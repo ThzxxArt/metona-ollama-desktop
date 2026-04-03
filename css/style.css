@@ -205,31 +205,29 @@ body::before {
     50% { opacity: 0.5; box-shadow: 0 0 12px currentColor; }
 }
 
-/* ── 图标按钮 ── */
+/* ── 图标按钮（渐变风格，与发送按钮统一）── */
 .icon-btn {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 38px;
-    height: 38px;
-    border: 1px solid var(--border-glass);
-    background: var(--bg-glass-light);
-    color: var(--text-secondary);
+    width: 40px;
+    height: 40px;
+    border: none;
+    background: var(--gradient-main);
+    color: white;
     border-radius: var(--radius-md);
     cursor: pointer;
     transition: var(--transition);
+    box-shadow: 0 2px 10px rgba(0, 245, 212, 0.25);
 }
 
 .icon-btn:hover {
-    background: var(--bg-glass-hover);
-    color: var(--accent-cyan);
-    border-color: var(--accent-cyan);
-    box-shadow: 0 0 12px rgba(0, 245, 212, 0.15);
-    transform: translateY(-1px);
+    transform: scale(1.05);
+    box-shadow: 0 4px 18px rgba(0, 245, 212, 0.4);
 }
 
 .icon-btn:active {
-    transform: translateY(0) scale(0.95);
+    transform: scale(0.95);
 }
 
 .icon-btn svg {
@@ -334,8 +332,8 @@ body::before {
 .think-toggle input { display: none; }
 
 .think-btn {
-    width: 40px;
-    height: 40px;
+    width: 42px;
+    height: 42px;
     border-radius: var(--radius-md);
     background: var(--bg-glass-light);
     border: 1px solid var(--border-glass);
@@ -352,18 +350,22 @@ body::before {
 }
 
 .think-toggle:not(.unavailable):hover .think-btn {
+    transform: scale(1.05);
+    box-shadow: 0 4px 18px rgba(123, 47, 247, 0.35);
     border-color: var(--accent-purple);
     color: var(--accent-purple);
-    background: rgba(123, 47, 247, 0.1);
-    box-shadow: 0 0 12px rgba(123, 47, 247, 0.15);
-    transform: translateY(-1px);
 }
 
 .think-toggle input:checked + .think-btn {
-    background: linear-gradient(135deg, rgba(123, 47, 247, 0.2), rgba(0, 245, 212, 0.1));
-    border-color: var(--accent-purple);
-    color: var(--accent-purple);
-    box-shadow: 0 0 14px rgba(123, 47, 247, 0.3);
+    background: var(--gradient-main);
+    border: none;
+    color: white;
+    box-shadow: 0 2px 10px rgba(0, 245, 212, 0.25);
+}
+
+.think-toggle input:checked + .think-btn:hover {
+    transform: scale(1.05);
+    box-shadow: 0 4px 18px rgba(0, 245, 212, 0.4);
 }
 
 .think-toggle.unavailable .think-btn {
