@@ -86,7 +86,11 @@ export function appendMessageDOM(msg, index) {
                     </div>
                 </div>`;
         }
-        contentHtml += `<div class="msg-content">${safeMarkdown(safeContent)}</div>`;
+        if (safeContent) {
+            contentHtml += `<div class="msg-content">${safeMarkdown(safeContent)}</div>`;
+        } else {
+            contentHtml += `<div class="msg-content"></div>`;
+        }
     } else {
         contentHtml += `<div class="msg-content">${escapeHtml(safeContent)}</div>`;
     }

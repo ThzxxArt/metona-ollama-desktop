@@ -264,13 +264,12 @@ export async function sendMessage() {
             if (loadingDots) loadingDots.remove();
             if (loadingText) loadingText.remove();
 
-            // 获取已有的流式内容
             const contentDiv = placeholder?.querySelector('.msg-content');
-            const existingContent = contentDiv?.textContent || '';
 
+            // 保存部分消息（直接用 assistantContent，不从 DOM 读）
             const partialMsg = {
                 role: 'assistant',
-                content: existingContent || '',
+                content: assistantContent,
                 timestamp: Date.now(),
                 ...(modelName && { model: modelName }),
                 ...(thinkContent && { think: thinkContent }),
@@ -278,10 +277,14 @@ export async function sendMessage() {
             };
             currentSession.messages.push(partialMsg);
 
-            if (contentDiv && existingContent) {
-                contentDiv.innerHTML = safeMarkdown(existingContent) + '<p><code>[已停止]</code></p>';
-            } else {
-                if (contentDiv) contentDiv.innerHTML = '<p><code>[已停止]</code></p>';
+            // 更新 DOM
+            if (contentDiv) {
+                let html = '';
+                if (assistantContent) {
+                    html = safeMarkdown(assistantContent);
+                }
+                html += '<p><code>[已停止]</code></p>';
+                contentDiv.innerHTML = html;
             }
 
             appendSystemMessage('⏹ 已停止生成');
@@ -293,23 +296,23 @@ export async function sendMessage() {
             return;
         }
 
+        // 其他错误
         const placeholder = document.querySelector('#messagesContainer .message.assistant:last-child');
         const loadingDots = placeholder?.querySelector('.loading-dots');
         const loadingText = placeholder?.querySelector('.loading-text');
         if (loadingDots) loadingDots.remove();
         if (loadingText) loadingText.remove();
 
-        const existingContent = placeholder?.querySelector('.msg-content')?.textContent || '';
+        const contentDiv = placeholder?.querySelector('.msg-content');
 
-        if (existingContent) {
+        if (assistantContent && contentDiv) {
             const partialMsg = {
                 role: 'assistant',
-                content: existingContent + '\n\n`[已中断]`',
+                content: assistantContent + '\n\n`[已中断]`',
                 timestamp: Date.now(),
             };
             currentSession.messages.push(partialMsg);
-            const contentDiv = placeholder?.querySelector('.msg-content');
-            if (contentDiv) contentDiv.innerHTML = `<p>${existingContent}</p><p><code>[已中断]</code></p>`;
+            contentDiv.innerHTML = safeMarkdown(assistantContent) + '<p><code>[已中断]</code></p>';
             await saveCurrentSession();
         } else {
             if (placeholder) placeholder.remove();
