@@ -7,10 +7,10 @@ const CACHE_NAME = 'metona-ollama-v3';
 const ASSETS = [
     './',
     './index.html',
-    './style.css',
-    './chat-db.js',
-    './marked.esm.js',
-    './ollama-api.js',
+    './css/style.css',
+    './js/chat-db.js',
+    './js/lib/marked.esm.js',
+    './js/ollama-api.js',
     './manifest.json'
 ];
 

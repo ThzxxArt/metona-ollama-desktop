@@ -52,14 +52,39 @@ OLLAMA_ORIGINS="*" ollama serve
 
 ```
 metona-ollama/
-├── index.html          # 主页面 + 应用逻辑
-├── style.css           # 暗色主题样式
-├── ollama-api.js       # Ollama REST API 封装
-├── chat-db.js          # IndexedDB 持久化层
-├── marked.esm.js       # Markdown 渲染器
-├── sw.js               # Service Worker (PWA)
-├── manifest.json       # PWA 清单
-└── README.md
+├── index.html              # 入口页面（纯模板）
+├── manifest.json           # PWA 清单
+├── sw.js                   # Service Worker (PWA)
+├── LICENSE
+├── README.md
+│
+├── assets/
+│   └── icons/              # 图标资源
+│       ├── llama.ico
+│       └── llama.png
+│
+├── css/
+│   └── style.css           # 暗色主题样式
+│
+└── js/
+    ├── app.js              # 主入口 / 初始化协调
+    ├── ollama-api.js       # Ollama REST API 封装
+    ├── chat-db.js          # IndexedDB 持久化层
+    ├── state.js            # 响应式状态管理
+    ├── utils.js            # 通用工具函数
+    ├── sanitizer.js        # HTML XSS 净化器
+    ├── marked-config.js    # Markdown 渲染器配置
+    ├── lib/
+    │   └── marked.esm.js   # Markdown 渲染器（第三方）
+    └── components/
+        ├── chat-area.js        # 消息渲染 / 流式更新 / 导出
+        ├── input-area.js       # 文本输入 / 图片上传 / 发送
+        ├── history-modal.js    # 历史记录面板 / 搜索 / 分页
+        ├── settings-modal.js   # 设置面板 / 数据管理
+        ├── header.js           # 顶部导航 / 连接状态
+        ├── model-bar.js        # 模型选择栏
+        ├── toast.js            # Toast 通知
+        └── lightbox.js         # 图片预览
 ```
 
 ## ⚙️ 设置项

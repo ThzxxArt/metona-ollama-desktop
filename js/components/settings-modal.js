@@ -7,7 +7,7 @@ import { debounce, formatSize } from '../utils.js';
 import { updateConnectionInfo, updateRunningModels } from './header.js';
 import { loadModels } from './model-bar.js';
 import { showToast } from './toast.js';
-import { OllamaAPI } from '../../ollama-api.js';
+import { OllamaAPI } from '../ollama-api.js';
 
 let settingsModalEl;
 

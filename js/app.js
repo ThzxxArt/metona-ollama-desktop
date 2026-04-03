@@ -3,8 +3,8 @@
  * 负责初始化所有组件、协调事件流、管理生命周期
  */
 
-import { ChatDB } from '../chat-db.js';
-import { OllamaAPI } from '../ollama-api.js';
+import { ChatDB } from './chat-db.js';
+import { OllamaAPI } from './ollama-api.js';
 import { state, KEYS } from './state.js';
 import { generateId } from './utils.js';
 

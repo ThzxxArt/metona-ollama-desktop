@@ -5,7 +5,7 @@
 
 import { state, KEYS } from '../state.js';
 import { formatSize } from '../utils.js';
-import { OllamaAPI } from '../../ollama-api.js';
+import { OllamaAPI } from '../ollama-api.js';
 
 let connStatusEl;
 

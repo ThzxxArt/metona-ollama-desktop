@@ -3,7 +3,7 @@
  * 封装 marked.js，配置自定义渲染器和安全策略
  */
 
-import { marked } from '../marked.esm.js';
+import { marked } from './lib/marked.esm.js';
 import { SAFE_URI_SCHEMES } from './sanitizer.js';
 
 // 配置 marked
