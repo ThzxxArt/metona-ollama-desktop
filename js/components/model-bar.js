@@ -6,14 +6,15 @@
 import { state, KEYS } from '../state.js';
 import { formatSize } from '../utils.js';
 
-let modelSelectEl, modelInfoBadgeEl, thinkCheckbox, thinkWrap;
+let modelSelectEl, badgeThinkEl, badgeVisionEl, thinkCheckbox, thinkWrap;
 
 /** 缓存模型能力 { modelName: { think: bool, vision: bool } } */
 const modelCapabilityCache = new Map();
 
 export function initModelBar() {
     modelSelectEl = document.querySelector('#modelSelect');
-    modelInfoBadgeEl = document.querySelector('#modelInfoBadge');
+    badgeThinkEl = document.querySelector('#badgeThink');
+    badgeVisionEl = document.querySelector('#badgeVision');
     thinkCheckbox = document.querySelector('#toggleThink');
     thinkWrap = document.querySelector('#thinkToggleWrap');
 
@@ -25,7 +26,8 @@ export function initModelBar() {
             await checkModelCapability(model);
         } else {
             setThinkAvailable(false);
-            setModelBadge('');
+            badgeThinkEl.style.display = 'none';
+            badgeVisionEl.style.display = 'none';
         }
     });
 }
@@ -45,7 +47,7 @@ export async function loadModels() {
 
         if (!data.models || data.models.length === 0) {
             modelSelectEl.innerHTML = '<option value="">未安装任何模型</option>';
-            setModelBadge('');
+            badgeThinkEl.style.display = 'none'; badgeVisionEl.style.display = 'none';
             return;
         }
 
@@ -74,7 +76,7 @@ export async function loadModels() {
     } catch (err) {
         console.error('[ModelBar] 加载模型失败:', err);
         modelSelectEl.innerHTML = '<option value="">加载失败 - 检查连接</option>';
-        setModelBadge('');
+        badgeThinkEl.style.display = 'none'; badgeVisionEl.style.display = 'none';
     }
 }
 
@@ -116,11 +118,9 @@ async function checkModelCapability(modelName) {
 function applyCapability(modelName, caps) {
     setThinkAvailable(caps.think);
 
-    // 更新信息标签
-    const tags = [];
-    if (caps.think) tags.push('🧠 Think');
-    if (caps.vision) tags.push('👁️ Vision');
-    setModelBadge(tags.join('  '));
+    // 更新能力标签
+    badgeThinkEl.style.display = caps.think ? '' : 'none';
+    badgeVisionEl.style.display = caps.vision ? '' : 'none';
 }
 
 /**
@@ -137,14 +137,6 @@ function setThinkAvailable(available) {
         thinkWrap.title = '当前模型不支持 Think 模式';
         thinkWrap.classList.add('unavailable');
     }
-}
-
-/**
- * 更新模型信息标签
- */
-function setModelBadge(text) {
-    modelInfoBadgeEl.textContent = text;
-    modelInfoBadgeEl.style.display = text ? '' : 'none';
 }
 
 /**

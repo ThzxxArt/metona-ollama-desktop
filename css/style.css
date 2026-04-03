@@ -254,27 +254,47 @@ body::before {
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 8px 16px;
+    padding: 10px 16px;
     background: var(--bg-secondary);
     border-bottom: 1px solid var(--border-glass);
     flex-shrink: 0;
 }
 
+.model-bar-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-sm);
+    background: var(--gradient-main);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    box-shadow: 0 2px 8px rgba(0, 245, 212, 0.2);
+}
+
+.model-bar-icon svg {
+    width: 16px;
+    height: 16px;
+    color: white;
+}
+
 .model-select-wrap {
     position: relative;
     flex: 1;
+    min-width: 0;
     display: flex;
     align-items: center;
 }
 
 .model-select {
     width: 100%;
-    padding: 7px 32px 7px 12px;
+    padding: 8px 36px 8px 14px;
     background: var(--bg-glass-light);
-    border: 1px solid var(--border-glass);
-    border-radius: var(--radius-sm);
+    border: 1.5px solid var(--border-glass);
+    border-radius: var(--radius-md);
     color: var(--text-primary);
     font-size: 13px;
+    font-weight: 500;
     font-family: var(--font-sans);
     outline: none;
     cursor: pointer;
@@ -285,39 +305,60 @@ body::before {
 
 .model-select:focus {
     border-color: var(--accent-cyan);
-    box-shadow: 0 0 0 2px rgba(0, 245, 212, 0.1);
+    box-shadow: 0 0 0 3px rgba(0, 245, 212, 0.12), 0 0 12px rgba(0, 245, 212, 0.1);
+}
+
+.model-select:hover {
+    border-color: rgba(0, 245, 212, 0.4);
 }
 
 .model-select option {
     background: var(--bg-secondary);
     color: var(--text-primary);
-    padding: 6px;
+    padding: 8px;
 }
 
 .model-select-arrow {
     position: absolute;
-    right: 8px;
+    right: 10px;
     top: 50%;
     transform: translateY(-50%);
     pointer-events: none;
-    color: var(--text-muted);
+    color: var(--accent-cyan);
     display: flex;
+    opacity: 0.6;
 }
 
 .model-select-arrow svg {
-    width: 14px;
-    height: 14px;
+    width: 16px;
+    height: 16px;
 }
 
-.model-info-badge {
+.model-badges {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.model-badge {
     font-size: 11px;
-    color: var(--text-muted);
+    font-weight: 600;
     white-space: nowrap;
-    padding: 2px 8px;
-    background: var(--bg-glass-light);
-    border-radius: 10px;
-    border: 1px solid var(--border-glass);
-    display: none;
+    padding: 4px 10px;
+    border-radius: 20px;
+    letter-spacing: 0.3px;
+}
+
+.think-badge {
+    color: var(--accent-purple);
+    background: rgba(123, 47, 247, 0.12);
+    border: 1px solid rgba(123, 47, 247, 0.25);
+}
+
+.vision-badge {
+    color: var(--accent-cyan);
+    background: rgba(0, 245, 212, 0.08);
+    border: 1px solid rgba(0, 245, 212, 0.2);
 }
 
 /* ── Think 按钮（输入栏内） ── */
