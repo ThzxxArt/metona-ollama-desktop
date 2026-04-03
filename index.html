@@ -47,14 +47,15 @@
 
     <!-- ═══════════════ 模型选择栏 ═══════════════ -->
     <div class="model-bar">
-        <select class="model-select" id="modelSelect">
-            <option value="">正在加载模型...</option>
-        </select>
-        <label class="toggle-label" title="Think 模式：启用深度推理">
-            <input type="checkbox" id="toggleThink">
-            <span class="toggle-slider"></span>
-            <span>Think</span>
-        </label>
+        <div class="model-select-wrap">
+            <select class="model-select" id="modelSelect">
+                <option value="">正在加载模型...</option>
+            </select>
+            <span class="model-select-arrow">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+            </span>
+        </div>
+        <span class="model-info-badge" id="modelInfoBadge" title="模型信息"></span>
     </div>
 
     <!-- ═══════════════ 聊天区域 ═══════════════ -->
@@ -94,6 +95,15 @@
             </button>
             <input type="file" id="fileInput" accept="image/*" multiple style="display:none;">
             <textarea class="chat-input" id="chatInput" placeholder="输入消息..." rows="1"></textarea>
+            <label class="think-toggle" id="thinkToggleWrap" title="Think 模式未可用">
+                <input type="checkbox" id="toggleThink" disabled>
+                <span class="think-btn">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 2a7 7 0 0 1 7 7c0 2.38-1.19 4.47-3 5.74V17a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1v-2.26C6.19 13.47 5 11.38 5 9a7 7 0 0 1 7-7z"/>
+                        <line x1="9" y1="21" x2="15" y2="21"/>
+                    </svg>
+                </span>
+            </label>
             <button class="send-btn" id="btnSend">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
