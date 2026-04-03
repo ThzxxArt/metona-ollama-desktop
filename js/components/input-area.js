@@ -174,6 +174,9 @@ export async function sendMessage() {
     msgsToAdd.forEach(m => currentSession.messages.push(m));
     renderMessages();
 
+    // 立即保存（防止新建会话或刷新时丢失用户消息）
+    await saveCurrentSession();
+
     // 清空输入
     chatInputEl.value = '';
     pendingImages = [];
@@ -307,7 +310,7 @@ export async function sendMessage() {
             currentSession.messages.push(partialMsg);
             const contentDiv = placeholder?.querySelector('.msg-content');
             if (contentDiv) contentDiv.innerHTML = `<p>${existingContent}</p><p><code>[已中断]</code></p>`;
-            saveCurrentSession();
+            await saveCurrentSession();
         } else {
             if (placeholder) placeholder.remove();
         }

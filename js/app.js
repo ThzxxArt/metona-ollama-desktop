@@ -33,7 +33,15 @@ function createNewSession() {
     };
 }
 
-function startNewSession() {
+async function startNewSession() {
+    // 先保存当前会话（如果有的话）
+    const db = state.get(KEYS.DB);
+    const currentSession = state.get(KEYS.CURRENT_SESSION);
+    if (db && currentSession && currentSession.messages.length > 0) {
+        currentSession.updatedAt = Date.now();
+        await db.saveSession(currentSession);
+    }
+
     const session = createNewSession();
     state.set(KEYS.CURRENT_SESSION, session);
     state.set(KEYS.IS_HISTORY_VIEW, false);
