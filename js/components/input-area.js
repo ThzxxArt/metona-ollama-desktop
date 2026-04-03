@@ -196,12 +196,13 @@ export async function sendMessage() {
     const systemPrompt = state.get(KEYS.SYSTEM_PROMPT);
     const numCtx = state.get(KEYS.NUM_CTX, 24576);
 
-    try {
-        let assistantContent = '';
-        let thinkContent = '';
-        let finalStats = null;
-        let modelName = '';
+    // 流式回复状态变量（声明在 try 外，catch 中也需要访问）
+    let assistantContent = '';
+    let thinkContent = '';
+    let finalStats = null;
+    let modelName = '';
 
+    try {
         const apiMessages = currentSession.messages.map(m => ({
             role: m.role,
             content: m.content || '',
