@@ -69,8 +69,10 @@ export class OllamaAPI {
      * 使用 ReadableStream + TextDecoder 解析 NDJSON 流
      * Ollama 流式响应格式 (NDJSON):
      * {"model":"xxx","message":{"role":"assistant","content":"Hello"},"done":false}
+     *
+     * @param {AbortController} [abortController] - 可选，用于强制终止流
      */
-    async chatStream(params, onChunk) {
+    async chatStream(params, onChunk, abortController) {
         const body = {
             model: params.model,
             messages: params.messages,
@@ -81,14 +83,28 @@ export class OllamaAPI {
             ...(params.options && { options: params.options })
         };
 
-        const response = await this._request('/api/chat', {
+        const fetchOptions = {
             method: 'POST',
             body: JSON.stringify(body)
-        });
+        };
+
+        // 注入 abort 信号，同时中止 fetch 和 reader
+        if (abortController) {
+            fetchOptions.signal = abortController.signal;
+        }
+
+        const response = await this._request('/api/chat', fetchOptions);
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
+
+        // 如果外部触发 abort，立即取消 reader（双重保险：fetch abort + reader.cancel）
+        if (abortController) {
+            abortController.signal.addEventListener('abort', () => {
+                reader.cancel();
+            }, { once: true });
+        }
 
         while (true) {
             const { done, value } = await reader.read();

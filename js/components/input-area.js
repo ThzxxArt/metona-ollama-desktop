@@ -8,7 +8,7 @@ import { fileToBase64, debounce, truncate } from '../utils.js';
 import { getSelectedModel, isThinkEnabled } from './model-bar.js';
 import {
     renderMessages, appendAssistantPlaceholder, appendSystemMessage,
-    updateLastAssistantMessage, clearMessages
+    updateLastAssistantMessage, clearMessages, safeMarkdown
 } from './chat-area.js';
 import { showToast } from './toast.js';
 import { checkConnection } from './header.js';
@@ -23,7 +23,13 @@ export function initInputArea() {
     imagePreviewEl = document.querySelector('#imagePreview');
 
     // 发送
-    btnSendEl.addEventListener('click', sendMessage);
+    btnSendEl.addEventListener('click', () => {
+        if (state.get(KEYS.IS_STREAMING)) {
+            stopGeneration();
+        } else {
+            sendMessage();
+        }
+    });
     chatInputEl.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
@@ -93,13 +99,31 @@ function renderImagePreviews() {
 
 function updateSendButton(streaming) {
     if (streaming) {
-        btnSendEl.innerHTML = '<div class="spinner"></div>';
-        btnSendEl.classList.add('disabled');
+        // 流式时显示停止按钮
+        btnSendEl.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor">
+            <rect x="6" y="6" width="12" height="12" rx="2"/>
+        </svg>`;
+        btnSendEl.classList.add('stop-btn');
+        btnSendEl.classList.remove('disabled');
+        btnSendEl.title = '停止生成';
     } else {
+        // 恢复发送按钮
         btnSendEl.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
         </svg>`;
+        btnSendEl.classList.remove('stop-btn');
         btnSendEl.classList.remove('disabled');
+        btnSendEl.title = '发送';
+    }
+}
+
+/**
+ * 停止生成 - 真正中止 Ollama 接口请求
+ */
+function stopGeneration() {
+    const abortController = state.get(KEYS.ABORT_CONTROLLER);
+    if (abortController) {
+        abortController.abort();
     }
 }
 
@@ -207,7 +231,7 @@ export async function sendMessage() {
             if (chunk.done) {
                 finalStats = { eval_count: chunk.eval_count, total_duration: chunk.total_duration };
             }
-        });
+        }, abortController);
 
         const assistantMsg = {
             role: 'assistant',
@@ -228,13 +252,49 @@ export async function sendMessage() {
     } catch (err) {
         console.error('[InputArea] 流式聊天错误:', err);
 
+        // 处理用户主动停止（AbortError）
+        if (err.name === 'AbortError') {
+            const placeholder = document.querySelector('#messagesContainer .message.assistant:last-child');
+            const loadingDots = placeholder?.querySelector('.loading-dots');
+            const loadingText = placeholder?.querySelector('.loading-text');
+            if (loadingDots) loadingDots.remove();
+            if (loadingText) loadingText.remove();
+
+            // 获取已有的流式内容
+            const contentDiv = placeholder?.querySelector('.msg-content');
+            const existingContent = contentDiv?.textContent || '';
+
+            const partialMsg = {
+                role: 'assistant',
+                content: existingContent || '',
+                timestamp: Date.now(),
+                ...(modelName && { model: modelName }),
+                ...(thinkContent && { think: thinkContent }),
+                stopped: true
+            };
+            currentSession.messages.push(partialMsg);
+
+            if (contentDiv && existingContent) {
+                contentDiv.innerHTML = safeMarkdown(existingContent) + '<p><code>[已停止]</code></p>';
+            } else {
+                if (contentDiv) contentDiv.innerHTML = '<p><code>[已停止]</code></p>';
+            }
+
+            appendSystemMessage('⏹ 已停止生成');
+            await saveCurrentSession();
+
+            state.set(KEYS.IS_STREAMING, false);
+            updateSendButton(false);
+            state.set(KEYS.ABORT_CONTROLLER, null);
+            return;
+        }
+
         const placeholder = document.querySelector('#messagesContainer .message.assistant:last-child');
         const loadingDots = placeholder?.querySelector('.loading-dots');
         const loadingText = placeholder?.querySelector('.loading-text');
         if (loadingDots) loadingDots.remove();
         if (loadingText) loadingText.remove();
 
-        const assistantContent = ''; // 已在 catch 作用域外不可用，取 DOM 值
         const existingContent = placeholder?.querySelector('.msg-content')?.textContent || '';
 
         if (existingContent) {

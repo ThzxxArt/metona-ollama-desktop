@@ -827,6 +827,22 @@ body::before {
     height: 18px;
 }
 
+/* 停止按钮样式 */
+.send-btn.stop-btn {
+    background: linear-gradient(135deg, #ff4757, #ff6b81);
+    box-shadow: 0 2px 10px rgba(255, 71, 87, 0.4);
+    animation: stopPulse 1.5s ease-in-out infinite;
+}
+
+.send-btn.stop-btn:hover {
+    box-shadow: 0 4px 20px rgba(255, 71, 87, 0.6);
+}
+
+@keyframes stopPulse {
+    0%, 100% { box-shadow: 0 2px 10px rgba(255, 71, 87, 0.4); }
+    50% { box-shadow: 0 2px 16px rgba(255, 71, 87, 0.7); }
+}
+
 .spinner {
     width: 18px;
     height: 18px;
