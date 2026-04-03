@@ -1,0 +1,1608 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#0a0a1a">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="description" content="Metona Ollama Client - 流式聊天、多模态、历史管理">
+    <link rel="manifest" href="manifest.json">
+	<link rel="icon" href="llama.ico" type="image/x-icon">
+    <title>Metona Ollama</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+
+    <!-- ═══════════════ 顶部导航 ═══════════════ -->
+    <header class="app-header">
+        <div class="header-left">
+            <span class="logo">🦙</span>
+            <span class="app-title">Metona Ollama</span>
+            <span class="app-version">v1.1.0</span>
+        </div>
+        <div class="header-right">
+            <div class="conn-status pending" id="connStatus" title="连接状态">
+                <span class="status-dot"></span>
+                <span class="status-label">未连接</span>
+            </div>
+            <button class="icon-btn" id="btnNewChat" title="新建会话">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                </svg>
+            </button>
+            <button class="icon-btn" id="btnHistory" title="历史记录">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                </svg>
+            </button>
+            <button class="icon-btn" id="btnSettings" title="设置">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+                </svg>
+            </button>
+        </div>
+    </header>
+
+    <!-- ═══════════════ 模型选择栏 ═══════════════ -->
+    <div class="model-bar">
+        <select class="model-select" id="modelSelect">
+            <option value="">正在加载模型...</option>
+        </select>
+        <label class="toggle-label" title="Think 模式：启用深度推理">
+            <input type="checkbox" id="toggleThink">
+            <span class="toggle-slider"></span>
+            <span>Think</span>
+        </label>
+    </div>
+
+    <!-- ═══════════════ 聊天区域 ═══════════════ -->
+    <main class="chat-area" id="chatArea">
+        <!-- 空状态 -->
+        <div class="empty-state" id="emptyState">
+            <div class="empty-icon">
+                <svg viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <circle cx="100" cy="100" r="80" stroke="rgba(0,245,212,0.2)" stroke-width="2"/>
+                    <circle cx="100" cy="100" r="60" stroke="rgba(123,47,247,0.2)" stroke-width="2"/>
+                    <path d="M70 90c0-16.57 13.43-30 30-30s30 13.43 30 30" stroke="rgba(0,245,212,0.5)" stroke-width="2" stroke-linecap="round"/>
+                    <circle cx="85" cy="100" r="5" fill="rgba(0,245,212,0.6)"/>
+                    <circle cx="115" cy="100" r="5" fill="rgba(0,245,212,0.6)"/>
+                    <path d="M88 120c4 4 20 4 24 0" stroke="rgba(0,245,212,0.4)" stroke-width="2" stroke-linecap="round"/>
+                </svg>
+            </div>
+            <h2>开始对话</h2>
+            <p>选择一个模型，输入消息开始聊天</p>
+        </div>
+
+        <!-- 消息列表 -->
+        <div class="messages" id="messagesContainer" style="display:none;"></div>
+    </main>
+
+    <!-- ═══════════════ 历史只读提示栏 ═══════════════ -->
+    <div class="history-view-bar" id="historyBar" style="display:none;">
+        <span>📖 正在查看历史记录（只读模式）</span>
+        <button class="btn btn-sm btn-outline" id="btnExitHistory">返回新会话</button>
+    </div>
+
+    <!-- ═══════════════ 输入区域 ═══════════════ -->
+    <div class="input-area" id="inputArea">
+        <div class="image-preview" id="imagePreview" style="display:none;"></div>
+        <div class="input-row">
+            <button class="icon-btn attach-btn" id="btnAttach" title="上传图片">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
+                    <polyline points="21 15 16 10 5 21"/>
+                </svg>
+            </button>
+            <input type="file" id="fileInput" accept="image/*" multiple style="display:none;">
+            <textarea class="chat-input" id="chatInput" placeholder="输入消息..." rows="1"></textarea>
+            <button class="send-btn" id="btnSend">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                </svg>
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════ 设置模态框 ═══════════════ -->
+<div class="modal-overlay" id="settingsModal" style="display:none;">
+    <div class="modal">
+        <div class="modal-header">
+            <h3>⚙️ 设置</h3>
+            <button class="icon-btn" id="btnCloseSettings">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+            </button>
+        </div>
+        <div class="modal-body">
+            <!-- 连接配置 -->
+            <div class="setting-group">
+                <label class="setting-label">Ollama 服务地址</label>
+                <input class="setting-input" id="inputServerUrl" type="url" placeholder="http://127.0.0.1:11434">
+                <div class="connection-info" id="connInfo">
+                    <span class="status-badge" id="connBadge">检测中...</span>
+                    <span class="server-version" id="serverVersion"></span>
+                </div>
+                <div class="cors-hint" id="corsHint" style="display:none;">
+                    <p>⚠️ 连接失败，可能是 CORS 问题。请在启动 Ollama 时设置环境变量：</p>
+                    <code>OLLAMA_ORIGINS="*" ollama serve</code>
+                </div>
+            </div>
+
+            <!-- 模型参数 -->
+            <div class="setting-group">
+                <label class="setting-label">
+                    系统提示词（System Prompt）
+                    <label class="toggle-label" style="margin-left:auto;display:inline-flex;">
+                        <input type="checkbox" id="toggleSystemPrompt">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </label>
+                <textarea class="setting-input" id="inputSystemPrompt" rows="4" placeholder="例如：你是一个专业的编程助手，用中文回答。" style="resize:vertical;min-height:80px;" disabled></textarea>
+
+                <label class="setting-label" style="margin-top:12px;">上下文长度（num_ctx）</label>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <input class="setting-input" id="inputNumCtx" type="number" min="512" max="131072" step="512" value="24576" style="margin-bottom:0;">
+                    <span class="text-muted" style="white-space:nowrap;">tokens</span>
+                </div>
+                <p class="text-muted" style="margin-top:4px;font-size:11px;">常见值：2048 / 4096 / 8192 / 32768。值越大上下文越长，显存占用越高。</p>
+            </div>
+
+            <!-- 运行中的模型 -->
+            <div class="setting-group">
+                <label class="setting-label">运行中的模型</label>
+                <div class="running-models" id="runningModels">
+                    <p class="text-muted">无运行中的模型</p>
+                </div>
+            </div>
+
+            <!-- 操作按钮 -->
+            <div class="setting-group">
+                <label class="setting-label">显存管理</label>
+                <button class="btn btn-danger" id="btnReleaseVRAM">释放显存（卸载模型）</button>
+            </div>
+
+            <!-- 数据管理 -->
+            <div class="setting-group">
+                <label class="setting-label">数据管理</label>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                    <button class="btn btn-outline" id="btnExportAll">📦 导出全部会话</button>
+                    <button class="btn btn-outline" id="btnImportSessions">📥 导入会话</button>
+                    <input type="file" id="importFileInput" accept=".json" style="display:none;">
+                    <button class="btn btn-danger" id="btnClearAllHistory">清空所有历史</button>
+                </div>
+                <p class="text-muted" style="margin-top:6px;font-size:11px;">导出格式为 JSON，可备份后在其他设备导入恢复。</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════ 历史记录模态框 ═══════════════ -->
+<div class="modal-overlay" id="historyModal" style="display:none;">
+    <div class="modal">
+        <div class="modal-header">
+            <h3>🕐 历史记录</h3>
+            <button class="icon-btn" id="btnCloseHistory">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="history-search-wrap">
+                <input class="history-search-input" id="historySearchInput" type="text" placeholder="搜索会话标题或内容...">
+                <button class="history-search-clear" id="historySearchClear" style="display:none;">✕</button>
+            </div>
+            <div class="history-list" id="historyList">
+                <!-- 动态生成 -->
+            </div>
+            <div class="history-pagination" id="historyPagination"></div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════ 图片预览 Lightbox ═══════════════ -->
+<div class="lightbox-overlay" id="lightbox" style="display:none;">
+    <button class="lightbox-close" id="lightboxClose">✕</button>
+    <img class="lightbox-img" id="lightboxImg" src="" alt="预览">
+</div>
+
+<!-- ═══════════════ Toast 通知容器 ═══════════════ -->
+<div class="toast-container" id="toastContainer"></div>
+
+<!-- ═══════════════ 主应用逻辑 ═══════════════ -->
+<script type="module">
+import { ChatDB } from './chat-db.js';
+import { OllamaAPI } from './ollama-api.js';
+import { marked } from './marked.esm.js';
+
+console.log('[Metona] 代码版本: v3-fix ' + new Date().toISOString());
+
+// 配置 marked
+marked.setOptions({
+    breaks: true,      // 换行转 <br>
+    gfm: true,         // GitHub 风格 Markdown
+});
+
+// ══════════════════════════════════════════════════════════════
+// HTML Sanitizer — 防止 marked 输出中的 XSS
+// ══════════════════════════════════════════════════════════════
+const SAFE_URI_SCHEMES = new Set(['http:', 'https:', 'mailto:', 'tel:', 'ftp:', 'ftps:', 'xmpp:']);
+const SAFE_DATA_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml']);
+
+/**
+ * 净化 HTML 字符串，移除危险标签和属性
+ * 基于白名单策略，保留 Markdown 常用标签
+ */
+function sanitize(html) {
+    try {
+        const template = document.createElement('template');
+        template.innerHTML = html;
+        const root = template.content;
+
+        const ALLOWED_TAGS = new Set([
+            'a', 'abbr', 'b', 'blockquote', 'br', 'code', 'del', 'details', 'div',
+            'dl', 'dt', 'dd', 'em', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hr',
+            'i', 'img', 'ins', 'kbd', 'li', 'ol', 'p', 'pre', 'q', 'rp', 'rt',
+            'ruby', 's', 'samp', 'small', 'span', 'strike', 'strong', 'sub',
+            'summary', 'sup', 'table', 'tbody', 'td', 'tfoot', 'th', 'thead',
+            'tr', 'u', 'ul', 'var', 'input',
+        ]);
+
+        const ALLOWED_ATTRS = new Set([
+            'href', 'src', 'alt', 'title', 'width', 'height', 'align',
+            'target', 'rel', 'class', 'id', 'type', 'checked', 'disabled',
+            'start', 'value', 'scope', 'rowspan', 'colspan', 'lang',
+        ]);
+
+        const DANGEROUS_PREFIXES = ['on', 'xlink:href', 'xmlns:'];
+
+        // 删除注释节点
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_COMMENT);
+        const comments = [];
+        while (walker.nextNode()) comments.push(walker.currentNode);
+        comments.forEach(c => c.remove());
+
+        // 用 querySelectorAll 安全遍历所有元素（先收集再处理）
+        const elements = [...root.querySelectorAll('*')];
+        for (const el of elements) {
+            // 元素可能已被之前的处理移除
+            if (!el.parentNode) continue;
+
+            const tag = el.tagName.toLowerCase();
+
+            if (!ALLOWED_TAGS.has(tag)) {
+                // 不在白名单 → 解包（保留子节点，移除标签）
+                while (el.firstChild) el.parentNode.insertBefore(el.firstChild, el);
+                el.remove();
+                continue;
+            }
+
+            // 清理属性
+            for (const attr of [...el.attributes]) {
+                const name = attr.name.toLowerCase();
+                if (DANGEROUS_PREFIXES.some(p => name.startsWith(p))) {
+                    el.removeAttribute(attr.name);
+                    continue;
+                }
+                if (!ALLOWED_ATTRS.has(name)) {
+                    el.removeAttribute(attr.name);
+                    continue;
+                }
+                if ((name === 'href' || name === 'src' || name === 'action') && attr.value) {
+                    const val = attr.value.trim().toLowerCase();
+                    if (/^(javascript|vbscript|data|file):/i.test(val)) {
+                        const mimeMatch = val.match(/^data:([^;,]+)/i);
+                        if (!mimeMatch || !SAFE_DATA_TYPES.has(mimeMatch[1].toLowerCase())) {
+                            el.removeAttribute(attr.name);
+                        }
+                    }
+                }
+            }
+        }
+
+        return root.innerHTML;
+    } catch (e) {
+        return html;
+    }
+}
+
+// 自定义渲染器：链接新窗口打开 + 安全属性
+const renderer = new marked.Renderer();
+renderer.link = function({ href, title, text }) {
+    // 协议白名单检查
+    const safe = SAFE_URI_SCHEMES.has(new URL(href, 'https://placeholder').protocol);
+    const t = title ? ` title="${title}"` : '';
+    if (!safe) {
+        return `<span class="blocked-link" title="已阻止不安全链接">${text}</span>`;
+    }
+    return `<a href="${href}"${t} target="_blank" rel="noopener noreferrer">${text}</a>`;
+};
+renderer.image = function({ href, title, text }) {
+    // 图片 src 也需要协议检查
+    const safe = SAFE_URI_SCHEMES.has(new URL(href, 'https://placeholder').protocol);
+    if (!safe && !/^data:image\//i.test(href)) {
+        return `<span class="blocked-link">[已阻止不安全图片: ${text}]</span>`;
+    }
+    const t = title ? ` title="${title}"` : '';
+    return `<img src="${href}" alt="${text}"${t} loading="lazy">`;
+};
+marked.use({ renderer });
+
+/**
+ * Metona Ollama Client - 主应用
+ * 使用 IIFE 避免全局变量污染
+ */
+const App = (() => {
+    // ── DOM 元素引用 ──
+    const $ = (sel) => document.querySelector(sel);
+    const $$ = (sel) => document.querySelectorAll(sel);
+
+    const DOM = {
+        chatArea: $('#chatArea'),
+        messagesContainer: $('#messagesContainer'),
+        emptyState: $('#emptyState'),
+        chatInput: $('#chatInput'),
+        btnSend: $('#btnSend'),
+        btnAttach: $('#btnAttach'),
+        fileInput: $('#fileInput'),
+        imagePreview: $('#imagePreview'),
+        modelSelect: $('#modelSelect'),
+        toggleThink: $('#toggleThink'),
+        connStatus: $('#connStatus'),
+        settingsModal: $('#settingsModal'),
+        historyModal: $('#historyModal'),
+        historyList: $('#historyList'),
+        historyPagination: $('#historyPagination'),
+        historyBar: $('#historyBar'),
+        inputArea: $('#inputArea'),
+        lightbox: $('#lightbox'),
+        lightboxImg: $('#lightboxImg'),
+    };
+
+    // ── 状态 ──
+    let db = null;           // ChatDB 实例
+    let api = null;           // OllamaAPI 实例
+    let currentSession = null; // 当前会话 { id, title, model, messages, createdAt, updatedAt }
+    let isStreaming = false;  // 是否正在流式回复中
+    let isHistoryView = false; // 是否在历史只读模式
+    let pendingImages = [];   // 待发送的图片 (base64)
+    let abortController = null; // 用于取消流式请求
+    let systemPrompt = '';    // 系统提示词
+    let systemPromptEnabled = false; // 系统提示词开关
+    let numCtx = 24576;       // 上下文长度
+    let historyPage = 1;      // 历史记录当前页码
+    let historySearchQuery = ''; // 历史搜索关键词
+    const HISTORY_PAGE_SIZE = 10; // 每页条数
+
+    // ── 工具函数 ──
+
+    /** 生成唯一 ID */
+    function generateId() {
+        return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    }
+
+    /** 格式化时间 */
+    function formatTime(ts) {
+        const d = new Date(ts);
+        const pad = n => String(n).padStart(2, '0');
+        return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+
+    /** 截断文本 */
+    function truncate(str, len = 50) {
+        if (!str) return '';
+        return str.length > len ? str.substring(0, len) + '...' : str;
+    }
+
+    /** 防抖 */
+    function debounce(fn, ms = 300) {
+        let timer;
+        return (...args) => {
+            clearTimeout(timer);
+            timer = setTimeout(() => fn(...args), ms);
+        };
+    }
+
+    // ── 会话管理 ──
+
+    /** 创建新会话 */
+    function createNewSession() {
+        const model = DOM.modelSelect.value || '';
+        return {
+            id: generateId(),
+            title: '新会话',
+            model: model,
+            messages: [],
+            createdAt: Date.now(),
+            updatedAt: Date.now()
+        };
+    }
+
+    /** 初始化新会话 */
+    function startNewSession() {
+        currentSession = createNewSession();
+        isHistoryView = false;
+        DOM.historyBar.style.display = 'none';
+        DOM.inputArea.style.display = '';
+        DOM.messagesContainer.innerHTML = ''; // 清空旧 DOM
+        renderMessages();
+        DOM.chatInput.focus();
+    }
+
+    /** 保存当前会话到数据库 */
+    async function saveCurrentSession() {
+        if (!currentSession || !db || isHistoryView) return;
+        currentSession.updatedAt = Date.now();
+        try {
+            await db.saveSession(currentSession);
+        } catch (err) {
+            console.error('[App] 保存会话失败:', err);
+        }
+    }
+
+    // ── 渲染消息 ──
+
+    /** 渲染所有消息 */
+    function renderMessages() {
+        const msgs = currentSession ? currentSession.messages : [];
+        if (msgs.length === 0) {
+            DOM.emptyState.style.display = '';
+            DOM.messagesContainer.style.display = 'none';
+            return;
+        }
+        DOM.emptyState.style.display = 'none';
+        DOM.messagesContainer.style.display = '';
+
+        // 增量渲染：只追加新消息
+        const existingCount = DOM.messagesContainer.children.length;
+        for (let i = existingCount; i < msgs.length; i++) {
+            appendMessageDOM(msgs[i], i);
+        }
+
+        scrollToBottom();
+    }
+
+    /** 安全地将 Markdown 转为 HTML，失败则返回转义后的纯文本 */
+    function safeMarkdown(text) {
+        if (!text) return '';
+        try {
+            const result = marked.parse(String(text));
+            return typeof result === 'string' ? result : escapeHtml(String(text));
+        } catch (e) {
+            return escapeHtml(String(text));
+        }
+    }
+
+    /** 追加单条消息 DOM */
+    function appendMessageDOM(msg, index) {
+        const div = document.createElement('div');
+        div.className = `message ${msg.role}`;
+        div.dataset.index = index;
+
+        const avatar = msg.role === 'user' ? '👤' : '🤖';
+        const roleLabel = msg.role === 'user' ? '你' : 'AI';
+        // 模型名称标签（仅 assistant 消息）
+        const modelTag = (msg.role === 'assistant' && msg.model)
+            ? `<span class="model-tag">${escapeHtml(msg.model)}</span>`
+            : '';
+
+        let contentHtml = '';
+        // 安全获取内容，防御 null/undefined
+        const safeContent = (msg.content != null) ? String(msg.content) : '';
+        if (msg.role === 'assistant') {
+            // 处理思考块
+            if (msg.think) {
+                contentHtml += `
+                    <div class="think-block">
+                        <div class="think-header" onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display === 'none' ? '' : 'none'; this.querySelector('.chevron').classList.toggle('expanded');">
+                            <span>🤔 思考过程</span>
+                            <svg class="chevron expanded" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                        </div>
+                        <div class="think-content">
+                            <pre>${escapeHtml(msg.think)}</pre>
+                        </div>
+                    </div>`;
+            }
+            contentHtml += `<div class="msg-content">${safeMarkdown(safeContent)}</div>`;
+        } else {
+            contentHtml += `<div class="msg-content">${escapeHtml(safeContent)}</div>`;
+        }
+
+        // 图片
+        if (msg.images && msg.images.length > 0) {
+            contentHtml += '<div class="msg-images">';
+            msg.images.forEach((img, i) => {
+                contentHtml += `<img class="msg-img" src="data:image/png;base64,${img}" alt="用户图片" data-lightbox="true">`;
+            });
+            contentHtml += '</div>';
+        }
+
+        // 纯图片消息隐藏空内容区域
+        if (msg.role === 'user' && (!msg.content || msg.content.trim() === '') && msg.images && msg.images.length > 0) {
+            contentHtml = contentHtml.replace('<div class="msg-content"></div>', '');
+        }
+
+        // 统计信息
+        const stats = [];
+        if (msg.timestamp) stats.push(formatTime(msg.timestamp));
+        if (msg.eval_count) stats.push(`${msg.eval_count} tokens`);
+        if (msg.total_duration) stats.push(`${(msg.total_duration / 1e9).toFixed(1)}s`);
+        if (stats.length > 0) {
+            contentHtml += `<div class="msg-stats">${stats.map(s => `<span>${s}</span>`).join(' · ')}</div>`;
+        }
+
+        div.innerHTML = `
+            <div class="msg-avatar">${avatar}</div>
+            <div class="msg-body">
+                <div class="msg-role">${roleLabel}${modelTag}</div>
+                ${contentHtml}
+            </div>
+        `;
+
+        DOM.messagesContainer.appendChild(div);
+    }
+
+    /** 更新最后一条 assistant 消息（用于流式输出） */
+    function updateLastAssistantMessage(content, think, stats, model) {
+        const lastMsg = DOM.messagesContainer.querySelector('.message.assistant:last-child');
+        if (!lastMsg) return;
+
+        // 移除 loading 动画
+        const loadingDots = lastMsg.querySelector('.loading-dots');
+        const loadingText = lastMsg.querySelector('.loading-text');
+        if (loadingDots) loadingDots.remove();
+        if (loadingText) loadingText.remove();
+
+        // 更新模型标签
+        if (model) {
+            let modelTag = lastMsg.querySelector('.model-tag');
+            if (!modelTag) {
+                modelTag = document.createElement('span');
+                modelTag.className = 'model-tag';
+                const roleEl = lastMsg.querySelector('.msg-role');
+                if (roleEl) roleEl.appendChild(modelTag);
+            }
+            modelTag.textContent = model;
+        }
+
+        const contentDiv = lastMsg.querySelector('.msg-content');
+        const safeContent = (content != null) ? String(content) : '';
+        if (contentDiv && safeContent) {
+            contentDiv.innerHTML = safeMarkdown(safeContent);
+        }
+
+        // 处理思考块
+        let thinkBlock = lastMsg.querySelector('.think-block');
+        if (think) {
+            if (!thinkBlock) {
+                const msgBody = lastMsg.querySelector('.msg-body');
+                thinkBlock = document.createElement('div');
+                thinkBlock.className = 'think-block';
+                thinkBlock.innerHTML = `
+                    <div class="think-header" onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display === 'none' ? '' : 'none'; this.querySelector('.chevron').classList.toggle('expanded');">
+                        <span>🤔 思考过程</span>
+                        <svg class="chevron expanded" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                    </div>
+                    <div class="think-content"><pre></pre></div>
+                `;
+                msgBody.insertBefore(thinkBlock, contentDiv);
+            }
+            thinkBlock.querySelector('pre').textContent = think;
+        }
+
+        // 统计信息
+        if (stats) {
+            let statsDiv = lastMsg.querySelector('.msg-stats');
+            if (!statsDiv) {
+                statsDiv = document.createElement('div');
+                statsDiv.className = 'msg-stats';
+                lastMsg.querySelector('.msg-body').appendChild(statsDiv);
+            }
+            const parts = [];
+            if (stats.eval_count) parts.push(`${stats.eval_count} tokens`);
+            if (stats.total_duration) parts.push(`${(stats.total_duration / 1e9).toFixed(1)}s`);
+            if (parts.length) statsDiv.innerHTML = parts.join(' · ');
+        }
+
+        scrollToBottom();
+    }
+
+    /** 追加临时的 assistant 消息占位 */
+    function appendAssistantPlaceholder() {
+        const div = document.createElement('div');
+        div.className = 'message assistant';
+        div.innerHTML = `
+            <div class="msg-avatar">🤖</div>
+            <div class="msg-body">
+                <div class="msg-role">AI</div>
+                <div class="msg-content">
+                    <div class="loading-dots">
+                        <span></span><span></span><span></span>
+                    </div>
+                    <span class="loading-text">正在思考...</span>
+                </div>
+            </div>
+        `;
+        DOM.messagesContainer.appendChild(div);
+        scrollToBottom();
+    }
+
+    /** 追加系统提示消息 */
+    function appendSystemMessage(text, type = 'info') {
+        const div = document.createElement('div');
+        div.style.cssText = 'text-align:center;padding:8px;font-size:12px;color:var(--text-muted);';
+        div.textContent = text;
+        DOM.emptyState.style.display = 'none';
+        DOM.messagesContainer.style.display = '';
+        DOM.messagesContainer.appendChild(div);
+        scrollToBottom();
+    }
+
+    /** 右侧弹出 Toast 通知 */
+    function showToast(text, type = 'info', duration = 3000) {
+        const iconMap = { success: '✓', error: '✗', warning: '⚠', info: 'ℹ' };
+        const container = document.querySelector('#toastContainer');
+        const toast = document.createElement('div');
+        toast.className = `toast ${type}`;
+        toast.innerHTML = `<span class="toast-icon">${iconMap[type] || 'ℹ'}</span><span>${text}</span>`;
+        container.appendChild(toast);
+        setTimeout(() => {
+            toast.classList.add('removing');
+            toast.addEventListener('animationend', () => toast.remove());
+        }, duration);
+    }
+
+    /** 打开图片预览 */
+    function openLightbox(src) {
+        DOM.lightboxImg.src = src;
+        DOM.lightbox.style.display = '';
+    }
+
+    /** 关闭图片预览 */
+    function closeLightbox() {
+        DOM.lightbox.style.display = 'none';
+        DOM.lightboxImg.src = '';
+    }
+
+    /** 滚动到底部 */
+    function scrollToBottom() {
+        requestAnimationFrame(() => {
+            DOM.chatArea.scrollTop = DOM.chatArea.scrollHeight;
+        });
+    }
+
+    /** 转义 HTML（本地快捷方法） */
+    function escapeHtml(str) {
+        const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+        return String(str).replace(/[&<>\"']/g, (c) => map[c]);
+    }
+
+    // ── 发送消息 ──
+
+    /** 核心发送逻辑 */
+    async function sendMessage() {
+        const text = DOM.chatInput.value.trim();
+        if (!text && pendingImages.length === 0) return;
+        if (isStreaming) return;
+
+        const model = DOM.modelSelect.value;
+        if (!model) {
+            appendSystemMessage('⚠️ 请先选择一个模型', 'warning');
+            return;
+        }
+
+        // 构造用户消息（图文分开为独立消息）
+        const now = Date.now();
+        const msgsToAdd = [];
+
+        // 图片消息（如果有）
+        if (pendingImages.length > 0) {
+            msgsToAdd.push({
+                role: 'user',
+                content: '',
+                images: pendingImages.map(img => img.base64),
+                timestamp: now
+            });
+        }
+
+        // 文字消息（如果有）
+        if (text) {
+            msgsToAdd.push({
+                role: 'user',
+                content: text,
+                timestamp: now
+            });
+        }
+
+        // 如果是第一条消息，更新会话标题
+        if (currentSession.messages.length === 0) {
+            currentSession.title = truncate(text || '[图片消息]', 30);
+            currentSession.model = model;
+        }
+
+        // 追加到会话
+        msgsToAdd.forEach(m => currentSession.messages.push(m));
+
+        // 渲染用户消息
+        renderMessages();
+
+        // 清空输入
+        DOM.chatInput.value = '';
+        pendingImages = [];
+        DOM.imagePreview.style.display = 'none';
+        DOM.imagePreview.innerHTML = '';
+        autoResizeTextarea();
+
+        // 显示助手占位
+        appendAssistantPlaceholder();
+
+        // 开始流式回复
+        isStreaming = true;
+        updateSendButton(true);
+        abortController = new AbortController();
+
+        const thinkMode = DOM.toggleThink.checked;
+
+        try {
+            let assistantContent = '';
+            let thinkContent = '';
+            let finalStats = null;
+            let modelName = '';
+
+            // 构造消息历史（不含 timestamp 和 stats 字段）
+            const apiMessages = currentSession.messages.map(m => ({
+                role: m.role,
+                content: m.content || '',
+                ...(m.images && { images: m.images })
+            }));
+
+            // 构造 API 请求参数
+            const chatParams = {
+                model: model,
+                messages: apiMessages,
+                think: thinkMode,
+                ...(systemPromptEnabled && systemPrompt && { system: systemPrompt }),
+                ...(numCtx && { options: { num_ctx: numCtx } })
+            };
+
+            await api.chatStream(chatParams, (chunk) => {
+                if (chunk.message) {
+                    if (chunk.message.content) {
+                        assistantContent += chunk.message.content;
+                    }
+                    // 兼容不同 Ollama 版本的 thinking 字段
+                    const think = chunk.message.thinking || chunk.message.reasoning_content;
+                    if (think && typeof think === 'string') {
+                        thinkContent += think;
+                    }
+                }
+
+                // 捕获模型名称
+                if (chunk.model) {
+                    modelName = chunk.model;
+                }
+
+                // 实时更新 UI
+                updateLastAssistantMessage(assistantContent, thinkContent || null, null, modelName || null);
+
+                // 流结束时收集统计
+                if (chunk.done) {
+                    finalStats = {
+                        eval_count: chunk.eval_count,
+                        total_duration: chunk.total_duration
+                    };
+                }
+            });
+
+            // 保存到会话
+            const assistantMsg = {
+                role: 'assistant',
+                content: assistantContent || '',
+                timestamp: Date.now(),
+                ...(modelName && { model: modelName }),
+                ...(thinkContent && { think: thinkContent }),
+                ...(finalStats && { eval_count: finalStats.eval_count, total_duration: finalStats.total_duration })
+            };
+            currentSession.messages.push(assistantMsg);
+
+            // 更新最终统计显示
+            if (finalStats) {
+                updateLastAssistantMessage(assistantContent, thinkContent || null, finalStats, modelName || null);
+            }
+
+            await saveCurrentSession();
+
+        } catch (err) {
+            console.error('[App] 流式聊天错误:', err);
+
+            // 移除 loading 占位动画
+            const placeholder = DOM.messagesContainer.querySelector('.message.assistant:last-child');
+            const loadingDots = placeholder?.querySelector('.loading-dots');
+            const loadingText = placeholder?.querySelector('.loading-text');
+            if (loadingDots) loadingDots.remove();
+            if (loadingText) loadingText.remove();
+
+            if (assistantContent) {
+                // 有已生成的内容 → 保留并存入会话
+                const partialMsg = {
+                    role: 'assistant',
+                    content: assistantContent + '\n\n`[已中断]`',
+                    timestamp: Date.now(),
+                    ...(modelName && { model: modelName }),
+                    ...(thinkContent && { think: thinkContent })
+                };
+                currentSession.messages.push(partialMsg);
+                // 更新 DOM 显示
+                const contentDiv = placeholder?.querySelector('.msg-content');
+                if (contentDiv) contentDiv.innerHTML = safeMarkdown(partialMsg.content);
+                saveCurrentSession();
+            } else {
+                // 没有内容 → 移除占位
+                if (placeholder) placeholder.remove();
+            }
+
+            // 检查是否是 CORS 错误
+            let errMsg = `❌ 错误: ${err.message}`;
+            if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
+                errMsg = '❌ 连接失败。请检查：\n1. Ollama 是否正在运行\n2. 地址是否正确\n3. 是否设置了 OLLAMA_ORIGINS="*"';
+            }
+            appendSystemMessage(errMsg, 'error');
+
+            // 如果当前没有消息，保持空状态
+            if (currentSession.messages.length === 0) {
+                DOM.emptyState.style.display = '';
+                DOM.messagesContainer.style.display = 'none';
+            }
+        } finally {
+            isStreaming = false;
+            updateSendButton(false);
+            abortController = null;
+        }
+    }
+
+    /** 更新发送按钮状态 */
+    function updateSendButton(streaming) {
+        if (streaming) {
+            DOM.btnSend.innerHTML = '<div class="spinner"></div>';
+            DOM.btnSend.classList.add('disabled');
+        } else {
+            DOM.btnSend.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+            </svg>`;
+            DOM.btnSend.classList.remove('disabled');
+        }
+    }
+
+    // ── 图片处理 ──
+
+    /** 处理文件选择 */
+    async function handleFileSelect(files) {
+        const maxSize = 20 * 1024 * 1024; // 20MB
+
+        for (const file of files) {
+            if (!file.type.startsWith('image/')) continue;
+            if (file.size > maxSize) {
+                appendSystemMessage(`⚠️ 图片 ${file.name} 超过 20MB 限制`, 'warning');
+                continue;
+            }
+
+            try {
+                const base64 = await fileToBase64(file);
+                pendingImages.push({ name: file.name, base64 });
+                renderImagePreviews();
+            } catch (err) {
+                console.error('[App] 图片读取失败:', err);
+            }
+        }
+    }
+
+    /** File → Base64 */
+    function fileToBase64(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+                // 去掉 data:image/...;base64, 前缀
+                const base64 = reader.result.split(',')[1];
+                resolve(base64);
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+        });
+    }
+
+    /** 渲染图片预览 */
+    function renderImagePreviews() {
+        if (pendingImages.length === 0) {
+            DOM.imagePreview.style.display = 'none';
+            DOM.imagePreview.innerHTML = '';
+            return;
+        }
+        DOM.imagePreview.style.display = '';
+        DOM.imagePreview.innerHTML = pendingImages.map((img, i) => `
+            <div class="preview-thumb">
+                <img src="data:image/png;base64,${img.base64}" alt="${img.name}">
+                <button class="remove-img" data-index="${i}">×</button>
+            </div>
+        `).join('');
+    }
+
+    // ── 模型管理 ──
+
+    /** 加载模型列表 */
+    async function loadModels() {
+        try {
+            const data = await api.listModels();
+            DOM.modelSelect.innerHTML = '';
+            if (!data.models || data.models.length === 0) {
+                DOM.modelSelect.innerHTML = '<option value="">未安装任何模型</option>';
+                return;
+            }
+            data.models.forEach(m => {
+                const opt = document.createElement('option');
+                opt.value = m.name;
+                opt.textContent = `${m.name} (${formatSize(m.size)})`;
+                DOM.modelSelect.appendChild(opt);
+            });
+
+            // 恢复上次选择的模型
+            if (currentSession && currentSession.model) {
+                DOM.modelSelect.value = currentSession.model;
+            }
+
+            // 保存到设置
+            if (db) await db.saveSetting('selectedModel', DOM.modelSelect.value);
+        } catch (err) {
+            console.error('[App] 加载模型失败:', err);
+            DOM.modelSelect.innerHTML = '<option value="">加载失败 - 检查连接</option>';
+        }
+    }
+
+    /** 格式化字节大小 */
+    function formatSize(bytes) {
+        if (!bytes) return '';
+        const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+        let i = 0;
+        let size = bytes;
+        while (size >= 1024 && i < units.length - 1) {
+            size /= 1024;
+            i++;
+        }
+        return `${size.toFixed(1)} ${units[i]}`;
+    }
+
+    // ── 连接检测 ──
+
+    /** 检测连接状态 */
+    async function checkConnection() {
+        const statusEl = DOM.connStatus;
+        statusEl.className = 'conn-status pending';
+        statusEl.querySelector('.status-label').textContent = '连接中...';
+
+        try {
+            const version = await api.getVersion();
+            statusEl.className = 'conn-status connected';
+            statusEl.title = `已连接 (v${version.version})`;
+            statusEl.querySelector('.status-label').textContent = '已连接';
+            return { ok: true, version };
+        } catch (err) {
+            statusEl.className = 'conn-status disconnected';
+            statusEl.title = '未连接';
+            statusEl.querySelector('.status-label').textContent = '未连接';
+            return { ok: false, error: err };
+        }
+    }
+
+    /** 更新设置面板中的连接信息 */
+    async function updateConnectionInfo() {
+        const badge = document.querySelector('#connBadge');
+        const verEl = document.querySelector('#serverVersion');
+        const corsHint = document.querySelector('#corsHint');
+
+        badge.textContent = '检测中...';
+        badge.className = 'status-badge warning';
+        verEl.textContent = '';
+
+        try {
+            const version = await api.getVersion();
+            badge.textContent = '✓ 已连接';
+            badge.className = 'status-badge success';
+            verEl.textContent = `v${version.version}`;
+            corsHint.style.display = 'none';
+        } catch (err) {
+            badge.textContent = '✗ 未连接';
+            badge.className = 'status-badge error';
+            verEl.textContent = '';
+
+            // 检测是否是 CORS 错误
+            if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError') || err.message.includes('CORS')) {
+                corsHint.style.display = '';
+            } else {
+                corsHint.style.display = 'none';
+            }
+        }
+    }
+
+    /** 更新运行中的模型列表 */
+    async function updateRunningModels() {
+        const container = document.querySelector('#runningModels');
+        try {
+            const data = await api.psModels();
+            if (!data.models || data.models.length === 0) {
+                container.innerHTML = '<p class="text-muted">无运行中的模型</p>';
+                return;
+            }
+            container.innerHTML = data.models.map(m => `
+                <div class="running-model">
+                    <span class="model-name">${m.name}</span>
+                    <span class="model-vram">${formatSize(m.size_vram || 0)} VRAM</span>
+                </div>
+            `).join('');
+        } catch {
+            container.innerHTML = '<p class="text-muted">无法获取运行信息</p>';
+        }
+    }
+
+    // ── 历史记录 ──
+
+    /** 加载历史记录列表（带搜索和分页） */
+    async function loadHistory() {
+        if (!db) return;
+        let allSessions = await db.getAllSessions();
+
+        // 搜索过滤
+        if (historySearchQuery) {
+            const q = historySearchQuery.toLowerCase();
+            allSessions = allSessions.filter(s => {
+                if (s.title && s.title.toLowerCase().includes(q)) return true;
+                if (s.model && s.model.toLowerCase().includes(q)) return true;
+                return s.messages.some(m => m.content && m.content.toLowerCase().includes(q));
+            });
+        }
+
+        allSessions.sort((a, b) => b.updatedAt - a.updatedAt);
+
+        const listEl = DOM.historyList;
+        const paginationEl = DOM.historyPagination;
+
+        if (allSessions.length === 0) {
+            listEl.innerHTML = `
+                <div class="empty-history">
+                    <svg width="60" height="60" viewBox="0 0 24 24" fill="none" stroke="rgba(85,85,112,0.5)" stroke-width="1.5">
+                        <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                    </svg>
+                    <p class="text-muted">暂无历史记录</p>
+                </div>`;
+            paginationEl.innerHTML = '';
+            return;
+        }
+
+        const totalPages = Math.ceil(allSessions.length / HISTORY_PAGE_SIZE);
+        if (historyPage > totalPages) historyPage = totalPages;
+
+        const start = (historyPage - 1) * HISTORY_PAGE_SIZE;
+        const pageSessions = allSessions.slice(start, start + HISTORY_PAGE_SIZE);
+
+        listEl.innerHTML = pageSessions.map(s => `
+            <div class="history-item" data-id="${s.id}">
+                <div class="history-info">
+                    <div class="history-title">${escapeHtml(s.title)}</div>
+                    <div class="history-meta">
+                        <span>${formatTime(s.updatedAt)}</span>
+                        <span>${s.messages.length} 条消息</span>
+                        <span>${s.model || '无模型'}</span>
+                    </div>
+                </div>
+                <div class="history-actions">
+                    <button class="icon-btn sm btn-export-md" data-id="${s.id}" title="导出为 Markdown">📄</button>
+                    <button class="icon-btn sm btn-export-html" data-id="${s.id}" title="导出为 HTML">🌐</button>
+                    <button class="icon-btn sm btn-export-txt" data-id="${s.id}" title="导出为 TXT">📝</button>
+                    <button class="icon-btn sm danger btn-delete-session" data-id="${s.id}" title="删除">🗑️</button>
+                </div>
+            </div>
+        `).join('');
+
+        // 分页控件
+        if (totalPages <= 1) {
+            paginationEl.innerHTML = `<span class="page-info">共 ${allSessions.length} 条</span>`;
+            return;
+        }
+
+        let paginationHtml = `<span class="page-info">共 ${allSessions.length} 条</span>`;
+        paginationHtml += '<div class="page-buttons">';
+        paginationHtml += `<button class="page-btn${historyPage <= 1 ? ' disabled' : ''}" data-page="${historyPage - 1}">‹</button>`;
+
+        // 页码按钮：显示当前页前后各2页
+        const range = 2;
+        let pages = [];
+        for (let i = 1; i <= totalPages; i++) {
+            if (i === 1 || i === totalPages || (i >= historyPage - range && i <= historyPage + range)) {
+                pages.push(i);
+            }
+        }
+        let prev = 0;
+        for (const p of pages) {
+            if (p - prev > 1) paginationHtml += '<span class="page-ellipsis">…</span>';
+            paginationHtml += `<button class="page-btn${p === historyPage ? ' active' : ''}" data-page="${p}">${p}</button>`;
+            prev = p;
+        }
+
+        paginationHtml += `<button class="page-btn${historyPage >= totalPages ? ' disabled' : ''}" data-page="${historyPage + 1}">›</button>`;
+        paginationHtml += '</div>';
+        paginationEl.innerHTML = paginationHtml;
+    }
+
+    /** 加载历史会话（只读模式） */
+    async function loadHistorySession(sessionId) {
+        if (!db) return;
+        const session = await db.getSession(sessionId);
+        if (!session) {
+            appendSystemMessage('❌ 会话不存在', 'error');
+            return;
+        }
+
+        currentSession = session;
+        isHistoryView = true;
+        DOM.historyBar.style.display = '';
+        DOM.inputArea.style.display = 'none';
+        DOM.messagesContainer.innerHTML = ''; // 清空旧 DOM
+        renderMessages();
+        closeHistoryModal();
+    }
+
+    // ── 导出功能 ──
+
+    /** 导出为 Markdown */
+    function exportAsMarkdown(session) {
+        let md = `# ${session.title}\n\n`;
+        md += `**模型:** ${session.model}  \n`;
+        md += `**时间:** ${formatTime(session.createdAt)}\n\n---\n\n`;
+
+        session.messages.forEach(m => {
+            const role = m.role === 'user' ? '👤 用户' : '🤖 AI';
+            md += `### ${role}\n\n${m.content || ''}\n\n`;
+            if (m.think) md += `> **思考:** ${m.think}\n\n`;
+        });
+
+        downloadFile(`${session.title}.md`, md, 'text/markdown');
+    }
+
+    /** 导出为 HTML */
+    function exportAsHtml(session) {
+        let html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${escapeHtml(session.title)}</title>
+<style>body{max-width:800px;margin:0 auto;padding:20px;font-family:system-ui;line-height:1.6;background:#0a0a1a;color:#e8e8f0;}
+.user{background:rgba(25,25,60,0.5);padding:12px;border-radius:8px;margin:8px 0;}
+.assistant{background:rgba(0,245,212,0.03);padding:12px;border-radius:8px;margin:8px 0;border:1px solid rgba(0,245,212,0.08);}
+h1{background:linear-gradient(135deg,#00f5d4,#7b2ff7);-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
+pre{background:rgba(0,0,0,0.3);padding:12px;border-radius:8px;overflow-x:auto;}
+code{background:rgba(0,0,0,0.2);padding:2px 6px;border-radius:4px;}</style></head><body>
+<h1>${escapeHtml(session.title)}</h1><p>${formatTime(session.createdAt)} · ${session.model}</p><hr>`;
+
+        session.messages.forEach(m => {
+            html += `<div class="${m.role}"><strong>${m.role === 'user' ? '👤 用户' : '🤖 AI'}</strong><br>${(m.content || '').replace(/\n/g, '<br>')}</div>`;
+        });
+
+        html += '</body></html>';
+        downloadFile(`${session.title}.html`, html, 'text/html');
+    }
+
+    /** 导出为 TXT */
+    function exportAsTxt(session) {
+        let txt = `${session.title}\n模型: ${session.model}\n时间: ${formatTime(session.createdAt)}\n${'='.repeat(50)}\n\n`;
+
+        session.messages.forEach(m => {
+            txt += `[${m.role === 'user' ? '用户' : 'AI'}]\n${m.content || ''}\n\n`;
+        });
+
+        downloadFile(`${session.title}.txt`, txt, 'text/plain');
+    }
+
+    /** 下载文件 */
+    function downloadFile(filename, content, type) {
+        const blob = new Blob([content], { type: type + ';charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+
+    // ── 批量导出/导入 ──
+
+    /** 导出全部会话为 JSON */
+    async function exportAllSessions() {
+        if (!db) return;
+        const sessions = await db.getAllSessions();
+        if (sessions.length === 0) {
+            showToast('没有可导出的会话', 'warning');
+            return;
+        }
+
+        const backup = {
+            app: 'Metona Ollama Client',
+            version: 1,
+            exportedAt: new Date().toISOString(),
+            count: sessions.length,
+            sessions: sessions
+        };
+
+        const json = JSON.stringify(backup, null, 2);
+        const ts = new Date().toISOString().slice(0, 10);
+        downloadFile(`metona-backup-${ts}.json`, json, 'application/json');
+        showToast(`已导出 ${sessions.length} 个会话`, 'success');
+    }
+
+    /** 从 JSON 文件导入会话 */
+    async function importSessions(file) {
+        if (!db) return;
+
+        try {
+            const text = await file.text();
+            let data;
+            try {
+                data = JSON.parse(text);
+            } catch {
+                showToast('文件格式错误：不是有效的 JSON', 'error');
+                return;
+            }
+
+            // 兼容两种格式：直接数组 或 { sessions: [...] }
+            let sessions;
+            if (Array.isArray(data)) {
+                sessions = data;
+            } else if (data.sessions && Array.isArray(data.sessions)) {
+                sessions = data.sessions;
+            } else {
+                showToast('文件格式错误：未找到会话数据', 'error');
+                return;
+            }
+
+            // 批量写入（单事务）
+            const result = await db.importSessions(sessions);
+            showToast(`导入完成：${result.imported} 个会话${result.skipped > 0 ? `，跳过 ${result.skipped} 个（已存在或格式无效）` : ''}`, 'success', 4000);
+            loadHistory();
+        } catch (err) {
+            console.error('[App] 导入失败:', err);
+            showToast(`导入失败: ${err.message}`, 'error');
+        }
+    }
+
+    // ── 模态框控制 ──
+
+    function openSettingsModal() {
+        DOM.settingsModal.style.display = '';
+        document.querySelector('#inputServerUrl').value = api.baseUrl;
+        updateConnectionInfo();
+        updateRunningModels();
+    }
+
+    function closeSettingsModal() {
+        DOM.settingsModal.style.display = 'none';
+    }
+
+    function openHistoryModal() {
+        historyPage = 1;
+        historySearchQuery = '';
+        const searchInput = document.querySelector('#historySearchInput');
+        const searchClear = document.querySelector('#historySearchClear');
+        if (searchInput) searchInput.value = '';
+        if (searchClear) searchClear.style.display = 'none';
+        loadHistory();
+        DOM.historyModal.style.display = '';
+    }
+
+    function closeHistoryModal() {
+        DOM.historyModal.style.display = 'none';
+    }
+
+    // ── 自动调整 textarea 高度 ──
+    function autoResizeTextarea() {
+        const el = DOM.chatInput;
+        el.style.height = 'auto';
+        el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // 事件绑定
+    // ═══════════════════════════════════════════════════════════
+
+    function bindEvents() {
+        // 发送消息
+        DOM.btnSend.addEventListener('click', sendMessage);
+        DOM.chatInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+
+        // 输入框自动调整
+        DOM.chatInput.addEventListener('input', autoResizeTextarea);
+
+        // 图片上传
+        DOM.btnAttach.addEventListener('click', () => DOM.fileInput.click());
+        DOM.fileInput.addEventListener('change', (e) => {
+            handleFileSelect(e.target.files);
+            e.target.value = ''; // 重置，允许重复选择同一文件
+        });
+
+        // 删除图片预览
+        DOM.imagePreview.addEventListener('click', (e) => {
+            if (e.target.classList.contains('remove-img')) {
+                const idx = parseInt(e.target.dataset.index);
+                pendingImages.splice(idx, 1);
+                renderImagePreviews();
+            }
+        });
+
+        // 新建会话
+        document.querySelector('#btnNewChat').addEventListener('click', startNewSession);
+
+        // 设置面板
+        document.querySelector('#btnSettings').addEventListener('click', openSettingsModal);
+        document.querySelector('#btnCloseSettings').addEventListener('click', closeSettingsModal);
+        DOM.settingsModal.addEventListener('click', (e) => {
+            if (e.target === DOM.settingsModal) closeSettingsModal();
+        });
+
+        // 历史记录面板
+        document.querySelector('#btnHistory').addEventListener('click', openHistoryModal);
+        document.querySelector('#btnCloseHistory').addEventListener('click', closeHistoryModal);
+        DOM.historyModal.addEventListener('click', (e) => {
+            if (e.target === DOM.historyModal) closeHistoryModal();
+        });
+
+        // 历史搜索
+        const historySearchInput = document.querySelector('#historySearchInput');
+        const historySearchClear = document.querySelector('#historySearchClear');
+        const doHistorySearch = debounce(() => {
+            historySearchQuery = historySearchInput.value.trim();
+            historySearchClear.style.display = historySearchQuery ? '' : 'none';
+            historyPage = 1;
+            loadHistory();
+        }, 250);
+        historySearchInput.addEventListener('input', doHistorySearch);
+        historySearchClear.addEventListener('click', () => {
+            historySearchInput.value = '';
+            historySearchQuery = '';
+            historySearchClear.style.display = 'none';
+            historyPage = 1;
+            loadHistory();
+        });
+
+        // 退出历史只读模式
+        document.querySelector('#btnExitHistory').addEventListener('click', startNewSession);
+
+        // 历史记录列表事件（事件委托）
+        DOM.historyList.addEventListener('click', async (e) => {
+            const target = e.target.closest('[data-id]');
+            if (!target) return;
+            const sessionId = target.dataset.id;
+
+            if (target.classList.contains('btn-delete-session')) {
+                if (confirm('确定删除此会话？')) {
+                    await db.deleteSession(sessionId);
+                    if (currentSession && currentSession.id === sessionId) {
+                        startNewSession();
+                    }
+                    loadHistory();
+                }
+            } else if (target.classList.contains('btn-export-md')) {
+                const session = await db.getSession(sessionId);
+                if (session) exportAsMarkdown(session);
+            } else if (target.classList.contains('btn-export-html')) {
+                const session = await db.getSession(sessionId);
+                if (session) exportAsHtml(session);
+            } else if (target.classList.contains('btn-export-txt')) {
+                const session = await db.getSession(sessionId);
+                if (session) exportAsTxt(session);
+            } else if (target.classList.contains('history-info') || target.classList.contains('history-item')) {
+                loadHistorySession(sessionId);
+            }
+        });
+
+        // 历史记录分页事件
+        DOM.historyPagination.addEventListener('click', (e) => {
+            const btn = e.target.closest('.page-btn');
+            if (!btn || btn.classList.contains('disabled')) return;
+            const page = parseInt(btn.dataset.page);
+            if (page && page !== historyPage) {
+                historyPage = page;
+                loadHistory();
+                DOM.historyList.scrollTop = 0;
+            }
+        });
+
+        // 保存服务器地址
+        const saveServerUrl = debounce(async () => {
+            const url = document.querySelector('#inputServerUrl').value.trim();
+            if (!url) return;
+            api = new OllamaAPI(url);
+            if (db) await db.saveSetting('serverUrl', url);
+            updateConnectionInfo();
+            loadModels();
+        }, 500);
+        document.querySelector('#inputServerUrl').addEventListener('input', saveServerUrl);
+
+        // 模型选择变化
+        DOM.modelSelect.addEventListener('change', async () => {
+            if (db) await db.saveSetting('selectedModel', DOM.modelSelect.value);
+        });
+
+        // 系统提示词开关
+        document.querySelector('#toggleSystemPrompt').addEventListener('change', async (e) => {
+            systemPromptEnabled = e.target.checked;
+            document.querySelector('#inputSystemPrompt').disabled = !systemPromptEnabled;
+            if (db) await db.saveSetting('systemPromptEnabled', systemPromptEnabled);
+        });
+
+        // 保存系统提示词
+        const saveSystemPrompt = debounce(async () => {
+            systemPrompt = document.querySelector('#inputSystemPrompt').value.trim();
+            if (db) await db.saveSetting('systemPrompt', systemPrompt);
+        }, 500);
+        document.querySelector('#inputSystemPrompt').addEventListener('input', saveSystemPrompt);
+
+        // 保存上下文长度
+        const saveNumCtx = debounce(async () => {
+            const val = document.querySelector('#inputNumCtx').value.trim();
+            numCtx = val ? parseInt(val) : 24576;
+            if (db) await db.saveSetting('numCtx', numCtx);
+        }, 500);
+        document.querySelector('#inputNumCtx').addEventListener('input', saveNumCtx);
+
+        // 释放显存
+        document.querySelector('#btnReleaseVRAM').addEventListener('click', async () => {
+            try {
+                await api.chat({ model: DOM.modelSelect.value || 'any', messages: [], keep_alive: 0 });
+                showToast('显存已释放', 'success');
+                updateRunningModels();
+            } catch (err) {
+                showToast(`释放失败: ${err.message}`, 'error');
+            }
+        });
+
+        // 清空所有历史
+        document.querySelector('#btnClearAllHistory').addEventListener('click', async () => {
+            if (confirm('确定清空所有历史记录？此操作不可恢复！')) {
+                await db.clearAll();
+                startNewSession();
+                showToast('已清空所有历史记录', 'success');
+            }
+        });
+
+        // 导出全部会话
+        document.querySelector('#btnExportAll').addEventListener('click', () => exportAllSessions());
+
+        // 导入会话
+        const importFileInput = document.querySelector('#importFileInput');
+        document.querySelector('#btnImportSessions').addEventListener('click', () => importFileInput.click());
+        importFileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                importSessions(e.target.files[0]);
+                e.target.value = '';
+            }
+        });
+
+        // ESC 关闭模态框
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                closeSettingsModal();
+                closeHistoryModal();
+                closeLightbox();
+            }
+        });
+
+        // 点击消息图片打开预览
+        DOM.messagesContainer.addEventListener('click', (e) => {
+            if (e.target.dataset.lightbox === 'true') {
+                openLightbox(e.target.src);
+            }
+        });
+
+        // 关闭图片预览
+        DOM.lightbox.addEventListener('click', (e) => {
+            if (e.target === DOM.lightbox) closeLightbox();
+        });
+        document.querySelector('#lightboxClose').addEventListener('click', closeLightbox);
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // 初始化
+    // ═══════════════════════════════════════════════════════════
+
+    async function init() {
+        try {
+            // 1. 初始化 IndexedDB
+            db = new ChatDB();
+            await db.init();
+
+            // 2. 读取保存的设置
+            const serverUrl = await db.getSetting('serverUrl', 'http://127.0.0.1:11434');
+            api = new OllamaAPI(serverUrl);
+
+            // 3. 创建初始会话
+            currentSession = createNewSession();
+
+            // 4. 绑定事件
+            bindEvents();
+
+            // 5. 检测连接 + 加载模型
+            await checkConnection();
+            await loadModels();
+
+            // 6. 恢复上次选择的模型
+            const savedModel = await db.getSetting('selectedModel', '');
+            if (savedModel) DOM.modelSelect.value = savedModel;
+
+            // 7. 恢复系统提示词和上下文长度
+            systemPromptEnabled = await db.getSetting('systemPromptEnabled', false);
+            systemPrompt = await db.getSetting('systemPrompt', '');
+            numCtx = await db.getSetting('numCtx', 24576);
+            document.querySelector('#toggleSystemPrompt').checked = systemPromptEnabled;
+            document.querySelector('#inputSystemPrompt').disabled = !systemPromptEnabled;
+            document.querySelector('#inputSystemPrompt').value = systemPrompt;
+            document.querySelector('#inputNumCtx').value = numCtx;
+
+            // 7. 聚焦输入框
+            DOM.chatInput.focus();
+
+            // 8. 注册 Service Worker (PWA) — 先清除旧缓存再注册，避免旧 SW 拦截
+            if ('serviceWorker' in navigator) {
+                // 先获取所有已注册的 SW，注销旧的
+                navigator.serviceWorker.getRegistrations().then(regs => {
+                    regs.forEach(r => r.unregister());
+                }).then(() => {
+                    // 清除所有缓存
+                    return caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k))));
+                }).then(() => {
+                    // 重新注册新的 SW
+                    return navigator.serviceWorker.register('sw.js?v=3', { updateViaCache: 'none' });
+                }).then(reg => {
+                    reg.addEventListener('updatefound', () => {
+                        const w = reg.installing;
+                        if (w) w.addEventListener('statechange', () => {
+                            if (w.state === 'activated') window.location.reload();
+                        });
+                    });
+                    reg.update();
+                }).catch(err => {
+                    console.warn('[App] Service Worker 注册失败:', err);
+                });
+            }
+
+            console.log('[App] 初始化完成');
+        } catch (err) {
+            console.error('[App] 初始化失败:', err);
+            // 即使 DB 失败也尝试运行
+            if (!api) api = new OllamaAPI();
+            currentSession = createNewSession();
+            bindEvents();
+            checkConnection().then(loadModels);
+        }
+    }
+
+    // 全局错误捕获
+    window.addEventListener('error', (e) => {
+        console.error('[App] 未捕获错误:', e.error || e.message);
+        showToast(`发生错误: ${e.message}`, 'error', 5000);
+    });
+    window.addEventListener('unhandledrejection', (e) => {
+        console.error('[App] 未处理 Promise 拒绝:', e.reason);
+        const msg = e.reason?.message || String(e.reason);
+        showToast(`操作失败: ${msg}`, 'error', 5000);
+    });
+
+    // 启动应用
+    init();
+
+    // 暴露公共 API（用于调试）
+    return { sendMessage, startNewSession, checkConnection };
+})();
+</script>
+</body>
+</html>
