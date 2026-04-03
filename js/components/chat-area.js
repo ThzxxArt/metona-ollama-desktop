@@ -5,7 +5,6 @@
 
 import { state, KEYS } from '../state.js';
 import { marked } from '../marked-config.js';
-import { sanitize } from '../sanitizer.js';
 import { escapeHtml, formatTime, downloadFile } from '../utils.js';
 
 let chatAreaEl, messagesContainerEl, emptyStateEl;
@@ -18,13 +17,14 @@ export function initChatArea() {
 
 /** 安全地将 Markdown 转为 HTML */
 export function safeMarkdown(text) {
-    if (!text) return '';
+    if (!text && text !== 0) return '';
+    const str = typeof text === 'string' ? text : String(text);
+    if (!str) return '';
     try {
-        const result = marked.parse(String(text));
-        const html = typeof result === 'string' ? result : escapeHtml(String(text));
-        return sanitize(html);
+        const result = marked.parse(str);
+        return typeof result === 'string' ? result : escapeHtml(str);
     } catch (e) {
-        return escapeHtml(String(text));
+        return escapeHtml(str);
     }
 }
 
