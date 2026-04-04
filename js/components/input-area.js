@@ -508,6 +508,21 @@ ${ragContext}
             updateLastAssistantMessage(assistantContent, thinkContent || null, finalStats, modelName || null);
         }
 
+        // 流结束后插入 RAG 来源到现有 DOM（renderMessages 不会重新渲染已有消息）
+        if (ragSources && ragSources.length > 0) {
+            const lastAssistant = document.querySelector('#messagesContainer .message.assistant:last-of-type');
+            if (lastAssistant) {
+                const sourcesHtml = ragSources.map((s, i) => {
+                    const scorePercent = s.score ? `${(s.score * 100).toFixed(0)}%` : '';
+                    return `<div class="rag-source-item"><span class="rag-source-name">📄 来源 ${i + 1}: ${escapeHtml(s.filename)}</span>${scorePercent ? `<span class="rag-source-score">${scorePercent}</span>` : ''}</div>`;
+                }).join('');
+                const ragDiv = document.createElement('div');
+                ragDiv.className = 'rag-sources';
+                ragDiv.innerHTML = `<div class="rag-sources-header">🧠 基于知识库回答</div>${sourcesHtml}`;
+                lastAssistant.querySelector('.msg-body').appendChild(ragDiv);
+            }
+        }
+
         await saveCurrentSession();
 
     } catch (err) {
