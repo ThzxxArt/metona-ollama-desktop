@@ -370,9 +370,6 @@ export async function sendMessage() {
     filePreviewEl.innerHTML = '';
     autoResizeTextarea();
 
-    // 助手占位
-    appendAssistantPlaceholder();
-
     // 流式回复
     state.set(KEYS.IS_STREAMING, true);
     updateSendButton(true);
@@ -468,6 +465,9 @@ ${ragContext}
         console.log('[RAG] numCtx:', numCtx, 'system长度:', chatParams.system?.length || 0);
         console.log('[RAG] 开始调用 chatStream...');
 
+        // 助手占位（放在RAG检索之后，确保消息顺序：用户 → 检索状态 → AI）
+        appendAssistantPlaceholder();
+
         await api.chatStream(chatParams, (chunk) => {
             if (chunk.message) {
                 if (chunk.message.content) {
@@ -484,9 +484,6 @@ ${ragContext}
                 finalStats = { eval_count: chunk.eval_count, total_duration: chunk.total_duration };
             }
         }, abortController);
-
-        // 清除 RAG 临时状态消息
-        document.querySelectorAll('.rag-status').forEach(el => el.remove());
 
         // 如果流结束但没有任何内容
         if (!assistantContent && !thinkContent) {
@@ -512,9 +509,6 @@ ${ragContext}
 
     } catch (err) {
         console.error('[InputArea] 流式聊天错误:', err);
-
-        // 清除 RAG 临时状态消息
-        document.querySelectorAll('.rag-status').forEach(el => el.remove());
 
         if (err.name === 'AbortError') {
             const placeholder = document.querySelector('#messagesContainer .message.assistant.loading');
