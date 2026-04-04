@@ -1718,20 +1718,32 @@ body::before {
 .modal-lg {
     max-width: 780px;
     width: 95vw;
+    max-height: 85vh;
+}
+
+#kbModal .modal-body {
+    padding: 16px 20px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
 }
 
 .kb-layout {
     display: flex;
     gap: 16px;
-    min-height: 400px;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
 }
 
 .kb-sidebar {
-    width: 260px;
+    width: 240px;
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
     gap: 8px;
+    min-height: 0;
+    overflow: hidden;
 }
 
 .kb-new-collection {
@@ -1751,6 +1763,7 @@ body::before {
     display: flex;
     flex-direction: column;
     gap: 4px;
+    min-height: 0;
 }
 
 .kb-collection-item {
@@ -1803,6 +1816,8 @@ body::before {
     flex-direction: column;
     gap: 10px;
     min-width: 0;
+    min-height: 0;
+    overflow: hidden;
 }
 
 .kb-toolbar {
@@ -1861,6 +1876,7 @@ body::before {
     display: flex;
     flex-direction: column;
     gap: 4px;
+    min-height: 0;
 }
 
 .kb-doc-item {
@@ -1919,5 +1935,12 @@ body::before {
     }
     .kb-sidebar {
         width: 100%;
+        max-height: 180px;
+    }
+    .kb-main {
+        min-height: 200px;
+    }
+    .modal-lg {
+        max-height: 90vh;
     }
 }
