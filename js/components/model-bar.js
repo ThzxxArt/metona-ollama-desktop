@@ -57,9 +57,8 @@ export async function loadModels() {
         data.models.forEach(m => {
             const opt = document.createElement('option');
             opt.value = m.name;
-            const paramSize = m.details?.parameter_size || '';
-            const family = m.details?.family || '';
-            const label = paramSize ? `${m.name} · ${paramSize}` : m.name;
+            const diskSize = formatSize(m.size);
+            const label = diskSize ? `${m.name} · ${diskSize}` : m.name;
             opt.textContent = label;
             modelSelectEl.appendChild(opt);
         });
