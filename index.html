@@ -340,27 +340,22 @@
                 <!-- 右侧：文档列表 -->
                 <div class="kb-main">
                     <div class="kb-toolbar">
-                        <div class="kb-toolbar-left">
-                            <button class="btn btn-sm btn-outline" id="btnUploadDoc">📄 上传文档</button>
-                            <input type="file" id="kbFileInput" accept=".txt,.md,.py,.js,.ts,.java,.go,.rs,.cpp,.c,.h,.hpp,.rb,.php,.sh,.html,.css,.json,.yaml,.yml,.toml,.xml,.sql,.csv" multiple style="display:none;">
-                            <span id="kbProgress" style="display:none;" class="kb-progress">
-                                <span class="spinner"></span>
-                                <span id="kbProgressText">处理中...</span>
-                            </span>
-                        </div>
-                        <div class="kb-toolbar-right">
-                            <label class="setting-label" style="margin:0;font-size:12px;">RAG 检索</label>
+                        <button class="btn btn-sm btn-outline" id="btnUploadDoc">📄 上传文档</button>
+                        <input type="file" id="kbFileInput" accept=".txt,.md,.py,.js,.ts,.java,.go,.rs,.cpp,.c,.h,.hpp,.rb,.php,.sh,.html,.css,.json,.yaml,.yml,.toml,.xml,.sql,.csv" multiple style="display:none;">
+                        <span id="kbProgress" style="display:none;" class="kb-progress">
+                            <span class="spinner"></span>
+                            <span id="kbProgressText">处理中...</span>
+                        </span>
+                        <select class="kb-embed-select" id="selectEmbedModel">
+                            <option value="">嵌入模型...</option>
+                        </select>
+                        <div class="kb-rag-toggle">
+                            <label class="setting-label" style="margin:0;font-size:12px;white-space:nowrap;">RAG</label>
                             <label class="toggle-label" style="margin:0;">
                                 <input type="checkbox" id="toggleRAG">
                                 <span class="toggle-slider"></span>
                             </label>
                         </div>
-                    </div>
-                    <div class="kb-embed-model">
-                        <label class="setting-label" style="font-size:12px;">嵌入模型</label>
-                        <select class="model-select" id="selectEmbedModel" style="font-size:13px;">
-                            <option value="">选择嵌入模型...</option>
-                        </select>
                     </div>
                     <div class="kb-doc-list" id="kbDocList">
                         <p class="text-muted" style="padding:16px;text-align:center;">← 选择一个知识库集合</p>
