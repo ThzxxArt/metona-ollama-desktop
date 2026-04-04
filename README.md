@@ -4,7 +4,7 @@
 
 支持流式对话、多模态图片输入、文本/代码文件上传分析、Think 深度推理、RAG 本地知识库、历史记录管理，可安装为 PWA 离线使用。
 
-![版本](https://img.shields.io/badge/version-3.0.2-brightgreen)
+![版本](https://img.shields.io/badge/version-3.1.0-brightgreen)
 ![平台](https://img.shields.io/badge/platform-Web-blue)
 ![协议](https://img.shields.io/badge/license-MIT-green)
 
@@ -321,6 +321,36 @@ metona-ollama/
 - Markdown 链接仅允许 `http:` / `https:` / `mailto:` / `tel:` 协议
 - 阻止 `javascript:` / `vbscript:` / `data:` 协议注入
 - 输入内容自动转义，防御 XSS 攻击
+
+---
+
+## 📋 更新日志
+
+### v3.1.0
+
+- **修复 RAG 知识库问答时消息不显示的问题** — 开启 RAG 后 AI 回复内容无法渲染，页面一直显示"正在思考..."
+  - 根因：流式更新时 CSS 选择器 `.message.assistant:last-child` 被 `appendSystemMessage` 插入的系统消息破坏，导致 `updateLastAssistantMessage` 无法定位 placeholder
+  - 最终方案：用模块变量 `currentPlaceholder` 直接持有 DOM 引用，彻底绕过选择器依赖
+- **RAG 检索状态可视化** — 检索过程中显示"正在检索知识库..."和"已检索 X 个相关片段"状态提示
+- **流式回复后展示 RAG 来源** — AI 回复下方显示知识库来源文件名和相似度分数
+- 版本号升级至 3.1.0
+
+### v3.0.2
+
+- 新建会话时自动释放显存
+- RAG 上下文根据 numCtx 和已有消息动态计算可用预算
+- 版本号升级至 3.0.2
+
+### v3.0.1
+
+- 嵌入模型检测改用 /api/show capabilities 判断
+- 嵌入模型下拉仅显示 embedding 模型
+- 版本号升级至 3.0.1
+
+### v3.0.0
+
+- RAG 本地知识库：向量存储、文档分块、语义检索、知识库管理面板
+- 版本号升级至 3.0.0
 
 ---
 
