@@ -404,17 +404,26 @@ export async function sendMessage() {
         // RAG 检索增强
         let ragSources = null;
         if (isRagEnabled()) {
-            const ragResult = await performRagRetrieval(text);
-            if (ragResult && ragResult.ragPrompt) {
-                chatParams.system = chatParams.system
-                    ? chatParams.system + '\n\n' + ragResult.ragPrompt
-                    : ragResult.ragPrompt;
-                // 保存检索来源信息
-                ragSources = ragResult.results.map(r => ({
-                    filename: r.filename,
-                    score: r.score,
-                    text: truncate(r.text, 100)
-                }));
+            appendSystemMessage('🧠 正在检索知识库...');
+            try {
+                const ragResult = await performRagRetrieval(text);
+                if (ragResult && ragResult.results && ragResult.results.length > 0) {
+                    chatParams.system = chatParams.system
+                        ? chatParams.system + '\n\n' + ragResult.ragPrompt
+                        : ragResult.ragPrompt;
+                    ragSources = ragResult.results.map(r => ({
+                        filename: r.filename,
+                        score: r.score,
+                        text: truncate(r.text, 100)
+                    }));
+                    const sourceNames = [...new Set(ragSources.map(s => s.filename))];
+                    appendSystemMessage(`🧠 已检索 ${ragSources.length} 个相关片段（来源：${sourceNames.join('、')}）`);
+                } else {
+                    appendSystemMessage('🧠 知识库未检索到相关内容，使用通用知识回答');
+                }
+            } catch (ragErr) {
+                console.error('[RAG] 检索失败:', ragErr);
+                appendSystemMessage(`🧠 知识库检索失败: ${ragErr.message}`);
             }
         }
 
