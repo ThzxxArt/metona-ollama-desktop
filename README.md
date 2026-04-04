@@ -96,6 +96,62 @@ OLLAMA_ORIGINS="*" ollama serve
 
 ---
 
+## 🧠 RAG 本地知识库
+
+Metona 内置 RAG（检索增强生成）系统，让你可以基于本地文档进行精准问答。
+
+### 工作流程
+
+```
+用户上传文档 → 文档分块(段落/句子级) → Ollama 嵌入向量 → IndexedDB 持久化
+                                                        ↓
+用户提问 → 查询嵌入 → 余弦相似度检索 Top-K → 上下文注入 System Prompt → Ollama 生成回答
+```
+
+### 使用方式
+
+1. 点击顶部导航栏的 🧠 按钮打开知识库面板
+2. 创建知识库集合（需选择一个嵌入模型，如 `nomic-embed-text`）
+3. 上传文档文件（支持与文件上传相同的 50+ 种格式）
+4. 系统自动分块并生成向量索引
+5. 在对话时勾选知识库集合，用户的提问会自动检索相关文档片段并注入上下文
+
+### 前置条件
+
+需要安装嵌入模型：
+
+```bash
+ollama pull nomic-embed-text
+# 或其他支持 /api/embed 的嵌入模型
+```
+
+### 核心模块
+
+| 模块 | 文件 | 职责 |
+|------|------|------|
+| RAG 管线 | `js/rag.js` | 检索增强生成主逻辑：嵌入、检索、上下文构造 |
+| 向量存储 | `js/vector-store.js` | IndexedDB 向量持久化 + 余弦相似度搜索 |
+| 文档处理 | `js/document-processor.js` | 文档分块（段落级 + 句子级，支持中英文） |
+| 管理面板 | `js/components/kb-modal.js` | 知识库 UI：集合管理、文档上传、进度展示 |
+
+### 分块策略
+
+- 默认块大小 **1500 字符**，块间重叠 **200 字符**
+- 先按段落（空行）分割，超长段落按句子（中英文句号/问号/感叹号）进一步切分
+- 重叠区域保证上下文连贯性，避免关键信息被截断
+
+### 存储结构
+
+向量数据存储在独立的 IndexedDB 数据库 `metona-ollama-vectors` 中，与聊天历史互不干扰：
+
+```
+metona-ollama-vectors (IndexedDB)
+├── collections       # 知识库集合（名称、嵌入模型、文档/块统计）
+└── vectors           # 向量数据（文本块、嵌入向量、元数据、集合关联）
+```
+
+---
+
 ## 🔌 Ollama API 调用清单
 
 Metona 通过 `js/ollama-api.js` 封装了 Ollama REST API，以下是所有调用的接口：
@@ -116,7 +172,7 @@ Metona 通过 `js/ollama-api.js` 封装了 Ollama REST API，以下是所有调�
 | `/api/chat` | `POST` | `chatStream(params, onChunk, abortController)` | input-area.js | **核心接口**。流式聊天（`stream: true`），通过 NDJSON 流实时返回 AI 回复，支持 AbortController 强制中止 |
 | `/api/chat` | `POST` | `chat(params)` | settings-modal.js | 非流式聊天（`stream: false`）。用于释放显存：发送空消息并设置 `keep_alive: 0` 强制卸载模型 |
 | `/api/generate` | `POST` | `generateStream(params, onChunk)` | — (未使用) | 单轮流式生成，预留接口 |
-| `/api/embed` | `POST` | `embed(model, input)` | — (未使用) | 生成嵌入向量，预留接口 |
+| `/api/embed` | `POST` | `embed(model, input)` | rag.js | 生成文本嵌入向量，用于 RAG 知识库的文档向量化和查询检索 |
 
 ### 流式聊天数据格式 (NDJSON)
 
@@ -207,6 +263,9 @@ metona-ollama/
     ├── utils.js                # 工具函数（ID生成、格式化、防抖、Base64、文件读取、语言检测）
     ├── sanitizer.js            # HTML XSS 净化器（白名单策略）
     ├── marked-config.js        # Markdown 渲染器配置（自定义链接/图片安全检查）
+    ├── rag.js                  # RAG 检索增强生成管线（嵌入、检索、上下文构造）
+    ├── vector-store.js         # 向量存储与余弦相似度检索（IndexedDB 持久化）
+    ├── document-processor.js   # 文档分块处理（段落/句子级，中英文兼容）
     ├── lib/
     │   └── marked.esm.js       # marked.js v15 (Markdown 解析器)
     └── components/
@@ -214,6 +273,7 @@ metona-ollama/
         ├── input-area.js       # 文本输入、图片/文件上传、发送/停止逻辑
         ├── history-modal.js    # 历史记录面板、搜索、分页
         ├── settings-modal.js   # 设置面板、模型管理、数据管理
+        ├── kb-modal.js         # 知识库管理面板（集合创建、文档上传、进度展示）
         ├── header.js           # 顶部导航、连接状态检测
         ├── model-bar.js        # 模型选择栏、Think/Vision 能力检测
         ├── toast.js            # Toast 通知组件
