@@ -245,8 +245,10 @@ async function createCollection() {
  * 上传文档处理
  */
 async function handleDocUpload(e) {
-    const files = e.target.value;
+    const fileArr = Array.from(e.target.files || []);
     e.target.value = '';
+
+    if (fileArr.length === 0) return;
 
     const embedModel = document.querySelector('#selectEmbedModel').value;
     if (!embedModel) {
@@ -254,15 +256,16 @@ async function handleDocUpload(e) {
         return;
     }
 
-    const fileArr = Array.from(e.target.files || []);
-    if (fileArr.length === 0) return;
-
     const progressEl = document.querySelector('#kbProgress');
     const progressTextEl = document.querySelector('#kbProgressText');
+
+    let successCount = 0;
+    let failCount = 0;
 
     for (const file of fileArr) {
         if (file.size > 5 * 1024 * 1024) {
             showToast(`${file.name} 超过 5MB 限制`, 'warning');
+            failCount++;
             continue;
         }
 
@@ -271,21 +274,28 @@ async function handleDocUpload(e) {
             progressTextEl.textContent = `正在处理 ${file.name}...`;
 
             const content = await fileToText(file);
-            await addDocumentToKB(
+            const result = await addDocumentToKB(
                 currentColId, file.name, content, embedModel,
                 (done, total, msg) => {
                     progressTextEl.textContent = `${file.name}: ${msg} (${done}/${total})`;
                 }
             );
 
-            showToast(`${file.name} 已添加到知识库`, 'success');
+            showToast(`${file.name} 已添加到知识库（${result.chunkCount} 个分块）`, 'success');
+            successCount++;
         } catch (err) {
             console.error('[KB] 文档处理失败:', err);
             showToast(`${file.name} 处理失败: ${err.message}`, 'error');
+            failCount++;
         }
     }
 
     progressEl.style.display = 'none';
+
+    if (fileArr.length > 1) {
+        showToast(`上传完成：成功 ${successCount} 个，失败 ${failCount} 个`, failCount > 0 ? 'warning' : 'success');
+    }
+
     await refreshCollections();
     await refreshDocList();
 }
