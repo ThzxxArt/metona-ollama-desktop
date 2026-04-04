@@ -408,9 +408,47 @@ export async function sendMessage() {
             try {
                 const ragResult = await performRagRetrieval(text);
                 if (ragResult && ragResult.results && ragResult.results.length > 0) {
+                    // 计算 RAG 上下文可用预算
+                    const ctxLimit = numCtx || 24576;
+                    const outputReserve = 2048; // 预留给模型输出
+                    // 估算已有 token 数（粗略：1 token ≈ 2 字符）
+                    const msgChars = apiMessages.reduce((sum, m) => sum + (m.content?.length || 0), 0);
+                    const systemChars = (chatParams.system?.length || 0);
+                    const usedTokens = Math.ceil((msgChars + systemChars) / 2);
+                    const ragBudget = Math.max(0, ctxLimit - outputReserve - usedTokens);
+                    const ragBudgetChars = ragBudget * 2; // 转换为字符数
+
+                    // 构建 RAG prompt，按预算截取上下文
+                    let ragContext = ragResult.results.map((r, i) =>
+                        `[来源 ${i + 1}: ${r.filename}]\n${r.text}`
+                    ).join('\n\n---\n\n');
+
+                    const ragTemplate = `你是一个知识库问答助手。以下是检索到的相关文档片段，请基于这些内容回答用户的问题。如果检索到的内容无法回答问题，请如实说明。
+
+=== 检索到的相关内容 ===
+
+=== 内容结束 ===
+
+请基于以上内容回答用户的问题。引用时请注明来源编号（如"来源 1"）。`;
+                    const templateOverhead = ragTemplate.length; // 模板本身占用的字符数
+
+                    if (ragContext.length + templateOverhead > ragBudgetChars) {
+                        ragContext = ragContext.slice(0, Math.max(0, ragBudgetChars - templateOverhead - 50)) + '\n\n[知识库内容过长，已截取最相关的部分]';
+                        appendSystemMessage(`⚠️ 知识库内容已截取（预算 ${ragBudgetChars} 字符）`);
+                    }
+
+                    const ragPrompt = `你是一个知识库问答助手。以下是检索到的相关文档片段，请基于这些内容回答用户的问题。如果检索到的内容无法回答问题，请如实说明。
+
+=== 检索到的相关内容 ===
+${ragContext}
+=== 内容结束 ===
+
+请基于以上内容回答用户的问题。引用时请注明来源编号（如"来源 1"）。`;
+
                     chatParams.system = chatParams.system
-                        ? chatParams.system + '\n\n' + ragResult.ragPrompt
-                        : ragResult.ragPrompt;
+                        ? chatParams.system + '\n\n' + ragPrompt
+                        : ragPrompt;
+
                     ragSources = ragResult.results.map(r => ({
                         filename: r.filename,
                         score: r.score,
@@ -427,13 +465,7 @@ export async function sendMessage() {
             }
         }
 
-        // 限制 system prompt 长度，防止超出上下文窗口
-        if (chatParams.system && chatParams.system.length > 12000) {
-            chatParams.system = chatParams.system.slice(0, 12000) + '\n\n[内容过长，已截断]';
-            appendSystemMessage('⚠️ 知识库内容过长，已截断处理');
-        }
-
-        console.log('[RAG] chatParams.system 长度:', chatParams.system?.length || 0);
+        console.log('[RAG] numCtx:', numCtx, 'system长度:', chatParams.system?.length || 0);
         console.log('[RAG] 开始调用 chatStream...');
 
         await api.chatStream(chatParams, (chunk) => {
