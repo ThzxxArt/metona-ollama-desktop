@@ -12,6 +12,7 @@ import {
 } from './chat-area.js';
 import { showToast } from './toast.js';
 import { checkConnection } from './header.js';
+import { isRagEnabled, performRagRetrieval } from './kb-modal.js';
 
 let chatInputEl, btnSendEl, fileInputEl, textFileInputEl, imagePreviewEl, filePreviewEl;
 let pendingImages = [];
@@ -399,6 +400,16 @@ export async function sendMessage() {
             ...(systemPromptEnabled && systemPrompt && { system: systemPrompt }),
             ...(numCtx && { options: { num_ctx: numCtx } })
         };
+
+        // RAG 检索增强
+        if (isRagEnabled()) {
+            const ragResult = await performRagRetrieval(text);
+            if (ragResult && ragResult.ragPrompt) {
+                chatParams.system = chatParams.system
+                    ? chatParams.system + '\n\n' + ragResult.ragPrompt
+                    : ragResult.ragPrompt;
+            }
+        }
 
         await api.chatStream(chatParams, (chunk) => {
             if (chunk.message) {

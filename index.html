@@ -32,6 +32,14 @@
                     <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
                 </svg>
             </button>
+            <button class="icon-btn" id="btnKB" title="知识库">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+                    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+                    <line x1="8" y1="7" x2="16" y2="7"/>
+                    <line x1="8" y1="11" x2="14" y2="11"/>
+                </svg>
+            </button>
             <button class="icon-btn" id="btnHistory" title="历史记录">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
@@ -64,6 +72,7 @@
         <div class="model-badges" id="modelBadges">
             <span class="model-badge think-badge" id="badgeThink" style="display:none;">🧠 Think</span>
             <span class="model-badge vision-badge" id="badgeVision" style="display:none;">👁️ Vision</span>
+            <span class="model-badge rag-badge" id="badgeRAG" style="display:none;">📚 RAG</span>
         </div>
     </div>
 
@@ -221,6 +230,63 @@
             </div>
             <div class="history-list" id="historyList"></div>
             <div class="history-pagination" id="historyPagination"></div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════ 知识库管理模态框 ═══════════════ -->
+<div class="modal-overlay" id="kbModal" style="display:none;">
+    <div class="modal modal-lg">
+        <div class="modal-header">
+            <h3>📚 知识库 (RAG)</h3>
+            <button class="icon-btn" id="btnCloseKB">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="kb-layout">
+                <!-- 左侧：集合列表 -->
+                <div class="kb-sidebar">
+                    <div class="kb-new-collection">
+                        <input class="setting-input" id="inputKBName" type="text" placeholder="新建知识库名称...">
+                        <button class="btn btn-sm btn-primary" id="btnNewCollection">创建</button>
+                    </div>
+                    <div class="kb-collection-list" id="kbCollectionList">
+                        <p class="text-muted" style="padding:16px;text-align:center;">暂无知识库</p>
+                    </div>
+                </div>
+                <!-- 右侧：文档列表 -->
+                <div class="kb-main">
+                    <div class="kb-toolbar">
+                        <div class="kb-toolbar-left">
+                            <button class="btn btn-sm btn-outline" id="btnUploadDoc">📄 上传文档</button>
+                            <input type="file" id="kbFileInput" accept=".txt,.md,.py,.js,.ts,.java,.go,.rs,.cpp,.c,.h,.hpp,.rb,.php,.sh,.html,.css,.json,.yaml,.yml,.toml,.xml,.sql,.csv" multiple style="display:none;">
+                            <span id="kbProgress" style="display:none;" class="kb-progress">
+                                <span class="spinner"></span>
+                                <span id="kbProgressText">处理中...</span>
+                            </span>
+                        </div>
+                        <div class="kb-toolbar-right">
+                            <label class="setting-label" style="margin:0;font-size:12px;">RAG 检索</label>
+                            <label class="toggle-label" style="margin:0;">
+                                <input type="checkbox" id="toggleRAG">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="kb-embed-model">
+                        <label class="setting-label" style="font-size:12px;">嵌入模型</label>
+                        <select class="model-select" id="selectEmbedModel" style="font-size:13px;">
+                            <option value="">选择嵌入模型...</option>
+                        </select>
+                    </div>
+                    <div class="kb-doc-list" id="kbDocList">
+                        <p class="text-muted" style="padding:16px;text-align:center;">← 选择一个知识库集合</p>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 </div>

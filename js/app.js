@@ -17,6 +17,8 @@ import { initChatArea, renderMessages, clearMessages, enableAutoScroll } from '.
 import { initInputArea } from './components/input-area.js';
 import { initSettingsModal, closeSettingsModal } from './components/settings-modal.js';
 import { initHistoryModal, closeHistoryModal } from './components/history-modal.js';
+import { initKBModal } from './components/kb-modal.js';
+import { initVectorStore } from './rag.js';
 
 console.log('[Metona] 模块化版本 v2.2.0 ' + new Date().toISOString());
 
@@ -88,6 +90,7 @@ async function init() {
         initInputArea();
         initSettingsModal();
         initHistoryModal();
+        initKBModal();
 
         // 5. 绑定全局事件
         bindGlobalEvents();
@@ -95,6 +98,9 @@ async function init() {
         // 6. 检测连接 + 加载模型
         await checkConnection();
         await loadModels();
+
+        // 6.1 初始化向量存储
+        await initVectorStore();
 
         // 7. 恢复上次选择的模型
         const savedModel = await db.getSetting('selectedModel', '');
