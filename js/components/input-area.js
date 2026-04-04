@@ -427,6 +427,15 @@ export async function sendMessage() {
             }
         }
 
+        // 限制 system prompt 长度，防止超出上下文窗口
+        if (chatParams.system && chatParams.system.length > 12000) {
+            chatParams.system = chatParams.system.slice(0, 12000) + '\n\n[内容过长，已截断]';
+            appendSystemMessage('⚠️ 知识库内容过长，已截断处理');
+        }
+
+        console.log('[RAG] chatParams.system 长度:', chatParams.system?.length || 0);
+        console.log('[RAG] 开始调用 chatStream...');
+
         await api.chatStream(chatParams, (chunk) => {
             if (chunk.message) {
                 if (chunk.message.content) {
@@ -443,6 +452,11 @@ export async function sendMessage() {
                 finalStats = { eval_count: chunk.eval_count, total_duration: chunk.total_duration };
             }
         }, abortController);
+
+        // 如果流结束但没有任何内容
+        if (!assistantContent && !thinkContent) {
+            appendSystemMessage('⚠️ 模型未返回任何内容，可能是上下文过长或模型不支持当前请求');
+        }
 
         const assistantMsg = {
             role: 'assistant',
@@ -523,8 +537,13 @@ export async function sendMessage() {
         }
 
         let errMsg = `❌ 错误: ${err.message}`;
+        console.error('[InputArea] 完整错误:', err);
         if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
             errMsg = '❌ 连接失败。请检查：\n1. Ollama 是否正在运行\n2. 地址是否正确\n3. 是否设置了 OLLAMA_ORIGINS="*"';
+        } else if (err.message.includes('400')) {
+            errMsg = '❌ 请求参数错误，可能是知识库内容超出模型上下文限制';
+        } else if (err.message.includes('500')) {
+            errMsg = '❌ Ollama 服务器错误，请检查 Ollama 日志';
         }
         appendSystemMessage(errMsg);
 
