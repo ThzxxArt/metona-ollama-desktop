@@ -404,7 +404,7 @@ export async function sendMessage() {
         // RAG 检索增强
         let ragSources = null;
         if (isRagEnabled()) {
-            appendSystemMessage('🧠 正在检索知识库...');
+            appendSystemMessage('🧠 正在检索知识库...', 'rag-status');
             try {
                 const ragResult = await performRagRetrieval(text);
                 if (ragResult && ragResult.results && ragResult.results.length > 0) {
@@ -434,7 +434,7 @@ export async function sendMessage() {
 
                     if (ragContext.length + templateOverhead > ragBudgetChars) {
                         ragContext = ragContext.slice(0, Math.max(0, ragBudgetChars - templateOverhead - 50)) + '\n\n[知识库内容过长，已截取最相关的部分]';
-                        appendSystemMessage(`⚠️ 知识库内容已截取（预算 ${ragBudgetChars} 字符）`);
+                        appendSystemMessage(`⚠️ 知识库内容已截取（预算 ${ragBudgetChars} 字符）`, 'rag-status');
                     }
 
                     const ragPrompt = `你是一个知识库问答助手。以下是检索到的相关文档片段，请基于这些内容回答用户的问题。如果检索到的内容无法回答问题，请如实说明。
@@ -455,13 +455,13 @@ ${ragContext}
                         text: truncate(r.text, 100)
                     }));
                     const sourceNames = [...new Set(ragSources.map(s => s.filename))];
-                    appendSystemMessage(`🧠 已检索 ${ragSources.length} 个相关片段（来源：${sourceNames.join('、')}）`);
+                    appendSystemMessage(`🧠 已检索 ${ragSources.length} 个相关片段（来源：${sourceNames.join('、')}）`, 'rag-status');
                 } else {
-                    appendSystemMessage('🧠 知识库未检索到相关内容，使用通用知识回答');
+                    appendSystemMessage('🧠 知识库未检索到相关内容，使用通用知识回答', 'rag-status');
                 }
             } catch (ragErr) {
                 console.error('[RAG] 检索失败:', ragErr);
-                appendSystemMessage(`🧠 知识库检索失败: ${ragErr.message}`);
+                appendSystemMessage(`🧠 知识库检索失败: ${ragErr.message}`, 'rag-status');
             }
         }
 
@@ -484,6 +484,9 @@ ${ragContext}
                 finalStats = { eval_count: chunk.eval_count, total_duration: chunk.total_duration };
             }
         }, abortController);
+
+        // 清除 RAG 临时状态消息
+        document.querySelectorAll('.rag-status').forEach(el => el.remove());
 
         // 如果流结束但没有任何内容
         if (!assistantContent && !thinkContent) {
@@ -509,6 +512,9 @@ ${ragContext}
 
     } catch (err) {
         console.error('[InputArea] 流式聊天错误:', err);
+
+        // 清除 RAG 临时状态消息
+        document.querySelectorAll('.rag-status').forEach(el => el.remove());
 
         if (err.name === 'AbortError') {
             const placeholder = document.querySelector('#messagesContainer .message.assistant.loading');

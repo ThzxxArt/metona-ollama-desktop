@@ -309,9 +309,10 @@ export function appendAssistantPlaceholder() {
 }
 
 /** 追加系统提示消息 */
-export function appendSystemMessage(text) {
+export function appendSystemMessage(text, tempClass) {
     const div = document.createElement('div');
     div.style.cssText = 'text-align:center;padding:8px;font-size:12px;color:var(--text-muted);';
+    if (tempClass) div.classList.add(tempClass);
     div.textContent = text;
     emptyStateEl.style.display = 'none';
     messagesContainerEl.style.display = '';
