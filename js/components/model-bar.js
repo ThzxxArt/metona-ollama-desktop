@@ -54,14 +54,20 @@ export async function loadModels() {
             return;
         }
 
-        data.models.forEach(m => {
-            const opt = document.createElement('option');
-            opt.value = m.name;
-            const diskSize = formatSize(m.size);
-            const label = diskSize ? `${m.name} · ${diskSize}` : m.name;
-            opt.textContent = label;
-            modelSelectEl.appendChild(opt);
-        });
+        data.models
+            .sort((a, b) => {
+                const nameA = a.name.toLowerCase(), nameB = b.name.toLowerCase();
+                if (nameA !== nameB) return nameA.localeCompare(nameB);
+                return (a.size || 0) - (b.size || 0);
+            })
+            .forEach(m => {
+                const opt = document.createElement('option');
+                opt.value = m.name;
+                const diskSize = formatSize(m.size);
+                const label = diskSize ? `${m.name} · ${diskSize}` : m.name;
+                opt.textContent = label;
+                modelSelectEl.appendChild(opt);
+            });
 
         // 恢复上次选择的模型
         const currentSession = state.get(KEYS.CURRENT_SESSION);
