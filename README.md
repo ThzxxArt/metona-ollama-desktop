@@ -2,9 +2,9 @@
 
 基于原生 JavaScript 的 [Ollama](https://ollama.com) AI 聊天客户端。零依赖、无构建步骤，开箱即用。
 
-支持流式对话、多模态图片输入、Think 深度推理、历史记录管理，可安装为 PWA 离线使用。
+支持流式对话、多模态图片输入、文本/代码文件上传分析、Think 深度推理、历史记录管理，可安装为 PWA 离线使用。
 
-![版本](https://img.shields.io/badge/version-2.0.0-brightgreen)
+![版本](https://img.shields.io/badge/version-2.1.0-brightgreen)
 ![平台](https://img.shields.io/badge/platform-Web-blue)
 ![协议](https://img.shields.io/badge/license-MIT-green)
 
@@ -17,7 +17,9 @@
 | 流式对话 | 基于 ReadableStream 的实时打字机效果，支持强制停止 |
 | 多模型支持 | 自动加载 Ollama 已安装模型，一键切换 |
 | Think 推理模式 | 可展开/收起的思考过程展示（需模型支持） |
-| 多模态输入 | 支持图片上传，兼容视觉模型 |
+| 多模态输入 | 支持图片上传，兼容视觉模型（自动检测模型 Vision 能力） |
+| 文件上传分析 | 支持 50+ 种文本/代码文件，内容自动格式化为代码块发送给模型 |
+| 智能滚动 | 流式回复时可自由滚动查看历史，浮动按钮一键回到底部 |
 | 强制停止 | 真正中止 Ollama 接口请求，双重保险（fetch abort + reader cancel） |
 | 历史管理 | IndexedDB 持久化，支持搜索、分页、导出 |
 | 数据导出 | Markdown / HTML / TXT / JSON 多格式 |
@@ -59,6 +61,35 @@ python3 -m http.server 8080
 ```bash
 OLLAMA_ORIGINS="*" ollama serve
 ```
+
+---
+
+## 📎 文件上传分析
+
+点击输入栏左侧的 📄 按钮上传文本或代码文件，内容会以代码块格式发送给模型分析。
+
+### 支持的文件类型
+
+| 类别 | 扩展名 | 图标 |
+|------|--------|------|
+| Python | `.py` `.pyw` `.pyi` | 🐍 |
+| JavaScript | `.js` `.mjs` `.cjs` | 💛 |
+| TypeScript | `.ts` `.tsx` | 🔷 / ⚛️ |
+| Java | `.java` | ☕ |
+| Go | `.go` | 🐹 |
+| Rust | `.rs` | 🦀 |
+| Ruby | `.rb` | 💎 |
+| C / C++ | `.c` `.cpp` `.h` `.hpp` | ⚙️ |
+| Shell | `.sh` `.bash` `.zsh` | 🐚 |
+| Web | `.html` `.css` | 🌐 / 🎨 |
+| 配置 | `.json` `.yaml` `.toml` `.xml` | 📋 / 📰 |
+| 数据 | `.sql` `.csv` | 🗃️ / 📊 |
+| 文档 | `.md` `.txt` `.log` | 📝 / 📄 / 📜 |
+| 其他 | `.php` `.swift` `.kt` `.lua` `Dockerfile` 等 | 各有专属图标 |
+
+- 单文件限制 **500KB**，支持多文件同时上传
+- 文件展示为带图标的 chip，气泡内不暴露文件内容
+- 模型需支持 Vision 才能上传图片（自动检测，不支持时按钮灰显）
 
 ---
 
@@ -113,6 +144,26 @@ Metona 通过 `js/ollama-api.js` 封装了 Ollama REST API，以下是所有调�
 }
 ```
 
+### 文件上传的消息格式
+
+文件内容在发送时动态拼入消息的 `content` 字段，展示时仅显示文件 chip：
+
+```javascript
+// 存储的消息结构
+{
+  role: "user",
+  content: "帮我分析这段代码",          // 用户输入文本
+  files: [{ name: "app.py", language: "python", size: 1234 }],  // 展示用元数据
+  _fileContents: [{ language: "python", content: "import os\n..." }]  // 发送用内容
+}
+
+// 发送给 Ollama 的消息（buildApiMessages 构造）
+{
+  role: "user",
+  content: "帮我分析这段代码\n\n---\n📄 以下是一个文件内容：\n\n```python\nimport os\n...\n```"
+}
+```
+
 ### 强制停止机制
 
 用户点击停止按钮时的完整流程：
@@ -149,18 +200,18 @@ metona-ollama/
     ├── ollama-api.js           # Ollama REST API 封装（见上方 API 清单）
     ├── chat-db.js              # IndexedDB 持久化层（会话 CRUD + 设置存储）
     ├── state.js                # 响应式状态管理（发布-订阅模式）
-    ├── utils.js                # 工具函数（ID生成、格式化、防抖、Base64）
+    ├── utils.js                # 工具函数（ID生成、格式化、防抖、Base64、文件读取、语言检测）
     ├── sanitizer.js            # HTML XSS 净化器（白名单策略）
     ├── marked-config.js        # Markdown 渲染器配置（自定义链接/图片安全检查）
     ├── lib/
     │   └── marked.esm.js       # marked.js v15 (Markdown 解析器)
     └── components/
-        ├── chat-area.js        # 消息渲染、流式更新、导出功能
-        ├── input-area.js       # 文本输入、图片上传、发送/停止逻辑
+        ├── chat-area.js        # 消息渲染、流式更新、智能滚动、导出功能
+        ├── input-area.js       # 文本输入、图片/文件上传、发送/停止逻辑
         ├── history-modal.js    # 历史记录面板、搜索、分页
         ├── settings-modal.js   # 设置面板、模型管理、数据管理
         ├── header.js           # 顶部导航、连接状态检测
-        ├── model-bar.js        # 模型选择栏、能力检测
+        ├── model-bar.js        # 模型选择栏、Think/Vision 能力检测
         ├── toast.js            # Toast 通知组件
         └── lightbox.js         # 图片预览灯箱
 ```

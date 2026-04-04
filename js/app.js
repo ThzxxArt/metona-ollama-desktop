@@ -18,7 +18,7 @@ import { initInputArea } from './components/input-area.js';
 import { initSettingsModal, closeSettingsModal } from './components/settings-modal.js';
 import { initHistoryModal, closeHistoryModal } from './components/history-modal.js';
 
-console.log('[Metona] 模块化版本 v2.0.0 ' + new Date().toISOString());
+console.log('[Metona] 模块化版本 v2.1.0 ' + new Date().toISOString());
 
 // ── 会话管理 ──
 
