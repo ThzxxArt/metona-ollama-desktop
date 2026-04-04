@@ -228,11 +228,13 @@ body::before {
 
 .icon-btn.disabled,
 .icon-btn:disabled {
-    opacity: 0.3;
+    opacity: 0.4;
     cursor: not-allowed;
     transform: none;
-    box-shadow: none;
-    pointer-events: none;
+    box-shadow: 0 0 8px rgba(239, 68, 68, 0.2);
+    border: 1px dashed rgba(239, 68, 68, 0.4);
+    background: rgba(239, 68, 68, 0.08);
+    color: rgba(255, 255, 255, 0.5);
 }
 
 .icon-btn:active {
@@ -419,12 +421,12 @@ body::before {
 }
 
 .think-toggle.unavailable .think-btn {
-    opacity: 0.3;
+    opacity: 0.5;
     cursor: not-allowed;
 }
 
 .think-toggle.unavailable .think-btn svg {
-    stroke: var(--text-muted);
+    stroke: var(--text-secondary);
 }
 
 /* ── 开关控件 ── */
