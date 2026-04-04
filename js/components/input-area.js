@@ -477,10 +477,14 @@ ${ragContext}
         console.log('[RAG] numCtx:', numCtx, 'system长度:', chatParams.system?.length || 0);
         console.log('[RAG] 开始调用 chatStream...');
 
-        // 开始回复时清除 RAG 临时状态消息
-        document.querySelectorAll('.rag-status').forEach(el => el.remove());
+        let ragStatusCleared = false;
 
         await api.chatStream(chatParams, (chunk) => {
+            // 首个有效内容到达时才清除 RAG 状态，避免检索完到开始回复之间的空白
+            if (!ragStatusCleared && chunk.message?.content) {
+                ragStatusCleared = true;
+                document.querySelectorAll('.rag-status').forEach(el => el.remove());
+            }
             if (chunk.message) {
                 if (chunk.message.content) {
                     assistantContent += chunk.message.content;
