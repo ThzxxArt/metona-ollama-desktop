@@ -806,6 +806,70 @@ body::before {
     justify-content: center;
 }
 
+/* ── 文件预览区域 ── */
+.file-preview {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 0;
+}
+
+.file-chip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px;
+    border-radius: 8px;
+    background: rgba(0, 245, 212, 0.06);
+    border: 1px solid rgba(0, 245, 212, 0.18);
+    font-size: 12px;
+    line-height: 1;
+    transition: var(--transition);
+    animation: fadeInUp 0.2s ease;
+}
+
+.file-chip:hover {
+    border-color: rgba(0, 245, 212, 0.35);
+    background: rgba(0, 245, 212, 0.1);
+}
+
+.file-icon {
+    font-size: 14px;
+    flex-shrink: 0;
+}
+
+.file-name {
+    font-weight: 600;
+    color: var(--text-primary);
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.file-size {
+    color: var(--text-muted);
+    flex-shrink: 0;
+}
+
+.remove-file {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 15px;
+    line-height: 1;
+    padding: 0 2px;
+    border-radius: 4px;
+    transition: var(--transition);
+    flex-shrink: 0;
+}
+
+.remove-file:hover {
+    color: var(--accent-red);
+    background: rgba(239, 68, 68, 0.1);
+}
+
 .input-row {
     display: flex;
     align-items: flex-end;

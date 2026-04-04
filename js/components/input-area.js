@@ -1,10 +1,10 @@
 /**
  * InputArea - 输入区域组件
- * 包含文本输入、图片上传、发送逻辑
+ * 包含文本输入、图片上传、文件上传、发送逻辑
  */
 
 import { state, KEYS } from '../state.js';
-import { fileToBase64, debounce, truncate } from '../utils.js';
+import { fileToBase64, fileToText, detectLanguage, debounce, truncate, escapeHtml, formatSize } from '../utils.js';
 import { getSelectedModel, isThinkEnabled } from './model-bar.js';
 import {
     renderMessages, appendAssistantPlaceholder, appendSystemMessage,
@@ -13,16 +13,43 @@ import {
 import { showToast } from './toast.js';
 import { checkConnection } from './header.js';
 
-let chatInputEl, btnSendEl, fileInputEl, imagePreviewEl;
+let chatInputEl, btnSendEl, fileInputEl, textFileInputEl, imagePreviewEl, filePreviewEl;
 let pendingImages = [];
+let pendingFiles = [];
+
+/** 常见文本/代码文件扩展名集合（用于校验） */
+const TEXT_EXTENSIONS = new Set([
+    'txt','md','markdown','rst','log','csv','tsv',
+    'py','pyw','pyi','js','mjs','cjs','ts','tsx','jsx',
+    'java','c','h','cpp','cc','cxx','hpp','go','rs','rb','php',
+    'sh','bash','zsh','fish','sql','html','htm','css',
+    'json','jsonl','xml','svg','yaml','yml','toml','ini','cfg','conf',
+    'swift','kt','kts','scala','lua','r','m','mm',
+    'cs','fs','vb','ex','exs','erl','hs','clj','lisp',
+    'diff','patch','pl','dockerfile','makefile'
+]);
+
+/** 最大文件大小 500KB */
+const MAX_FILE_SIZE = 500 * 1024;
+
+/** 判断是否为文本/代码文件 */
+function isTextFile(file) {
+    // 无扩展名的特殊文件名
+    const name = file.name.toLowerCase();
+    if (name === 'dockerfile' || name === 'makefile') return true;
+    const ext = name.split('.').pop();
+    return TEXT_EXTENSIONS.has(ext);
+}
 
 export function initInputArea() {
     chatInputEl = document.querySelector('#chatInput');
     btnSendEl = document.querySelector('#btnSend');
     fileInputEl = document.querySelector('#fileInput');
+    textFileInputEl = document.querySelector('#textFileInput');
     imagePreviewEl = document.querySelector('#imagePreview');
+    filePreviewEl = document.querySelector('#filePreview');
 
-    // 发送
+    // 发送 / 停止
     btnSendEl.addEventListener('click', () => {
         if (state.get(KEYS.IS_STREAMING)) {
             stopGeneration();
@@ -41,9 +68,16 @@ export function initInputArea() {
     chatInputEl.addEventListener('input', autoResizeTextarea);
 
     // 图片上传
-    document.querySelector('#btnAttach').addEventListener('click', () => fileInputEl.click());
+    document.querySelector('#btnAttachImg').addEventListener('click', () => fileInputEl.click());
     fileInputEl.addEventListener('change', (e) => {
-        handleFileSelect(e.target.files);
+        handleImageSelect(e.target.files);
+        e.target.value = '';
+    });
+
+    // 文件上传（文本/代码）
+    document.querySelector('#btnAttachFile').addEventListener('click', () => textFileInputEl.click());
+    textFileInputEl.addEventListener('change', (e) => {
+        handleTextFileSelect(e.target.files);
         e.target.value = '';
     });
 
@@ -55,6 +89,15 @@ export function initInputArea() {
             renderImagePreviews();
         }
     });
+
+    // 删除文件预览
+    filePreviewEl.addEventListener('click', (e) => {
+        if (e.target.classList.contains('remove-file')) {
+            const idx = parseInt(e.target.dataset.index);
+            pendingFiles.splice(idx, 1);
+            renderFilePreviews();
+        }
+    });
 }
 
 function autoResizeTextarea() {
@@ -62,16 +105,16 @@ function autoResizeTextarea() {
     chatInputEl.style.height = Math.min(chatInputEl.scrollHeight, 120) + 'px';
 }
 
-async function handleFileSelect(files) {
-    const maxSize = 20 * 1024 * 1024;
+// ── 图片处理 ──
 
+async function handleImageSelect(files) {
+    const maxSize = 20 * 1024 * 1024;
     for (const file of files) {
         if (!file.type.startsWith('image/')) continue;
         if (file.size > maxSize) {
             appendSystemMessage(`⚠️ 图片 ${file.name} 超过 20MB 限制`);
             continue;
         }
-
         try {
             const base64 = await fileToBase64(file);
             pendingImages.push({ name: file.name, base64 });
@@ -91,15 +134,66 @@ function renderImagePreviews() {
     imagePreviewEl.style.display = '';
     imagePreviewEl.innerHTML = pendingImages.map((img, i) => `
         <div class="preview-thumb">
-            <img src="data:image/png;base64,${img.base64}" alt="${img.name}">
+            <img src="data:image/png;base64,${img.base64}" alt="${escapeHtml(img.name)}">
             <button class="remove-img" data-index="${i}">×</button>
         </div>
     `).join('');
 }
 
+// ── 文件处理（文本/代码） ──
+
+async function handleTextFileSelect(files) {
+    for (const file of files) {
+        if (!isTextFile(file)) {
+            appendSystemMessage(`⚠️ ${file.name} 不是支持的文本/代码文件`);
+            continue;
+        }
+        if (file.size > MAX_FILE_SIZE) {
+            appendSystemMessage(`⚠️ ${file.name} 超过 500KB 限制（${formatSize(file.size)}）`);
+            continue;
+        }
+        // 重复检测
+        if (pendingFiles.some(f => f.name === file.name && f.size === file.size)) {
+            appendSystemMessage(`ℹ️ ${file.name} 已添加`);
+            continue;
+        }
+        try {
+            const content = await fileToText(file);
+            pendingFiles.push({
+                name: file.name,
+                content,
+                language: detectLanguage(file.name),
+                size: file.size
+            });
+            renderFilePreviews();
+        } catch (err) {
+            console.error('[InputArea] 文件读取失败:', err);
+            appendSystemMessage(`❌ 读取 ${file.name} 失败`);
+        }
+    }
+}
+
+function renderFilePreviews() {
+    if (pendingFiles.length === 0) {
+        filePreviewEl.style.display = 'none';
+        filePreviewEl.innerHTML = '';
+        return;
+    }
+    filePreviewEl.style.display = '';
+    filePreviewEl.innerHTML = pendingFiles.map((f, i) => `
+        <div class="file-chip">
+            <span class="file-icon">📄</span>
+            <span class="file-name">${escapeHtml(f.name)}</span>
+            <span class="file-size">${formatSize(f.size)}</span>
+            <button class="remove-file" data-index="${i}" title="移除">×</button>
+        </div>
+    `).join('');
+}
+
+// ── UI 状态 ──
+
 function updateSendButton(streaming) {
     if (streaming) {
-        // 流式时显示停止按钮
         btnSendEl.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor">
             <rect x="6" y="6" width="12" height="12" rx="2"/>
         </svg>`;
@@ -107,7 +201,6 @@ function updateSendButton(streaming) {
         btnSendEl.classList.remove('disabled');
         btnSendEl.title = '停止生成';
     } else {
-        // 恢复发送按钮
         btnSendEl.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
         </svg>`;
@@ -118,7 +211,7 @@ function updateSendButton(streaming) {
 }
 
 /**
- * 停止生成 - 真正中止 Ollama 接口请求
+ * 停止生成
  */
 function stopGeneration() {
     const abortController = state.get(KEYS.ABORT_CONTROLLER);
@@ -132,7 +225,7 @@ function stopGeneration() {
  */
 export async function sendMessage() {
     const text = chatInputEl.value.trim();
-    if (!text && pendingImages.length === 0) return;
+    if (!text && pendingImages.length === 0 && pendingFiles.length === 0) return;
     if (state.get(KEYS.IS_STREAMING)) return;
 
     const model = getSelectedModel();
@@ -144,44 +237,69 @@ export async function sendMessage() {
     const currentSession = state.get(KEYS.CURRENT_SESSION);
     if (!currentSession) return;
 
-    // 构造用户消息
     const now = Date.now();
     const msgsToAdd = [];
 
+    // ── 构造用户消息内容 ──
+    // 场景1：有图片（Ollama 需要单独的 images 消息）
     if (pendingImages.length > 0) {
         msgsToAdd.push({
             role: 'user',
-            content: '',
+            content: pendingImages.length === 1
+                ? `[上传了图片: ${pendingImages[0].name}]`
+                : `[上传了 ${pendingImages.length} 张图片]`,
             images: pendingImages.map(img => img.base64),
             timestamp: now
         });
     }
 
-    if (text) {
+    // 场景2：有文本输入 + 文件，或者只有文件
+    if (text || pendingFiles.length > 0) {
+        let content = text || '';
+
+        // 把文件内容格式化为代码块拼入消息
+        if (pendingFiles.length > 0) {
+            const fileParts = pendingFiles.map(f => {
+                const lang = f.language || '';
+                return `📄 **${f.name}**\n\n\`\`\`${lang}\n${f.content}\n\`\`\``;
+            });
+
+            if (content) {
+                content += '\n\n---\n' + fileParts.join('\n\n---\n');
+            } else {
+                content = `请分析以下 ${pendingFiles.length > 1 ? pendingFiles.length + ' 个' : ''}文件：\n\n${fileParts.join('\n\n---\n')}`;
+            }
+        }
+
         msgsToAdd.push({
             role: 'user',
-            content: text,
+            content,
             timestamp: now
         });
     }
 
     // 更新会话标题
     if (currentSession.messages.length === 0) {
-        currentSession.title = truncate(text || '[图片消息]', 30);
+        const titleText = text
+            || (pendingFiles.length > 0 ? `[文件: ${pendingFiles.map(f => f.name).join(', ')}]` : '[图片消息]');
+        currentSession.title = truncate(titleText, 30);
         currentSession.model = model;
     }
 
     msgsToAdd.forEach(m => currentSession.messages.push(m));
     renderMessages();
 
-    // 立即保存（防止新建会话或刷新时丢失用户消息）
+    // 立即保存
     await saveCurrentSession();
 
     // 清空输入
     chatInputEl.value = '';
     pendingImages = [];
+    pendingFiles = [];
     imagePreviewEl.style.display = 'none';
     imagePreviewEl.innerHTML = '';
+    filePreviewEl.style.display = 'none';
+    filePreviewEl.innerHTML = '';
     autoResizeTextarea();
 
     // 助手占位
@@ -199,7 +317,6 @@ export async function sendMessage() {
     const systemPrompt = state.get(KEYS.SYSTEM_PROMPT);
     const numCtx = state.get(KEYS.NUM_CTX, 24576);
 
-    // 流式回复状态变量（声明在 try 外，catch 中也需要访问）
     let assistantContent = '';
     let thinkContent = '';
     let finalStats = null;
@@ -256,7 +373,6 @@ export async function sendMessage() {
     } catch (err) {
         console.error('[InputArea] 流式聊天错误:', err);
 
-        // 处理用户主动停止（AbortError）
         if (err.name === 'AbortError') {
             const placeholder = document.querySelector('#messagesContainer .message.assistant:last-child');
             const loadingDots = placeholder?.querySelector('.loading-dots');
@@ -266,7 +382,6 @@ export async function sendMessage() {
 
             const contentDiv = placeholder?.querySelector('.msg-content');
 
-            // 保存部分消息（直接用 assistantContent，不从 DOM 读）
             const partialMsg = {
                 role: 'assistant',
                 content: assistantContent,
@@ -277,7 +392,6 @@ export async function sendMessage() {
             };
             currentSession.messages.push(partialMsg);
 
-            // 更新 DOM
             if (contentDiv) {
                 let html = '';
                 if (assistantContent) {
@@ -296,7 +410,6 @@ export async function sendMessage() {
             return;
         }
 
-        // 其他错误
         const placeholder = document.querySelector('#messagesContainer .message.assistant:last-child');
         const loadingDots = placeholder?.querySelector('.loading-dots');
         const loadingText = placeholder?.querySelector('.loading-text');

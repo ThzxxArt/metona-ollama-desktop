@@ -71,3 +71,44 @@ export function fileToBase64(file) {
         reader.readAsDataURL(file);
     });
 }
+
+/** File → 文本内容 */
+export function fileToText(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsText(file);
+    });
+}
+
+/** 根据文件名检测语言标识（用于 Markdown 代码块） */
+export function detectLanguage(filename) {
+    const ext = filename.split('.').pop().toLowerCase();
+    const map = {
+        py: 'python', pyw: 'python', pyi: 'python',
+        js: 'javascript', mjs: 'javascript', cjs: 'javascript',
+        ts: 'typescript', tsx: 'tsx', jsx: 'jsx',
+        java: 'java', class: 'java',
+        c: 'c', h: 'c',
+        cpp: 'cpp', cc: 'cpp', cxx: 'cpp', hpp: 'cpp',
+        go: 'go', rs: 'rust', rb: 'ruby', php: 'php',
+        sh: 'bash', bash: 'bash', zsh: 'bash', fish: 'bash',
+        sql: 'sql', html: 'html', htm: 'html', css: 'css',
+        json: 'json', jsonl: 'json',
+        xml: 'xml', svg: 'svg',
+        yaml: 'yaml', yml: 'yaml', toml: 'toml',
+        ini: 'ini', cfg: 'ini', conf: 'ini',
+        md: 'markdown', markdown: 'markdown', rst: 'rst',
+        txt: '', csv: 'csv', tsv: 'csv', log: '',
+        swift: 'swift', kt: 'kotlin', kts: 'kotlin',
+        scala: 'scala', lua: 'lua', pl: 'perl', r: 'r',
+        m: 'matlab', mm: 'objectivec',
+        cs: 'csharp', fs: 'fsharp', vb: 'vbnet',
+        ex: 'elixir', exs: 'elixir', erl: 'erlang',
+        hs: 'haskell', clj: 'clojure', lisp: 'lisp',
+        dockerfile: 'dockerfile', makefile: 'makefile',
+        diff: 'diff', patch: 'diff',
+    };
+    return map[ext] ?? ext;
+}
