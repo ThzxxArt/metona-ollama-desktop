@@ -8,7 +8,7 @@ import { fileToBase64, fileToText, detectLanguage, debounce, truncate, escapeHtm
 import { getSelectedModel, isThinkEnabled, isVisionAvailable } from './model-bar.js';
 import {
     renderMessages, appendAssistantPlaceholder, appendSystemMessage,
-    updateLastAssistantMessage, clearMessages, safeMarkdown
+    updateLastAssistantMessage, clearMessages, safeMarkdown, enableAutoScroll
 } from './chat-area.js';
 import { showToast } from './toast.js';
 import { checkConnection } from './header.js';
@@ -353,6 +353,7 @@ export async function sendMessage() {
     }
 
     msgsToAdd.forEach(m => currentSession.messages.push(m));
+    enableAutoScroll();
     renderMessages();
 
     // 立即保存

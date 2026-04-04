@@ -13,7 +13,7 @@ import { initToast, showToast } from './components/toast.js';
 import { initLightbox, closeLightbox } from './components/lightbox.js';
 import { initHeader, checkConnection } from './components/header.js';
 import { initModelBar, loadModels, setSelectedModel } from './components/model-bar.js';
-import { initChatArea, renderMessages, clearMessages } from './components/chat-area.js';
+import { initChatArea, renderMessages, clearMessages, enableAutoScroll } from './components/chat-area.js';
 import { initInputArea } from './components/input-area.js';
 import { initSettingsModal, closeSettingsModal } from './components/settings-modal.js';
 import { initHistoryModal, closeHistoryModal } from './components/history-modal.js';
@@ -50,6 +50,7 @@ async function startNewSession() {
     document.querySelector('#inputArea').style.display = '';
 
     clearMessages();
+    enableAutoScroll();
     renderMessages();
     document.querySelector('#chatInput')?.focus();
 }

@@ -39,10 +39,38 @@ function getFileIcon(filename) {
     return map[ext] || '📄';
 }
 
+let chatAreaEl, messagesContainerEl, emptyStateEl, scrollBtnEl;
+let autoScroll = true; // 是否自动滚动到底部
+
 export function initChatArea() {
     chatAreaEl = document.querySelector('#chatArea');
     messagesContainerEl = document.querySelector('#messagesContainer');
     emptyStateEl = document.querySelector('#emptyState');
+    scrollBtnEl = document.querySelector('#scrollToBottom');
+
+    // 监听用户手动滚动
+    chatAreaEl.addEventListener('scroll', () => {
+        const atBottom = isAtBottom();
+        if (atBottom) {
+            autoScroll = true;
+            scrollBtnEl.style.display = 'none';
+        } else {
+            autoScroll = false;
+            scrollBtnEl.style.display = '';
+        }
+    });
+
+    // 点击滚动到底部按钮
+    scrollBtnEl.addEventListener('click', () => {
+        autoScroll = true;
+        scrollBtnEl.style.display = 'none';
+        chatAreaEl.scrollTo({ top: chatAreaEl.scrollHeight, behavior: 'smooth' });
+    });
+}
+
+/** 判断是否在底部附近（60px 容差） */
+function isAtBottom() {
+    return chatAreaEl.scrollHeight - chatAreaEl.scrollTop - chatAreaEl.clientHeight < 60;
 }
 
 /** 安全地将 Markdown 转为 HTML */
@@ -58,8 +86,9 @@ export function safeMarkdown(text) {
     }
 }
 
-/** 滚动到底部 */
+/** 滚动到底部（仅当 autoScroll 开启时） */
 export function scrollToBottom() {
+    if (!autoScroll) return;
     requestAnimationFrame(() => {
         chatAreaEl.scrollTop = chatAreaEl.scrollHeight;
     });
@@ -80,11 +109,17 @@ export function renderMessages() {
     messagesContainerEl.style.display = '';
 
     const existingCount = messagesContainerEl.children.length;
+    const isNewMessage = existingCount > 0 && existingCount < msgs.length;
     for (let i = existingCount; i < msgs.length; i++) {
         appendMessageDOM(msgs[i], i);
     }
 
-    scrollToBottom();
+    // 新消息按 autoScroll 决定；首次渲染（加载历史）强制滚到底部
+    if (isNewMessage) {
+        scrollToBottom();
+    } else if (msgs.length > 0) {
+        chatAreaEl.scrollTop = chatAreaEl.scrollHeight;
+    }
 }
 
 /** 追加单条消息 DOM */
@@ -272,6 +307,12 @@ export function getMessagesContainer() {
 /** 清空消息 DOM */
 export function clearMessages() {
     messagesContainerEl.innerHTML = '';
+}
+
+/** 重置自动滚动（用户发送消息、新建会话时调用） */
+export function enableAutoScroll() {
+    autoScroll = true;
+    if (scrollBtnEl) scrollBtnEl.style.display = 'none';
 }
 
 // ── 导出功能 ──
