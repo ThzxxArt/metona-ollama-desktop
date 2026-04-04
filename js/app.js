@@ -59,6 +59,17 @@ async function startNewSession() {
         await db.saveSession(currentSession);
     }
 
+    // 释放显存，清理模型上下文
+    const api = state.get(KEYS.API);
+    const model = currentSession?.model || state.get('_defaultModel', '');
+    if (api && model) {
+        try {
+            await api.chat({ model, messages: [], keep_alive: 0 });
+        } catch (e) {
+            console.warn('[App] 释放显存失败:', e);
+        }
+    }
+
     const session = createNewSession();
     state.set(KEYS.CURRENT_SESSION, session);
     state.set(KEYS.IS_HISTORY_VIEW, false);
