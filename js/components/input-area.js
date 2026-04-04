@@ -5,7 +5,7 @@
 
 import { state, KEYS } from '../state.js';
 import { fileToBase64, fileToText, detectLanguage, debounce, truncate, escapeHtml, formatSize } from '../utils.js';
-import { getSelectedModel, isThinkEnabled } from './model-bar.js';
+import { getSelectedModel, isThinkEnabled, isVisionAvailable } from './model-bar.js';
 import {
     renderMessages, appendAssistantPlaceholder, appendSystemMessage,
     updateLastAssistantMessage, clearMessages, safeMarkdown
@@ -98,7 +98,13 @@ export function initInputArea() {
     chatInputEl.addEventListener('input', autoResizeTextarea);
 
     // 图片上传
-    document.querySelector('#btnAttachImg').addEventListener('click', () => fileInputEl.click());
+    document.querySelector('#btnAttachImg').addEventListener('click', () => {
+        if (!isVisionAvailable()) {
+            showToast('当前模型不支持图片分析', 'warning');
+            return;
+        }
+        fileInputEl.click();
+    });
     fileInputEl.addEventListener('change', (e) => {
         handleImageSelect(e.target.files);
         e.target.value = '';
@@ -287,6 +293,12 @@ export async function sendMessage() {
     const model = getSelectedModel();
     if (!model) {
         appendSystemMessage('⚠️ 请先选择一个模型');
+        return;
+    }
+
+    // 有图片但模型不支持 vision → 阻止发送
+    if (pendingImages.length > 0 && !isVisionAvailable()) {
+        appendSystemMessage('⚠️ 当前模型不支持图片分析，请移除图片后重试');
         return;
     }
 

@@ -226,6 +226,15 @@ body::before {
     box-shadow: 0 4px 18px rgba(0, 245, 212, 0.4);
 }
 
+.icon-btn.disabled,
+.icon-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+    pointer-events: none;
+}
+
 .icon-btn:active {
     transform: scale(0.95);
 }
