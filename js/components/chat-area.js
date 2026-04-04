@@ -39,6 +39,7 @@ function getFileIcon(filename) {
 
 let chatAreaEl, messagesContainerEl, emptyStateEl, scrollBtnEl;
 let autoScroll = true; // 是否自动滚动到底部
+let currentPlaceholder = null; // 当前流式消息的 placeholder 引用
 
 export function initChatArea() {
     chatAreaEl = document.querySelector('#chatArea');
@@ -221,11 +222,8 @@ export function appendMessageDOM(msg, index) {
 
 /** 更新最后一条 assistant 消息（流式输出） */
 export function updateLastAssistantMessage(content, think, stats, model) {
-    let lastMsg = messagesContainerEl.querySelector('.message.assistant.loading');
-    if (!lastMsg) {
-        // loading class 已在首次调用时移除，用 last-of-type 回退
-        lastMsg = messagesContainerEl.querySelector('.message.assistant:last-of-type');
-    }
+    // 使用 placeholder 引用，完全不依赖 CSS 选择器
+    const lastMsg = currentPlaceholder;
     if (!lastMsg) return;
 
     // 仅首次调用时移除 loading 指示器
@@ -306,6 +304,7 @@ export function appendAssistantPlaceholder() {
         </div>
     `;
     messagesContainerEl.appendChild(div);
+    currentPlaceholder = div;
     scrollToBottom();
 }
 
@@ -328,6 +327,7 @@ export function getMessagesContainer() {
 /** 清空消息 DOM */
 export function clearMessages() {
     messagesContainerEl.innerHTML = '';
+    currentPlaceholder = null;
 }
 
 /** 重置自动滚动（用户发送消息、新建会话时调用） */
