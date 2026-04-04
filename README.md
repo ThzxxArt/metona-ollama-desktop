@@ -4,7 +4,7 @@
 
 支持流式对话、多模态图片输入、文本/代码文件上传分析、Think 深度推理、历史记录管理，可安装为 PWA 离线使用。
 
-![版本](https://img.shields.io/badge/version-2.1.0-brightgreen)
+![版本](https://img.shields.io/badge/version-2.2.0-brightgreen)
 ![平台](https://img.shields.io/badge/platform-Web-blue)
 ![协议](https://img.shields.io/badge/license-MIT-green)
 
@@ -15,7 +15,8 @@
 | 功能 | 说明 |
 |------|------|
 | 流式对话 | 基于 ReadableStream 的实时打字机效果，支持强制停止 |
-| 多模型支持 | 自动加载 Ollama 已安装模型，一键切换 |
+| 多模型支持 | 自动加载 Ollama 已安装模型，按名称排序，一键切换 |
+| 模型磁盘大小 | 下拉框展示每个模型的实际磁盘占用，从小到大排序 |
 | Think 推理模式 | 可展开/收起的思考过程展示（需模型支持） |
 | 多模态输入 | 支持图片上传，兼容视觉模型（自动检测模型 Vision 能力） |
 | 文件上传分析 | 支持 50+ 种文本/代码文件，内容自动格式化为代码块发送给模型 |
@@ -199,6 +200,7 @@ metona-ollama/
     ├── app.js                  # 主入口：初始化所有组件、事件绑定、生命周期管理
     ├── ollama-api.js           # Ollama REST API 封装（见上方 API 清单）
     ├── chat-db.js              # IndexedDB 持久化层（会话 CRUD + 设置存储）
+    ├── crypto.js               # 会话加密模块（AES-256-GCM / XOR 混淆，.metona 格式）
     ├── state.js                # 响应式状态管理（发布-订阅模式）
     ├── utils.js                # 工具函数（ID生成、格式化、防抖、Base64、文件读取、语言检测）
     ├── sanitizer.js            # HTML XSS 净化器（白名单策略）
@@ -226,6 +228,7 @@ metona-ollama/
 | 系统提示词 | 全局 System Prompt | 关闭 | `system` |
 | 上下文长度 | 上下文窗口大小 | 24576 tokens | `options.num_ctx` |
 | Think 模式 | 启用深度推理 | 关闭 | `think` |
+| 默认模型 | 切换模型后自动记忆，刷新恢复 | 上次选择 | — |
 
 ---
 
@@ -236,7 +239,7 @@ metona-ollama/
 | Markdown | 单会话导出，便于阅读和编辑 | `.md` |
 | HTML | 带暗色主题样式的离线页面 | `.html` |
 | TXT | 纯文本备份 | `.txt` |
-| JSON | 全量备份/迁移，可跨设备导入 | `.json` |
+| Metona 加密 | 全量备份/迁移，AES-256-GCM 加密（HTTPS 环境）或 XOR 混淆（HTTP 降级），仅支持 `.metona` 格式导入 | `.metona` |
 
 ---
 
