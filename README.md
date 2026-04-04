@@ -2,9 +2,9 @@
 
 基于原生 JavaScript 的 [Ollama](https://ollama.com) AI 聊天客户端。零依赖、无构建步骤，开箱即用。
 
-支持流式对话、多模态图片输入、文本/代码文件上传分析、Think 深度推理、历史记录管理，可安装为 PWA 离线使用。
+支持流式对话、多模态图片输入、文本/代码文件上传分析、Think 深度推理、RAG 本地知识库、历史记录管理，可安装为 PWA 离线使用。
 
-![版本](https://img.shields.io/badge/version-2.2.0-brightgreen)
+![版本](https://img.shields.io/badge/version-3.0.0-brightgreen)
 ![平台](https://img.shields.io/badge/platform-Web-blue)
 ![协议](https://img.shields.io/badge/license-MIT-green)
 
@@ -27,6 +27,8 @@
 | PWA 离线 | Service Worker 缓存，可安装到桌面 |
 | 连接检测 | 实时状态指示，CORS 问题自动提示 |
 | 显存管理 | 一键卸载模型释放显存 |
+| RAG 知识库 | 本地向量存储，文档上传自动分块，语义检索增强问答 |
+| 使用帮助 | 内置帮助弹框，快速了解功能与快捷键 |
 
 ---
 
