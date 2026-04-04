@@ -221,9 +221,10 @@ export function appendMessageDOM(msg, index) {
 
 /** 更新最后一条 assistant 消息（流式输出） */
 export function updateLastAssistantMessage(content, think, stats, model) {
-    const lastMsg = messagesContainerEl.querySelector('.message.assistant:last-of-type');
+    const lastMsg = messagesContainerEl.querySelector('.message.assistant.loading');
     if (!lastMsg) return;
 
+    lastMsg.classList.remove('loading');
     const loadingDots = lastMsg.querySelector('.loading-dots');
     const loadingText = lastMsg.querySelector('.loading-text');
     if (loadingDots) loadingDots.remove();
@@ -284,7 +285,7 @@ export function updateLastAssistantMessage(content, think, stats, model) {
 /** 追加临时的 assistant 消息占位 */
 export function appendAssistantPlaceholder() {
     const div = document.createElement('div');
-    div.className = 'message assistant';
+    div.className = 'message assistant loading';
     div.innerHTML = `
         <div class="msg-avatar">🤖</div>
         <div class="msg-body">
