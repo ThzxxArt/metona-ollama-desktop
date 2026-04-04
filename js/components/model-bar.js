@@ -219,6 +219,7 @@ export function getSelectedModel() {
  */
 export function setSelectedModel(modelName) {
     modelSelectEl.value = modelName;
+    modelSelectEl.dispatchEvent(new Event('change'));
 }
 
 /**
