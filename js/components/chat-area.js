@@ -221,14 +221,21 @@ export function appendMessageDOM(msg, index) {
 
 /** 更新最后一条 assistant 消息（流式输出） */
 export function updateLastAssistantMessage(content, think, stats, model) {
-    const lastMsg = messagesContainerEl.querySelector('.message.assistant.loading');
+    let lastMsg = messagesContainerEl.querySelector('.message.assistant.loading');
+    if (!lastMsg) {
+        // loading class 已在首次调用时移除，用 last-of-type 回退
+        lastMsg = messagesContainerEl.querySelector('.message.assistant:last-of-type');
+    }
     if (!lastMsg) return;
 
-    lastMsg.classList.remove('loading');
-    const loadingDots = lastMsg.querySelector('.loading-dots');
-    const loadingText = lastMsg.querySelector('.loading-text');
-    if (loadingDots) loadingDots.remove();
-    if (loadingText) loadingText.remove();
+    // 仅首次调用时移除 loading 指示器
+    if (lastMsg.classList.contains('loading')) {
+        lastMsg.classList.remove('loading');
+        const loadingDots = lastMsg.querySelector('.loading-dots');
+        const loadingText = lastMsg.querySelector('.loading-text');
+        if (loadingDots) loadingDots.remove();
+        if (loadingText) loadingText.remove();
+    }
 
     if (model) {
         let modelTag = lastMsg.querySelector('.model-tag');
