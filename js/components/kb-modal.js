@@ -291,7 +291,7 @@ async function handleDocUpload(e) {
 }
 
 /**
- * 填充嵌入模型下拉
+ * 填充嵌入模型下拉（仅显示嵌入模型）
  */
 async function populateEmbedModels() {
     const select = document.querySelector('#selectEmbedModel');
@@ -302,41 +302,22 @@ async function populateEmbedModels() {
         const data = await api.listModels();
         select.innerHTML = '<option value="">选择嵌入模型...</option>';
         if (data.models) {
-            // 推荐的嵌入模型优先显示
-            const embedKeywords = ['embed', 'nomic', 'mxbai', 'bge', 'e5', 'snowflake'];
-            const recommended = [];
-            const others = [];
+            const embedKeywords = ['embed', 'nomic', 'mxbai', 'bge', 'e5', 'snowflake', 'arctic'];
+            const embedModels = data.models.filter(m =>
+                embedKeywords.some(kw => m.name.toLowerCase().includes(kw))
+            );
 
-            for (const m of data.models) {
-                const name = m.name.toLowerCase();
-                if (embedKeywords.some(kw => name.includes(kw))) {
-                    recommended.push(m);
-                } else {
-                    others.push(m);
-                }
-            }
-
-            if (recommended.length > 0) {
-                const optgroup = document.createElement('optgroup');
-                optgroup.label = '推荐（嵌入模型）';
-                recommended.forEach(m => {
-                    const opt = document.createElement('option');
-                    opt.value = m.name;
-                    opt.textContent = m.name;
-                    optgroup.appendChild(opt);
-                });
-                select.appendChild(optgroup);
-            }
-
-            const optgroup2 = document.createElement('optgroup');
-            optgroup2.label = '其他模型';
-            others.forEach(m => {
+            embedModels.forEach(m => {
                 const opt = document.createElement('option');
                 opt.value = m.name;
-                opt.textContent = m.name;
-                optgroup2.appendChild(opt);
+                const size = m.size ? ` (${formatSize(m.size)})` : '';
+                opt.textContent = m.name + size;
+                select.appendChild(opt);
             });
-            select.appendChild(optgroup2);
+
+            if (embedModels.length === 0) {
+                select.innerHTML = '<option value="">未检测到嵌入模型，请先 ollama pull</option>';
+            }
         }
     } catch (err) {
         console.warn('[KB] 加载模型列表失败:', err);
