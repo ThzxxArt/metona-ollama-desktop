@@ -23,10 +23,12 @@ console.log('[Metona] 模块化版本 v2.1.0 ' + new Date().toISOString());
 // ── 会话管理 ──
 
 function createNewSession() {
+    const selectedModel = document.querySelector('#modelSelect')?.value || '';
+    const defaultModel = selectedModel || state.get('_defaultModel', '');
     return {
         id: generateId(),
         title: '新会话',
-        model: document.querySelector('#modelSelect')?.value || '',
+        model: defaultModel,
         messages: [],
         createdAt: Date.now(),
         updatedAt: Date.now()
@@ -96,7 +98,10 @@ async function init() {
 
         // 7. 恢复上次选择的模型
         const savedModel = await db.getSetting('selectedModel', '');
-        if (savedModel) setSelectedModel(savedModel);
+        if (savedModel) {
+            setSelectedModel(savedModel);
+            state.set('_defaultModel', savedModel);
+        }
 
         // 8. 恢复系统提示词和上下文长度
         const systemPromptEnabled = await db.getSetting('systemPromptEnabled', false);

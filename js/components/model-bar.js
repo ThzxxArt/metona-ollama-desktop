@@ -23,6 +23,9 @@ export function initModelBar() {
     modelSelectEl.addEventListener('change', async () => {
         const model = modelSelectEl.value;
         if (db()) await db().saveSetting('selectedModel', model);
+        state.set('_defaultModel', model);
+        const session = state.get(KEYS.CURRENT_SESSION);
+        if (session) session.model = model;
         if (model) {
             await checkModelCapability(model);
         } else {
@@ -70,9 +73,9 @@ export async function loadModels() {
             });
 
         // 恢复上次选择的模型
-        const currentSession = state.get(KEYS.CURRENT_SESSION);
-        if (currentSession?.model) {
-            modelSelectEl.value = currentSession.model;
+        const defaultModel = state.get('_defaultModel', '');
+        if (defaultModel) {
+            modelSelectEl.value = defaultModel;
         }
 
         if (db()) await db().saveSetting('selectedModel', modelSelectEl.value);
