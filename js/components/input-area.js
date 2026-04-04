@@ -32,6 +32,36 @@ const TEXT_EXTENSIONS = new Set([
 /** 最大文件大小 500KB */
 const MAX_FILE_SIZE = 500 * 1024;
 
+/** 根据文件名返回图标 */
+function getFileIcon(filename) {
+    const name = filename.toLowerCase();
+    if (name === 'dockerfile') return '🐳';
+    if (name === 'makefile' || name === 'gnumakefile') return '🔨';
+    const ext = filename.split('.').pop().toLowerCase();
+    const map = {
+        py: '🐍', pyw: '🐍', pyi: '🐍',
+        js: '💛', mjs: '💛', cjs: '💛',
+        ts: '🔷', tsx: '⚛️', jsx: '⚛️',
+        java: '☕', go: '🐹', rs: '🦀', rb: '💎',
+        php: '🐘', swift: '🍎', kt: '🤖', scala: '🔴',
+        lua: '🌙', pl: '🐪', r: '📐', m: '📐',
+        cs: '🟪', fs: '🔵', vb: '🔷',
+        ex: '💧', exs: '💧', erl: '📞', hs: '🟣',
+        clj: '🟢', lisp: '🟢',
+        cpp: '⚙️', cc: '⚙️', cxx: '⚙️', hpp: '⚙️',
+        c: '⚙️', h: '⚙️',
+        sh: '🐚', bash: '🐚', zsh: '🐚', fish: '🐚',
+        html: '🌐', htm: '🌐', css: '🎨', svg: '🎨',
+        json: '📋', yaml: '📋', yml: '📋', toml: '📋',
+        ini: '📋', cfg: '📋', conf: '📋',
+        xml: '📰', sql: '🗃️',
+        md: '📝', markdown: '📝', rst: '📝', txt: '📄',
+        log: '📜', csv: '📊', tsv: '📊',
+        diff: '🔀', patch: '🔀',
+    };
+    return map[ext] || '📄';
+}
+
 /** 判断是否为文本/代码文件 */
 function isTextFile(file) {
     // 无扩展名的特殊文件名
@@ -182,7 +212,7 @@ function renderFilePreviews() {
     filePreviewEl.style.display = '';
     filePreviewEl.innerHTML = pendingFiles.map((f, i) => `
         <div class="file-chip">
-            <span class="file-icon">📄</span>
+            <span class="file-icon">${getFileIcon(f.name)}</span>
             <span class="file-name">${escapeHtml(f.name)}</span>
             <span class="file-size">${formatSize(f.size)}</span>
             <button class="remove-file" data-index="${i}" title="移除">×</button>

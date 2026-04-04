@@ -11,24 +11,32 @@ let chatAreaEl, messagesContainerEl, emptyStateEl;
 
 /** 根据文件名返回合适的图标 */
 function getFileIcon(filename) {
+    const name = filename.toLowerCase();
+    if (name === 'dockerfile') return '🐳';
+    if (name === 'makefile' || name === 'gnumakefile') return '🔨';
     const ext = filename.split('.').pop().toLowerCase();
-    const iconMap = {
+    const map = {
         py: '🐍', pyw: '🐍', pyi: '🐍',
         js: '💛', mjs: '💛', cjs: '💛',
         ts: '🔷', tsx: '⚛️', jsx: '⚛️',
         java: '☕', go: '🐹', rs: '🦀', rb: '💎',
-        php: '🐘', sh: '🐚', bash: '🐚', zsh: '🐚',
+        php: '🐘', swift: '🍎', kt: '🤖', scala: '🔴',
+        lua: '🌙', pl: '🐪', r: '📐', m: '📐',
+        cs: '🟪', fs: '🔵', vb: '🔷',
+        ex: '💧', exs: '💧', erl: '📞', hs: '🟣',
+        clj: '🟢', lisp: '🟢',
+        cpp: '⚙️', cc: '⚙️', cxx: '⚙️', hpp: '⚙️',
+        c: '⚙️', h: '⚙️',
+        sh: '🐚', bash: '🐚', zsh: '🐚', fish: '🐚',
         html: '🌐', htm: '🌐', css: '🎨', svg: '🎨',
         json: '📋', yaml: '📋', yml: '📋', toml: '📋',
-        xml: '📰', sql: '🗃️', md: '📝', markdown: '📝',
-        txt: '📄', log: '📜', csv: '📊', tsv: '📊',
-        cpp: '⚙️', c: '⚙️', h: '⚙️', hpp: '⚙️',
-        swift: '🍎', kt: '🤖', lua: '🌙',
-        dockerfile: '🐳', makefile: '🔨',
+        ini: '📋', cfg: '📋', conf: '📋',
+        xml: '📰', sql: '🗃️',
+        md: '📝', markdown: '📝', rst: '📝', txt: '📄',
+        log: '📜', csv: '📊', tsv: '📊',
+        diff: '🔀', patch: '🔀',
     };
-    if (filename.toLowerCase() === 'dockerfile') return '🐳';
-    if (filename.toLowerCase() === 'makefile') return '🔨';
-    return iconMap[ext] || '📄';
+    return map[ext] || '📄';
 }
 
 export function initChatArea() {
