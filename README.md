@@ -4,7 +4,7 @@
 
 支持流式对话、多模态图片输入、文本/代码文件上传分析、Think 深度推理、RAG 本地知识库、历史记录管理，可安装为 PWA 离线使用。
 
-![版本](https://img.shields.io/badge/version-3.1.0-brightgreen)
+![版本](https://img.shields.io/badge/version-3.1.1-brightgreen)
 ![平台](https://img.shields.io/badge/platform-Web-blue)
 ![协议](https://img.shields.io/badge/license-MIT-green)
 
@@ -325,6 +325,11 @@ metona-ollama/
 ---
 
 ## 📋 更新日志
+
+### v3.1.1
+
+- **模型选择下拉框过滤嵌入模型** — 后台检测模型 capabilities，自动移除不支持 completion 的嵌入模型（如 `nomic-embed-text`），仅保留可用于聊天的模型
+- 版本号升级至 3.1.1
 
 ### v3.1.0
 

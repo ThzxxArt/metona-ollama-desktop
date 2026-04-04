@@ -82,11 +82,46 @@ export async function loadModels() {
         if (modelSelectEl.value) {
             await checkModelCapability(modelSelectEl.value);
         }
+
+        // 后台过滤：移除不支持 completion 的嵌入模型
+        filterEmbedModels(data.models);
+
     } catch (err) {
         console.error('[ModelBar] 加载模型失败:', err);
         modelSelectEl.innerHTML = '<option value="">加载失败 - 检查连接</option>';
         badgeThinkEl.style.display = 'none'; badgeVisionEl.style.display = 'none';
         setThinkAvailable(false); setVisionAvailable(false);
+    }
+}
+
+/**
+ * 后台检测并过滤嵌入模型（不支持 completion 的模型）
+ */
+async function filterEmbedModels(models) {
+    for (const m of models) {
+        try {
+            const info = await api().showModel(m.name);
+            const caps = info.capabilities || [];
+            const isCompletion = caps.includes('completion');
+            // 缓存能力
+            modelCapabilityCache.set(m.name, {
+                think: caps.includes('thinking'),
+                vision: caps.includes('vision'),
+                completion: isCompletion,
+            });
+            // 从下拉框移除不支持 completion 的模型
+            if (!isCompletion) {
+                const opt = modelSelectEl.querySelector(`option[value="${CSS.escape(m.name)}"]`);
+                if (opt) opt.remove();
+            }
+        } catch { /* 忽略检测失败的模型 */ }
+    }
+    // 如果当前选中的模型被移除了，选中第一个可用模型
+    if (!modelSelectEl.value && modelSelectEl.options.length > 0) {
+        modelSelectEl.value = modelSelectEl.options[0].value;
+        state.set('_defaultModel', modelSelectEl.value);
+        if (db()) await db().saveSetting('selectedModel', modelSelectEl.value);
+        await checkModelCapability(modelSelectEl.value);
     }
 }
 
