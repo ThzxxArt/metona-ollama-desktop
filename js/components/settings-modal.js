@@ -4,6 +4,7 @@
 
 import { state, KEYS } from '../state.js';
 import { debounce, formatSize } from '../utils.js';
+import { encryptData, decryptData, isMetonaFile } from '../crypto.js';
 import { updateConnectionInfo, updateRunningModels } from './header.js';
 import { loadModels } from './model-bar.js';
 import { showToast } from './toast.js';
@@ -127,28 +128,32 @@ async function exportAllSessions() {
         sessions
     };
 
-    const json = JSON.stringify(backup, null, 2);
-    const ts = new Date().toISOString().slice(0, 10);
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([json], { type: 'application/json;charset=utf-8' }));
-    a.download = `metona-backup-${ts}.json`;
-    a.click();
-    showToast(`已导出 ${sessions.length} 个会话`, 'success');
+    try {
+        const blob = await encryptData(backup);
+        const ts = new Date().toISOString().slice(0, 10);
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `metona-backup-${ts}.metona`;
+        a.click();
+        showToast(`已导出 ${sessions.length} 个会话（已加密）`, 'success');
+    } catch (err) {
+        console.error('[Settings] 导出失败:', err);
+        showToast(`导出失败: ${err.message}`, 'error');
+    }
 }
 
 async function importSessions(file) {
     const db = state.get(KEYS.DB);
     if (!db) return;
 
+    if (!isMetonaFile(file)) {
+        showToast('仅支持导入 .metona 格式文件', 'error');
+        return;
+    }
+
     try {
-        const text = await file.text();
-        let data;
-        try {
-            data = JSON.parse(text);
-        } catch {
-            showToast('文件格式错误：不是有效的 JSON', 'error');
-            return;
-        }
+        const buffer = await file.arrayBuffer();
+        const data = await decryptData(buffer);
 
         let sessions;
         if (Array.isArray(data)) {
@@ -156,7 +161,7 @@ async function importSessions(file) {
         } else if (data.sessions && Array.isArray(data.sessions)) {
             sessions = data.sessions;
         } else {
-            showToast('文件格式错误：未找到会话数据', 'error');
+            showToast('文件内容格式错误：未找到会话数据', 'error');
             return;
         }
 
