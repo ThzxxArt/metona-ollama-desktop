@@ -7,8 +7,6 @@ import { state, KEYS } from '../state.js';
 import { marked } from '../marked-config.js';
 import { escapeHtml, formatTime, downloadFile } from '../utils.js';
 
-let chatAreaEl, messagesContainerEl, emptyStateEl;
-
 /** 根据文件名返回合适的图标 */
 function getFileIcon(filename) {
     const name = filename.toLowerCase();
