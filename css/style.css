@@ -1825,6 +1825,7 @@ body::before {
     align-items: center;
     justify-content: space-between;
     gap: 8px;
+    flex-shrink: 0;
 }
 .kb-toolbar-left {
     display: flex;
@@ -1835,6 +1836,7 @@ body::before {
     display: flex;
     align-items: center;
     gap: 6px;
+    white-space: nowrap;
 }
 
 .kb-progress {
@@ -1863,9 +1865,14 @@ body::before {
     display: flex;
     align-items: center;
     gap: 8px;
+    flex-shrink: 0;
+}
+.kb-embed-model .setting-label {
+    flex-shrink: 0;
 }
 .kb-embed-model .model-select {
     flex: 1;
+    min-width: 0;
     padding: 5px 8px;
     font-size: 12px;
 }
