@@ -4,7 +4,7 @@
 
 支持流式对话、多模态图片输入、文本/代码文件上传分析、Think 深度推理、RAG 本地知识库、历史记录管理，可安装为 PWA 离线使用。
 
-![版本](https://img.shields.io/badge/version-3.1.1-brightgreen)
+![版本](https://img.shields.io/badge/version-3.2.0-brightgreen)
 ![平台](https://img.shields.io/badge/platform-Web-blue)
 ![协议](https://img.shields.io/badge/license-MIT-green)
 
@@ -325,6 +325,17 @@ metona-ollama/
 ---
 
 ## 📋 更新日志
+
+### v3.2.0
+
+- **State 管理优化** — 新增 `shallowEqual` 结构化浅比较、`update()` 函数式更新、`setIn()` 路径式嵌套更新、`batch()` 批量更新 API，修复对象/数组变更无法触发监听器的问题
+- **IVF 倒排索引优化向量搜索** — K-Means++ 聚类 + nprobe 近邻检索，N≥200 时搜索量降 75%，N≥5000 时搜索加速 3x+；N<200 自动降级暴力搜索；索引持久化到 IndexedDB
+- **修复页面刷新后模型能力检测丢失** — `setSelectedModel()` 恢复时触发 `change` 事件，确保 Think/Vision 状态正确恢复
+- **修复 RAG 检索状态消息过早消失** — RAG 状态消息延迟到首个 token 到达时才清除，消除回复前的空白期
+- **知识库弹框优化** — 加大至 900px，工具栏加边框背景，左侧分隔线，选中态 glow 阴影
+- **帮助弹框优化** — 加大至 640px，各功能区块加左边线强调，快捷键表格加边框和 hover 高亮
+- **模态框全局优化** — 更深毛玻璃背景、圆角优化、入场缩放动画、头部微渐变
+- 版本号升级至 3.2.0
 
 ### v3.1.1
 
