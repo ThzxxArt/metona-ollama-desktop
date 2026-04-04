@@ -402,12 +402,19 @@ export async function sendMessage() {
         };
 
         // RAG 检索增强
+        let ragSources = null;
         if (isRagEnabled()) {
             const ragResult = await performRagRetrieval(text);
             if (ragResult && ragResult.ragPrompt) {
                 chatParams.system = chatParams.system
                     ? chatParams.system + '\n\n' + ragResult.ragPrompt
                     : ragResult.ragPrompt;
+                // 保存检索来源信息
+                ragSources = ragResult.results.map(r => ({
+                    filename: r.filename,
+                    score: r.score,
+                    text: truncate(r.text, 100)
+                }));
             }
         }
 
@@ -434,7 +441,8 @@ export async function sendMessage() {
             timestamp: Date.now(),
             ...(modelName && { model: modelName }),
             ...(thinkContent && { think: thinkContent }),
-            ...(finalStats && { eval_count: finalStats.eval_count, total_duration: finalStats.total_duration })
+            ...(finalStats && { eval_count: finalStats.eval_count, total_duration: finalStats.total_duration }),
+            ...(ragSources && { ragSources })
         };
         currentSession.messages.push(assistantMsg);
 

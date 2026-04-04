@@ -193,6 +193,21 @@ export function appendMessageDOM(msg, index) {
         contentHtml += `<div class="msg-stats">${stats.map(s => `<span>${s}</span>`).join(' · ')}</div>`;
     }
 
+    // RAG 知识库来源
+    if (msg.role === 'assistant' && msg.ragSources && msg.ragSources.length > 0) {
+        const sourcesHtml = msg.ragSources.map((s, i) => {
+            const scorePercent = s.score ? `${(s.score * 100).toFixed(0)}%` : '';
+            return `<div class="rag-source-item">
+                <span class="rag-source-name">📄 来源 ${i + 1}: ${escapeHtml(s.filename)}</span>
+                ${scorePercent ? `<span class="rag-source-score">${scorePercent}</span>` : ''}
+            </div>`;
+        }).join('');
+        contentHtml += `<div class="rag-sources">
+            <div class="rag-sources-header">🧠 基于知识库回答</div>
+            ${sourcesHtml}
+        </div>`;
+    }
+
     div.innerHTML = `
         <div class="msg-avatar">${avatar}</div>
         <div class="msg-body">
