@@ -1713,6 +1713,68 @@ body::before {
     to { opacity: 0; transform: translateX(40px); }
 }
 
+/* ═══════════════ 帮助弹框 ═══════════════ */
+
+.help-btn {
+    margin-left: 4px;
+    opacity: 0.6;
+}
+.help-btn:hover {
+    opacity: 1;
+}
+
+.help-section {
+    margin-bottom: 18px;
+}
+.help-section:last-child {
+    margin-bottom: 0;
+}
+.help-section h4 {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    color: var(--text-primary);
+}
+.help-section ul,
+.help-section ol {
+    padding-left: 20px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.8;
+}
+.help-section li {
+    margin-bottom: 2px;
+}
+.help-section code {
+    background: rgba(0,245,212,0.1);
+    color: var(--accent-cyan);
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 12px;
+}
+.help-section kbd {
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 12px;
+    font-family: inherit;
+}
+
+.help-shortcuts {
+    width: 100%;
+    font-size: 13px;
+    border-collapse: collapse;
+}
+.help-shortcuts td {
+    padding: 4px 8px;
+    border-bottom: 1px solid var(--border-glass);
+}
+.help-shortcuts td:first-child {
+    width: 140px;
+    text-align: center;
+}
+
 /* ═══════════════ 知识库管理 ═══════════════ */
 
 .modal-lg {

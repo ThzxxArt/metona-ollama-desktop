@@ -20,6 +20,19 @@ import { initHistoryModal, closeHistoryModal } from './components/history-modal.
 import { initKBModal } from './components/kb-modal.js';
 import { initVectorStore } from './rag.js';
 
+function initHelpModal() {
+    const helpModal = document.querySelector('#helpModal');
+    document.querySelector('#btnHelp').addEventListener('click', () => {
+        helpModal.style.display = '';
+    });
+    document.querySelector('#btnCloseHelp').addEventListener('click', () => {
+        helpModal.style.display = 'none';
+    });
+    helpModal.addEventListener('click', (e) => {
+        if (e.target === helpModal) helpModal.style.display = 'none';
+    });
+}
+
 console.log('[Metona] 模块化版本 v2.2.0 ' + new Date().toISOString());
 
 // ── 会话管理 ──
@@ -91,6 +104,7 @@ async function init() {
         initSettingsModal();
         initHistoryModal();
         initKBModal();
+        initHelpModal();
 
         // 5. 绑定全局事件
         bindGlobalEvents();
@@ -162,6 +176,8 @@ function bindGlobalEvents() {
             closeSettingsModal();
             closeHistoryModal();
             closeLightbox();
+            document.querySelector('#helpModal').style.display = 'none';
+            document.querySelector('#kbModal').style.display = 'none';
         }
     });
 
