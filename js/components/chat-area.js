@@ -9,6 +9,28 @@ import { escapeHtml, formatTime, downloadFile } from '../utils.js';
 
 let chatAreaEl, messagesContainerEl, emptyStateEl;
 
+/** 根据文件名返回合适的图标 */
+function getFileIcon(filename) {
+    const ext = filename.split('.').pop().toLowerCase();
+    const iconMap = {
+        py: '🐍', pyw: '🐍', pyi: '🐍',
+        js: '💛', mjs: '💛', cjs: '💛',
+        ts: '🔷', tsx: '⚛️', jsx: '⚛️',
+        java: '☕', go: '🐹', rs: '🦀', rb: '💎',
+        php: '🐘', sh: '🐚', bash: '🐚', zsh: '🐚',
+        html: '🌐', htm: '🌐', css: '🎨', svg: '🎨',
+        json: '📋', yaml: '📋', yml: '📋', toml: '📋',
+        xml: '📰', sql: '🗃️', md: '📝', markdown: '📝',
+        txt: '📄', log: '📜', csv: '📊', tsv: '📊',
+        cpp: '⚙️', c: '⚙️', h: '⚙️', hpp: '⚙️',
+        swift: '🍎', kt: '🤖', lua: '🌙',
+        dockerfile: '🐳', makefile: '🔨',
+    };
+    if (filename.toLowerCase() === 'dockerfile') return '🐳';
+    if (filename.toLowerCase() === 'makefile') return '🔨';
+    return iconMap[ext] || '📄';
+}
+
 export function initChatArea() {
     chatAreaEl = document.querySelector('#chatArea');
     messagesContainerEl = document.querySelector('#messagesContainer');
@@ -98,15 +120,27 @@ export function appendMessageDOM(msg, index) {
     // 图片
     if (msg.images && msg.images.length > 0) {
         contentHtml += '<div class="msg-images">';
-        msg.images.forEach(() => {
-            contentHtml += `<img class="msg-img" src="data:image/png;base64,${msg.images[0]}" alt="用户图片" data-lightbox="true">`;
-        });
+        for (const img of msg.images) {
+            contentHtml += `<img class="msg-img" src="data:image/png;base64,${img}" alt="用户图片" data-lightbox="true">`;
+        }
         contentHtml += '</div>';
     }
 
-    // 纯图片消息隐藏空内容
-    if (msg.role === 'user' && (!msg.content || msg.content.trim() === '') && msg.images?.length > 0) {
+    // 文件 chip（展示用，不暴露文件内容）
+    if (msg.files && msg.files.length > 0) {
+        contentHtml += '<div class="msg-files">';
+        for (const f of msg.files) {
+            const icon = getFileIcon(f.name);
+            contentHtml += `<div class="file-chip"><span class="file-icon">${icon}</span><span class="file-name">${escapeHtml(f.name)}</span></div>`;
+        }
+        contentHtml += '</div>';
+    }
+
+    // 纯图片/文件消息隐藏空内容
+    if (msg.role === 'user' && (!msg.content || msg.content.trim() === '') && (msg.images?.length > 0 || msg.files?.length > 0)) {
         contentHtml = contentHtml.replace('<div class="msg-content"></div>', '');
+    } else if (msg.role === 'user' && msg.files?.length > 0 && msg.content) {
+        // 有文本也有文件，保留文本内容展示
     }
 
     // 统计信息
@@ -243,6 +277,9 @@ export function exportAsMarkdown(session) {
     session.messages.forEach(m => {
         const role = m.role === 'user' ? '👤 用户' : '🤖 AI';
         md += `### ${role}\n\n${m.content || ''}\n\n`;
+        if (m.files && m.files.length > 0) {
+            md += m.files.map(f => `📎 \`${f.name}\``).join(' · ') + '\n\n';
+        }
         if (m.think) md += `> **思考:** ${m.think}\n\n`;
     });
 
@@ -261,7 +298,10 @@ code{background:rgba(0,0,0,0.2);padding:2px 6px;border-radius:4px;}</style></hea
 <h1>${escapeHtml(session.title)}</h1><p>${formatTime(session.createdAt)} · ${session.model}</p><hr>`;
 
     session.messages.forEach(m => {
-        html += `<div class="${m.role}"><strong>${m.role === 'user' ? '👤 用户' : '🤖 AI'}</strong><br>${(m.content || '').replace(/\n/g, '<br>')}</div>`;
+        const fileChips = (m.files && m.files.length > 0)
+            ? '<br>' + m.files.map(f => `<span style="background:rgba(123,47,247,0.15);padding:2px 8px;border-radius:4px;font-size:12px;margin:2px;display:inline-block;">📎 ${escapeHtml(f.name)}</span>`).join(' ')
+            : '';
+        html += `<div class="${m.role}"><strong>${m.role === 'user' ? '👤 用户' : '🤖 AI'}</strong>${fileChips}<br>${(m.content || '').replace(/\n/g, '<br>')}</div>`;
     });
 
     html += '</body></html>';
@@ -273,7 +313,11 @@ export function exportAsTxt(session) {
     let txt = `${session.title}\n模型: ${session.model}\n时间: ${formatTime(session.createdAt)}\n${'='.repeat(50)}\n\n`;
 
     session.messages.forEach(m => {
-        txt += `[${m.role === 'user' ? '用户' : 'AI'}]\n${m.content || ''}\n\n`;
+        txt += `[${m.role === 'user' ? '用户' : 'AI'}]\n`;
+        if (m.files && m.files.length > 0) {
+            txt += m.files.map(f => `📎 ${f.name}`).join(' · ') + '\n';
+        }
+        txt += `${m.content || ''}\n\n`;
     });
 
     downloadFile(`${session.title}.txt`, txt, 'text/plain');

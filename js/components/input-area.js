@@ -223,6 +223,32 @@ function stopGeneration() {
 /**
  * 核心发送逻辑
  */
+
+/** 构建发送给 Ollama API 的消息数组：将文件内容拼入 content */
+function buildApiMessages(messages) {
+    return messages.map(m => {
+        let content = m.content || '';
+        // 如果有文件内容，拼接到 API 消息的 content 中
+        if (m._fileContents && m._fileContents.length > 0) {
+            const fileParts = m._fileContents.map(f => {
+                const lang = f.language || '';
+                return `📄 以下是一个文件内容：\n\n\`\`\`${lang}\n${f.content}\n\`\`\``;
+            });
+            if (content) {
+                content += '\n\n---\n' + fileParts.join('\n\n---\n');
+            } else {
+                const count = m._fileContents.length;
+                content = `请分析以下 ${count > 1 ? count + ' 个' : ''}文件：\n\n${fileParts.join('\n\n---\n')}`;
+            }
+        }
+        return {
+            role: m.role,
+            content,
+            ...(m.images && { images: m.images })
+        };
+    });
+}
+
 export async function sendMessage() {
     const text = chatInputEl.value.trim();
     if (!text && pendingImages.length === 0 && pendingFiles.length === 0) return;
@@ -240,8 +266,14 @@ export async function sendMessage() {
     const now = Date.now();
     const msgsToAdd = [];
 
-    // ── 构造用户消息内容 ──
-    // 场景1：有图片（Ollama 需要单独的 images 消息）
+    // ── 构造用户消息：展示用（content=纯文本，files=元数据） ──
+    const userFiles = pendingFiles.map(f => ({
+        name: f.name,
+        language: f.language,
+        size: f.size
+    }));
+
+    // 场景1：有图片
     if (pendingImages.length > 0) {
         msgsToAdd.push({
             role: 'user',
@@ -255,27 +287,19 @@ export async function sendMessage() {
 
     // 场景2：有文本输入 + 文件，或者只有文件
     if (text || pendingFiles.length > 0) {
-        let content = text || '';
-
-        // 把文件内容格式化为代码块拼入消息
-        if (pendingFiles.length > 0) {
-            const fileParts = pendingFiles.map(f => {
-                const lang = f.language || '';
-                return `📄 **${f.name}**\n\n\`\`\`${lang}\n${f.content}\n\`\`\``;
-            });
-
-            if (content) {
-                content += '\n\n---\n' + fileParts.join('\n\n---\n');
-            } else {
-                content = `请分析以下 ${pendingFiles.length > 1 ? pendingFiles.length + ' 个' : ''}文件：\n\n${fileParts.join('\n\n---\n')}`;
-            }
-        }
-
-        msgsToAdd.push({
+        const msg = {
             role: 'user',
-            content,
+            content: text || '',
             timestamp: now
-        });
+        };
+        if (userFiles.length > 0) {
+            msg.files = userFiles;
+            msg._fileContents = pendingFiles.map(f => ({
+                language: f.language,
+                content: f.content
+            }));
+        }
+        msgsToAdd.push(msg);
     }
 
     // 更新会话标题
@@ -323,11 +347,7 @@ export async function sendMessage() {
     let modelName = '';
 
     try {
-        const apiMessages = currentSession.messages.map(m => ({
-            role: m.role,
-            content: m.content || '',
-            ...(m.images && { images: m.images })
-        }));
+        const apiMessages = buildApiMessages(currentSession.messages);
 
         const chatParams = {
             model,

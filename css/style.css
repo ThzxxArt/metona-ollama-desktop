@@ -739,6 +739,24 @@ body::before {
     margin-top: 8px;
 }
 
+/* 消息内的文件 chip 展示 */
+.msg-files {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.msg-files .file-chip {
+    background: rgba(123, 47, 247, 0.08);
+    border-color: rgba(123, 47, 247, 0.2);
+}
+
+.msg-files .file-chip:hover {
+    border-color: rgba(123, 47, 247, 0.35);
+    background: rgba(123, 47, 247, 0.12);
+}
+
 .msg-img {
     max-width: 200px;
     max-height: 200px;
