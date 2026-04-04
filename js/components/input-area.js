@@ -511,7 +511,7 @@ ${ragContext}
         console.error('[InputArea] 流式聊天错误:', err);
 
         if (err.name === 'AbortError') {
-            const placeholder = document.querySelector('#messagesContainer .message.assistant:last-child');
+            const placeholder = document.querySelector('#messagesContainer .message.assistant:last-of-type');
             const loadingDots = placeholder?.querySelector('.loading-dots');
             const loadingText = placeholder?.querySelector('.loading-text');
             if (loadingDots) loadingDots.remove();
@@ -547,7 +547,7 @@ ${ragContext}
             return;
         }
 
-        const placeholder = document.querySelector('#messagesContainer .message.assistant:last-child');
+        const placeholder = document.querySelector('#messagesContainer .message.assistant:last-of-type');
         const loadingDots = placeholder?.querySelector('.loading-dots');
         const loadingText = placeholder?.querySelector('.loading-text');
         if (loadingDots) loadingDots.remove();

@@ -221,7 +221,7 @@ export function appendMessageDOM(msg, index) {
 
 /** 更新最后一条 assistant 消息（流式输出） */
 export function updateLastAssistantMessage(content, think, stats, model) {
-    const lastMsg = messagesContainerEl.querySelector('.message.assistant:last-child');
+    const lastMsg = messagesContainerEl.querySelector('.message.assistant:last-of-type');
     if (!lastMsg) return;
 
     const loadingDots = lastMsg.querySelector('.loading-dots');
