@@ -101,6 +101,7 @@ async function init() {
         if (savedModel) {
             setSelectedModel(savedModel);
             state.set('_defaultModel', savedModel);
+            await db.saveSetting('selectedModel', savedModel);
         }
 
         // 8. 恢复系统提示词和上下文长度

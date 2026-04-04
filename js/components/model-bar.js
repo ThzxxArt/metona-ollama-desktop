@@ -72,13 +72,11 @@ export async function loadModels() {
                 modelSelectEl.appendChild(opt);
             });
 
-        // 恢复上次选择的模型
+        // 恢复默认选中模型
         const defaultModel = state.get('_defaultModel', '');
         if (defaultModel) {
             modelSelectEl.value = defaultModel;
         }
-
-        if (db()) await db().saveSetting('selectedModel', modelSelectEl.value);
 
         // 检测当前选中模型的能力
         if (modelSelectEl.value) {
