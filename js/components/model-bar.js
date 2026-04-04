@@ -24,8 +24,7 @@ export function initModelBar() {
         const model = modelSelectEl.value;
         if (db()) await db().saveSetting('selectedModel', model);
         state.set('_defaultModel', model);
-        const session = state.get(KEYS.CURRENT_SESSION);
-        if (session) session.model = model;
+        state.update(KEYS.CURRENT_SESSION, session => session ? ({ ...session, model }) : session);
         if (model) {
             await checkModelCapability(model);
         } else {

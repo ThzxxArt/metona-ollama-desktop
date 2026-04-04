@@ -345,15 +345,24 @@ export async function sendMessage() {
         msgsToAdd.push(msg);
     }
 
-    // 更新会话标题
-    if (currentSession.messages.length === 0) {
-        const titleText = text
-            || (pendingFiles.length > 0 ? `[文件: ${pendingFiles.map(f => f.name).join(', ')}]` : '[图片消息]');
-        currentSession.title = truncate(titleText, 30);
-        currentSession.model = model;
-    }
+    // 更新会话标题 + 追加消息（通过 update 确保引用变化，触发浅比较）
+    const isFirstMsg = currentSession.messages.length === 0;
+    state.update(KEYS.CURRENT_SESSION, session => ({
+        ...session,
+        ...(isFirstMsg && {
+            title: truncate(
+                text || (pendingFiles.length > 0 ? `[文件: ${pendingFiles.map(f => f.name).join(', ')}]` : '[图片消息]'),
+                30
+            ),
+            model
+        }),
+        messages: [...session.messages, ...msgsToAdd],
+        updatedAt: Date.now()
+    }));
 
-    msgsToAdd.forEach(m => currentSession.messages.push(m));
+    // update() 产生新引用，后续必须从 state 读取最新值
+    const freshSession = state.get(KEYS.CURRENT_SESSION);
+
     enableAutoScroll();
     renderMessages();
 
@@ -391,7 +400,7 @@ export async function sendMessage() {
     let modelName = '';
 
     try {
-        const apiMessages = buildApiMessages(currentSession.messages);
+        const apiMessages = buildApiMessages(freshSession.messages);
 
         const chatParams = {
             model,
@@ -502,7 +511,11 @@ ${ragContext}
             ...(finalStats && { eval_count: finalStats.eval_count, total_duration: finalStats.total_duration }),
             ...(ragSources && { ragSources })
         };
-        currentSession.messages.push(assistantMsg);
+        state.update(KEYS.CURRENT_SESSION, session => ({
+            ...session,
+            messages: [...session.messages, assistantMsg],
+            updatedAt: Date.now()
+        }));
 
         if (finalStats) {
             updateLastAssistantMessage(assistantContent, thinkContent || null, finalStats, modelName || null);
@@ -549,7 +562,11 @@ ${ragContext}
                 ...(thinkContent && { think: thinkContent }),
                 stopped: true
             };
-            currentSession.messages.push(partialMsg);
+            state.update(KEYS.CURRENT_SESSION, session => ({
+                ...session,
+                messages: [...session.messages, partialMsg],
+                updatedAt: Date.now()
+            }));
 
             if (contentDiv) {
                 let html = '';
@@ -584,7 +601,11 @@ ${ragContext}
                 content: assistantContent + '\n\n`[已中断]`',
                 timestamp: Date.now(),
             };
-            currentSession.messages.push(partialMsg);
+            state.update(KEYS.CURRENT_SESSION, session => ({
+                ...session,
+                messages: [...session.messages, partialMsg],
+                updatedAt: Date.now()
+            }));
             contentDiv.innerHTML = safeMarkdown(assistantContent) + '<p><code>[已中断]</code></p>';
             await saveCurrentSession();
         } else {
