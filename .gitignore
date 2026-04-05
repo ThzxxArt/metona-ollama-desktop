@@ -6,3 +6,6 @@ out/
 Thumbs.db
 *.log
 window-state.json
+
+# Build output (release for desktop)
+!release/*.exe
