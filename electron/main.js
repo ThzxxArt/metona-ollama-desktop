@@ -60,7 +60,8 @@ function createMainWindow() {
         title: APP_NAME,
         backgroundColor: '#0a0a1a',
         show: false, // 等 ready-to-show 再显示，避免闪烁
-        autoHideMenuBar: false,
+        autoHideMenuBar: true,
+        menuBarVisible: false,
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             contextIsolation: true,
@@ -74,6 +75,9 @@ function createMainWindow() {
 
     // 加载应用
     mainWindow.loadFile(path.join(__dirname, '..', 'index.html'));
+
+    // 彻底隐藏菜单栏
+    mainWindow.setMenuBarVisibility(false);
 
     // 窗口准备好后显示
     mainWindow.once('ready-to-show', () => {
