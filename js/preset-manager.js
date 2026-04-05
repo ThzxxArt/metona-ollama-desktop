@@ -233,12 +233,11 @@ function syncPresetToUI(preset) {
     if (tempSlider) tempSlider.value = preset.temperature ?? 0.7;
     if (tempDisplay) tempDisplay.textContent = (preset.temperature ?? 0.7).toFixed(1);
 
-    // Think toggle
+    // Think toggle — 仅在模型支持时才设为 checked，否则保持 unchecked
     const thinkCheckbox = document.querySelector('#toggleThink');
     if (thinkCheckbox) {
-        thinkCheckbox.checked = preset.think ?? false;
-        // 触发 change 事件让 model-bar 响应
-        thinkCheckbox.dispatchEvent(new Event('change'));
+        const modelSupportsThink = !thinkCheckbox.disabled;
+        thinkCheckbox.checked = modelSupportsThink && (preset.think ?? false);
     }
 }
 
