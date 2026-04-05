@@ -4,7 +4,7 @@
 
 支持流式对话、多模态图片输入、文本/代码文件上传分析、Think 深度推理、RAG 本地知识库、历史记录管理，可安装为 PWA 离线使用。
 
-![版本](https://img.shields.io/badge/version-4.0.0-brightgreen)
+![版本](https://img.shields.io/badge/version-4.0.1-brightgreen)
 ![平台](https://img.shields.io/badge/platform-Web-blue)
 ![协议](https://img.shields.io/badge/license-MIT-green)
 
@@ -328,6 +328,13 @@ metona-ollama/
 ---
 
 ## 📋 更新日志
+
+### v4.0.1
+
+- **设置面板新增温度滑块** — 在上下文长度下方新增 Temperature 滑块控制 (0~2, 步长0.1)，实时显示当前值，保存到 IndexedDB 持久化
+- 切换预设时自动同步温度滑块 UI
+- 应用启动时从 DB 恢复温度设置
+- 版本号升级至 4.0.1
 
 ### v4.0.0
 
