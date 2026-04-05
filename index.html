@@ -20,7 +20,7 @@
         <div class="header-left">
             <span class="logo">🦙</span>
             <span class="app-title">Metona Ollama</span>
-            <span class="app-version">v4.0.2</span>
+            <span class="app-version">v4.0.3</span>
             <button class="icon-btn help-btn" id="btnHelp" title="使用帮助">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
@@ -290,6 +290,16 @@
                 </ul>
             </div>
             <div class="help-section">
+                <h4>🤖 Agent 预设</h4>
+                <ul>
+                    <li>模型栏下方显示<strong>预设栏</strong>，点击胶囊按钮一键切换角色/工作模式</li>
+                    <li><strong>内置预设</strong> — 💬默认、🌐翻译官、🔍代码审查、✍️写作助手、📊数据分析师、🎓学习导师</li>
+                    <li>切换预设自动应用：系统提示词、温度、上下文长度、Think 开关</li>
+                    <li>点击 <strong>＋</strong> 按钮可创建自定义预设（名称、图标、系统提示词等全部可配）</li>
+                    <li>右键自定义预设胶囊可编辑/删除</li>
+                </ul>
+            </div>
+            <div class="help-section">
                 <h4>🕐 历史记录</h4>
                 <ul>
                     <li>所有会话自动保存到浏览器本地（IndexedDB）</li>
@@ -301,6 +311,9 @@
                 <h4>⚙️ 设置</h4>
                 <ul>
                     <li><strong>服务地址</strong> — 修改 Ollama API 端点</li>
+                    <li><strong>系统提示词</strong> — 开启后定义 AI 的角色和行为</li>
+                    <li><strong>上下文长度</strong> — 调整 <code>num_ctx</code>，值越大记忆越长</li>
+                    <li><strong>温度</strong> — 调节回答随机性（0 精确稳定 ~ 2 最大创意）</li>
                     <li><strong>释放显存</strong> — 卸载当前模型，释放 GPU 内存</li>
                     <li><strong>跨域问题</strong> — 启动 Ollama 时设置 <code>OLLAMA_ORIGINS="*"</code></li>
                 </ul>
