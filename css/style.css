@@ -580,6 +580,11 @@ html, body {
     cursor: not-allowed;
 }
 
+.think-toggle.unavailable:hover .think-btn {
+    opacity: 0.3;
+    background: rgba(241, 112, 123, 0.08);
+}
+
 /* ── 开关控件 (WinUI ToggleSwitch) ── */
 .toggle-label {
     display: flex;
