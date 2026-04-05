@@ -1,11 +1,13 @@
 {
   "name": "metona-ollama-desktop",
-  "version": "1.1.0",
-  "description": "Metona Ollama - 桌面端 AI 聊天客户端",
-  "main": "electron/main.js",
+  "version": "2.0.0",
+  "description": "Metona Ollama - TypeScript + Electron 桌面 AI 聊天客户端",
+  "main": "dist/main/main.js",
   "author": "thzxx",
   "license": "MIT",
   "scripts": {
+    "dev": "vite && electron .",
+    "build": "tsc && vite build",
     "start": "electron . --no-sandbox",
     "pack": "electron-builder --dir",
     "dist": "electron-builder --win",
@@ -19,27 +21,19 @@
       "output": "release"
     },
     "files": [
-      "electron/**/*",
-      "js/**/*",
-      "css/**/*",
+      "dist/**/*",
       "assets/**/*",
-      "index.html",
-      "manifest.json",
       "!node_modules/**/*"
     ],
     "win": {
       "target": [
         {
           "target": "nsis",
-          "arch": [
-            "x64"
-          ]
+          "arch": ["x64"]
         },
         {
           "target": "portable",
-          "arch": [
-            "x64"
-          ]
+          "arch": ["x64"]
         }
       ],
       "icon": "assets/icons/llama.ico",
@@ -60,7 +54,10 @@
     }
   },
   "devDependencies": {
+    "@types/node": "^20.17.0",
     "electron": "^33.4.11",
-    "electron-builder": "^25.0.0"
+    "electron-builder": "^25.1.8",
+    "typescript": "^5.7.0",
+    "vite": "^5.4.0"
   }
 }

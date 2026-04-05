@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#202020">
+    <meta name="description" content="Metona Ollama Desktop - TypeScript + Electron AI 聊天客户端">
+    <link rel="icon" href="../assets/icons/llama.ico" type="image/x-icon">
+    <title>Metona Ollama</title>
+</head>
+<body>
+<div id="app">
+
+    <!-- ═══════════════ 顶部导航 ═══════════════ -->
+    <header class="app-header">
+        <div class="header-left">
+            <span class="logo">🦙</span>
+            <span class="app-title">Metona Ollama</span>
+            <span class="app-version">v2.0.0</span>
+            <button class="icon-btn help-btn" id="btnHelp" title="使用帮助">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
+                    <line x1="12" y1="17" x2="12.01" y2="17"/>
+                </svg>
+            </button>
+        </div>
+        <div class="header-right">
+            <div class="conn-status pending" id="connStatus" title="连接状态">
+                <span class="status-dot"></span>
+                <span class="status-label">未连接</span>
+            </div>
+            <button class="icon-btn" id="btnNewChat" title="新建会话">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                </svg>
+            </button>
+            <button class="icon-btn" id="btnKB" title="知识库">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+                    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+                    <line x1="8" y1="7" x2="16" y2="7"/>
+                    <line x1="8" y1="11" x2="14" y2="11"/>
+                </svg>
+            </button>
+            <button class="icon-btn" id="btnHistory" title="历史记录">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                </svg>
+            </button>
+            <button class="icon-btn" id="btnSettings" title="设置">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+                </svg>
+            </button>
+        </div>
+    </header>
+
+    <!-- ═══════════════ 模型选择栏 ═══════════════ -->
+    <div class="model-bar">
+        <div class="model-bar-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="4" y="4" width="16" height="16" rx="2"/>
+                <path d="M9 9h6M9 12h6M9 15h4"/>
+            </svg>
+        </div>
+        <div class="model-select-wrap">
+            <select class="model-select" id="modelSelect">
+                <option value="">正在加载模型...</option>
+            </select>
+            <span class="model-select-arrow">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+            </span>
+        </div>
+        <div class="model-badges" id="modelBadges">
+            <span class="model-badge think-badge" id="badgeThink" style="display:none;">🧠 Think</span>
+            <span class="model-badge vision-badge" id="badgeVision" style="display:none;">👁️ Vision</span>
+            <span class="model-badge rag-badge" id="badgeRAG" style="display:none;">📚 RAG</span>
+        </div>
+    </div>
+
+    <!-- ═══════════════ 聊天区域 ═══════════════ -->
+    <main class="chat-area" id="chatArea">
+        <div class="empty-state" id="emptyState">
+            <div class="empty-icon">
+                <svg viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <circle cx="100" cy="100" r="80" stroke="rgba(0,245,212,0.2)" stroke-width="2"/>
+                    <circle cx="100" cy="100" r="60" stroke="rgba(123,47,247,0.2)" stroke-width="2"/>
+                    <path d="M70 90c0-16.57 13.43-30 30-30s30 13.43 30 30" stroke="rgba(0,245,212,0.5)" stroke-width="2" stroke-linecap="round"/>
+                    <circle cx="85" cy="100" r="5" fill="rgba(0,245,212,0.6)"/>
+                    <circle cx="115" cy="100" r="5" fill="rgba(0,245,212,0.6)"/>
+                    <path d="M88 120c4 4 20 4 24 0" stroke="rgba(0,245,212,0.4)" stroke-width="2" stroke-linecap="round"/>
+                </svg>
+            </div>
+            <h2>开始对话</h2>
+            <p>选择一个模型，输入消息开始聊天</p>
+        </div>
+        <div class="messages" id="messagesContainer" style="display:none;"></div>
+        <button class="scroll-to-bottom" id="scrollToBottom" style="display:none;" title="回到最新">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="6 9 12 15 18 9"/>
+            </svg>
+            <span>回到底部</span>
+        </button>
+    </main>
+
+    <!-- ═══════════════ 历史只读提示栏 ═══════════════ -->
+    <div class="history-view-bar" id="historyBar" style="display:none;">
+        <span>📖 正在查看历史记录（只读模式）</span>
+        <button class="btn btn-sm btn-outline" id="btnExitHistory">返回新会话</button>
+    </div>
+
+    <!-- ═══════════════ 输入区域 ═══════════════ -->
+    <div class="input-area" id="inputArea">
+        <div class="image-preview" id="imagePreview" style="display:none;"></div>
+        <div class="file-preview" id="filePreview" style="display:none;"></div>
+        <div class="input-row">
+            <button class="icon-btn attach-btn" id="btnAttachImg" title="上传图片">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
+                    <polyline points="21 15 16 10 5 21"/>
+                </svg>
+            </button>
+            <button class="icon-btn attach-btn" id="btnAttachFile" title="上传文件（文本/代码）">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                    <polyline points="14 2 14 8 20 8"/>
+                    <line x1="16" y1="13" x2="8" y2="13"/>
+                    <line x1="16" y1="17" x2="8" y2="17"/>
+                    <polyline points="10 9 9 9 8 9"/>
+                </svg>
+            </button>
+            <input type="file" id="fileInput" accept="image/*" multiple style="display:none;">
+            <input type="file" id="textFileInput" accept=".txt,.md,.log,.csv,.py,.pyw,.js,.mjs,.cjs,.ts,.tsx,.jsx,.java,.c,.h,.cpp,.cc,.hpp,.go,.rs,.rb,.php,.sh,.bash,.zsh,.sql,.html,.htm,.css,.json,.jsonl,.xml,.svg,.yaml,.yml,.toml,.ini,.cfg,.conf,.swift,.kt,.kts,.scala,.lua,.r,.m,.cs,.fs,.ex,.exs,.erl,.hs,.clj,.lisp,.diff,.patch,Dockerfile,Makefile,.rst,.tsv,.vb,.pl,.mm,.pyi,.fsharp,.makefile,.dockerfile" multiple style="display:none;">
+            <textarea class="chat-input" id="chatInput" placeholder="输入消息..." rows="1"></textarea>
+            <label class="think-toggle" id="thinkToggleWrap" title="Think 模式未可用">
+                <input type="checkbox" id="toggleThink" disabled>
+                <span class="think-btn">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 2a7 7 0 0 1 7 7c0 2.38-1.19 4.47-3 5.74V17a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1v-2.26C6.19 13.47 5 11.38 5 9a7 7 0 0 1 7-7z"/>
+                        <line x1="9" y1="21" x2="15" y2="21"/>
+                    </svg>
+                </span>
+            </label>
+            <button class="send-btn" id="btnSend">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                </svg>
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════ 设置模态框 ═══════════════ -->
+<div class="modal-overlay" id="settingsModal" style="display:none;">
+    <div class="modal">
+        <div class="modal-header">
+            <h3>⚙️ 设置</h3>
+            <button class="icon-btn" id="btnCloseSettings">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="setting-group">
+                <label class="setting-label">Ollama 服务地址</label>
+                <input class="setting-input" id="inputServerUrl" type="url" placeholder="http://127.0.0.1:11434">
+                <div class="connection-info" id="connInfo">
+                    <span class="status-badge" id="connBadge">检测中...</span>
+                    <span class="server-version" id="serverVersion"></span>
+                </div>
+                <div class="cors-hint" id="corsHint" style="display:none;">
+                    <p>⚠️ 连接失败，可能是 CORS 问题。请在启动 Ollama 时设置环境变量：</p>
+                    <code>OLLAMA_ORIGINS="*" ollama serve</code>
+                </div>
+            </div>
+            <div class="setting-group">
+                <label class="setting-label">
+                    系统提示词（System Prompt）
+                    <label class="toggle-label" style="margin-left:auto;display:inline-flex;">
+                        <input type="checkbox" id="toggleSystemPrompt">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </label>
+                <textarea class="setting-input" id="inputSystemPrompt" rows="4" placeholder="例如：你是一个专业的编程助手，用中文回答。" style="resize:vertical;min-height:80px;" disabled></textarea>
+                <label class="setting-label" style="margin-top:12px;">上下文长度（num_ctx）</label>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <input class="setting-input" id="inputNumCtx" type="number" min="512" max="131072" step="512" value="24576" style="margin-bottom:0;">
+                    <span class="text-muted" style="white-space:nowrap;">tokens</span>
+                </div>
+                <p class="text-muted" style="margin-top:4px;font-size:11px;">常见值：2048 / 4096 / 8192 / 32768。值越大上下文越长，显存占用越高。</p>
+                <label class="setting-label" style="margin-top:12px;">温度（Temperature）：<span id="tempValue">0.7</span></label>
+                <input type="range" id="inputTemperature" class="preset-temp-slider" min="0" max="2" step="0.1" value="0.7">
+                <p class="text-muted" style="margin-top:4px;font-size:11px;">低值更精确稳定，高值更有创意多样（0 = 确定性，2 = 最大随机）</p>
+            </div>
+            <div class="setting-group">
+                <label class="setting-label">运行中的模型</label>
+                <div class="running-models" id="runningModels">
+                    <p class="text-muted">无运行中的模型</p>
+                </div>
+            </div>
+            <div class="setting-group">
+                <label class="setting-label">显存管理</label>
+                <button class="btn btn-danger" id="btnReleaseVRAM">释放显存（卸载模型）</button>
+            </div>
+            <div class="setting-group">
+                <label class="setting-label">数据管理</label>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                    <button class="btn btn-outline" id="btnExportAll">📦 导出全部会话</button>
+                    <button class="btn btn-outline" id="btnImportSessions">📥 导入会话</button>
+                    <input type="file" id="importFileInput" accept=".metona" style="display:none;">
+                    <button class="btn btn-danger" id="btnClearAllHistory">清空所有历史</button>
+                </div>
+                <p class="text-muted" style="margin-top:6px;font-size:11px;">导出格式为 JSON，可备份后在其他设备导入恢复。</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════ 历史记录模态框 ═══════════════ -->
+<div class="modal-overlay" id="historyModal" style="display:none;">
+    <div class="modal">
+        <div class="modal-header">
+            <h3>🕐 历史记录</h3>
+            <button class="icon-btn" id="btnCloseHistory">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="history-search-wrap">
+                <input class="history-search-input" id="historySearchInput" type="text" placeholder="搜索会话标题或内容...">
+                <button class="history-search-clear" id="historySearchClear" style="display:none;">✕</button>
+            </div>
+            <div class="history-list" id="historyList"></div>
+            <div class="history-pagination" id="historyPagination"></div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════ 帮助模态框 ═══════════════ -->
+<div class="modal-overlay" id="helpModal" style="display:none;">
+    <div class="modal">
+        <div class="modal-header">
+            <h3>📖 使用帮助</h3>
+            <button class="icon-btn" id="btnCloseHelp">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="help-section"><h4>🚀 快速开始</h4><ol><li>确保 Ollama 已启动（默认 <code>http://127.0.0.1:11434</code>）</li><li>顶部下拉框选择一个模型</li><li>输入消息，按 <kbd>Enter</kbd> 发送，<kbd>Shift+Enter</kbd> 换行</li></ol></div>
+            <div class="help-section"><h4>💬 聊天功能</h4><ul><li><strong>流式回复</strong> — 实时打字效果，随时点 ■ 停止</li><li><strong>Think 推理</strong> — 🧠 按钮开启深度思考（需模型支持）</li><li><strong>上下文长度</strong> — 设置中调整 <code>num_ctx</code>，越大记忆越长</li><li><strong>系统提示词</strong> — 设置中开启，定义 AI 的角色和行为</li></ul></div>
+            <div class="help-section"><h4>📎 文件与图片</h4><ul><li><strong>📷 上传图片</strong> — 图标按钮上传，模型需支持 Vision</li><li><strong>📄 上传文件</strong> — 支持 50+ 种文本/代码格式，单文件 ≤500KB</li><li>文件内容自动以代码块格式发送给模型分析</li></ul></div>
+            <div class="help-section"><h4>📚 知识库 (RAG)</h4><ul><li>点击顶部 📚 按钮打开知识库管理</li><li>创建集合 → 选择嵌入模型（推荐 <code>nomic-embed-text</code> 等）</li><li>上传文档，自动分块并生成向量索引</li><li>开启 RAG 检索后，聊天时自动检索相关文档注入回答</li></ul></div>
+            <div class="help-section"><h4>🤖 Agent 预设</h4><ul><li>模型栏下方显示<strong>预设栏</strong>，点击胶囊按钮一键切换角色/工作模式</li><li><strong>内置预设</strong> — 💬默认、🌐翻译官、🔍代码审查、✍️写作助手、📊数据分析师、🎓学习导师</li><li>切换预设自动应用：系统提示词、温度、上下文长度、Think 开关</li><li>点击 <strong>＋</strong> 按钮可创建自定义预设</li></ul></div>
+            <div class="help-section"><h4>🕐 历史记录</h4><ul><li>所有会话自动保存到 IndexedDB</li><li>点击 🕐 按钮查看、搜索、恢复历史会话</li><li>支持导出 <code>.metona</code> 加密备份文件</li></ul></div>
+            <div class="help-section"><h4>⚡ 快捷键</h4><table class="help-shortcuts"><tr><td><kbd>Enter</kbd></td><td>发送消息</td></tr><tr><td><kbd>Shift + Enter</kbd></td><td>换行</td></tr><tr><td><kbd>Esc</kbd></td><td>关闭弹窗</td></tr></table></div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════ 知识库管理模态框 ═══════════════ -->
+<div class="modal-overlay" id="kbModal" style="display:none;">
+    <div class="modal modal-lg">
+        <div class="modal-header">
+            <h3>📚 知识库 (RAG)</h3>
+            <button class="icon-btn" id="btnCloseKB">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="kb-layout">
+                <div class="kb-sidebar">
+                    <div class="kb-new-collection">
+                        <input class="setting-input" id="inputKBName" type="text" placeholder="新建知识库名称...">
+                        <button class="btn btn-sm btn-primary" id="btnNewCollection">创建</button>
+                    </div>
+                    <div class="kb-collection-list" id="kbCollectionList">
+                        <p class="text-muted" style="padding:16px;text-align:center;">暂无知识库</p>
+                    </div>
+                </div>
+                <div class="kb-main">
+                    <div class="kb-toolbar">
+                        <button class="btn btn-sm btn-outline" id="btnUploadDoc">📄 上传文档</button>
+                        <input type="file" id="kbFileInput" accept=".txt,.md,.py,.js,.ts,.java,.go,.rs,.cpp,.c,.h,.hpp,.rb,.php,.sh,.html,.css,.json,.yaml,.yml,.toml,.xml,.sql,.csv" multiple style="display:none;">
+                        <span id="kbProgress" style="display:none;" class="kb-progress">
+                            <span class="spinner"></span>
+                            <span id="kbProgressText">处理中...</span>
+                        </span>
+                        <select class="kb-embed-select" id="selectEmbedModel">
+                            <option value="">嵌入模型...</option>
+                        </select>
+                        <div class="kb-rag-toggle">
+                            <label class="setting-label" style="margin:0;font-size:12px;white-space:nowrap;">RAG</label>
+                            <label class="toggle-label" style="margin:0;">
+                                <input type="checkbox" id="toggleRAG">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="kb-doc-list" id="kbDocList">
+                        <p class="text-muted" style="padding:16px;text-align:center;">← 选择一个知识库集合</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════ 预设管理模态框 ═══════════════ -->
+<div class="modal-overlay" id="presetModal" style="display:none;">
+    <div class="modal">
+        <div class="modal-header">
+            <h3 id="presetModalTitle">✨ 新建预设</h3>
+            <button class="icon-btn" id="btnClosePresetModal">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="setting-group">
+                <label class="setting-label">名称</label>
+                <div class="preset-name-row">
+                    <input class="setting-input preset-icon-input" id="inputPresetIcon" type="text" maxlength="4" placeholder="🤖">
+                    <input class="setting-input" id="inputPresetName" type="text" placeholder="例如：翻译官" style="flex:1;">
+                </div>
+            </div>
+            <div class="setting-group">
+                <label class="setting-label">系统提示词（System Prompt）</label>
+                <textarea class="setting-input" id="inputPresetSystemPrompt" rows="6" placeholder="定义这个角色的行为、能力和回答风格..." style="resize:vertical;min-height:120px;"></textarea>
+            </div>
+            <div class="setting-group">
+                <label class="setting-label">温度（Temperature）：<span id="presetTempValue">0.7</span></label>
+                <input type="range" id="inputPresetTemp" class="preset-temp-slider" min="0" max="2" step="0.1" value="0.7">
+            </div>
+            <div class="setting-group">
+                <label class="setting-label">上下文长度（num_ctx）</label>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <input class="setting-input" id="inputPresetNumCtx" type="number" min="512" max="131072" step="512" value="24576" style="margin-bottom:0;">
+                    <span class="text-muted" style="white-space:nowrap;">tokens</span>
+                </div>
+            </div>
+            <div class="setting-group">
+                <label class="setting-label">Think 深度推理</label>
+                <label class="toggle-label" style="display:inline-flex;align-items:center;gap:8px;">
+                    <input type="checkbox" id="togglePresetThink">
+                    <span class="toggle-slider"></span>
+                    <span class="text-muted" style="font-size:12px;">需要模型支持</span>
+                </label>
+            </div>
+            <div class="preset-modal-actions">
+                <button class="btn btn-danger" id="btnDeletePreset" style="display:none;">🗑️ 删除</button>
+                <div style="flex:1;"></div>
+                <button class="btn btn-outline" id="btnClosePresetModal2" onclick="document.querySelector('#presetModal').style.display='none';">取消</button>
+                <button class="btn btn-primary" id="btnSavePreset">创建</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════ 图片预览 Lightbox ═══════════════ -->
+<div class="lightbox-overlay" id="lightbox" style="display:none;">
+    <button class="lightbox-close" id="lightboxClose">✕</button>
+    <img class="lightbox-img" id="lightboxImg" src="" alt="预览">
+</div>
+
+<!-- ═══════════════ Toast 通知容器 ═══════════════ -->
+<div class="toast-container" id="toastContainer"></div>
+
+<!-- ═══════════════ 应用入口 ════════════════ -->
+<script type="module" src="./main.ts"></script>
+</body>
+</html>
