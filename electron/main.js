@@ -286,7 +286,7 @@ function createMenu() {
                         dialog.showMessageBox(mainWindow, {
                             type: 'info',
                             title: '关于 Metona Ollama',
-                            message: 'Metona Ollama Desktop v1.0.0',
+                            message: 'Metona Ollama Desktop v1.1.0',
                             detail: '基于原生 JavaScript 的 Ollama AI 聊天客户端\n桌面版由 Electron 驱动\n\nhttps://gitee.com/thzxx/metona-ollama',
                             icon: process.platform === 'win32' ? ICO_PATH : ICON_PATH
                         });
