@@ -6,13 +6,16 @@
   "author": "thzxx",
   "license": "MIT",
   "scripts": {
-    "dev": "vite && electron .",
-    "build": "tsc && vite build",
-    "start": "electron . --no-sandbox",
-    "pack": "electron-builder --dir",
-    "dist": "electron-builder --win",
-    "dist:nsis": "electron-builder --win nsis",
-    "dist:portable": "electron-builder --win portable"
+    "dev:renderer": "vite build --watch",
+    "dev:main": "tsc -p tsconfig.main.json --watch",
+    "build:renderer": "vite build",
+    "build:main": "tsc -p tsconfig.main.json",
+    "build": "npm run build:renderer && npm run build:main",
+    "start": "npm run build && electron . --no-sandbox",
+    "pack": "npm run build && electron-builder --dir",
+    "dist": "npm run build && electron-builder --win",
+    "dist:nsis": "npm run build && electron-builder --win nsis",
+    "dist:portable": "npm run build && electron-builder --win portable"
   },
   "build": {
     "appId": "com.metona.ollama-desktop",

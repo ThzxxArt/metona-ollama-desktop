@@ -2,8 +2,8 @@
  * Metona Ollama Desktop - 系统托盘
  */
 
-import { Tray, Menu, nativeImage } from 'electron';
-import { mainWindow, isQuitting, getIconPath } from './main.js';
+import { Tray, Menu, nativeImage, app } from 'electron';
+import { mainWindow, setQuitting, getIconPath } from './main.js';
 
 let tray: Tray | null = null;
 
@@ -32,9 +32,8 @@ export function createTray(): void {
     {
       label: '退出',
       click: () => {
-        const main = require('./main.js');
-        main.isQuitting = true;
-        require('electron').app.quit();
+        setQuitting();
+        app.quit();
       }
     }
   ]);

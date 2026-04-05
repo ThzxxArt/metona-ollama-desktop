@@ -2,8 +2,8 @@
  * Metona Ollama Desktop - 原生菜单
  */
 
-import { Menu, dialog, shell } from 'electron';
-import { mainWindow, isQuitting, getIconPath } from './main.js';
+import { Menu, dialog, shell, app } from 'electron';
+import { mainWindow, setQuitting, getIconPath } from './main.js';
 
 export function createMenu(): void {
   const template: Electron.MenuItemConstructorOptions[] = [
@@ -30,8 +30,7 @@ export function createMenu(): void {
           label: '退出',
           accelerator: 'Ctrl+Q',
           click: () => {
-            const { app } = require('electron');
-            (require('./main.js') as Record<string, unknown>).isQuitting = true;
+            setQuitting();
             app.quit();
           }
         }
@@ -112,8 +111,7 @@ export function createMenu(): void {
     }
   ];
 
-  const IS_DEV = !require('electron').app.isPackaged;
-  if (IS_DEV) {
+  if (!app.isPackaged) {
     template.push({
       label: 'Dev',
       submenu: [

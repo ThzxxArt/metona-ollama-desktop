@@ -3,8 +3,7 @@
  * 负责初始化所有组件、协调事件流、管理生命周期
  */
 
-import '../styles/style.css';
-import './types.js';
+import './styles/style.css';
 
 import { ChatDB } from './db/chat-db.js';
 import { OllamaAPI } from './api/ollama.js';

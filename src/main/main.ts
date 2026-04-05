@@ -18,6 +18,10 @@ const IS_DEV = !app.isPackaged;
 export let mainWindow: BrowserWindow | null = null;
 export let isQuitting = false;
 
+export function setQuitting(): void {
+  isQuitting = true;
+}
+
 export function getIconPath(): string {
   return process.platform === 'win32' ? ICO_PATH : ICON_PATH;
 }
@@ -45,7 +49,6 @@ function createMainWindow(): BrowserWindow {
     backgroundColor: '#202020',
     show: false,
     autoHideMenuBar: true,
-    menuBarVisible: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -56,7 +59,13 @@ function createMainWindow(): BrowserWindow {
     }
   });
 
-  mainWindow.loadFile(path.join(__dirname, '..', '..', 'index.html'));
+  // 开发模式：从 src/renderer/ 加载；生产模式：从 dist/renderer/ 加载
+  const isDev = !app.isPackaged;
+  if (isDev) {
+    mainWindow.loadFile(path.join(__dirname, '..', '..', 'src', 'renderer', 'index.html'));
+  } else {
+    mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
+  }
   mainWindow.setMenuBarVisibility(false);
 
   mainWindow.once('ready-to-show', () => {
