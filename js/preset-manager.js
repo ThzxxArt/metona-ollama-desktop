@@ -227,6 +227,12 @@ function syncPresetToUI(preset) {
     const inputCtx = document.querySelector('#inputNumCtx');
     if (inputCtx) inputCtx.value = preset.numCtx || 24576;
 
+    // Temperature
+    const tempSlider = document.querySelector('#inputTemperature');
+    const tempDisplay = document.querySelector('#tempValue');
+    if (tempSlider) tempSlider.value = preset.temperature ?? 0.7;
+    if (tempDisplay) tempDisplay.textContent = (preset.temperature ?? 0.7).toFixed(1);
+
     // Think toggle
     const thinkCheckbox = document.querySelector('#toggleThink');
     if (thinkCheckbox) {

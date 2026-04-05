@@ -62,6 +62,21 @@ export function initSettingsModal() {
     }, 500);
     document.querySelector('#inputNumCtx').addEventListener('input', saveNumCtx);
 
+    // 温度滑块
+    const tempSlider = document.querySelector('#inputTemperature');
+    const tempDisplay = document.querySelector('#tempValue');
+    tempSlider.addEventListener('input', () => {
+        const val = parseFloat(tempSlider.value);
+        tempDisplay.textContent = val.toFixed(1);
+    });
+    const saveTemperature = debounce(async () => {
+        const db = state.get(KEYS.DB);
+        const val = parseFloat(tempSlider.value);
+        state.set('temperature', val);
+        if (db) await db.saveSetting('temperature', val);
+    }, 300);
+    tempSlider.addEventListener('change', saveTemperature);
+
     // 释放显存
     document.querySelector('#btnReleaseVRAM').addEventListener('click', async () => {
         const api = state.get(KEYS.API);

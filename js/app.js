@@ -142,19 +142,23 @@ async function init() {
             await db.saveSetting('selectedModel', savedModel);
         }
 
-        // 8. 恢复系统提示词和上下文长度
+        // 8. 恢复系统提示词、上下文长度、温度
         const systemPromptEnabled = await db.getSetting('systemPromptEnabled', false);
         const systemPrompt = await db.getSetting('systemPrompt', '');
         const numCtx = await db.getSetting('numCtx', 24576);
+        const temperature = await db.getSetting('temperature', 0.7);
 
         state.set(KEYS.SYSTEM_PROMPT_ENABLED, systemPromptEnabled);
         state.set(KEYS.SYSTEM_PROMPT, systemPrompt);
         state.set(KEYS.NUM_CTX, numCtx);
+        state.set('temperature', temperature);
 
         document.querySelector('#toggleSystemPrompt').checked = systemPromptEnabled;
         document.querySelector('#inputSystemPrompt').disabled = !systemPromptEnabled;
         document.querySelector('#inputSystemPrompt').value = systemPrompt;
         document.querySelector('#inputNumCtx').value = numCtx;
+        document.querySelector('#inputTemperature').value = temperature;
+        document.querySelector('#tempValue').textContent = parseFloat(temperature).toFixed(1);
 
         // 9. 聚焦输入框
         document.querySelector('#chatInput')?.focus();
