@@ -4,7 +4,7 @@
 
 支持流式对话、多模态图片输入、文本/代码文件上传分析、Think 深度推理、RAG 本地知识库、历史记录管理，可安装为 PWA 离线使用。
 
-![版本](https://img.shields.io/badge/version-4.0.1-brightgreen)
+![版本](https://img.shields.io/badge/version-4.0.2-brightgreen)
 ![平台](https://img.shields.io/badge/platform-Web-blue)
 ![协议](https://img.shields.io/badge/license-MIT-green)
 
@@ -393,6 +393,11 @@ metona-ollama/
 ---
 
 ## 📋 更新日志
+
+### v4.0.2
+
+- **修复切换预设时 Think 按钮显示异常** — 当模型不支持 Think 时，即使预设开启了 Think，按钮也不应显示激活态（蓝色渐变），保持禁用样式
+- 版本号升级至 4.0.2
 
 ### v4.0.1
 
