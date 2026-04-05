@@ -1,0 +1,66 @@
+{
+  "name": "metona-ollama-desktop",
+  "version": "1.0.0",
+  "description": "Metona Ollama - 桌面端 AI 聊天客户端",
+  "main": "electron/main.js",
+  "author": "thzxx",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron . --no-sandbox",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder --win",
+    "dist:nsis": "electron-builder --win nsis",
+    "dist:portable": "electron-builder --win portable"
+  },
+  "build": {
+    "appId": "com.metona.ollama-desktop",
+    "productName": "Metona Ollama",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "electron/**/*",
+      "js/**/*",
+      "css/**/*",
+      "assets/**/*",
+      "index.html",
+      "manifest.json",
+      "!node_modules/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icons/llama.ico",
+      "requestedExecutionLevel": "asInvoker"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Metona Ollama",
+      "installerIcon": "assets/icons/llama.ico",
+      "uninstallerIcon": "assets/icons/llama.ico",
+      "installerHeaderIcon": "assets/icons/llama.ico"
+    },
+    "portable": {
+      "artifactName": "MetonaOllama-Portable-${version}.exe"
+    }
+  },
+  "devDependencies": {
+    "electron": "^33.4.11",
+    "electron-builder": "^25.0.0"
+  }
+}
