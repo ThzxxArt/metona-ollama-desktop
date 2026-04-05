@@ -228,7 +228,16 @@ html, body {
 .icon-btn:disabled {
     opacity: 0.36;
     cursor: not-allowed;
-    pointer-events: none;
+}
+
+/* 图片按钮禁用时保留 pointer-events 以显示 tooltip 和 cursor */
+#btnAttachImg.disabled {
+    pointer-events: auto;
+}
+
+#btnAttachImg.disabled:hover {
+    opacity: 0.3;
+    background: rgba(241, 112, 123, 0.08);
 }
 
 .icon-btn.sm {
@@ -558,10 +567,12 @@ html, body {
     background: var(--accent-subtle);
     border-color: var(--accent);
     color: var(--accent);
+    box-shadow: 0 0 12px rgba(96, 205, 255, 0.4), 0 0 4px rgba(96, 205, 255, 0.2);
 }
 
 .think-toggle input:checked + .think-btn:hover {
     background: var(--accent-subtle-hover);
+    box-shadow: 0 0 18px rgba(96, 205, 255, 0.55), 0 0 6px rgba(96, 205, 255, 0.3);
 }
 
 .think-toggle.unavailable .think-btn {
@@ -1504,6 +1515,12 @@ html, body {
     font-size: 13px;
 }
 
+/* ── 历史记录模态框加宽 ── */
+#historyModal .modal {
+    max-width: 680px;
+    max-height: 88vh;
+}
+
 /* ── 历史记录 ── */
 .history-list {
     display: flex;
@@ -1793,6 +1810,12 @@ html, body {
 }
 
 /* ═══ 知识库管理 ═══ */
+#kbModal .modal {
+    max-width: 95vw;
+    width: 1100px;
+    max-height: 88vh;
+}
+
 #kbModal .modal-body {
     padding: 16px 20px;
     overflow: hidden;
@@ -2095,7 +2118,6 @@ html, body {
 
 @media (min-width: 1024px) {
     .messages { max-width: 900px; }
-    #historyModal .modal { max-width: 620px; }
 }
 
 /* ── 选中文本 ── */
