@@ -366,6 +366,59 @@
     </div>
 </div>
 
+<!-- ═══════════════ 预设管理模态框 ═══════════════ -->
+<div class="modal-overlay" id="presetModal" style="display:none;">
+    <div class="modal">
+        <div class="modal-header">
+            <h3 id="presetModalTitle">✨ 新建预设</h3>
+            <button class="icon-btn" id="btnClosePresetModal">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="setting-group">
+                <label class="setting-label">名称</label>
+                <div class="preset-name-row">
+                    <input class="setting-input preset-icon-input" id="inputPresetIcon" type="text" maxlength="4" placeholder="🤖">
+                    <input class="setting-input" id="inputPresetName" type="text" placeholder="例如：翻译官" style="flex:1;">
+                </div>
+            </div>
+            <div class="setting-group">
+                <label class="setting-label">系统提示词（System Prompt）</label>
+                <textarea class="setting-input" id="inputPresetSystemPrompt" rows="6" placeholder="定义这个角色的行为、能力和回答风格..." style="resize:vertical;min-height:120px;"></textarea>
+            </div>
+            <div class="setting-group">
+                <label class="setting-label">温度（Temperature）：<span id="presetTempValue">0.7</span></label>
+                <input type="range" id="inputPresetTemp" class="preset-temp-slider" min="0" max="2" step="0.1" value="0.7">
+                <p class="text-muted" style="font-size:11px;margin-top:4px;">低值更精确稳定，高值更有创意多样（0 = 确定性，2 = 最大随机）</p>
+            </div>
+            <div class="setting-group">
+                <label class="setting-label">上下文长度（num_ctx）</label>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <input class="setting-input" id="inputPresetNumCtx" type="number" min="512" max="131072" step="512" value="24576" style="margin-bottom:0;">
+                    <span class="text-muted" style="white-space:nowrap;">tokens</span>
+                </div>
+            </div>
+            <div class="setting-group">
+                <label class="setting-label">Think 深度推理</label>
+                <label class="toggle-label" style="display:inline-flex;align-items:center;gap:8px;">
+                    <input type="checkbox" id="togglePresetThink">
+                    <span class="toggle-slider"></span>
+                    <span class="text-muted" style="font-size:12px;">需要模型支持</span>
+                </label>
+            </div>
+            <div class="preset-modal-actions">
+                <button class="btn btn-danger" id="btnDeletePreset" style="display:none;">🗑️ 删除</button>
+                <div style="flex:1;"></div>
+                <button class="btn btn-outline" id="btnClosePresetModal2" onclick="document.querySelector('#presetModal').style.display='none';">取消</button>
+                <button class="btn btn-primary" id="btnSavePreset">创建</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- ═══════════════ 图片预览 Lightbox ═══════════════ -->
 <div class="lightbox-overlay" id="lightbox" style="display:none;">
     <button class="lightbox-close" id="lightboxClose">✕</button>

@@ -18,6 +18,8 @@ import { initInputArea } from './components/input-area.js';
 import { initSettingsModal, closeSettingsModal } from './components/settings-modal.js';
 import { initHistoryModal, closeHistoryModal } from './components/history-modal.js';
 import { initKBModal } from './components/kb-modal.js';
+import { initPresetBar, initPresetModal } from './components/preset-bar.js';
+import { initPresetManager } from './preset-manager.js';
 import { initVectorStore } from './rag.js';
 
 function initHelpModal() {
@@ -115,6 +117,8 @@ async function init() {
         initSettingsModal();
         initHistoryModal();
         initKBModal();
+        initPresetBar();
+        initPresetModal();
         initHelpModal();
 
         // 5. 绑定全局事件
@@ -126,6 +130,9 @@ async function init() {
 
         // 6.1 初始化向量存储
         await initVectorStore();
+
+        // 6.2 初始化预设管理器（会从 DB 加载并应用上次激活的预设）
+        await initPresetManager();
 
         // 7. 恢复上次选择的模型
         const savedModel = await db.getSetting('selectedModel', '');
@@ -173,6 +180,9 @@ async function init() {
         initInputArea();
         initSettingsModal();
         initHistoryModal();
+        initPresetBar();
+        initPresetModal();
+        initPresetManager();
         checkConnection().then(loadModels);
     }
 }

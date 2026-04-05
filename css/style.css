@@ -372,6 +372,166 @@ body::before {
     border: 1px solid rgba(0, 245, 212, 0.2);
 }
 
+/* ── 预设栏 ── */
+.preset-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 16px;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-glass);
+    flex-shrink: 0;
+    overflow: hidden;
+}
+
+.preset-list {
+    display: flex;
+    gap: 6px;
+    flex: 1;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    padding: 2px 0;
+}
+
+.preset-list::-webkit-scrollbar { display: none; }
+
+.preset-chip {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 12px;
+    border-radius: 20px;
+    border: 1px solid var(--border-glass);
+    background: var(--bg-glass-light);
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 500;
+    font-family: var(--font-sans);
+    white-space: nowrap;
+    cursor: pointer;
+    transition: var(--transition);
+    flex-shrink: 0;
+    user-select: none;
+}
+
+.preset-chip:hover {
+    background: var(--bg-glass-hover);
+    border-color: rgba(0, 245, 212, 0.3);
+    color: var(--text-primary);
+    transform: translateY(-1px);
+}
+
+.preset-chip.active {
+    background: var(--gradient-main);
+    border-color: transparent;
+    color: #fff;
+    font-weight: 600;
+    box-shadow: 0 2px 10px rgba(0, 245, 212, 0.25);
+}
+
+.preset-chip.active:hover {
+    box-shadow: 0 4px 16px rgba(0, 245, 212, 0.35);
+    transform: translateY(-1px);
+}
+
+.preset-chip-icon {
+    font-size: 14px;
+    line-height: 1;
+}
+
+.preset-chip-name {
+    line-height: 1;
+}
+
+.preset-add-btn {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    border: 1px dashed var(--border-glass);
+    background: transparent;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: var(--transition);
+    flex-shrink: 0;
+}
+
+.preset-add-btn:hover {
+    border-color: var(--accent-cyan);
+    color: var(--accent-cyan);
+    background: rgba(0, 245, 212, 0.06);
+    transform: scale(1.1);
+}
+
+.preset-add-btn svg {
+    width: 16px;
+    height: 16px;
+}
+
+/* ── 预设模态框 ── */
+.preset-name-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.preset-icon-input {
+    width: 56px !important;
+    text-align: center;
+    font-size: 18px;
+    flex-shrink: 0;
+    padding: 8px 4px !important;
+}
+
+.preset-temp-slider {
+    width: 100%;
+    -webkit-appearance: none;
+    appearance: none;
+    height: 6px;
+    border-radius: 3px;
+    background: var(--bg-glass-light);
+    outline: none;
+    margin: 8px 0;
+}
+
+.preset-temp-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--gradient-main);
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0, 245, 212, 0.3);
+    transition: transform 0.15s ease;
+}
+
+.preset-temp-slider::-webkit-slider-thumb:hover {
+    transform: scale(1.2);
+}
+
+.preset-temp-slider::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--gradient-main);
+    cursor: pointer;
+    border: none;
+    box-shadow: 0 2px 8px rgba(0, 245, 212, 0.3);
+}
+
+.preset-modal-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-top: 16px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border-glass);
+}
+
 /* ── Think 按钮（输入栏内） ── */
 .think-toggle {
     display: flex;

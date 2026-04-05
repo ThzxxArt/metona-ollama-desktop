@@ -402,12 +402,14 @@ export async function sendMessage() {
     try {
         const apiMessages = buildApiMessages(freshSession.messages);
 
+        const temperature = state.get('temperature', 0.7);
+
         const chatParams = {
             model,
             messages: apiMessages,
             think: thinkMode,
             ...(systemPromptEnabled && systemPrompt && { system: systemPrompt }),
-            ...(numCtx && { options: { num_ctx: numCtx } })
+            ...(numCtx && { options: { num_ctx: numCtx, temperature } })
         };
 
         // RAG 检索增强
