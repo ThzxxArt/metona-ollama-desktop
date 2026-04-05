@@ -2,7 +2,7 @@
 
 基于原生 JavaScript 的 [Ollama](https://ollama.com) AI 聊天客户端。Web 版零依赖开箱即用，桌面版基于 Electron 封装，支持 Windows。
 
-![版本](https://img.shields.io/badge/version-1.0.0--desktop-brightgreen)
+![版本](https://img.shields.io/badge/version-1.1.0--desktop-brightgreen)
 ![平台](https://img.shields.io/badge/platform-Windows%20%7C%20Web-blue)
 ![Electron](https://img.shields.io/badge/Electron-33-47848f)
 ![协议](https://img.shields.io/badge/license-MIT-green)
@@ -41,6 +41,7 @@
 
 | 特性 | 说明 |
 |------|------|
+| Fluent Design 主题 | Windows 11 暗色风格，Mica 毛玻璃材质 |
 | 系统托盘 | 最小化到托盘，双击恢复，右键菜单 |
 | 原生菜单 | 文件 / 编辑 / 视图 / 窗口 / 帮助完整菜单 |
 | 原生文件对话框 | Windows 文件选择器替代浏览器 input |
@@ -55,8 +56,8 @@
 
 | 文件 | 类型 |
 |------|------|
-| `Metona Ollama Setup 1.0.0.exe` | NSIS 安装包（可选目录、创建快捷方式） |
-| `MetonaOllama-Portable-1.0.0.exe` | 绿色便携版（免安装，双击即用） |
+| `Metona Ollama Setup 1.1.0.exe` | NSIS 安装包（可选目录、创建快捷方式） |
+| `MetonaOllama-Portable-1.1.0.exe` | 绿色便携版（免安装，双击即用） |
 
 > ⚠️ 未签名版本，首次运行 Windows 可能弹出安全警告，点击「仍要运行」即可。
 
@@ -65,11 +66,14 @@
 ```bash
 git clone https://gitee.com/thzxx/metona-ollama.git
 cd metona-ollama
-git checkout metona-ollama-desktop-v1
+git checkout metona-ollama-desktop-v1.1
+npm config set registry https://registry.npmmirror.com
 npm install
 npm start          # 开发运行
-npm run dist       # 构建 Windows 安装包
+ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm run dist   # 构建 Windows 安装包
 ```
+
+> 💡 国内环境需使用 npmmirror 加速，详见 [BUILD.md](BUILD.md)。
 
 ---
 
@@ -178,6 +182,23 @@ metona-ollama/
 - Markdown 链接仅允许 `http:` / `https:` / `mailto:` / `tel:`
 - 阻止 `javascript:` / `vbscript:` / `data:` 协议注入
 - 桌面版：contextIsolation + IPC 白名单 + 单实例锁
+
+---
+
+## 📋 更新日志
+
+### v1.1.0
+- 🎨 UI 重构为 Windows 11 Fluent Design 暗色主题（Mica 材质、Segoe UI Variable）
+- 📐 知识库/历史记录弹框加宽
+- ✨ Think 按钮开启后添加蓝色光效，hover 时增强
+- 🖱️ 图片上传禁用态添加 hover 标识（微红背景 + 禁止光标）
+- 🚫 彻底隐藏窗口菜单栏
+
+### v1.0.0
+- 🖥️ Electron Windows 桌面客户端首版
+- 📦 NSIS 安装包 + 绿色便携版
+- 📋 系统托盘、原生菜单、原生文件对话框
+- 🔔 系统通知、窗口管理、单实例锁
 
 ---
 
