@@ -4,7 +4,7 @@
 
 支持流式对话、多模态图片输入、文本/代码文件上传分析、Think 深度推理、RAG 本地知识库、历史记录管理，可安装为 PWA 离线使用。
 
-![版本](https://img.shields.io/badge/version-4.0.2-brightgreen)
+![版本](https://img.shields.io/badge/version-4.0.3-brightgreen)
 ![平台](https://img.shields.io/badge/platform-Web-blue)
 ![协议](https://img.shields.io/badge/license-MIT-green)
 
@@ -393,6 +393,12 @@ metona-ollama/
 ---
 
 ## 📋 更新日志
+
+### v4.0.3
+
+- **帮助弹框新增 Agent 预设说明** — 内置预设列表、切换方式、自定义创建
+- 帮助弹框设置章节补充系统提示词、上下文长度、温度描述
+- 版本号升级至 4.0.3
 
 ### v4.0.2
 
