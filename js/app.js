@@ -18,6 +18,8 @@ import { initInputArea } from './components/input-area.js';
 import { initSettingsModal, closeSettingsModal } from './components/settings-modal.js';
 import { initHistoryModal, closeHistoryModal } from './components/history-modal.js';
 import { initKBModal } from './components/kb-modal.js';
+import { initPresetBar, initPresetModal } from './components/preset-bar.js';
+import { initPresetManager } from './preset-manager.js';
 import { initVectorStore } from './rag.js';
 
 function initHelpModal() {
@@ -33,7 +35,7 @@ function initHelpModal() {
     });
 }
 
-console.log('[Metona] 模块化版本 v3.2.0 ' + new Date().toISOString());
+console.log('[Metona] 模块化版本 v4.0.2 ' + new Date().toISOString());
 
 // ── 会话管理 ──
 
@@ -115,6 +117,8 @@ async function init() {
         initSettingsModal();
         initHistoryModal();
         initKBModal();
+        initPresetBar();
+        initPresetModal();
         initHelpModal();
 
         // 5. 绑定全局事件
@@ -127,6 +131,9 @@ async function init() {
         // 6.1 初始化向量存储
         await initVectorStore();
 
+        // 6.2 初始化预设管理器（会从 DB 加载并应用上次激活的预设）
+        await initPresetManager();
+
         // 7. 恢复上次选择的模型
         const savedModel = await db.getSetting('selectedModel', '');
         if (savedModel) {
@@ -135,19 +142,23 @@ async function init() {
             await db.saveSetting('selectedModel', savedModel);
         }
 
-        // 8. 恢复系统提示词和上下文长度
+        // 8. 恢复系统提示词、上下文长度、温度
         const systemPromptEnabled = await db.getSetting('systemPromptEnabled', false);
         const systemPrompt = await db.getSetting('systemPrompt', '');
         const numCtx = await db.getSetting('numCtx', 24576);
+        const temperature = await db.getSetting('temperature', 0.7);
 
         state.set(KEYS.SYSTEM_PROMPT_ENABLED, systemPromptEnabled);
         state.set(KEYS.SYSTEM_PROMPT, systemPrompt);
         state.set(KEYS.NUM_CTX, numCtx);
+        state.set('temperature', temperature);
 
         document.querySelector('#toggleSystemPrompt').checked = systemPromptEnabled;
         document.querySelector('#inputSystemPrompt').disabled = !systemPromptEnabled;
         document.querySelector('#inputSystemPrompt').value = systemPrompt;
         document.querySelector('#inputNumCtx').value = numCtx;
+        document.querySelector('#inputTemperature').value = temperature;
+        document.querySelector('#tempValue').textContent = parseFloat(temperature).toFixed(1);
 
         // 9. 聚焦输入框
         document.querySelector('#chatInput')?.focus();
@@ -173,6 +184,9 @@ async function init() {
         initInputArea();
         initSettingsModal();
         initHistoryModal();
+        initPresetBar();
+        initPresetModal();
+        initPresetManager();
         checkConnection().then(loadModels);
     }
 }

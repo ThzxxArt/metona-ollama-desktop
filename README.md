@@ -4,7 +4,7 @@
 
 支持流式对话、多模态图片输入、文本/代码文件上传分析、Think 深度推理、RAG 本地知识库、历史记录管理，可安装为 PWA 离线使用。
 
-![版本](https://img.shields.io/badge/version-3.2.0-brightgreen)
+![版本](https://img.shields.io/badge/version-4.0.2-brightgreen)
 ![平台](https://img.shields.io/badge/platform-Web-blue)
 ![协议](https://img.shields.io/badge/license-MIT-green)
 
@@ -28,6 +28,7 @@
 | 连接检测 | 实时状态指示，CORS 问题自动提示 |
 | 显存管理 | 一键卸载模型释放显存 |
 | RAG 知识库 | 本地向量存储，文档上传自动分块，语义检索增强问答 |
+| Agent 预设 | 一键切换角色/工作模式（翻译官、代码审查、写作助手等），自动应用系统提示词+温度+Think |
 | 使用帮助 | 内置帮助弹框，快速了解功能与快捷键 |
 
 ---
@@ -152,6 +153,71 @@ metona-ollama-vectors (IndexedDB)
 
 ---
 
+## 🤖 Agent 预设系统
+
+用户可以创建、保存多个"角色预设"，每个预设包含系统提示词、温度、上下文长度、Think 开关等参数。**一键切换预设 = 切换人格/工作模式**，无需每次手动修改设置。
+
+### 工作流程
+
+```
+选择预设 → applyPresetToState() → 同步到全局 state + 设置面板 UI
+                                 ├── systemPrompt (系统提示词)
+                                 ├── temperature  (温度 0~2)
+                                 ├── numCtx       (上下文长度)
+                                 └── think        (Think 推理开关)
+                                                              ↓
+                              用户直接发消息 → 使用新预设配置调用 /api/chat
+```
+
+### 内置预设
+
+| 预设 | 图标 | 温度 | 上下文 | Think | 说明 |
+|------|------|------|--------|-------|------|
+| 默认 | 💬 | 0.7 | 24576 | ❌ | 通用对话，无系统提示词 |
+| 翻译官 | 🌐 | 0.3 | 16384 | ❌ | 专业翻译，自动识别语言，保持格式语气 |
+| 代码审查 | 🔍 | 0.2 | 32768 | ✅ | Bug/安全/性能/可读性五维审查，按严重程度排列 |
+| 写作助手 | ✍️ | 0.9 | 24576 | ❌ | 多文体创作、润色、风格调整，温度较高鼓励创意 |
+| 数据分析师 | 📊 | 0.4 | 32768 | ✅ | 统计分析、可视化建议、可执行洞察 |
+| 学习导师 | 🎓 | 0.6 | 24576 | ✅ | 苏格拉底式引导教学，由浅入深 |
+
+### 使用方式
+
+1. 模型选择栏下方显示 **预设栏**，点击胶囊按钮即可切换
+2. 点击右侧 **＋** 按钮打开管理面板
+3. 创建自定义预设：填写名称、图标、系统提示词、温度、上下文长度、Think 开关
+4. 右键自定义预设胶囊可编辑/删除
+
+### 数据存储
+
+预设存储在 IndexedDB `settings` Store 中：
+
+```
+metona-ollama (IndexedDB)
+├── sessions          # 聊天会话
+└── settings
+    ├── agentPresets        # 用户自定义预设数组
+    ├── activePresetId      # 当前激活预设 ID
+    ├── systemPrompt        # 当前系统提示词
+    ├── systemPromptEnabled # 系统提示词开关
+    ├── numCtx              # 上下文长度
+    └── temperature         # 温度参数
+```
+
+### 核心模块
+
+| 模块 | 文件 | 职责 |
+|------|------|------|
+| 预设管理 | `js/preset-manager.js` | 预设 CRUD、内置预设定义、切换时应用配置 |
+| 预设栏 | `js/components/preset-bar.js` | 预设胶囊按钮 UI、管理模态框（新建/编辑/删除） |
+
+### 与设置面板的关系
+
+- 预设系统和设置面板 **双向同步**：切换预设自动更新设置面板；设置面板修改也会反映在当前预设状态
+- 预设是设置的 **快捷方式**，本质操作的是同一组参数（systemPrompt / numCtx / temperature / think）
+- 内置预设不可修改/删除，自定义预设完全可编辑
+
+---
+
 ## 🔌 Ollama API 调用清单
 
 Metona 通过 `js/ollama-api.js` 封装了 Ollama REST API，以下是所有调用的接口：
@@ -266,6 +332,7 @@ metona-ollama/
     ├── rag.js                  # RAG 检索增强生成管线（嵌入、检索、上下文构造）
     ├── vector-store.js         # 向量存储与余弦相似度检索（IndexedDB 持久化）
     ├── document-processor.js   # 文档分块处理（段落/句子级，中英文兼容）
+    ├── preset-manager.js       # Agent 预设管理（CRUD + 内置预设 + 切换应用）
     ├── lib/
     │   └── marked.esm.js       # marked.js v15 (Markdown 解析器)
     └── components/
@@ -276,6 +343,7 @@ metona-ollama/
         ├── kb-modal.js         # 知识库管理面板（集合创建、文档上传、进度展示）
         ├── header.js           # 顶部导航、连接状态检测
         ├── model-bar.js        # 模型选择栏、Think/Vision 能力检测
+        ├── preset-bar.js       # 预设栏胶囊按钮、预设管理模态框
         ├── toast.js            # Toast 通知组件
         └── lightbox.js         # 图片预览灯箱
 ```
@@ -325,6 +393,29 @@ metona-ollama/
 ---
 
 ## 📋 更新日志
+
+### v4.0.2
+
+- **修复切换预设时 Think 按钮显示异常** — 当模型不支持 Think 时，即使预设开启了 Think，按钮也不应显示激活态（蓝色渐变），保持禁用样式
+- 版本号升级至 4.0.2
+
+### v4.0.1
+
+- **设置面板新增温度滑块** — 在上下文长度下方新增 Temperature 滑块控制 (0~2, 步长0.1)，实时显示当前值，保存到 IndexedDB 持久化
+- 切换预设时自动同步温度滑块 UI
+- 应用启动时从 DB 恢复温度设置
+- 版本号升级至 4.0.1
+
+### v4.0.0
+
+- **Agent 预设系统** — 用户可创建、保存多个角色预设，每个预设包含系统提示词、温度、上下文长度、Think 开关。一键切换预设 = 切换人格/工作模式
+  - 内置 6 个预设：💬 默认、🌐 翻译官、🔍 代码审查、✍️ 写作助手、📊 数据分析师、🎓 学习导师
+  - 预设栏胶囊按钮，点击即切换，自动应用全部配置（系统提示词 + temperature + num_ctx + think）
+  - 支持创建/编辑/删除自定义预设，IndexedDB 持久化
+  - 切换预设时同步设置面板 UI，无需手动修改
+  - 温度参数集成到 `/api/chat` 调用的 `options.temperature`
+- **新模块** — `js/preset-manager.js`（预设 CRUD + 6 个内置预设）、`js/components/preset-bar.js`（预设栏 UI + 管理模态框）
+- 版本号升级至 4.0.0
 
 ### v3.2.0
 
