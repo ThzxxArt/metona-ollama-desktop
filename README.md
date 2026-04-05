@@ -4,7 +4,7 @@
 
 支持流式对话、多模态图片输入、文本/代码文件上传分析、Think 深度推理、RAG 本地知识库、历史记录管理，可安装为 PWA 离线使用。
 
-![版本](https://img.shields.io/badge/version-3.2.0-brightgreen)
+![版本](https://img.shields.io/badge/version-4.0.0-brightgreen)
 ![平台](https://img.shields.io/badge/platform-Web-blue)
 ![协议](https://img.shields.io/badge/license-MIT-green)
 
@@ -28,6 +28,7 @@
 | 连接检测 | 实时状态指示，CORS 问题自动提示 |
 | 显存管理 | 一键卸载模型释放显存 |
 | RAG 知识库 | 本地向量存储，文档上传自动分块，语义检索增强问答 |
+| Agent 预设 | 一键切换角色/工作模式（翻译官、代码审查、写作助手等），自动应用系统提示词+温度+Think |
 | 使用帮助 | 内置帮助弹框，快速了解功能与快捷键 |
 
 ---
@@ -266,6 +267,7 @@ metona-ollama/
     ├── rag.js                  # RAG 检索增强生成管线（嵌入、检索、上下文构造）
     ├── vector-store.js         # 向量存储与余弦相似度检索（IndexedDB 持久化）
     ├── document-processor.js   # 文档分块处理（段落/句子级，中英文兼容）
+    ├── preset-manager.js       # Agent 预设管理（CRUD + 内置预设 + 切换应用）
     ├── lib/
     │   └── marked.esm.js       # marked.js v15 (Markdown 解析器)
     └── components/
@@ -276,6 +278,7 @@ metona-ollama/
         ├── kb-modal.js         # 知识库管理面板（集合创建、文档上传、进度展示）
         ├── header.js           # 顶部导航、连接状态检测
         ├── model-bar.js        # 模型选择栏、Think/Vision 能力检测
+        ├── preset-bar.js       # 预设栏胶囊按钮、预设管理模态框
         ├── toast.js            # Toast 通知组件
         └── lightbox.js         # 图片预览灯箱
 ```
@@ -325,6 +328,17 @@ metona-ollama/
 ---
 
 ## 📋 更新日志
+
+### v4.0.0
+
+- **Agent 预设系统** — 用户可创建、保存多个角色预设，每个预设包含系统提示词、温度、上下文长度、Think 开关。一键切换预设 = 切换人格/工作模式
+  - 内置 6 个预设：💬 默认、🌐 翻译官、🔍 代码审查、✍️ 写作助手、📊 数据分析师、🎓 学习导师
+  - 预设栏胶囊按钮，点击即切换，自动应用全部配置（系统提示词 + temperature + num_ctx + think）
+  - 支持创建/编辑/删除自定义预设，IndexedDB 持久化
+  - 切换预设时同步设置面板 UI，无需手动修改
+  - 温度参数集成到 `/api/chat` 调用的 `options.temperature`
+- **新模块** — `js/preset-manager.js`（预设 CRUD + 6 个内置预设）、`js/components/preset-bar.js`（预设栏 UI + 管理模态框）
+- 版本号升级至 4.0.0
 
 ### v3.2.0
 

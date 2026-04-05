@@ -35,7 +35,7 @@ function initHelpModal() {
     });
 }
 
-console.log('[Metona] 模块化版本 v3.2.0 ' + new Date().toISOString());
+console.log('[Metona] 模块化版本 v4.0.0 ' + new Date().toISOString());
 
 // ── 会话管理 ──
 
