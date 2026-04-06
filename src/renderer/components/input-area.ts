@@ -463,9 +463,20 @@ export async function sendMessage(): Promise<void> {
         if (think && typeof think === 'string') thinkContent += think;
       }
       if (chunk.model) modelName = chunk.model;
+      // 捕获任何包含统计的 chunk（不限于 done）
+      if (chunk.eval_count || chunk.total_duration) {
+        finalStats = {
+          eval_count: chunk.eval_count ?? finalStats?.eval_count,
+          total_duration: chunk.total_duration ?? finalStats?.total_duration,
+        };
+      }
       updateLastAssistantMessage(assistantContent, thinkContent || null, null, modelName || undefined);
       if (chunk.done) {
-        finalStats = { eval_count: chunk.eval_count, total_duration: chunk.total_duration };
+        // done chunk 优先使用其统计，保留之前的兜底
+        finalStats = {
+          eval_count: chunk.eval_count ?? finalStats?.eval_count,
+          total_duration: chunk.total_duration ?? finalStats?.total_duration,
+        };
       }
     }, abortController);
 
@@ -706,7 +717,7 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
       onConfirmTool: async (call) => {
         return showToolConfirm(call);
       },
-      onDone: async (finalContent, toolRecords) => {
+      onDone: async (finalContent, toolRecords, loopStats) => {
         assistantContent = finalContent;
 
         const assistantMsg: ChatMessage = {
@@ -714,7 +725,9 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
           content: assistantContent || '',
           timestamp: Date.now(),
           ...(thinkContent && { think: thinkContent }),
-          ...(toolRecords?.length && { toolCalls: toolRecords })
+          ...(toolRecords?.length && { toolCalls: toolRecords }),
+          ...(loopStats?.eval_count && { eval_count: loopStats.eval_count }),
+          ...(loopStats?.total_duration && { total_duration: loopStats.total_duration }),
         };
         state.update(KEYS.CURRENT_SESSION, (session: any) => ({
           ...session,
@@ -722,7 +735,7 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
           updatedAt: Date.now()
         }));
 
-        updateLastAssistantMessage(assistantContent, thinkContent || null, null);
+        updateLastAssistantMessage(assistantContent, thinkContent || null, loopStats || null);
         renderMessages();
         await saveCurrentSession();
       }

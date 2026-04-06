@@ -32,7 +32,7 @@ export interface AgentCallbacks {
   onToolCallStart: (call: ToolCall) => void;
   onToolCallResult: (name: string, result: ToolResult, call: ToolCall) => void;
   onToolCallError: (name: string, error: string, call: ToolCall) => void;
-  onDone: (finalContent: string, toolRecords?: ToolCallRecord[]) => void;
+  onDone: (finalContent: string, toolRecords?: ToolCallRecord[], stats?: { eval_count?: number; total_duration?: number }) => void;
   onConfirmTool: (call: ToolCall) => Promise<boolean>;
 }
 
@@ -101,6 +101,12 @@ export async function runAgentLoop(
   const allToolRecords: ToolCallRecord[] = [];
   const loopStartTime = Date.now();
   let content = '';
+  let totalEvalCount = 0;
+
+  const makeStats = () => {
+    const totalDuration = (Date.now() - loopStartTime) * 1e6; // 转为纳秒
+    return { eval_count: totalEvalCount || undefined, total_duration: totalDuration };
+  };
 
   while (loopCount < MAX_LOOPS) {
     loopCount++;
@@ -108,14 +114,14 @@ export async function runAgentLoop(
     // 全局超时检查
     if (Date.now() - loopStartTime > MAX_LOOP_TIME) {
       logWarn('Agent Loop 达到最大运行时间（5分钟），自动停止');
-      callbacks.onDone(content || '（达到最大运行时间限制）', allToolRecords);
+      callbacks.onDone(content || '（达到最大运行时间限制）', allToolRecords, makeStats());
       return;
     }
 
     // 检查是否已中止
     if (state.get<AbortController | null>(KEYS.ABORT_CONTROLLER)?.signal.aborted) {
       logInfo('Agent Loop 已中止');
-      callbacks.onDone(content, allToolRecords.length > 0 ? allToolRecords : undefined);
+      callbacks.onDone(content, allToolRecords.length > 0 ? allToolRecords : undefined, makeStats());
       return;
     }
 
@@ -156,6 +162,7 @@ export async function runAgentLoop(
               content += chunk.message.content;
               callbacks.onContent(content);
             }
+            if (chunk.eval_count) totalEvalCount = chunk.eval_count;
             if (chunk.message?.tool_calls?.length) {
               for (const tc of chunk.message.tool_calls) {
                 if (tc.function?.name) {
@@ -193,7 +200,7 @@ export async function runAgentLoop(
             ...(thinking && { thinking })
           });
         }
-        callbacks.onDone(content, allToolRecords.length > 0 ? allToolRecords : undefined);
+        callbacks.onDone(content, allToolRecords.length > 0 ? allToolRecords : undefined, makeStats());
         return;
       }
       // 超时错误 — 保留已生成的内容
@@ -206,7 +213,7 @@ export async function runAgentLoop(
             ...(thinking && { thinking })
           });
         }
-        callbacks.onDone(content || '（模型响应超时，已自动中断）', allToolRecords.length > 0 ? allToolRecords : undefined);
+        callbacks.onDone(content || '（模型响应超时，已自动中断）', allToolRecords.length > 0 ? allToolRecords : undefined, makeStats());
         return;
       }
       throw err;
@@ -228,14 +235,14 @@ export async function runAgentLoop(
 
     if (toolCalls.length === 0) {
       logInfo('无工具调用，Agent Loop 结束');
-      callbacks.onDone(content, allToolRecords.length > 0 ? allToolRecords : undefined);
+      callbacks.onDone(content, allToolRecords.length > 0 ? allToolRecords : undefined, makeStats());
       return;
     }
 
     for (const call of toolCalls) {
       // 检查是否已中止
       if (abortController.signal.aborted) {
-        callbacks.onDone(content, allToolRecords.length > 0 ? allToolRecords : undefined);
+        callbacks.onDone(content, allToolRecords.length > 0 ? allToolRecords : undefined, makeStats());
         return;
       }
 
@@ -246,7 +253,7 @@ export async function runAgentLoop(
         const confirmed = await callbacks.onConfirmTool(call);
         // 确认后再次检查是否已中止
         if (abortController.signal.aborted) {
-          callbacks.onDone(content, allToolRecords.length > 0 ? allToolRecords : undefined);
+          callbacks.onDone(content, allToolRecords.length > 0 ? allToolRecords : undefined, makeStats());
           return;
         }
         if (!confirmed) {
@@ -320,5 +327,5 @@ export async function runAgentLoop(
   }
 
   logWarn('Agent Loop 达到最大工具调用次数限制');
-  callbacks.onDone(content || '（达到最大工具调用次数限制）', allToolRecords);
+  callbacks.onDone(content || '（达到最大工具调用次数限制）', allToolRecords, makeStats());
 }

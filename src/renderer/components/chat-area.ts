@@ -159,8 +159,8 @@ export function appendMessageDOM(msg: ChatMessage, index: number): void {
 
   const stats: string[] = [];
   if (msg.timestamp) stats.push(formatTime(msg.timestamp));
-  if (msg.eval_count) stats.push(`${msg.eval_count} tokens`);
-  if (msg.total_duration) stats.push(`${(msg.total_duration / 1e9).toFixed(1)}s`);
+  if (msg.eval_count != null && msg.eval_count > 0) stats.push(`${msg.eval_count} tokens`);
+  if (msg.total_duration != null && msg.total_duration > 0) stats.push(`${(msg.total_duration / 1e9).toFixed(1)}s`);
   if (stats.length > 0) {
     contentHtml += `<div class="msg-stats">${stats.map(s => `<span>${s}</span>`).join(' · ')}</div>`;
   }
@@ -337,8 +337,8 @@ export function updateLastAssistantMessage(content: string, think: string | null
       lastMsg.querySelector('.msg-body')!.appendChild(statsDiv);
     }
     const parts: string[] = [];
-    if (stats.eval_count) parts.push(`${stats.eval_count} tokens`);
-    if (stats.total_duration) parts.push(`${(stats.total_duration / 1e9).toFixed(1)}s`);
+    if (stats.eval_count != null && stats.eval_count > 0) parts.push(`${stats.eval_count} tokens`);
+    if (stats.total_duration != null && stats.total_duration > 0) parts.push(`${(stats.total_duration / 1e9).toFixed(1)}s`);
     if (parts.length) statsDiv.innerHTML = parts.join(' · ');
   }
 
