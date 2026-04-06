@@ -82,7 +82,7 @@ function setupDesktopIntegration(): void {
   console.log('[Desktop Integration] 桌面集成完成 ✓');
 }
 
-console.log('[Metona] TypeScript + Electron v2.0.0 ' + new Date().toISOString());
+console.log('[Metona] TypeScript + Electron v3.0.0 ' + new Date().toISOString());
 
 function createNewSession(): ChatSession {
   const selectedModel = (document.querySelector('#modelSelect') as HTMLSelectElement)?.value || '';
