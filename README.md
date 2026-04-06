@@ -2,7 +2,7 @@
 
 基于 TypeScript + Electron 的 [Ollama](https://ollama.com) 桌面 AI 聊天客户端，专为 Windows 打造。
 
-![版本](https://img.shields.io/badge/version-3.1.0--desktop-brightgreen)
+![版本](https://img.shields.io/badge/version-3.1.1--desktop-brightgreen)
 ![平台](https://img.shields.io/badge/platform-Windows%20x64-blue)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178c6)
 ![Electron](https://img.shields.io/badge/Electron-33-47848f)
@@ -153,8 +153,8 @@ v3.0 三大子系统协调运作：
 
 | 文件 | 类型 |
 |------|------|
-| `Metona Ollama Setup 3.1.0.exe` | NSIS 安装包（可选目录、创建快捷方式） |
-| `MetonaOllama-Portable-3.1.0.exe` | 绿色便携版（免安装，双击即用） |
+| `Metona Ollama Setup 3.1.1.exe` | NSIS 安装包（可选目录、创建快捷方式） |
+| `MetonaOllama-Portable-3.1.1.exe` | 绿色便携版（免安装，双击即用） |
 
 > ⚠️ 未签名版本，首次运行 Windows 可能弹出安全警告，点击「仍要运行」即可。
 
@@ -172,7 +172,7 @@ v3.0 三大子系统协调运作：
 ```bash
 git clone https://gitee.com/thzxx/metona-ollama.git
 cd metona-ollama
-git checkout metona-ollama-desktop-v3.1.0
+git checkout metona-ollama-desktop-v3.1.1
 
 # 安装依赖（国内使用 npmmirror 加速）
 npm config set registry https://registry.npmmirror.com
@@ -343,7 +343,7 @@ metona-ollama/
 
 ### 最新版本
 
-**v3.1.0** — 代码质量 & 桌面原生化
+**v3.1.1** — 代码质量 & 桌面原生化
 - ♻️ 渲染进程 58 处 console.log 全部迁移至结构化 log-service
 - 🖥️ 所有文件对话框（上传/保存/导入）改用 Electron 原生对话框
 - 🪙 Header 新增当前会话总 token 消耗统计

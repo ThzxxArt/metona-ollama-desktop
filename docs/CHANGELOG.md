@@ -3,14 +3,14 @@
 ## 分支结构
 
 **桌面版主线**（`master`）：
-- `metona-ollama-desktop-v1` → `metona-ollama-desktop-v1.1` → `metona-ollama-desktop-v2` → `metona-ollama-desktop-v3` → `metona-ollama-desktop-v3.1.0`（当前）
-- `refactor/modular-architecture`：v3.1.0 重构分支，已合并到 master
+- `metona-ollama-desktop-v1` → `metona-ollama-desktop-v1.1` → `metona-ollama-desktop-v2` → `metona-ollama-desktop-v3` → `metona-ollama-desktop-v3.1.1`（当前）
+- `refactor/modular-architecture`：v3.1.1 重构分支，已合并到 master
 
 ---
 
 ## 桌面版（Desktop）
 
-### Desktop v3.1.0 — 代码质量 & 桌面原生化
+### Desktop v3.1.1 — 代码质量 & 桌面原生化
 
 - ♻️ **结构化日志系统**
   - 渲染进程 58 处 `console.log/warn/error` 全部迁移至 `log-service.ts`
