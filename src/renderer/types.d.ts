@@ -116,21 +116,6 @@ export interface ChatSession {
   updatedAt: number;
 }
 
-// ── 预设类型（v3.0 废弃，保留用于兼容）──
-
-export interface Preset {
-  id: string;
-  name: string;
-  icon: string;
-  systemPrompt: string;
-  temperature: number;
-  numCtx: number;
-  think: boolean;
-  builtIn?: boolean;
-  createdAt: number;
-  updatedAt: number;
-}
-
 // ── Agent 记忆系统类型 ──
 
 export type MemoryType = 'fact' | 'preference' | 'rule' | 'episode';
@@ -278,8 +263,6 @@ export type StateKey =
   | 'historySearchQuery'
   | 'temperature'
   | 'thinkEnabled'
-  | 'presets'
-  | 'activePresetId'
   | 'toolCallingEnabled'
   | 'runCommandEnabled'
   | 'memoryEnabled'

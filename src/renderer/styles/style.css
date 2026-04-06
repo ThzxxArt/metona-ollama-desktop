@@ -376,116 +376,8 @@ html, body {
     border-color: rgba(179, 136, 255, 0.15);
 }
 
-/* ── 预设栏 ── */
-.preset-bar {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 16px;
-    background: var(--bg-layer-alt);
-    border-bottom: 1px solid var(--border-subtle);
-    flex-shrink: 0;
-}
-
-.preset-list {
-    display: flex;
-    gap: 6px;
-    flex: 1;
-    overflow-x: auto;
-    overflow-y: hidden;
-    scrollbar-width: none;
-    -ms-overflow-style: none;
-    padding: 2px 0;
-}
-
-.preset-list::-webkit-scrollbar { display: none; }
-
-.preset-chip {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    padding: 4px 12px;
-    border-radius: var(--radius-control);
-    border: 1px solid var(--border-default);
-    background: var(--bg-layer);
-    color: var(--text-secondary);
-    font-size: 12px;
-    font-family: var(--font);
-    white-space: nowrap;
-    cursor: pointer;
-    transition: var(--transition);
-    flex-shrink: 0;
-    user-select: none;
-}
-
-.preset-chip:hover {
-    background: var(--bg-card-hover);
-    border-color: var(--border-strong);
-    color: var(--text-primary);
-}
-
-.preset-chip.active {
-    background: var(--accent-subtle);
-    border-color: var(--accent);
-    color: var(--accent);
-    font-weight: 600;
-}
-
-.preset-chip.active:hover {
-    background: var(--accent-subtle-hover);
-}
-
-.preset-chip-icon {
-    font-size: 13px;
-    line-height: 1;
-}
-
-.preset-chip-name {
-    line-height: 1;
-}
-
-.preset-add-btn {
-    width: 28px;
-    height: 28px;
-    border-radius: var(--radius-control);
-    border: 1px dashed var(--border-default);
-    background: transparent;
-    color: var(--text-tertiary);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: var(--transition);
-    flex-shrink: 0;
-}
-
-.preset-add-btn:hover {
-    border-color: var(--accent);
-    color: var(--accent);
-    background: var(--accent-subtle);
-}
-
-.preset-add-btn svg {
-    width: 14px;
-    height: 14px;
-}
-
-/* ── 预设模态框 ── */
-.preset-name-row {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-}
-
-.preset-icon-input {
-    width: 52px !important;
-    text-align: center;
-    font-size: 16px;
-    flex-shrink: 0;
-    padding: 6px 4px !important;
-}
-
-.preset-temp-slider {
+/* ── 温度滑块 ── */
+.temp-slider {
     width: 100%;
     -webkit-appearance: none;
     appearance: none;
@@ -496,7 +388,7 @@ html, body {
     margin: 8px 0;
 }
 
-.preset-temp-slider::-webkit-slider-thumb {
+.temp-slider::-webkit-slider-thumb {
     -webkit-appearance: none;
     width: 16px;
     height: 16px;
@@ -507,11 +399,11 @@ html, body {
     transition: box-shadow var(--transition);
 }
 
-.preset-temp-slider::-webkit-slider-thumb:hover {
+.temp-slider::-webkit-slider-thumb:hover {
     box-shadow: 0 0 0 3px var(--accent-subtle);
 }
 
-.preset-temp-slider::-moz-range-thumb {
+.temp-slider::-moz-range-thumb {
     width: 16px;
     height: 16px;
     border-radius: 50%;
@@ -520,7 +412,7 @@ html, body {
     border: none;
 }
 
-.preset-modal-actions {
+.modal-actions {
     display: flex;
     gap: 8px;
     align-items: center;

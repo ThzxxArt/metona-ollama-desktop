@@ -1,6 +1,6 @@
 /**
  * MemoryPanel - Agent 记忆管理面板
- * 替代 PresetBar，提供记忆的查看、搜索、编辑、删除功能
+ * 提供记忆的查看、搜索、编辑、删除功能
  */
 
 import { state, KEYS } from '../state/state.js';

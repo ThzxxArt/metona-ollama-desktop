@@ -6,6 +6,7 @@ import { state, KEYS } from '../state/state.js';
 import { debounce } from '../utils/utils.js';
 import { encryptData, decryptData, isMetonaFile } from '../services/crypto.js';
 import { setMemoryEnabled } from '../services/memory-manager.js';
+import { setToolEnabled } from '../services/tool-registry.js';
 import { updateConnectionInfo, updateRunningModels } from './header.js';
 import { loadModels } from './model-bar.js';
 import { showToast } from './toast.js';
@@ -122,6 +123,7 @@ export function initSettingsModal(): void {
       const db = state.get<ChatDB | null>(KEYS.DB);
       state.set('runCommandEnabled', toggleRunCommand.checked);
       if (db) await db.saveSetting('runCommandEnabled', toggleRunCommand.checked);
+      setToolEnabled('run_command', toggleRunCommand.checked);
       if (toggleRunCommand.checked) {
         showToast('⚠️ 命令执行已开启，请谨慎使用', 'warning');
       }

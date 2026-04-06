@@ -20,10 +20,9 @@ import { initInputArea } from './components/input-area.js';
 import { initSettingsModal, closeSettingsModal } from './components/settings-modal.js';
 import { initHistoryModal, closeHistoryModal } from './components/history-modal.js';
 import { initKBModal } from './components/kb-modal.js';
-import { initPresetBar, initPresetModal } from './components/preset-bar.js';
-import { initPresetManager } from './services/preset-manager.js';
 import { initVectorStore } from './services/rag.js';
 import { initMemoryManager } from './services/memory-manager.js';
+import { setToolEnabled } from './services/tool-registry.js';
 import { initToolConfirmModal } from './components/tool-confirm-modal.js';
 import { initMemoryPanel } from './components/memory-panel.js';
 import type { ChatSession } from './types.js';
@@ -155,8 +154,6 @@ async function init(): Promise<void> {
     initSettingsModal();
     initHistoryModal();
     initKBModal();
-    initPresetBar();
-    initPresetModal();
     initHelpModal();
     initToolConfirmModal();
     initMemoryPanel();
@@ -167,7 +164,6 @@ async function init(): Promise<void> {
     await checkConnection();
     await loadModels();
     await initVectorStore();
-    await initPresetManager();
     await initMemoryManager();
 
     const savedModel = await db.getSetting('selectedModel', '');
@@ -199,6 +195,7 @@ async function init(): Promise<void> {
     const runCommandEnabled = await db.getSetting('runCommandEnabled', false);
     state.set('toolCallingEnabled', toolCallingEnabled);
     state.set('runCommandEnabled', runCommandEnabled);
+    if (runCommandEnabled) setToolEnabled('run_command', true);
     const toggleTC = document.querySelector<HTMLInputElement>('#toggleToolCalling');
     if (toggleTC) toggleTC.checked = toolCallingEnabled;
     const toggleRC = document.querySelector<HTMLInputElement>('#toggleRunCommand');
@@ -227,8 +224,6 @@ async function init(): Promise<void> {
     initInputArea();
     initSettingsModal();
     initHistoryModal();
-    initPresetBar();
-    initPresetModal();
     setupDesktopIntegration();
     checkConnection().then(loadModels);
   }
