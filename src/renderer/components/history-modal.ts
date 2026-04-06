@@ -6,6 +6,7 @@ import { state, KEYS } from '../state/state.js';
 import { debounce, escapeHtml, formatTime } from '../utils/utils.js';
 import { exportAsMarkdown, exportAsHtml, exportAsTxt, renderMessages, clearMessages } from './chat-area.js';
 import { ChatDB } from '../db/chat-db.js';
+import { logSession, logWarn } from '../services/log-service.js';
 import type { ChatSession } from '../types.js';
 
 const HISTORY_PAGE_SIZE = 10;
@@ -57,6 +58,7 @@ export function initHistoryModal(): void {
     if (target.classList.contains('btn-delete-session')) {
       if (confirm('确定删除此会话？')) {
         await db!.deleteSession(sessionId);
+        logSession('删除', sessionId);
         const currentSession = state.get<ChatSession | null>(KEYS.CURRENT_SESSION);
         if (currentSession && currentSession.id === sessionId) {
           (document.querySelector('#btnNewChat') as HTMLElement).click();
@@ -164,8 +166,12 @@ async function loadHistorySession(sessionId: string): Promise<void> {
   if (!db) return;
 
   const session = await db.getSession(sessionId);
-  if (!session) return;
+  if (!session) {
+    logWarn('会话不存在', sessionId);
+    return;
+  }
 
+  logSession('加载', `${session.title} (${session.messages.length}条消息)`);
   state.set(KEYS.CURRENT_SESSION, session);
   state.set(KEYS.IS_HISTORY_VIEW, true);
 

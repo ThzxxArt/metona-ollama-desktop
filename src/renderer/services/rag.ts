@@ -5,6 +5,7 @@
 import { state, KEYS } from '../state/state.js';
 import { VectorStore } from './vector-store.js';
 import { chunkText, createChunkMetadata } from './document-processor.js';
+import { logRAG, logDebug, logError } from './log-service.js';
 import type { OllamaAPI, SearchResult, VectorItem } from '../types.js';
 
 let vectorStore: VectorStore | null = null;
@@ -50,6 +51,7 @@ export async function addDocumentToKB(
 
   const textChunks = chunkText(content);
   if (textChunks.length === 0) throw new Error('文档内容为空，无法处理');
+  logRAG(`分块完成: ${filename}`, `${textChunks.length} 个分块`);
 
   const docId = `doc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
@@ -120,6 +122,7 @@ export async function retrieveContext(query: string, colId: string, topK = 5): P
   const queryEmbedding = await embedText(query, embedModel);
   const results = await vs.search(colId, queryEmbedding, topK);
   if (results.length === 0) return { context: '', results: [] };
+  logRAG(`检索完成`, `${results.length} 个相关片段`);
 
   const contextParts = results.map((r, i) =>
     `[来源 ${i + 1}: ${r.filename}]\n${r.text}`

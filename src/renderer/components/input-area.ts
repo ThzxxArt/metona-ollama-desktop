@@ -133,6 +133,7 @@ async function handleImageSelect(files: FileList): Promise<void> {
     try {
       const base64 = await fileToBase64(file);
       pendingImages.push({ name: file.name, base64 });
+      logInfo(`图片已添加: ${file.name}`, formatSize(file.size));
       renderImagePreviews();
     } catch (err) {
       console.error('[InputArea] 图片读取失败:', err);
@@ -172,6 +173,7 @@ async function handleTextFileSelect(files: FileList): Promise<void> {
     try {
       const content = await fileToText(file);
       pendingFiles.push({ name: file.name, content, language: detectLanguage(file.name), size: file.size });
+      logInfo(`文件已添加: ${file.name}`, formatSize(file.size));
       renderFilePreviews();
     } catch (err) {
       console.error('[InputArea] 文件读取失败:', err);

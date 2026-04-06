@@ -7,6 +7,7 @@ import { debounce } from '../utils/utils.js';
 import { encryptData, decryptData, isMetonaFile } from '../services/crypto.js';
 import { setMemoryEnabled } from '../services/memory-manager.js';
 import { setToolEnabled } from '../services/tool-registry.js';
+import { logSetting, logInfo, logWarn, logError, logSuccess } from '../services/log-service.js';
 import { updateConnectionInfo, updateRunningModels } from './header.js';
 import { loadModels } from './model-bar.js';
 import { showToast } from './toast.js';
@@ -39,9 +40,11 @@ export function initSettingsModal(): void {
 
   document.querySelector('#toggleSystemPrompt')!.addEventListener('change', async (e) => {
     const db = state.get<ChatDB | null>(KEYS.DB);
-    state.set(KEYS.SYSTEM_PROMPT_ENABLED, (e.target as HTMLInputElement).checked);
-    (document.querySelector('#inputSystemPrompt') as HTMLTextAreaElement).disabled = !(e.target as HTMLInputElement).checked;
-    if (db) await db.saveSetting('systemPromptEnabled', (e.target as HTMLInputElement).checked);
+    const checked = (e.target as HTMLInputElement).checked;
+    state.set(KEYS.SYSTEM_PROMPT_ENABLED, checked);
+    (document.querySelector('#inputSystemPrompt') as HTMLTextAreaElement).disabled = !checked;
+    if (db) await db.saveSetting('systemPromptEnabled', checked);
+    logSetting('系统提示词', checked ? '开启' : '关闭');
   });
 
   const saveSystemPrompt = debounce(async () => {
@@ -58,6 +61,7 @@ export function initSettingsModal(): void {
     const numCtx = val ? parseInt(val) : 24576;
     state.set(KEYS.NUM_CTX, numCtx);
     if (db) await db.saveSetting('numCtx', numCtx);
+    logSetting('上下文长度', `${numCtx} tokens`);
   }, 500);
   document.querySelector('#inputNumCtx')!.addEventListener('input', saveNumCtx);
 
@@ -71,27 +75,33 @@ export function initSettingsModal(): void {
     const val = parseFloat(tempSlider.value);
     state.set('temperature', val);
     if (db) await db.saveSetting('temperature', val);
+    logSetting('温度', val.toFixed(1));
   }, 300);
   tempSlider.addEventListener('change', saveTemperature);
 
   document.querySelector('#btnReleaseVRAM')!.addEventListener('click', async () => {
     const api = state.get<OllamaAPI>(KEYS.API);
     const model = (document.querySelector('#modelSelect') as HTMLSelectElement).value;
+    logInfo('释放显存', model || '所有模型');
     try {
       await api!.chat({ model: model || 'any', messages: [], keep_alive: 0 } as any);
       showToast('显存已释放', 'success');
+      logSuccess('显存已释放');
       updateRunningModels();
     } catch (err) {
       showToast(`释放失败: ${(err as Error).message}`, 'error');
+      logError('释放显存失败', (err as Error).message);
     }
   });
 
   document.querySelector('#btnClearAllHistory')!.addEventListener('click', async () => {
     const db = state.get<ChatDB | null>(KEYS.DB);
     if (confirm('确定清空所有历史记录？此操作不可恢复！')) {
+      logWarn('清空所有历史记录');
       await db!.clearAll();
       (document.querySelector('#btnNewChat') as HTMLElement).click();
       showToast('已清空所有历史记录', 'success');
+      logSuccess('历史记录已清空');
     }
   });
 
@@ -117,11 +127,14 @@ export function initSettingsModal(): void {
         const modelSupportsTools = state.get<boolean>('modelSupportsTools', false);
         if (!modelSupportsTools) {
           showToast('⚠️ 当前模型可能不支持 Tool Calling，建议使用 Qwen3、Llama 3.1+ 等模型', 'warning', 5000);
+          logWarn('Tool Calling 已开启（模型不支持）');
         } else {
           showToast('工具调用已开启', 'info');
+          logInfo('Tool Calling 已开启');
         }
       } else {
         showToast('工具调用已关闭', 'info');
+        logInfo('Tool Calling 已关闭');
       }
     });
   }
@@ -135,6 +148,9 @@ export function initSettingsModal(): void {
       setToolEnabled('run_command', toggleRunCommand.checked);
       if (toggleRunCommand.checked) {
         showToast('⚠️ 命令执行已开启，请谨慎使用', 'warning');
+        logWarn('命令执行已开启（高风险）');
+      } else {
+        logInfo('命令执行已关闭');
       }
     });
   }
@@ -145,6 +161,7 @@ export function initSettingsModal(): void {
     toggleMemory.addEventListener('change', () => {
       setMemoryEnabled(toggleMemory.checked);
       showToast(toggleMemory.checked ? 'Agent 记忆已开启' : 'Agent 记忆已关闭', 'info');
+      logSetting('Agent 记忆', toggleMemory.checked ? '开启' : '关闭');
     });
   }
 }
@@ -185,9 +202,11 @@ async function exportAllSessions(): Promise<void> {
     a.download = `metona-backup-${ts}.metona`;
     a.click();
     showToast(`已导出 ${sessions.length} 个会话（已加密）`, 'success');
+    logSuccess(`导出完成: ${sessions.length} 个会话`);
   } catch (err) {
     console.error('[Settings] 导出失败:', err);
     showToast(`导出失败: ${(err as Error).message}`, 'error');
+    logError('导出失败', (err as Error).message);
   }
 }
 
@@ -203,6 +222,7 @@ async function importSessions(file: File): Promise<void> {
   try {
     const buffer = await file.arrayBuffer();
     const data = await decryptData(buffer);
+    logInfo('导入会话', `文件: ${file.name}`);
 
     let sessions: ChatSession[];
     if (Array.isArray(data)) {
@@ -216,8 +236,10 @@ async function importSessions(file: File): Promise<void> {
 
     const result = await db.importSessions(sessions);
     showToast(`导入完成：${result.imported} 个会话${result.skipped > 0 ? `，跳过 ${result.skipped} 个` : ''}`, 'success', 4000);
+    logSuccess(`导入完成: ${result.imported} 个, 跳过 ${result.skipped} 个`);
   } catch (err) {
     console.error('[Settings] 导入失败:', err);
     showToast(`导入失败: ${(err as Error).message}`, 'error');
+    logError('导入失败', (err as Error).message);
   }
 }

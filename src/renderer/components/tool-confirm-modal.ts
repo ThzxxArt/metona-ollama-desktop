@@ -4,6 +4,7 @@
 
 import type { ToolCall } from '../types.js';
 import { getToolIcon, formatToolName } from '../services/tool-registry.js';
+import { logDebug, logInfo } from '../services/log-service.js';
 
 let modalEl: HTMLElement | null = null;
 let resolveConfirm: ((confirmed: boolean) => void) | null = null;
@@ -45,6 +46,7 @@ export function showToolConfirm(call: ToolCall): Promise<boolean> {
 
     const icon = getToolIcon(call.function.name);
     const name = formatToolName(call.function.name);
+    logInfo(`等待确认: ${call.function.name}`, JSON.stringify(call.function.arguments));
 
     const titleEl = modalEl.querySelector('#toolConfirmTitle')!;
     const bodyEl = modalEl.querySelector('#toolConfirmBody')!;
@@ -83,11 +85,13 @@ export function showToolConfirm(call: ToolCall): Promise<boolean> {
     const onConfirm = (e: Event) => {
       e.stopPropagation();
       cleanup();
+      logInfo(`已确认: ${call.function.name}`);
       resolveConfirm?.(true);
     };
     const onCancel = (e: Event) => {
       e.stopPropagation();
       cleanup();
+      logInfo(`已取消: ${call.function.name}`);
       resolveConfirm?.(false);
     };
     const cleanup = () => {

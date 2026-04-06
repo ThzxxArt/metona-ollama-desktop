@@ -1,6 +1,7 @@
 /**
  * LogService - 实时日志面板服务
  * 收集应用内所有事件，渲染到左侧日志面板
+ * 全程 try-catch，任何情况下不阻塞主流程
  */
 
 export type LogLevel = 'info' | 'success' | 'warn' | 'error' | 'debug' | 'tool' | 'think' | 'stream';
@@ -20,6 +21,8 @@ const MAX_LOGS = 500;
 let logs: LogEntry[] = [];
 let autoScroll = true;
 let idCounter = 0;
+let renderQueued = false;
+const pendingEntries: LogEntry[] = [];
 
 const LEVEL_ICONS: Record<LogLevel, string> = {
   info: 'ℹ️',
@@ -33,33 +36,40 @@ const LEVEL_ICONS: Record<LogLevel, string> = {
 };
 
 export function initLogPanel(): void {
-  logBodyEl = document.querySelector('#logPanelBody')!;
-  logPanelEl = document.querySelector('#logPanel')!;
+  try {
+    logBodyEl = document.querySelector('#logPanelBody')!;
+    logPanelEl = document.querySelector('#logPanel')!;
 
-  const btnToggle = document.querySelector('#btnToggleLog')!;
-  const btnClose = document.querySelector('#btnCloseLog')!;
-  const btnClear = document.querySelector('#btnClearLog')!;
+    document.querySelector('#btnToggleLog')!.addEventListener('click', () => {
+      try {
+        const visible = logPanelEl!.style.display !== 'none';
+        logPanelEl!.style.display = visible ? 'none' : '';
+        document.querySelector('#mainWrap')!.classList.toggle('log-open', !visible);
+      } catch { /* ignore */ }
+    });
 
-  btnToggle.addEventListener('click', () => {
-    const visible = logPanelEl!.style.display !== 'none';
-    logPanelEl!.style.display = visible ? 'none' : '';
-    document.querySelector('#mainWrap')!.classList.toggle('log-open', !visible);
-  });
+    document.querySelector('#btnCloseLog')!.addEventListener('click', () => {
+      try {
+        logPanelEl!.style.display = 'none';
+        document.querySelector('#mainWrap')!.classList.remove('log-open');
+      } catch { /* ignore */ }
+    });
 
-  btnClose.addEventListener('click', () => {
-    logPanelEl!.style.display = 'none';
-    document.querySelector('#mainWrap')!.classList.remove('log-open');
-  });
+    document.querySelector('#btnClearLog')!.addEventListener('click', () => {
+      try {
+        logs = [];
+        pendingEntries.length = 0;
+        if (logBodyEl) logBodyEl.innerHTML = '';
+      } catch { /* ignore */ }
+    });
 
-  btnClear.addEventListener('click', () => {
-    logs = [];
-    if (logBodyEl) logBodyEl.innerHTML = '';
-  });
-
-  logBodyEl.addEventListener('scroll', () => {
-    const el = logBodyEl!;
-    autoScroll = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-  });
+    logBodyEl.addEventListener('scroll', () => {
+      try {
+        const el = logBodyEl!;
+        autoScroll = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+      } catch { /* ignore */ }
+    });
+  } catch { /* ignore */ }
 }
 
 function genId(): string {
@@ -68,113 +78,102 @@ function genId(): string {
 
 function formatTime(ts: number): string {
   const d = new Date(ts);
-  const h = String(d.getHours()).padStart(2, '0');
-  const m = String(d.getMinutes()).padStart(2, '0');
-  const s = String(d.getSeconds()).padStart(2, '0');
-  return `${h}:${m}:${s}`;
-}
-
-export function addLog(level: LogLevel, message: string, detail?: string, icon?: string): void {
-  const entry: LogEntry = {
-    id: genId(),
-    time: Date.now(),
-    level,
-    icon: icon || LEVEL_ICONS[level] || '•',
-    message,
-    detail,
-  };
-
-  logs.push(entry);
-  if (logs.length > MAX_LOGS) {
-    const removed = logs.splice(0, logs.length - MAX_LOGS);
-    for (const r of removed) {
-      const el = document.getElementById(r.id);
-      if (el) el.remove();
-    }
-  }
-
-  appendLogDOM(entry);
-}
-
-function appendLogDOM(entry: LogEntry): void {
-  if (!logBodyEl) return;
-
-  const div = document.createElement('div');
-  div.className = `log-entry log-${entry.level}`;
-  div.id = entry.id;
-
-  let html = `<span class="log-time">${formatTime(entry.time)}</span>`;
-  html += `<span class="log-icon">${entry.icon}</span>`;
-  html += `<span class="log-msg">${escapeHtml(entry.message)}</span>`;
-
-  if (entry.detail) {
-    html += `<pre class="log-detail">${escapeHtml(entry.detail)}</pre>`;
-  }
-
-  div.innerHTML = html;
-  logBodyEl.appendChild(div);
-
-  if (autoScroll) {
-    logBodyEl.scrollTop = logBodyEl.scrollHeight;
-  }
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
 }
 
 function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-// ── 便捷方法 ──
+/** 批量渲染队列 — 使用 rAF 避免阻塞主线程 */
+function flushPending(): void {
+  if (!logBodyEl || pendingEntries.length === 0) return;
+  renderQueued = false;
 
-export function logInfo(msg: string, detail?: string): void {
-  addLog('info', msg, detail);
+  try {
+    const frag = document.createDocumentFragment();
+    const toRender = pendingEntries.splice(0, pendingEntries.length);
+
+    for (const entry of toRender) {
+      const div = document.createElement('div');
+      div.className = `log-entry log-${entry.level}`;
+      div.id = entry.id;
+
+      let html = `<span class="log-time">${formatTime(entry.time)}</span>`;
+      html += `<span class="log-icon">${entry.icon}</span>`;
+      html += `<span class="log-msg">${escapeHtml(entry.message)}</span>`;
+      if (entry.detail) {
+        html += `<pre class="log-detail">${escapeHtml(entry.detail)}</pre>`;
+      }
+      div.innerHTML = html;
+      frag.appendChild(div);
+    }
+
+    logBodyEl.appendChild(frag);
+
+    // 清理超出的旧 DOM 节点
+    while (logBodyEl.children.length > MAX_LOGS) {
+      logBodyEl.removeChild(logBodyEl.firstChild!);
+    }
+
+    if (autoScroll) {
+      logBodyEl.scrollTop = logBodyEl.scrollHeight;
+    }
+  } catch { /* 绝不抛出 */ }
 }
 
-export function logSuccess(msg: string, detail?: string): void {
-  addLog('success', msg, detail);
+/** 核心日志方法 — 永远不阻塞调用方 */
+export function addLog(level: LogLevel, message: string, detail?: string, icon?: string): void {
+  try {
+    const entry: LogEntry = {
+      id: genId(),
+      time: Date.now(),
+      level,
+      icon: icon || LEVEL_ICONS[level] || '•',
+      message,
+      detail,
+    };
+
+    logs.push(entry);
+    if (logs.length > MAX_LOGS) logs.splice(0, logs.length - MAX_LOGS);
+
+    pendingEntries.push(entry);
+    if (!renderQueued) {
+      renderQueued = true;
+      requestAnimationFrame(flushPending);
+    }
+  } catch { /* 绝不抛出 */ }
 }
 
-export function logWarn(msg: string, detail?: string): void {
-  addLog('warn', msg, detail);
-}
+// ── 便捷方法（全部安全包装）──
 
-export function logError(msg: string, detail?: string): void {
-  addLog('error', msg, detail);
-}
-
-export function logDebug(msg: string, detail?: string): void {
-  addLog('debug', msg, detail);
-}
+export function logInfo(msg: string, detail?: string): void { addLog('info', msg, detail); }
+export function logSuccess(msg: string, detail?: string): void { addLog('success', msg, detail); }
+export function logWarn(msg: string, detail?: string): void { addLog('warn', msg, detail); }
+export function logError(msg: string, detail?: string): void { addLog('error', msg, detail); }
+export function logDebug(msg: string, detail?: string): void { addLog('debug', msg, detail); }
 
 export function logToolStart(name: string, args: string): void {
-  addLog('tool', `工具调用: ${name}`, args);
+  addLog('tool', `▶ ${name}`, args);
 }
 
 export function logToolResult(name: string, success: boolean, summary?: string): void {
-  addLog(
-    success ? 'success' : 'error',
-    `工具完成: ${name}`,
-    summary,
-    success ? '✅' : '❌'
-  );
+  addLog(success ? 'success' : 'error', `◀ ${name} ${success ? '✓' : '✗'}`, summary, success ? '✅' : '❌');
 }
 
 export function logThink(thinking: string): void {
   const preview = thinking.length > 200 ? thinking.slice(-200) + '...' : thinking;
-  addLog('think', '模型思考中', preview);
+  addLog('think', '思考中', preview);
 }
 
-export function logStream(msg: string): void {
-  addLog('stream', msg);
-}
-
-export function logAgentLoop(iteration: number, maxLoops: number): void {
-  addLog('info', `Agent Loop #${iteration}/${maxLoops}`);
-}
-
-export function logModelResponse(contentLen: number, toolCalls: number): void {
-  addLog('stream', `模型响应: ${contentLen} 字符, ${toolCalls} 个工具调用`);
-}
+export function logStream(msg: string): void { addLog('stream', msg); }
+export function logAgentLoop(iteration: number, maxLoops: number): void { addLog('info', `Loop #${iteration}/${maxLoops}`); }
+export function logModelResponse(contentLen: number, toolCalls: number): void { addLog('stream', `响应: ${contentLen}字, ${toolCalls}工具`); }
+export function logConnection(status: string, detail?: string): void { addLog(status === 'connected' ? 'success' : 'warn', `连接: ${status}`, detail); }
+export function logModel(name: string, action: string): void { addLog('info', `模型: ${action}`, name); }
+export function logSession(action: string, detail?: string): void { addLog('info', `会话: ${action}`, detail); }
+export function logMemory(action: string, detail?: string): void { addLog('debug', `记忆: ${action}`, detail); }
+export function logRAG(action: string, detail?: string): void { addLog('info', `RAG: ${action}`, detail); }
+export function logSetting(key: string, value: string): void { addLog('debug', `设置: ${key}`, value); }
+export function logIPC(action: string, detail?: string): void { addLog('debug', `IPC: ${action}`, detail); }
+export function logInit(msg: string): void { addLog('info', `初始化: ${msg}`); }

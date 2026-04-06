@@ -26,6 +26,7 @@ import { setToolEnabled } from './services/tool-registry.js';
 import { initToolConfirmModal } from './components/tool-confirm-modal.js';
 import { initMemoryPanel } from './components/memory-panel.js';
 import { initLogPanel } from './services/log-service.js';
+import { logInfo, logSuccess, logError, logDebug, logInit } from './services/log-service.js';
 import type { ChatSession } from './types.js';
 
 function initHelpModal(): void {
@@ -43,11 +44,17 @@ function initHelpModal(): void {
 
 function setupDesktopIntegration(): void {
   const bridge = window.__metonaBridge;
-  if (!bridge || !bridge.isDesktop) return;
+  if (!bridge || !bridge.isDesktop) {
+    logDebug('非桌面环境，跳过桌面集成');
+    return;
+  }
+
+  logInit('桌面集成...');
 
   console.log('[Desktop Integration] 初始化桌面集成...');
 
   bridge.onMenuAction((action: string) => {
+    logInfo(`菜单操作: ${action}`);
     switch (action) {
       case 'new-chat': document.querySelector('#btnNewChat')?.dispatchEvent(new Event('click')); break;
       case 'import': document.querySelector('#btnImportSessions')?.dispatchEvent(new Event('click')); break;
@@ -57,6 +64,7 @@ function setupDesktopIntegration(): void {
   });
 
   bridge.onTrayAction((action: string) => {
+    logInfo(`托盘操作: ${action}`);
     switch (action) {
       case 'new-chat': document.querySelector('#btnNewChat')?.dispatchEvent(new Event('click')); break;
     }
@@ -80,6 +88,7 @@ function setupDesktopIntegration(): void {
   });
 
   console.log('[Desktop Integration] 桌面集成完成 ✓');
+  logSuccess('桌面集成完成');
 }
 
 console.log('[Metona] TypeScript + Electron v3.0.0 ' + new Date().toISOString());
@@ -110,6 +119,7 @@ async function startNewSession(): Promise<void> {
   if (api && model) {
     try {
       await api.chat({ model, messages: [], keep_alive: 0 } as any);
+      logDebug('释放旧模型显存');
     } catch (e) {
       console.warn('[App] 释放显存失败:', e);
     }
@@ -117,6 +127,7 @@ async function startNewSession(): Promise<void> {
 
   const session = createNewSession();
   state.set(KEYS.CURRENT_SESSION, session);
+  logInfo('新建会话');
   state.set(KEYS.IS_HISTORY_VIEW, false);
 
   (document.querySelector('#historyBar') as HTMLElement).style.display = 'none';
@@ -132,14 +143,18 @@ async function init(): Promise<void> {
   let db: ChatDB | undefined;
   let api: OllamaAPI;
 
+  logInit('启动...');
+
   try {
     db = new ChatDB();
     await db.init();
     state.set(KEYS.DB, db);
+    logInit('IndexedDB 已连接');
 
     const serverUrl = await db.getSetting('serverUrl', 'http://127.0.0.1:11434');
     api = new OllamaAPI(serverUrl);
     state.set(KEYS.API, api);
+    logInit(`Ollama 地址: ${serverUrl}`);
 
     state.set(KEYS.CURRENT_SESSION, createNewSession());
     state.set(KEYS.IS_STREAMING, false);
@@ -167,6 +182,7 @@ async function init(): Promise<void> {
     await loadModels();
     await initVectorStore();
     await initMemoryManager();
+    logInit('所有组件已就绪');
 
     const savedModel = await db.getSetting('selectedModel', '');
     if (savedModel) {
@@ -210,8 +226,10 @@ async function init(): Promise<void> {
     (document.querySelector('#chatInput') as HTMLElement)?.focus();
 
     console.log('[App] 初始化完成');
+    logSuccess('应用初始化完成');
   } catch (err) {
     console.error('[App] 初始化失败:', err);
+    logError('初始化失败', (err as Error).message);
     if (!api!) {
       api = new OllamaAPI();
       state.set(KEYS.API, api);

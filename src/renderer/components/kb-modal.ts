@@ -11,6 +11,7 @@ import {
 import { fileToText, formatSize, escapeHtml, truncate } from '../utils/utils.js';
 import { showToast } from './toast.js';
 import { OllamaAPI } from '../api/ollama.js';
+import { logRAG, logError } from '../services/log-service.js';
 import type { VectorCollection, SearchResult } from '../types.js';
 
 let kbModalEl: HTMLElement;
@@ -209,6 +210,7 @@ async function createCollection(): Promise<void> {
   currentColId = col.id;
   nameInput.value = '';
   showToast(`知识库「${name}」已创建`, 'success');
+  logRAG(`创建集合: ${name}`);
   await refreshCollections();
   await refreshDocList();
 }
@@ -248,10 +250,12 @@ async function handleDocUpload(e: Event): Promise<void> {
       );
 
       showToast(`${file.name} 已添加到知识库（${result.chunkCount} 个分块）`, 'success');
+      logRAG(`文档上传: ${file.name}`, `${result.chunkCount} 个分块`);
       successCount++;
     } catch (err) {
       console.error('[KB] 文档处理失败:', err);
       showToast(`${file.name} 处理失败: ${(err as Error).message}`, 'error');
+      logError(`RAG 文档处理失败: ${file.name}`, (err as Error).message);
       failCount++;
     }
   }
@@ -260,6 +264,7 @@ async function handleDocUpload(e: Event): Promise<void> {
 
   if (fileArr.length > 1) {
     showToast(`上传完成：成功 ${successCount} 个，失败 ${failCount} 个`, failCount > 0 ? 'warning' : 'success');
+    logRAG(`批量上传完成`, `成功 ${successCount}, 失败 ${failCount}`);
   }
 
   await refreshCollections();

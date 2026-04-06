@@ -4,6 +4,7 @@
  */
 
 import type { ToolDefinition, ToolResult } from '../types.js';
+import { logToolResult, logError } from './log-service.js';
 
 export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
@@ -147,11 +148,13 @@ export function getEnabledToolDefinitions(): ToolDefinition[] {
 
 export async function executeTool(toolName: string, args: Record<string, unknown>): Promise<ToolResult> {
   if (!isToolEnabled(toolName)) {
+    logError(`工具未启用: ${toolName}`);
     return { success: false, error: `工具 ${toolName} 未启用` };
   }
 
   const bridge = window.metonaDesktop;
   if (!bridge?.isDesktop) {
+    logError(`工具调用仅支持桌面版: ${toolName}`);
     return { success: false, error: '工具调用仅支持桌面版' };
   }
 
@@ -159,6 +162,7 @@ export async function executeTool(toolName: string, args: Record<string, unknown
     const result = await bridge.tool.execute(toolName, args);
     return result;
   } catch (err) {
+    logError(`工具异常: ${toolName}`, (err as Error).message);
     return { success: false, error: (err as Error).message };
   }
 }

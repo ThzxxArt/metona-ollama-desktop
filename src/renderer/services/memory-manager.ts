@@ -11,6 +11,7 @@
 
 import { state, KEYS } from '../state/state.js';
 import { generateId } from '../utils/utils.js';
+import { logMemory, logDebug, logWarn } from './log-service.js';
 import type { MemoryEntry, MemorySearchResult, MemoryExtractionResult, ChatDB, OllamaAPI } from '../types.js';
 
 const TYPE_ICONS: Record<string, string> = {
@@ -41,6 +42,7 @@ export async function initMemoryManager(): Promise<void> {
   state.set('memoryEntries', memoryCache);
 
   console.log(`[Memory] 初始化完成，加载 ${memoryCache.length} 条记忆`);
+  logMemory(`初始化完成, 加载 ${memoryCache.length} 条`);
 }
 
 export function isMemoryEnabled(): boolean {
@@ -152,6 +154,7 @@ export async function addMemory(data: {
   state.set('memoryEntries', [...memoryCache]);
 
   if (db) await db.saveMemory(entry);
+  logMemory(`新增: ${data.type}`, entry.content.slice(0, 60));
 
   return entry;
 }
@@ -177,6 +180,7 @@ export async function deleteMemory(id: string): Promise<void> {
 
   const db = state.get<ChatDB | null>(KEYS.DB);
   if (db) await db.deleteMemory(id);
+  logMemory(`删除`, id);
 }
 
 // ── 清空所有记忆 ──
@@ -316,9 +320,11 @@ ${conversationText.slice(0, 4000)}
       count++;
     }
 
+    if (count > 0) logMemory(`自动提取 ${count} 条`);
     return count;
   } catch (err) {
     console.warn('[Memory] 自动提取失败:', err);
+    logWarn('记忆自动提取失败', (err as Error).message);
     return 0;
   }
 }

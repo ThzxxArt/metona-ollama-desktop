@@ -5,6 +5,7 @@
 import { state, KEYS } from '../state/state.js';
 import { formatSize } from '../utils/utils.js';
 import { OllamaAPI } from '../api/ollama.js';
+import { logConnection, logError, logDebug } from '../services/log-service.js';
 
 let connStatusEl: HTMLElement;
 
@@ -24,11 +25,13 @@ export async function checkConnection(): Promise<{ ok: boolean; version?: { vers
     connStatusEl.className = 'conn-status connected';
     connStatusEl.title = `已连接 (v${version.version})`;
     connStatusEl.querySelector('.status-label')!.textContent = '已连接';
+    logConnection('connected', `Ollama v${version.version}`);
     return { ok: true, version };
   } catch (err) {
     connStatusEl.className = 'conn-status disconnected';
     connStatusEl.title = '未连接';
     connStatusEl.querySelector('.status-label')!.textContent = '未连接';
+    logConnection('disconnected', (err as Error).message);
     return { ok: false, error: err as Error };
   }
 }
@@ -51,10 +54,12 @@ export async function updateConnectionInfo(): Promise<void> {
     badge.className = 'status-badge success';
     verEl.textContent = `v${version.version}`;
     corsHint.style.display = 'none';
+    logConnection('info', `Ollama v${version.version}`);
   } catch (err) {
     badge.textContent = '✗ 未连接';
     badge.className = 'status-badge error';
     verEl.textContent = '';
+    logError('连接检测失败', (err as Error).message);
 
     if ((err as Error).message.includes('Failed to fetch') || (err as Error).message.includes('NetworkError') || (err as Error).message.includes('CORS')) {
       corsHint.style.display = '';

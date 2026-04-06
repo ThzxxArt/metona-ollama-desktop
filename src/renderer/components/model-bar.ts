@@ -6,6 +6,7 @@ import { state, KEYS } from '../state/state.js';
 import { formatSize } from '../utils/utils.js';
 import { OllamaAPI } from '../api/ollama.js';
 import { ChatDB } from '../db/chat-db.js';
+import { logModel, logDebug, logError, logWarn } from '../services/log-service.js';
 import type { OllamaModelDetail, ModelCaps } from '../types.js';
 
 let modelSelectEl: HTMLSelectElement;
@@ -34,6 +35,7 @@ export function initModelBar(): void {
     state.set('_defaultModel', model);
     state.update(KEYS.CURRENT_SESSION, (session: any) => session ? ({ ...session, model }) : session);
     if (model) {
+      logModel(model, '切换');
       await checkModelCapability(model);
     } else {
       setThinkAvailable(false);
@@ -58,8 +60,11 @@ export async function loadModels(): Promise<void> {
       modelSelectEl.innerHTML = '<option value="">未安装任何模型</option>';
       badgeThinkEl.style.display = 'none'; badgeVisionEl.style.display = 'none';
       setThinkAvailable(false); setVisionAvailable(false);
+      logWarn('未检测到已安装模型');
       return;
     }
+
+    logModel(`${data.models.length} 个模型`, '加载列表');
 
     data.models
       .sort((a, b) => {
@@ -86,6 +91,7 @@ export async function loadModels(): Promise<void> {
     filterEmbedModels(data.models);
   } catch (err) {
     console.error('[ModelBar] 加载模型失败:', err);
+    logError('加载模型列表失败', (err as Error).message);
     modelSelectEl.innerHTML = '<option value="">加载失败 - 检查连接</option>';
     badgeThinkEl.style.display = 'none'; badgeVisionEl.style.display = 'none';
     setThinkAvailable(false); setVisionAvailable(false);
@@ -125,6 +131,7 @@ async function filterEmbedModels(models: Array<{ name: string }>): Promise<void>
       if (!isCompletion) {
         const opt = modelSelectEl.querySelector(`option[value="${CSS.escape(m.name)}"]`);
         if (opt) opt.remove();
+        logDebug(`模型 ${m.name} 不是 completion 模型，已移除`);
       }
     } catch { /* ignore */ }
   }
@@ -159,9 +166,11 @@ async function checkModelCapability(modelName: string): Promise<void> {
       completion: capabilities.includes('completion'),
     };
     modelCapabilityCache.set(modelName, caps);
+    logDebug(`能力检测: ${modelName}`, capabilities.join(', '));
     applyCapability(modelName, caps);
   } catch (err) {
     console.warn('[ModelBar] 获取模型能力失败:', err);
+    logWarn(`能力检测失败: ${modelName}`, (err as Error).message);
     const fallback = { think: false, vision: false, tools: false, completion: true };
     modelCapabilityCache.set(modelName, fallback);
     applyCapability(modelName, fallback);
