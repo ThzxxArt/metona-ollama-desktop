@@ -86,9 +86,24 @@ export async function runAgentLoop(
   let loopCount = 0;
   const maxLoops = 10;
   const allToolRecords: ToolCallRecord[] = [];
+  const loopStartTime = Date.now();
+  const MAX_LOOP_TIME = 300000; // 5分钟总超时
 
   while (loopCount < maxLoops) {
     loopCount++;
+
+    // 全局超时检查
+    if (Date.now() - loopStartTime > MAX_LOOP_TIME) {
+      console.warn('[AgentEngine] 达到最大运行时间（5分钟），自动停止');
+      callbacks.onDone(content || '（达到最大运行时间限制）', allToolRecords);
+      return;
+    }
+
+    // 检查是否已中止
+    if (state.get<AbortController | null>(KEYS.ABORT_CONTROLLER)?.signal.aborted) {
+      callbacks.onDone(content, allToolRecords.length > 0 ? allToolRecords : undefined);
+      return;
+    }
 
     let thinking = '';
     let content = '';
@@ -171,10 +186,21 @@ export async function runAgentLoop(
     }
 
     for (const call of toolCalls) {
+      // 检查是否已中止
+      if (abortController.signal.aborted) {
+        callbacks.onDone(content, allToolRecords.length > 0 ? allToolRecords : undefined);
+        return;
+      }
+
       callbacks.onToolCallStart(call);
 
       if (needsConfirmation(call.function.name)) {
         const confirmed = await callbacks.onConfirmTool(call);
+        // 确认后再次检查是否已中止
+        if (abortController.signal.aborted) {
+          callbacks.onDone(content, allToolRecords.length > 0 ? allToolRecords : undefined);
+          return;
+        }
         if (!confirmed) {
           const record: ToolCallRecord = {
             name: call.function.name,
@@ -196,7 +222,14 @@ export async function runAgentLoop(
       }
 
       try {
-        const result = await executeTool(call.function.name, call.function.arguments);
+        // 工具执行超时保护（30秒）
+        const TOOL_TIMEOUT = 30000;
+        const result = await Promise.race([
+          executeTool(call.function.name, call.function.arguments),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('工具执行超时（30秒）')), TOOL_TIMEOUT)
+          )
+        ]);
         const record: ToolCallRecord = {
           name: call.function.name,
           arguments: call.function.arguments,
@@ -214,6 +247,7 @@ export async function runAgentLoop(
         callbacks.onToolCallResult(call.function.name, result, call);
       } catch (err) {
         const errorMsg = (err as Error).message;
+        console.error(`[AgentEngine] 工具执行失败 (${call.function.name}):`, errorMsg);
         const record: ToolCallRecord = {
           name: call.function.name,
           arguments: call.function.arguments,

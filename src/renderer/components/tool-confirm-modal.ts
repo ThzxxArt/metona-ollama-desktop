@@ -7,10 +7,12 @@ import { getToolIcon, formatToolName } from '../services/tool-registry.js';
 
 let modalEl: HTMLElement | null = null;
 let resolveConfirm: ((confirmed: boolean) => void) | null = null;
+let initialized = false;
 
 export function initToolConfirmModal(): void {
   modalEl = document.querySelector('#toolConfirmModal')!;
-  if (!modalEl) return;
+  if (!modalEl || initialized) return;
+  initialized = true;
 
   modalEl.addEventListener('click', (e) => {
     if (e.target === modalEl) {
@@ -24,9 +26,19 @@ export function showToolConfirm(call: ToolCall): Promise<boolean> {
     if (!modalEl) {
       modalEl = document.querySelector('#toolConfirmModal')!;
       if (!modalEl) { resolve(false); return; }
-      modalEl.addEventListener('click', (e) => {
-        if (e.target === modalEl) cancelConfirm();
-      });
+      if (!initialized) {
+        initialized = true;
+        modalEl.addEventListener('click', (e) => {
+          if (e.target === modalEl) cancelConfirm();
+        });
+      }
+    }
+
+    // 如果有未完成的确认，先取消
+    if (resolveConfirm) {
+      const oldResolve = resolveConfirm;
+      resolveConfirm = null;
+      oldResolve(false);
     }
 
     resolveConfirm = resolve;
@@ -68,11 +80,13 @@ export function showToolConfirm(call: ToolCall): Promise<boolean> {
 
     modalEl.style.display = '';
 
-    const onConfirm = () => {
+    const onConfirm = (e: Event) => {
+      e.stopPropagation();
       cleanup();
       resolveConfirm?.(true);
     };
-    const onCancel = () => {
+    const onCancel = (e: Event) => {
+      e.stopPropagation();
       cleanup();
       resolveConfirm?.(false);
     };
