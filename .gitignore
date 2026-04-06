@@ -2,6 +2,7 @@ node_modules/
 release/
 dist/
 out/
+build-resources/
 .DS_Store
 Thumbs.db
 *.log
