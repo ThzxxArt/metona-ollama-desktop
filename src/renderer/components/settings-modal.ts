@@ -271,9 +271,9 @@ async function importSessions(filePath: string): Promise<void> {
       return;
     }
 
-    const result = await db.importSessions(sessions);
-    showToast(`导入完成：${result.imported} 个会话${result.skipped > 0 ? `，跳过 ${result.skipped} 个` : ''}`, 'success', 4000);
-    logSuccess(`导入完成: ${result.imported} 个, 跳过 ${result.skipped} 个`);
+    const importResult = await db.importSessions(sessions);
+    showToast(`导入完成：${importResult.imported} 个会话${importResult.skipped > 0 ? `，跳过 ${importResult.skipped} 个` : ''}`, 'success', 4000);
+    logSuccess(`导入完成: ${importResult.imported} 个, 跳过 ${importResult.skipped} 个`);
   } catch (err) {
     showToast(`导入失败: ${(err as Error).message}`, 'error');
     logError('导入失败', (err as Error).message);
