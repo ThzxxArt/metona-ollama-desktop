@@ -43,7 +43,7 @@ function initHelpModal(): void {
 }
 
 function setupDesktopIntegration(): void {
-  const bridge = window.__metonaBridge;
+  const bridge = window.metonaDesktop;
   if (!bridge || !bridge.isDesktop) {
     logDebug('非桌面环境，跳过桌面集成');
     return;

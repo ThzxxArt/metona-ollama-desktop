@@ -58,10 +58,6 @@ function splitSentences(text: string): string[] {
   return parts.filter(p => p.trim()).map(p => p.trim() + ' ');
 }
 
-export function extractDocument(content: string, filename: string): { text: string; filename: string } {
-  return { text: content, filename };
-}
-
 export function createChunkMetadata(chunk: string, index: number, docId: string, filename: string) {
   return {
     id: `${docId}_chunk_${index}`,

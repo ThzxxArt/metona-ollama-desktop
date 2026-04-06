@@ -234,25 +234,6 @@ export interface SaveFileOptions {
   filters?: Array<{ name: string; extensions: string[] }>;
 }
 
-// ── 桌面 Bridge 接口 ──
-
-export interface DesktopBridge {
-  isDesktop: boolean;
-  getInfo: () => Promise<{ platform: string; version: string; arch?: string; electronVersion?: string; userDataPath?: string }>;
-  openFile: (filters?: Array<{ name: string; extensions: string[] }>) => Promise<string[] | null>;
-  saveFile: (options?: SaveFileOptions) => Promise<string | null>;
-  readFile: (filePath: string) => Promise<{ success: boolean; content?: string; name?: string; error?: string }>;
-  writeFile: (filePath: string, content: string) => Promise<{ success: boolean; error?: string }>;
-  notify: (title: string, body: string) => void;
-  minimize: () => void;
-  maximize: () => void;
-  close: () => void;
-  openExternal: (url: string) => void;
-  onMenuAction: (callback: (action: string) => void) => void;
-  onTrayAction: (callback: (action: string) => void) => void;
-  off: (channel: string) => void;
-}
-
 // ── State Keys ──
 
 export type StateKey =
@@ -333,7 +314,6 @@ export type AgentState = 'idle' | 'sending' | 'accumulating' | 'executing' | 'co
 declare global {
   interface Window {
     metonaDesktop?: MetonaDesktopAPI;
-    __metonaBridge?: DesktopBridge;
   }
 }
 

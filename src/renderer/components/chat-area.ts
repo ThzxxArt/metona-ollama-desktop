@@ -373,10 +373,6 @@ export function appendSystemMessage(text: string, tempClass?: string): void {
   scrollToBottom();
 }
 
-export function getMessagesContainer(): HTMLElement {
-  return messagesContainerEl;
-}
-
 export function clearMessages(): void {
   messagesContainerEl.innerHTML = '';
   currentPlaceholder = null;
