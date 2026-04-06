@@ -12,6 +12,7 @@ import {
 } from './tool-registry.js';
 import { searchMemories, buildMemoryContext, markMemoryUsed, isMemoryEnabled } from './memory-manager.js';
 import { showToast } from '../components/toast.js';
+import { logInfo, logWarn, logError, logToolStart, logToolResult, logThink, logStream, logAgentLoop, logModelResponse } from './log-service.js';
 import type {
   OllamaMessage,
   OllamaStreamChunk,
@@ -53,6 +54,7 @@ export async function runAgentLoop(
   const modelSupportsTools = state.get<boolean>('modelSupportsTools', false);
   if (!modelSupportsTools) {
     console.warn(`[AgentEngine] 模型 ${model} 未声明 tools 能力，Agent Loop 可能不稳定`);
+    logWarn(`模型 ${model} 不支持 Tool Calling`, 'Agent Loop 可能不稳定');
   }
 
   const messages: OllamaMessage[] = [];
@@ -94,6 +96,8 @@ export async function runAgentLoop(
   const tools = getEnabledToolDefinitions();
   const useTools = tools.length > 0;
 
+  logInfo(`Agent Loop 启动: ${model}`, `工具: ${useTools ? '开启' : '关闭'}, 记忆: ${isMemoryEnabled() ? '开启' : '关闭'}`);
+
   let loopCount = 0;
   const allToolRecords: ToolCallRecord[] = [];
   const loopStartTime = Date.now();
@@ -105,15 +109,19 @@ export async function runAgentLoop(
     // 全局超时检查
     if (Date.now() - loopStartTime > MAX_LOOP_TIME) {
       console.warn('[AgentEngine] 达到最大运行时间（5分钟），自动停止');
+      logWarn('Agent Loop 达到最大运行时间（5分钟），自动停止');
       callbacks.onDone(content || '（达到最大运行时间限制）', allToolRecords);
       return;
     }
 
     // 检查是否已中止
     if (state.get<AbortController | null>(KEYS.ABORT_CONTROLLER)?.signal.aborted) {
+      logInfo('Agent Loop 已中止');
       callbacks.onDone(content, allToolRecords.length > 0 ? allToolRecords : undefined);
       return;
     }
+
+    logAgentLoop(loopCount, MAX_LOOPS);
 
     let thinking = '';
     content = '';
@@ -141,6 +149,10 @@ export async function runAgentLoop(
             if (chunk.message?.thinking) {
               thinking += chunk.message.thinking;
               callbacks.onThinking(thinking);
+              // 每收到 200 字符记录一次思考日志
+              if (thinking.length % 200 < 10) {
+                logThink(thinking);
+              }
             }
             if (chunk.message?.content) {
               content += chunk.message.content;
@@ -173,6 +185,7 @@ export async function runAgentLoop(
       ]);
     } catch (err) {
       if (abortController.signal.aborted) {
+        logInfo('流式调用已中止');
         if (content || thinking) {
           messages.push({
             role: 'assistant',
@@ -186,6 +199,7 @@ export async function runAgentLoop(
       // 超时错误 — 保留已生成的内容
       if ((err as Error).message.includes('超时')) {
         console.warn('[AgentEngine] 流式调用超时:', (err as Error).message);
+        logError('流式调用超时（2分钟无数据）', (err as Error).message);
         if (content || thinking) {
           messages.push({
             role: 'assistant',
@@ -209,6 +223,8 @@ export async function runAgentLoop(
     }
     messages.push(assistantMsg);
 
+    logModelResponse(content.length, toolCalls.length);
+
     if (toolCalls.length === 0) {
       callbacks.onDone(content, allToolRecords.length > 0 ? allToolRecords : undefined);
       return;
@@ -222,6 +238,7 @@ export async function runAgentLoop(
       }
 
       callbacks.onToolCallStart(call);
+      logToolStart(call.function.name, JSON.stringify(call.function.arguments));
 
       if (needsConfirmation(call.function.name)) {
         const confirmed = await callbacks.onConfirmTool(call);
@@ -231,6 +248,7 @@ export async function runAgentLoop(
           return;
         }
         if (!confirmed) {
+          logWarn(`工具取消: ${call.function.name}`, '用户取消了操作');
           const record: ToolCallRecord = {
             name: call.function.name,
             arguments: call.function.arguments,
@@ -273,9 +291,11 @@ export async function runAgentLoop(
           content: JSON.stringify(result)
         });
         callbacks.onToolCallResult(call.function.name, result, call);
+        logToolResult(call.function.name, result.success, result.success ? undefined : result.error);
       } catch (err) {
         const errorMsg = (err as Error).message;
         console.error(`[AgentEngine] 工具执行失败 (${call.function.name}):`, errorMsg);
+        logError(`工具执行失败: ${call.function.name}`, errorMsg);
         const record: ToolCallRecord = {
           name: call.function.name,
           arguments: call.function.arguments,
@@ -295,5 +315,6 @@ export async function runAgentLoop(
     }
   }
 
+  logWarn('Agent Loop 达到最大工具调用次数限制');
   callbacks.onDone(content || '（达到最大工具调用次数限制）', allToolRecords);
 }

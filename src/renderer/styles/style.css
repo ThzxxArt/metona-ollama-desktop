@@ -78,9 +78,130 @@ html, body {
 
 #app {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
     height: 100vh;
     position: relative;
+}
+
+/* ═══ 日志面板 ═══ */
+.log-panel {
+    width: 300px;
+    min-width: 300px;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-card);
+    border-right: 1px solid var(--border-subtle);
+    z-index: 5;
+    flex-shrink: 0;
+}
+
+.log-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border-subtle);
+    flex-shrink: 0;
+}
+
+.log-panel-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.log-panel-actions {
+    display: flex;
+    gap: 4px;
+}
+
+.log-btn {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+}
+
+.log-btn svg {
+    width: 14px;
+    height: 14px;
+}
+
+.log-panel-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 6px 0;
+    font-family: 'Cascadia Code', 'Consolas', 'Menlo', monospace;
+    font-size: 11.5px;
+    line-height: 1.5;
+}
+
+.log-panel-body::-webkit-scrollbar { width: 6px; }
+.log-panel-body::-webkit-scrollbar-track { background: transparent; }
+.log-panel-body::-webkit-scrollbar-thumb { background: var(--border-subtle); border-radius: 3px; }
+
+.log-entry {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    padding: 3px 10px;
+    gap: 6px;
+    border-bottom: 1px solid rgba(255,255,255,0.02);
+}
+
+.log-entry:hover {
+    background: rgba(255,255,255,0.03);
+}
+
+.log-time {
+    color: var(--text-muted);
+    font-size: 10px;
+    flex-shrink: 0;
+    min-width: 56px;
+}
+
+.log-icon {
+    flex-shrink: 0;
+    font-size: 11px;
+}
+
+.log-msg {
+    flex: 1;
+    min-width: 0;
+    word-break: break-all;
+}
+
+.log-detail {
+    width: 100%;
+    margin: 2px 0 0;
+    padding: 4px 8px;
+    background: rgba(0,0,0,0.25);
+    border-radius: 4px;
+    font-size: 10.5px;
+    line-height: 1.4;
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 120px;
+    overflow-y: auto;
+    color: var(--text-secondary);
+}
+
+/* 日志级别颜色 */
+.log-info .log-msg { color: var(--text-secondary); }
+.log-success .log-msg { color: var(--success); }
+.log-warn .log-msg { color: #FFB74D; }
+.log-error .log-msg { color: #EF5350; }
+.log-debug .log-msg { color: var(--text-muted); }
+.log-tool .log-msg { color: #FFB74D; }
+.log-think .log-msg { color: var(--accent); }
+.log-stream .log-msg { color: var(--accent); }
+
+/* 主内容区 */
+.main-wrap {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+    height: 100vh;
 }
 
 /* ═══ 顶部导航 ═══ */

@@ -16,6 +16,7 @@ import { OllamaAPI } from '../api/ollama.js';
 import { runAgentLoop } from '../services/agent-engine.js';
 import { searchMemories, buildMemoryContext, markMemoryUsed, extractMemoriesFromConversation, isMemoryEnabled } from '../services/memory-manager.js';
 import { showToolConfirm } from './tool-confirm-modal.js';
+import { logInfo, logStream, logError, logSuccess, logWarn } from '../services/log-service.js';
 import type { ChatSession, ChatMessage, OllamaStreamChunk, RagSource, FileContent, ChatFile, ToolCallRecord } from '../types.js';
 
 let chatInputEl: HTMLTextAreaElement;
@@ -249,6 +250,8 @@ export async function sendMessage(): Promise<void> {
     return;
   }
 
+  logInfo(`发送消息: ${model}`, text ? text.slice(0, 60) + (text.length > 60 ? '...' : '') : '[附件消息]');
+
   if (pendingImages.length > 0 && !isVisionAvailable()) {
     appendSystemMessage('⚠️ 当前模型不支持图片分析，请移除图片后重试');
     return;
@@ -441,7 +444,10 @@ export async function sendMessage(): Promise<void> {
 
     if (!assistantContent && !thinkContent) {
       appendSystemMessage('⚠️ 模型未返回任何内容，可能是上下文过长或模型不支持当前请求');
+      logWarn('模型未返回任何内容');
     }
+
+    logStream(`流式完成: ${assistantContent.length} 字符${finalStats?.eval_count ? `, ${finalStats.eval_count} tokens` : ''}`);
 
     const assistantMsg: ChatMessage = {
       role: 'assistant',
@@ -555,10 +561,15 @@ export async function sendMessage(): Promise<void> {
     let errMsg = `❌ 错误: ${(err as Error).message}`;
     if ((err as Error).message.includes('Failed to fetch') || (err as Error).message.includes('NetworkError')) {
       errMsg = '❌ 连接失败。请检查：\n1. Ollama 是否正在运行\n2. 地址是否正确\n3. 是否设置了 OLLAMA_ORIGINS="*"';
+      logError('连接失败', 'Ollama 服务不可达');
     } else if ((err as Error).message.includes('400')) {
       errMsg = '❌ 请求参数错误，可能是知识库内容超出模型上下文限制';
+      logError('请求参数错误 (400)', (err as Error).message);
     } else if ((err as Error).message.includes('500')) {
       errMsg = '❌ Ollama 服务器错误，请检查 Ollama 日志';
+      logError('Ollama 服务器错误 (500)', (err as Error).message);
+    } else {
+      logError('对话错误', (err as Error).message);
     }
     appendSystemMessage(errMsg);
   } finally {
@@ -691,6 +702,7 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
     });
   } catch (err) {
     console.error('[AgentLoop] 错误:', err);
+    logError('Agent Loop 错误', (err as Error).message);
 
     if ((err as Error).name === 'AbortError') {
       const placeholder = document.querySelector('#messagesContainer .message.assistant.loading') as HTMLElement;
