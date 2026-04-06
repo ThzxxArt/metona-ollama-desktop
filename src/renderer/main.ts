@@ -161,6 +161,13 @@ async function init(): Promise<void> {
     state.set(KEYS.IS_HISTORY_VIEW, false);
     state.set(KEYS.NUM_CTX, 24576);
 
+    // ── 防御性重置：确保首次启动不会遗留脏状态 ──
+    state.set('toolCallingEnabled', false);
+    state.set('runCommandEnabled', false);
+    state.set('memoryEnabled', true);
+    state.set('thinkEnabled', false);
+
+    initLogPanel();  // ← 日志面板最先初始化，确保后续 init 日志能显示
     initToast();
     initLightbox();
     initHeader();
@@ -173,7 +180,6 @@ async function init(): Promise<void> {
     initHelpModal();
     initToolConfirmModal();
     initMemoryPanel();
-    initLogPanel();
     setupDesktopIntegration();
 
     bindGlobalEvents();
@@ -234,7 +240,11 @@ async function init(): Promise<void> {
       api = new OllamaAPI();
       state.set(KEYS.API, api);
     }
+    // ── 防御性重置：catch 路径也确保关键状态干净 ──
+    state.set(KEYS.IS_STREAMING, false);
+    state.set(KEYS.IS_HISTORY_VIEW, false);
     state.set(KEYS.CURRENT_SESSION, createNewSession());
+    initLogPanel();
     bindGlobalEvents();
     initToast();
     initLightbox();

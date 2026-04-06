@@ -5,6 +5,7 @@
 import { state, KEYS } from '../state/state.js';
 import { debounce, escapeHtml, formatTime } from '../utils/utils.js';
 import { exportAsMarkdown, exportAsHtml, exportAsTxt, renderMessages, clearMessages } from './chat-area.js';
+import { showConfirm } from './prompt-modal.js';
 import { ChatDB } from '../db/chat-db.js';
 import { logSession, logWarn } from '../services/log-service.js';
 import type { ChatSession } from '../types.js';
@@ -56,7 +57,7 @@ export function initHistoryModal(): void {
     const db = state.get<ChatDB>(KEYS.DB);
 
     if (target.classList.contains('btn-delete-session')) {
-      if (confirm('确定删除此会话？')) {
+      if (await showConfirm('确定删除此会话？', '删除会话')) {
         await db!.deleteSession(sessionId);
         logSession('删除', sessionId);
         const currentSession = state.get<ChatSession | null>(KEYS.CURRENT_SESSION);

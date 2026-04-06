@@ -10,6 +10,7 @@ import {
   getTypeIcon, getTypeName
 } from '../services/memory-manager.js';
 import { showToast } from './toast.js';
+import { showPrompt, showConfirm } from './prompt-modal.js';
 import { debounce, escapeHtml, formatTime } from '../utils/utils.js';
 import type { MemoryEntry, MemoryType } from '../types.js';
 
@@ -93,7 +94,7 @@ export function initMemoryPanel(): void {
 
   panel.querySelector('#btnAddMemory')!.addEventListener('click', () => openAddMemoryDialog());
   panel.querySelector('#btnClearMemories')!.addEventListener('click', async () => {
-    if (confirm('确定清空所有记忆？此操作不可恢复！')) {
+    if (await showConfirm('确定清空所有记忆？此操作不可恢复！', '清空记忆')) {
       await clearAllMemories();
       renderMemoryList();
       updateMemoryCount();
@@ -205,33 +206,62 @@ function renderMemoryList(): void {
   });
 }
 
-function openAddMemoryDialog(): void {
-  const type = prompt('记忆类型：\n1. fact（事实）\n2. preference（偏好）\n3. rule（规则）\n4. episode（事件）\n\n请输入数字：');
-  const typeMap: Record<string, MemoryType> = { '1': 'fact', '2': 'preference', '3': 'rule', '4': 'episode' };
-  const memoryType = typeMap[type || ''] || 'fact';
+async function openAddMemoryDialog(): Promise<void> {
+  const type = await showPrompt({
+    title: '添加记忆',
+    message: '选择记忆类型：',
+    type: 'select',
+    defaultValue: 'fact',
+    options: [
+      { value: 'fact', label: '📌 事实 — 项目信息、身份背景' },
+      { value: 'preference', label: '⚙️ 偏好 — 语言风格、技术栈偏好' },
+      { value: 'rule', label: '📏 规则 — 编码规范、输出要求' },
+      { value: 'episode', label: '📝 事件 — 完成的任务、结论' }
+    ]
+  });
+  if (type === null) return;
+  const memoryType = (type as MemoryType) || 'fact';
 
-  const content = prompt('请输入记忆内容：');
+  const content = await showPrompt({
+    title: '添加记忆',
+    message: '请输入记忆内容：',
+    type: 'textarea',
+    placeholder: '例如：用户正在开发一个 Electron 桌面应用'
+  });
   if (!content?.trim()) return;
 
-  const importanceStr = prompt('重要性（1-10，默认 5）：');
+  const importanceStr = await showPrompt({
+    title: '添加记忆',
+    message: '重要性（1-10，默认 5）：',
+    defaultValue: '5',
+    placeholder: '5'
+  });
   const importance = Math.min(10, Math.max(1, parseInt(importanceStr || '5') || 5));
 
-  addMemory({ type: memoryType, content: content.trim(), importance }).then(() => {
-    renderMemoryList();
-    updateMemoryCount();
-    showToast('记忆已添加', 'success', 1500);
-  });
+  await addMemory({ type: memoryType, content: content.trim(), importance });
+  renderMemoryList();
+  updateMemoryCount();
+  showToast('记忆已添加', 'success', 1500);
 }
 
-function openEditMemoryDialog(entry: MemoryEntry): void {
-  const newContent = prompt('编辑记忆内容：', entry.content);
+async function openEditMemoryDialog(entry: MemoryEntry): Promise<void> {
+  const newContent = await showPrompt({
+    title: '编辑记忆',
+    message: '修改记忆内容：',
+    type: 'textarea',
+    defaultValue: entry.content
+  });
   if (newContent === null || newContent.trim() === entry.content) return;
 
-  const importanceStr = prompt('重要性（1-10）：', String(entry.importance));
+  const importanceStr = await showPrompt({
+    title: '编辑记忆',
+    message: '重要性（1-10）：',
+    defaultValue: String(entry.importance),
+    placeholder: String(entry.importance)
+  });
   const importance = importanceStr ? Math.min(10, Math.max(1, parseInt(importanceStr) || entry.importance)) : entry.importance;
 
-  updateMemory(entry.id, { content: newContent.trim(), importance }).then(() => {
-    renderMemoryList();
-    showToast('记忆已更新', 'success', 1500);
-  });
+  await updateMemory(entry.id, { content: newContent.trim(), importance });
+  renderMemoryList();
+  showToast('记忆已更新', 'success', 1500);
 }

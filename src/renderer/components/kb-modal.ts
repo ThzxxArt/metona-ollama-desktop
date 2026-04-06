@@ -10,6 +10,7 @@ import {
 } from '../services/rag.js';
 import { fileToText, formatSize, escapeHtml, truncate } from '../utils/utils.js';
 import { showToast } from './toast.js';
+import { showConfirm } from './prompt-modal.js';
 import { OllamaAPI } from '../api/ollama.js';
 import { logRAG, logError } from '../services/log-service.js';
 import type { VectorCollection, SearchResult } from '../types.js';
@@ -144,7 +145,7 @@ async function refreshCollections(): Promise<void> {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
       const id = (btn as HTMLElement).dataset.id!;
-      if (!confirm('确定删除此知识库集合？所有文档将被清除。')) return;
+      if (!await showConfirm('确定删除此知识库集合？所有文档将被清除。', '删除知识库')) return;
       const vs = getVectorStore();
       await vs!.deleteCollection(id);
       if (currentColId === id) currentColId = null;
@@ -192,7 +193,7 @@ async function refreshDocList(): Promise<void> {
   docListEl.querySelectorAll('.kb-doc-delete').forEach(btn => {
     btn.addEventListener('click', async () => {
       const docId = (btn as HTMLElement).dataset.docid!;
-      if (!confirm('确定删除此文档？')) return;
+      if (!await showConfirm('确定删除此文档？', '删除文档')) return;
       await removeDocumentFromKB(currentColId!, docId);
       showToast('文档已删除', 'success');
       await refreshCollections();

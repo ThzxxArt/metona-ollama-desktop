@@ -11,6 +11,7 @@ import { logSetting, logInfo, logWarn, logError, logSuccess } from '../services/
 import { updateConnectionInfo, updateRunningModels } from './header.js';
 import { loadModels } from './model-bar.js';
 import { showToast } from './toast.js';
+import { showConfirm } from './prompt-modal.js';
 import { OllamaAPI } from '../api/ollama.js';
 import { ChatDB } from '../db/chat-db.js';
 import type { ChatSession } from '../types.js';
@@ -96,7 +97,7 @@ export function initSettingsModal(): void {
 
   document.querySelector('#btnClearAllHistory')!.addEventListener('click', async () => {
     const db = state.get<ChatDB | null>(KEYS.DB);
-    if (confirm('确定清空所有历史记录？此操作不可恢复！')) {
+    if (await showConfirm('确定清空所有历史记录？此操作不可恢复！', '清空历史')) {
       logWarn('清空所有历史记录');
       await db!.clearAll();
       (document.querySelector('#btnNewChat') as HTMLElement).click();

@@ -23,6 +23,9 @@ let autoScroll = true;
 let idCounter = 0;
 let renderQueued = false;
 const pendingEntries: LogEntry[] = [];
+let panelInitialized = false;
+/** initLogPanel 前的日志暂存区 */
+const earlyBuffer: LogEntry[] = [];
 
 const LEVEL_ICONS: Record<LogLevel, string> = {
   info: 'ℹ️',
@@ -69,6 +72,28 @@ export function initLogPanel(): void {
         autoScroll = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
       } catch { /* ignore */ }
     });
+
+    // ── 关键修复：flush initLogPanel 前缓冲的日志 ──
+    panelInitialized = true;
+    if (earlyBuffer.length > 0 && logBodyEl) {
+      const frag = document.createDocumentFragment();
+      for (const entry of earlyBuffer) {
+        const div = document.createElement('div');
+        div.className = `log-entry log-${entry.level}`;
+        div.id = entry.id;
+        let html = `<span class="log-time">${formatTime(entry.time)}</span>`;
+        html += `<span class="log-icon">${entry.icon}</span>`;
+        html += `<span class="log-msg">${escapeHtml(entry.message)}</span>`;
+        if (entry.detail) {
+          html += `<pre class="log-detail">${escapeHtml(entry.detail)}</pre>`;
+        }
+        div.innerHTML = html;
+        frag.appendChild(div);
+      }
+      logBodyEl.appendChild(frag);
+      earlyBuffer.length = 0;
+      if (autoScroll) logBodyEl.scrollTop = logBodyEl.scrollHeight;
+    }
   } catch { /* ignore */ }
 }
 
@@ -136,6 +161,12 @@ export function addLog(level: LogLevel, message: string, detail?: string, icon?:
 
     logs.push(entry);
     if (logs.length > MAX_LOGS) logs.splice(0, logs.length - MAX_LOGS);
+
+    // initLogPanel 之前：暂存到 earlyBuffer
+    if (!panelInitialized) {
+      earlyBuffer.push(entry);
+      return;
+    }
 
     pendingEntries.push(entry);
     if (!renderQueued) {
