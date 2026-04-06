@@ -122,6 +122,7 @@ export async function runAgentLoop(
     }
 
     logAgentLoop(loopCount, MAX_LOOPS);
+    console.log(`[AgentEngine] ===== Loop #${loopCount} 开始, messages: ${messages.length}, tools: ${useTools} =====`);
 
     let thinking = '';
     content = '';
@@ -132,6 +133,7 @@ export async function runAgentLoop(
 
     try {
       // 带超时保护的流式调用
+      console.log('[AgentEngine] 开始流式调用, model:', model, 'think:', state.get<boolean>('thinkEnabled', false));
       await Promise.race([
         api.chatStream(
           {
@@ -184,6 +186,7 @@ export async function runAgentLoop(
         )
       ]);
     } catch (err) {
+      console.error('[AgentEngine] 流式调用错误:', (err as Error).message, 'aborted:', abortController.signal.aborted);
       if (abortController.signal.aborted) {
         logInfo('流式调用已中止');
         if (content || thinking) {
@@ -224,26 +227,35 @@ export async function runAgentLoop(
     messages.push(assistantMsg);
 
     logModelResponse(content.length, toolCalls.length);
+    console.log('[AgentEngine] 流式完成, toolCalls:', toolCalls.length, 'content:', content.length);
 
     if (toolCalls.length === 0) {
+      logInfo('无工具调用，Agent Loop 结束');
       callbacks.onDone(content, allToolRecords.length > 0 ? allToolRecords : undefined);
       return;
     }
 
+    console.log('[AgentEngine] 开始处理工具调用:', toolCalls.map(c => c.function.name));
+
     for (const call of toolCalls) {
       // 检查是否已中止
       if (abortController.signal.aborted) {
+        console.log('[AgentEngine] Abort 信号已设置，退出');
         callbacks.onDone(content, allToolRecords.length > 0 ? allToolRecords : undefined);
         return;
       }
 
       callbacks.onToolCallStart(call);
       logToolStart(call.function.name, JSON.stringify(call.function.arguments));
+      console.log('[AgentEngine] 工具调用:', call.function.name, call.function.arguments);
 
       if (needsConfirmation(call.function.name)) {
+        console.log('[AgentEngine] 需要确认，弹出确认框:', call.function.name);
         const confirmed = await callbacks.onConfirmTool(call);
+        console.log('[AgentEngine] 用户确认结果:', confirmed, 'abort:', abortController.signal.aborted);
         // 确认后再次检查是否已中止
         if (abortController.signal.aborted) {
+          console.log('[AgentEngine] 确认后 Abort 信号已设置，退出');
           callbacks.onDone(content, allToolRecords.length > 0 ? allToolRecords : undefined);
           return;
         }
@@ -270,6 +282,7 @@ export async function runAgentLoop(
 
       try {
         // 工具执行超时保护
+        console.log('[AgentEngine] 执行工具:', call.function.name);
         const result = await Promise.race([
           executeTool(call.function.name, call.function.arguments),
           new Promise<never>((_, reject) =>
@@ -285,11 +298,13 @@ export async function runAgentLoop(
         };
         allToolRecords.push(record);
 
+        console.log('[AgentEngine] 工具结果:', call.function.name, result.success, result);
         messages.push({
           role: 'tool',
           tool_name: call.function.name,
           content: JSON.stringify(result)
         });
+        console.log('[AgentEngine] 当前 messages 数量:', messages.length);
         callbacks.onToolCallResult(call.function.name, result, call);
         logToolResult(call.function.name, result.success, result.success ? undefined : result.error);
       } catch (err) {

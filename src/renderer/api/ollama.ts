@@ -89,7 +89,9 @@ export class OllamaAPI {
       fetchOptions.signal = abortController.signal;
     }
 
+    console.log('[OllamaAPI] chatStream 请求:', `${this.baseUrl}/api/chat`, 'messages:', params.messages.length, 'tools:', params.tools?.length || 0);
     const response = await this._request('/api/chat', fetchOptions);
+    console.log('[OllamaAPI] chatStream 响应状态:', response.status);
     const reader = response.body!.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
@@ -102,7 +104,10 @@ export class OllamaAPI {
 
     while (true) {
       const { done, value } = await reader.read();
-      if (done) break;
+      if (done) {
+        console.log('[OllamaAPI] 流读取结束 (reader done)');
+        break;
+      }
 
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split('\n');
@@ -114,6 +119,7 @@ export class OllamaAPI {
           const chunk: OllamaStreamChunk = JSON.parse(line);
           if (onChunk) onChunk(chunk);
           if (chunk.done) {
+            console.log('[OllamaAPI] 收到 done:true, eval_count:', chunk.eval_count);
             reader.cancel();
             return;
           }
