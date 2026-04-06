@@ -84,15 +84,17 @@ export function showToolConfirm(call: ToolCall): Promise<boolean> {
 
     const onConfirm = (e: Event) => {
       e.stopPropagation();
+      const r = resolveConfirm;
       cleanup();
       logInfo(`已确认: ${call.function.name}`);
-      resolveConfirm?.(true);
+      r?.(true);
     };
     const onCancel = (e: Event) => {
       e.stopPropagation();
+      const r = resolveConfirm;
       cleanup();
       logInfo(`已取消: ${call.function.name}`);
-      resolveConfirm?.(false);
+      r?.(false);
     };
     const cleanup = () => {
       confirmBtn.removeEventListener('click', onConfirm);
