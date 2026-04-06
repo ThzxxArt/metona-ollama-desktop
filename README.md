@@ -2,7 +2,7 @@
 
 基于 TypeScript + Electron 的 [Ollama](https://ollama.com) 桌面 AI 聊天客户端，专为 Windows 打造。
 
-![版本](https://img.shields.io/badge/version-3.0.0--desktop-brightgreen)
+![版本](https://img.shields.io/badge/version-3.1.0--desktop-brightgreen)
 ![平台](https://img.shields.io/badge/platform-Windows%20x64-blue)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178c6)
 ![Electron](https://img.shields.io/badge/Electron-33-47848f)
