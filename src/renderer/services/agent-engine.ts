@@ -163,6 +163,7 @@ export async function runAgentLoop(
             if (chunk.message?.tool_calls?.length) {
               for (const tc of chunk.message.tool_calls) {
                 if (tc.function?.name) {
+                  // 新的工具调用
                   toolCalls.push({
                     type: 'function',
                     function: {
@@ -171,6 +172,7 @@ export async function runAgentLoop(
                     }
                   });
                 } else if (toolCalls.length > 0) {
+                  // 增量 arguments 追加到当前最后一个 tool_call
                   const last = toolCalls[toolCalls.length - 1];
                   if (tc.function?.arguments && typeof tc.function.arguments === 'object') {
                     Object.assign(last.function.arguments, tc.function.arguments);
@@ -223,6 +225,8 @@ export async function runAgentLoop(
     };
     if (toolCalls.length > 0) {
       assistantMsg.tool_calls = toolCalls;
+      // 官方示例要求：tool_calls 时同时保留 content 和 thinking
+      // 确保 content 不为空（模型可能在调用工具前说了话）
     }
     messages.push(assistantMsg);
 
