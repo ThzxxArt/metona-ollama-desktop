@@ -2394,3 +2394,290 @@ html, body {
     overflow-y: auto;
     color: rgba(255, 255, 255, 0.75);
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   Agent 记忆系统
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── 记忆状态栏 ── */
+.memory-bar {
+    display: flex;
+    align-items: center;
+    padding: 2px 16px;
+    background: rgba(255, 255, 255, 0.02);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.memory-bar-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: none;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    padding: 4px 12px;
+    color: var(--text-secondary, rgba(255, 255, 255, 0.6));
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.2s;
+}
+
+.memory-bar-btn:hover {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(0, 245, 212, 0.3);
+    color: var(--text-primary, #fff);
+}
+
+.memory-bar-btn svg {
+    width: 14px;
+    height: 14px;
+}
+
+.memory-bar-count {
+    background: rgba(0, 245, 212, 0.15);
+    color: var(--accent-cyan, #00f5d4);
+    padding: 0 6px;
+    border-radius: 8px;
+    font-size: 11px;
+    min-width: 18px;
+    text-align: center;
+}
+
+/* ── 记忆面板 ── */
+.memory-panel {
+    position: absolute;
+    top: 100px;
+    right: 16px;
+    width: 380px;
+    max-height: calc(100vh - 140px);
+    background: var(--bg-primary, #2d2d2d);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.memory-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.memory-panel-header h3 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.memory-panel-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.memory-toggle {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+}
+
+.memory-toggle input {
+    display: none;
+}
+
+.toggle-slider-sm {
+    width: 28px;
+    height: 16px;
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 8px;
+    position: relative;
+    transition: background 0.2s;
+}
+
+.toggle-slider-sm::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 12px;
+    height: 12px;
+    background: #fff;
+    border-radius: 50%;
+    transition: transform 0.2s;
+}
+
+.memory-toggle input:checked + .toggle-slider-sm {
+    background: var(--accent-cyan, #00f5d4);
+}
+
+.memory-toggle input:checked + .toggle-slider-sm::after {
+    transform: translateX(12px);
+}
+
+.memory-panel-search {
+    display: flex;
+    gap: 8px;
+    padding: 8px 16px;
+}
+
+.memory-search-input {
+    flex: 1;
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 6px;
+    padding: 6px 10px;
+    color: var(--text-primary, #fff);
+    font-size: 12px;
+    outline: none;
+}
+
+.memory-search-input:focus {
+    border-color: var(--accent-cyan, #00f5d4);
+}
+
+.memory-type-filter {
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 6px;
+    padding: 6px 8px;
+    color: var(--text-primary, #fff);
+    font-size: 12px;
+    outline: none;
+    cursor: pointer;
+}
+
+.memory-panel-actions-row {
+    display: flex;
+    gap: 8px;
+    padding: 0 16px 8px;
+}
+
+.btn-danger-outline {
+    background: none;
+    border: 1px solid rgba(255, 82, 82, 0.3);
+    color: #ff6b6b;
+    border-radius: 6px;
+    padding: 4px 10px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.2s;
+}
+
+.btn-danger-outline:hover {
+    background: rgba(255, 82, 82, 0.1);
+    border-color: rgba(255, 82, 82, 0.5);
+}
+
+.memory-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0 16px 16px;
+}
+
+.memory-empty {
+    text-align: center;
+    padding: 24px 16px;
+    color: var(--text-secondary, rgba(255, 255, 255, 0.4));
+    font-size: 12px;
+}
+
+.memory-item {
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 8px;
+    padding: 8px 10px;
+    margin-bottom: 6px;
+    background: rgba(255, 255, 255, 0.02);
+    transition: border-color 0.2s;
+}
+
+.memory-item:hover {
+    border-color: rgba(255, 255, 255, 0.12);
+}
+
+.memory-item-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 4px;
+}
+
+.memory-item-icon {
+    font-size: 12px;
+}
+
+.memory-item-type {
+    font-size: 11px;
+    color: var(--text-secondary, rgba(255, 255, 255, 0.5));
+    font-weight: 500;
+}
+
+.memory-item-importance {
+    font-size: 8px;
+    color: var(--accent-cyan, #00f5d4);
+    letter-spacing: 1px;
+    margin-left: auto;
+}
+
+.memory-item-delete {
+    background: none;
+    border: none;
+    color: var(--text-secondary, rgba(255, 255, 255, 0.3));
+    cursor: pointer;
+    font-size: 12px;
+    padding: 0 4px;
+    line-height: 1;
+    transition: color 0.2s;
+}
+
+.memory-item-delete:hover {
+    color: #ff6b6b;
+}
+
+.memory-item-content {
+    font-size: 12px;
+    color: var(--text-primary, rgba(255, 255, 255, 0.85));
+    line-height: 1.5;
+    cursor: default;
+}
+
+.memory-item-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 4px;
+    flex-wrap: wrap;
+}
+
+.memory-item-tags {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+}
+
+.memory-tag {
+    background: rgba(0, 245, 212, 0.08);
+    color: var(--accent-cyan, #00f5d4);
+    padding: 0 6px;
+    border-radius: 4px;
+    font-size: 10px;
+}
+
+.memory-item-time {
+    font-size: 10px;
+    color: var(--text-secondary, rgba(255, 255, 255, 0.3));
+    margin-left: auto;
+}
+
+/* 记忆注入状态 */
+.memory-status {
+    text-align: center;
+    padding: 4px;
+    font-size: 11px;
+    color: var(--accent-cyan, #00f5d4);
+    opacity: 0.7;
+}

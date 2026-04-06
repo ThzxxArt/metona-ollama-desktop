@@ -14,6 +14,7 @@ import { isRagEnabled, performRagRetrieval } from './kb-modal.js';
 import { ChatDB } from '../db/chat-db.js';
 import { OllamaAPI } from '../api/ollama.js';
 import { runAgentLoop } from '../services/agent-engine.js';
+import { searchMemories, buildMemoryContext, markMemoryUsed, extractMemoriesFromConversation, isMemoryEnabled } from '../services/memory-manager.js';
 import { showToolConfirm } from './tool-confirm-modal.js';
 import type { ChatSession, ChatMessage, OllamaStreamChunk, RagSource, FileContent, ChatFile, ToolCallRecord } from '../types.js';
 
@@ -349,6 +350,24 @@ export async function sendMessage(): Promise<void> {
     if (systemPromptEnabled && systemPrompt) chatParams.system = systemPrompt;
     if (numCtx) chatParams.options = { num_ctx: numCtx, temperature };
 
+    // ── Agent 记忆注入 ──
+    if (isMemoryEnabled()) {
+      const userMessage = text || (msgsToAdd.find(m => m.role === 'user')?.content || '');
+      if (userMessage) {
+        const relevantMemories = searchMemories(userMessage, 6);
+        if (relevantMemories.length > 0) {
+          const memoryContext = buildMemoryContext(relevantMemories);
+          chatParams.system = chatParams.system
+            ? (chatParams.system as string) + '\n\n' + memoryContext
+            : memoryContext;
+          for (const m of relevantMemories) {
+            await markMemoryUsed(m.id);
+          }
+          appendSystemMessage(`🧠 已注入 ${relevantMemories.length} 条相关记忆`, 'memory-status');
+        }
+      }
+    }
+
     let ragSources: RagSource[] | null = null;
 
     if (isRagEnabled()) {
@@ -454,8 +473,22 @@ export async function sendMessage(): Promise<void> {
     }
 
     await saveCurrentSession();
+
+    // ── 自动提取记忆（非阻塞）──
+    if (isMemoryEnabled() && freshSession.messages.length >= 6) {
+      const currentSession2 = state.get<ChatSession | null>(KEYS.CURRENT_SESSION);
+      if (currentSession2) {
+        extractMemoriesFromConversation(
+          currentSession2.messages.map(m => ({ role: m.role, content: m.content })),
+          currentSession2.title
+        ).then(count => {
+          if (count > 0) {
+            console.log(`[Memory] 自动提取了 ${count} 条记忆`);
+          }
+        }).catch(err => console.warn('[Memory] 提取失败:', err));
+      }
+    }
   } catch (err) {
-    console.error('[InputArea] 流式聊天错误:', err);
     document.querySelectorAll('.rag-status').forEach(el => el.remove());
 
     if ((err as Error).name === 'AbortError') {

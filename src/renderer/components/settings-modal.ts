@@ -5,6 +5,7 @@
 import { state, KEYS } from '../state/state.js';
 import { debounce } from '../utils/utils.js';
 import { encryptData, decryptData, isMetonaFile } from '../services/crypto.js';
+import { setMemoryEnabled } from '../services/memory-manager.js';
 import { updateConnectionInfo, updateRunningModels } from './header.js';
 import { loadModels } from './model-bar.js';
 import { showToast } from './toast.js';
@@ -124,6 +125,15 @@ export function initSettingsModal(): void {
       if (toggleRunCommand.checked) {
         showToast('⚠️ 命令执行已开启，请谨慎使用', 'warning');
       }
+    });
+  }
+
+  // ── Agent 记忆设置 ──
+  const toggleMemory = document.querySelector('#toggleMemoryEnabled') as HTMLInputElement;
+  if (toggleMemory) {
+    toggleMemory.addEventListener('change', () => {
+      setMemoryEnabled(toggleMemory.checked);
+      showToast(toggleMemory.checked ? 'Agent 记忆已开启' : 'Agent 记忆已关闭', 'info');
     });
   }
 }

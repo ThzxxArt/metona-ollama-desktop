@@ -10,6 +10,7 @@ import {
   getEnabledToolDefinitions,
   needsConfirmation
 } from './tool-registry.js';
+import { searchMemories, buildMemoryContext, markMemoryUsed, isMemoryEnabled } from './memory-manager.js';
 import { showToast } from '../components/toast.js';
 import type {
   OllamaMessage,
@@ -45,11 +46,26 @@ export async function runAgentLoop(
 
   const messages: OllamaMessage[] = [];
 
+  let systemPromptParts: string[] = [];
+
   if (state.get<boolean>(KEYS.SYSTEM_PROMPT_ENABLED)) {
     const systemPrompt = state.get<string>(KEYS.SYSTEM_PROMPT, '');
-    if (systemPrompt) {
-      messages.push({ role: 'system', content: systemPrompt });
+    if (systemPrompt) systemPromptParts.push(systemPrompt);
+  }
+
+  // 注入记忆上下文
+  if (isMemoryEnabled() && userContent) {
+    const relevantMemories = searchMemories(userContent, 6);
+    if (relevantMemories.length > 0) {
+      systemPromptParts.push(buildMemoryContext(relevantMemories));
+      for (const m of relevantMemories) {
+        await markMemoryUsed(m.id);
+      }
     }
+  }
+
+  if (systemPromptParts.length > 0) {
+    messages.push({ role: 'system', content: systemPromptParts.join('\n\n') });
   }
 
   for (const msg of historyMessages) {

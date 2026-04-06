@@ -23,7 +23,9 @@ import { initKBModal } from './components/kb-modal.js';
 import { initPresetBar, initPresetModal } from './components/preset-bar.js';
 import { initPresetManager } from './services/preset-manager.js';
 import { initVectorStore } from './services/rag.js';
+import { initMemoryManager } from './services/memory-manager.js';
 import { initToolConfirmModal } from './components/tool-confirm-modal.js';
+import { initMemoryPanel } from './components/memory-panel.js';
 import type { ChatSession } from './types.js';
 
 function initHelpModal(): void {
@@ -157,6 +159,7 @@ async function init(): Promise<void> {
     initPresetModal();
     initHelpModal();
     initToolConfirmModal();
+    initMemoryPanel();
     setupDesktopIntegration();
 
     bindGlobalEvents();
@@ -165,6 +168,7 @@ async function init(): Promise<void> {
     await loadModels();
     await initVectorStore();
     await initPresetManager();
+    await initMemoryManager();
 
     const savedModel = await db.getSetting('selectedModel', '');
     if (savedModel) {
@@ -199,6 +203,10 @@ async function init(): Promise<void> {
     if (toggleTC) toggleTC.checked = toolCallingEnabled;
     const toggleRC = document.querySelector<HTMLInputElement>('#toggleRunCommand');
     if (toggleRC) toggleRC.checked = runCommandEnabled;
+
+    // ── Agent 记忆设置 ──
+    const memoryEnabled = await db.getSetting('memoryEnabled', true);
+    state.set('memoryEnabled', memoryEnabled);
 
     (document.querySelector('#chatInput') as HTMLElement)?.focus();
 

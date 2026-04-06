@@ -1,15 +1,16 @@
 /**
  * ChatDB - IndexedDB 封装层
+ * v2: 新增 memories 存储（Agent 记忆系统）
  */
 
-import type { ChatSession } from '../types.js';
+import type { ChatSession, MemoryEntry } from '../types.js';
 
 export class ChatDB {
   private dbName: string;
   private version: number;
   private db: IDBDatabase | null = null;
 
-  constructor(dbName = 'metona-ollama', version = 1) {
+  constructor(dbName = 'metona-ollama', version = 2) {
     this.dbName = dbName;
     this.version = version;
   }
@@ -35,6 +36,13 @@ export class ChatDB {
         }
         if (!db.objectStoreNames.contains('settings')) {
           db.createObjectStore('settings', { keyPath: 'key' });
+        }
+        if (!db.objectStoreNames.contains('memories')) {
+          const memoryStore = db.createObjectStore('memories', { keyPath: 'id' });
+          memoryStore.createIndex('type', 'type', { unique: false });
+          memoryStore.createIndex('importance', 'importance', { unique: false });
+          memoryStore.createIndex('updatedAt', 'updatedAt', { unique: false });
+          memoryStore.createIndex('lastUsedAt', 'lastUsedAt', { unique: false });
         }
       };
     });
@@ -148,6 +156,63 @@ export class ChatDB {
       const store = this._tx('settings');
       const request = store.get(key);
       request.onsuccess = () => resolve(request.result ? request.result.value : defaultValue);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  // ── Agent 记忆系统 CRUD ──
+
+  async saveMemory(entry: MemoryEntry): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const store = this._tx('memories', 'readwrite');
+      const request = store.put(entry);
+      request.onsuccess = () => resolve(entry.id);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  async getMemory(id: string): Promise<MemoryEntry | null> {
+    return new Promise((resolve, reject) => {
+      const store = this._tx('memories');
+      const request = store.get(id);
+      request.onsuccess = () => resolve(request.result || null);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  async getAllMemories(): Promise<MemoryEntry[]> {
+    return new Promise((resolve, reject) => {
+      const store = this._tx('memories');
+      const request = store.getAll();
+      request.onsuccess = () => resolve(request.result || []);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  async getMemoriesByType(type: string): Promise<MemoryEntry[]> {
+    return new Promise((resolve, reject) => {
+      const store = this._tx('memories');
+      const index = store.index('type');
+      const request = index.getAll(type);
+      request.onsuccess = () => resolve(request.result || []);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  async deleteMemory(id: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const store = this._tx('memories', 'readwrite');
+      const request = store.delete(id);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  async clearAllMemories(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const store = this._tx('memories', 'readwrite');
+      const request = store.clear();
+      request.onsuccess = () => resolve();
       request.onerror = () => reject(request.error);
     });
   }

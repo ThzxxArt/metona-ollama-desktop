@@ -228,6 +228,22 @@
                 </div>
             </div>
             <div class="setting-group">
+                <label class="setting-label">
+                    🧠 Agent 记忆系统
+                    <label class="toggle-label" style="margin-left:auto;display:inline-flex;">
+                        <input type="checkbox" id="toggleMemoryEnabled" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </label>
+                <p class="text-muted" style="font-size:11px;">启用后，AI 会自动从对话中提取关键信息（事实、偏好、规则）并跨会话记住。发送消息时自动检索相关记忆注入上下文。</p>
+                <div class="tool-list" style="margin-top:8px;">
+                    <div class="tool-item"><span>📌 事实</span><span class="text-muted">项目信息、身份背景</span></div>
+                    <div class="tool-item"><span>⚙️ 偏好</span><span class="text-muted">语言风格、技术栈偏好</span></div>
+                    <div class="tool-item"><span>📏 规则</span><span class="text-muted">编码规范、输出格式要求</span></div>
+                    <div class="tool-item"><span>📝 事件</span><span class="text-muted">完成的任务、结论</span></div>
+                </div>
+            </div>
+            <div class="setting-group">
                 <label class="setting-label">显存管理</label>
                 <button class="btn btn-danger" id="btnReleaseVRAM">释放显存（卸载模型）</button>
             </div>

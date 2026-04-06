@@ -116,7 +116,7 @@ export interface ChatSession {
   updatedAt: number;
 }
 
-// ── 预设类型 ──
+// ── 预设类型（v3.0 废弃，保留用于兼容）──
 
 export interface Preset {
   id: string;
@@ -129,6 +129,37 @@ export interface Preset {
   builtIn?: boolean;
   createdAt: number;
   updatedAt: number;
+}
+
+// ── Agent 记忆系统类型 ──
+
+export type MemoryType = 'fact' | 'preference' | 'rule' | 'episode';
+
+export interface MemoryEntry {
+  id: string;
+  type: MemoryType;
+  content: string;
+  importance: number;      // 1-10，越高越重要
+  tags: string[];          // 用于快速匹配
+  source?: string;         // 来源描述（如会话标题）
+  sessionId?: string;      // 关联的会话 ID
+  createdAt: number;
+  updatedAt: number;
+  lastUsedAt: number;      // 最后一次被回忆的时间
+  useCount: number;        // 被回忆的次数
+}
+
+export interface MemorySearchResult extends MemoryEntry {
+  score: number;           // 相关性得分
+}
+
+export interface MemoryExtractionResult {
+  entries: Array<{
+    type: MemoryType;
+    content: string;
+    importance: number;
+    tags: string[];
+  }>;
 }
 
 // ── 知识库类型 ──
@@ -250,7 +281,9 @@ export type StateKey =
   | 'presets'
   | 'activePresetId'
   | 'toolCallingEnabled'
-  | 'runCommandEnabled';
+  | 'runCommandEnabled'
+  | 'memoryEnabled'
+  | 'memoryEntries';
 
 // ═══════════════════════════════════════════════════════════
 // Tool Calling 类型
