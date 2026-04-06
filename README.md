@@ -172,7 +172,7 @@ v3.0 三大子系统协调运作：
 ```bash
 git clone https://gitee.com/thzxx/metona-ollama.git
 cd metona-ollama
-git checkout refactor/modular-architecture
+git checkout metona-ollama-desktop-v3.1.0
 
 # 安装依赖（国内使用 npmmirror 加速）
 npm config set registry https://registry.npmmirror.com

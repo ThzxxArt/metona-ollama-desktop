@@ -2,15 +2,9 @@
 
 ## 分支结构
 
-项目有两条产品线，共 22 个分支：
-
-**Web 版主线**（`master`）：
-- `v1.1.0` → `v2.0.0` → `v2.1.0` → `v2.2.0` → `v3.0.0` → `v3.0.1` → `v3.0.2` → `v3.1.0` → `v3.1.1` → `v3.2.0` → `v4.0.0` → `v4.0.1` → `v4.0.2`（合并到 master）
-- `refactor/modular-architecture`：重构分支，v4.0.3 合并到 master
-
-**桌面版分支**（从 master v4.0.3 分出）：
-- `metona-ollama-desktop-v1` → `metona-ollama-desktop-v1.1` → `metona-ollama-desktop-v2` → `metona-ollama-desktop-v3`
-- `refactor/modular-architecture`：桌面版重构分支（当前）
+**桌面版主线**（`master`）：
+- `metona-ollama-desktop-v1` → `metona-ollama-desktop-v1.1` → `metona-ollama-desktop-v2` → `metona-ollama-desktop-v3` → `metona-ollama-desktop-v3.1.0`（当前）
+- `refactor/modular-architecture`：v3.1.0 重构分支，已合并到 master
 
 ---
 
