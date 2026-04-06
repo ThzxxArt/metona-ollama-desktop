@@ -4,7 +4,7 @@
 
 import { state, KEYS } from '../state/state.js';
 import { marked } from '../utils/marked-config.js';
-import { escapeHtml, formatTime, downloadFile } from '../utils/utils.js';
+import { escapeHtml, formatTime } from '../utils/utils.js';
 import type { ChatSession, ChatMessage, ToolCallRecord } from '../types.js';
 
 function getFileIcon(filename: string): string {
@@ -385,7 +385,30 @@ export function enableAutoScroll(): void {
 
 // ── 导出功能 ──
 
-export function exportAsMarkdown(session: ChatSession): void {
+async function nativeSaveFile(defaultName: string, content: string): Promise<void> {
+  const bridge = (window as any).metonaDesktop;
+  if (bridge) {
+    const ext = defaultName.split('.').pop() || 'txt';
+    const filePath = await bridge.dialog.saveFile({
+      defaultPath: defaultName,
+      filters: [{ name: ext.toUpperCase(), extensions: [ext] }]
+    });
+    if (!filePath) return;
+    const result = await bridge.fs.writeFile(filePath, content, 'utf-8');
+    if (!result.success) {
+      console.error('[ChatArea] 导出失败:', result.error);
+    }
+  } else {
+    // 回退
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = defaultName;
+    a.click();
+  }
+}
+
+export async function exportAsMarkdown(session: ChatSession): Promise<void> {
   let md = `# ${session.title}\n\n**模型:** ${session.model}  \n**时间:** ${formatTime(session.createdAt)}\n\n---\n\n`;
   session.messages.forEach(m => {
     const role = m.role === 'user' ? '👤 用户' : '🤖 AI';
@@ -395,10 +418,10 @@ export function exportAsMarkdown(session: ChatSession): void {
     }
     if (m.think) md += `> **思考:** ${m.think}\n\n`;
   });
-  downloadFile(`${session.title}.md`, md, 'text/markdown');
+  await nativeSaveFile(`${session.title}.md`, md);
 }
 
-export function exportAsHtml(session: ChatSession): void {
+export async function exportAsHtml(session: ChatSession): Promise<void> {
   let html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${escapeHtml(session.title)}</title>
 <style>body{max-width:800px;margin:0 auto;padding:20px;font-family:system-ui;line-height:1.6;background:#202020;color:#fff;}
 .user{background:rgba(25,25,60,0.5);padding:12px;border-radius:8px;margin:8px 0;}
@@ -410,13 +433,13 @@ code{background:rgba(0,0,0,0.2);padding:2px 6px;border-radius:4px;}</style></hea
     html += `<div class="${m.role}"><strong>${m.role === 'user' ? '👤 用户' : '🤖 AI'}</strong><br>${(m.content || '').replace(/\n/g, '<br>')}</div>`;
   });
   html += '</body></html>';
-  downloadFile(`${session.title}.html`, html, 'text/html');
+  await nativeSaveFile(`${session.title}.html`, html);
 }
 
-export function exportAsTxt(session: ChatSession): void {
+export async function exportAsTxt(session: ChatSession): Promise<void> {
   let txt = `${session.title}\n模型: ${session.model}\n时间: ${formatTime(session.createdAt)}\n${'='.repeat(50)}\n\n`;
   session.messages.forEach(m => {
     txt += `[${m.role === 'user' ? '用户' : 'AI'}]\n${m.content || ''}\n\n`;
   });
-  downloadFile(`${session.title}.txt`, txt, 'text/plain');
+  await nativeSaveFile(`${session.title}.txt`, txt);
 }

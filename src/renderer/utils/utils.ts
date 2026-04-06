@@ -48,17 +48,6 @@ export function escapeHtml(str: string): string {
   return String(str).replace(/[&<>"']/g, (c) => map[c]);
 }
 
-/** 下载文件 */
-export function downloadFile(filename: string, content: string, type: string): void {
-  const blob = new Blob([content], { type: type + ';charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
 /** 根据文件名检测语言标识（用于 Markdown 代码块） */
 export function detectLanguage(filename: string): string {
   const ext = filename.split('.').pop()?.toLowerCase() || '';
