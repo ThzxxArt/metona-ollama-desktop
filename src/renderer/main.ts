@@ -15,7 +15,7 @@ import { initToast, showToast } from './components/toast.js';
 import { initLightbox, closeLightbox } from './components/lightbox.js';
 import { initHeader, checkConnection } from './components/header.js';
 import { initModelBar, loadModels, setSelectedModel } from './components/model-bar.js';
-import { initChatArea, renderMessages, clearMessages, enableAutoScroll } from './components/chat-area.js';
+import { initChatArea, renderMessages, clearMessages, enableAutoScroll, updateTotalTokens } from './components/chat-area.js';
 import { initInputArea } from './components/input-area.js';
 import { initSettingsModal, closeSettingsModal } from './components/settings-modal.js';
 import { initHistoryModal, closeHistoryModal } from './components/history-modal.js';
@@ -148,6 +148,7 @@ async function startNewSession(): Promise<void> {
   clearMessages();
   enableAutoScroll();
   renderMessages();
+  updateTotalTokens();
   (document.querySelector('#chatInput') as HTMLElement)?.focus();
 }
 
@@ -242,6 +243,7 @@ async function init(): Promise<void> {
     state.set('memoryEnabled', memoryEnabled);
 
     (document.querySelector('#chatInput') as HTMLElement)?.focus();
+    updateTotalTokens();
 
     logSuccess('应用初始化完成');
   } catch (err) {

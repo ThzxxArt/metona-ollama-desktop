@@ -369,6 +369,20 @@ html, body {
     opacity: 1;
 }
 
+.total-tokens {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: 8px;
+    padding: 2px 8px;
+    font-size: 11px;
+    color: var(--text-secondary);
+    background: var(--bg-subtle, rgba(255,255,255,0.04));
+    border-radius: 10px;
+    white-space: nowrap;
+    user-select: none;
+}
+
 /* ═══ 模型选择栏 ═══ */
 .model-bar {
     display: flex;

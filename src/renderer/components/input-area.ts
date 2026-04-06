@@ -7,7 +7,7 @@ import { detectLanguage, truncate, escapeHtml, formatSize } from '../utils/utils
 import { getSelectedModel, isThinkEnabled, isVisionAvailable, isToolCallingSupported } from './model-bar.js';
 import {
   renderMessages, appendAssistantPlaceholder, appendSystemMessage,
-  updateLastAssistantMessage, clearMessages, safeMarkdown, enableAutoScroll
+  updateLastAssistantMessage, clearMessages, safeMarkdown, enableAutoScroll, updateTotalTokens
 } from './chat-area.js';
 import { showToast } from './toast.js';
 import { isRagEnabled, performRagRetrieval } from './kb-modal.js';
@@ -521,6 +521,7 @@ export async function sendMessage(): Promise<void> {
     }
 
     await saveCurrentSession();
+    updateTotalTokens();
 
     // ── 自动提取记忆（非阻塞）──
     if (isMemoryEnabled() && freshSession.messages.length >= 6) {
@@ -738,6 +739,7 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
         updateLastAssistantMessage(assistantContent, thinkContent || null, loopStats || null);
         renderMessages();
         await saveCurrentSession();
+        updateTotalTokens();
       }
     });
   } catch (err) {

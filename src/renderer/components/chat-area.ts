@@ -384,6 +384,18 @@ export function enableAutoScroll(): void {
   if (scrollBtnEl) scrollBtnEl.style.display = 'none';
 }
 
+/** 统计当前会话总 token 消耗并更新 header 显示 */
+export function updateTotalTokens(): void {
+  const session = state.get<ChatSession | null>(KEYS.CURRENT_SESSION);
+  const el = document.querySelector('#totalTokensValue');
+  if (!el) return;
+  if (!session) { el.textContent = '0'; return; }
+  const total = session.messages
+    .filter(m => m.role === 'assistant' && m.eval_count)
+    .reduce((sum, m) => sum + (m.eval_count || 0), 0);
+  el.textContent = total > 0 ? total.toLocaleString() : '0';
+}
+
 // ── 导出功能 ──
 
 async function nativeSaveFile(defaultName: string, content: string): Promise<void> {
