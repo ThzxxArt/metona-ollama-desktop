@@ -70,6 +70,7 @@ export async function loadModels(): Promise<void> {
       .forEach(m => {
         const opt = document.createElement('option');
         opt.value = m.name;
+        opt.dataset.size = String(m.size || 0);
         const diskSize = formatSize(m.size || 0);
         opt.textContent = diskSize ? `${m.name} · ${diskSize}` : m.name;
         modelSelectEl.appendChild(opt);
@@ -88,6 +89,21 @@ export async function loadModels(): Promise<void> {
     modelSelectEl.innerHTML = '<option value="">加载失败 - 检查连接</option>';
     badgeThinkEl.style.display = 'none'; badgeVisionEl.style.display = 'none';
     setThinkAvailable(false); setVisionAvailable(false);
+  }
+}
+
+/** 根据能力为下拉框选项添加图标标记 */
+function updateOptionIcons(): void {
+  for (const opt of Array.from(modelSelectEl.options)) {
+    const caps = modelCapabilityCache.get(opt.value);
+    if (!caps) continue;
+    const diskSize = opt.dataset.size ? formatSize(parseInt(opt.dataset.size)) : '';
+    const base = diskSize ? `${opt.value} · ${diskSize}` : opt.value;
+    const icons: string[] = [];
+    if (caps.think) icons.push('🧠');
+    if (caps.vision) icons.push('👁️');
+    if (caps.tools) icons.push('🔧');
+    opt.textContent = icons.length > 0 ? `${base}  ${icons.join('')}` : base;
   }
 }
 
@@ -112,6 +128,8 @@ async function filterEmbedModels(models: Array<{ name: string }>): Promise<void>
       }
     } catch { /* ignore */ }
   }
+
+  updateOptionIcons();
 
   if (!modelSelectEl.value && modelSelectEl.options.length > 0) {
     modelSelectEl.value = modelSelectEl.options[0].value;
