@@ -331,35 +331,14 @@ metona-ollama/
 
 ## 📋 更新日志
 
-### v3.0.0
-- 🔧 **Tool Calling — AI 本地文件操作系统**
-  - 7 个工具：`read_file` / `write_file` / `list_directory` / `search_files` / `create_directory` / `delete_file` / `run_command`
-  - Agent Loop 引擎：流式多轮工具调用循环，支持并行调用
-  - 安全模型：路径白名单/黑名单、命令过滤、用户确认对话框
-  - 工具调用可视化卡片（5 种状态）
-- 🧠 **Agent 记忆系统**
-  - 自动从对话中提取关键信息（事实/偏好/规则/事件）
-  - 关键词+标签+重要性加权检索，自动注入上下文
-  - IndexedDB 持久化，跨会话积累
-  - 可视化记忆管理面板
-- ⚡ **全功能协调运作**
-  - 记忆检索 → RAG 检索 → Tool Calling 三层协作
-  - 对话结束自动记忆提取
+完整更新日志和项目发展历程请查看 [docs/CHANGELOG.md](docs/CHANGELOG.md)。
 
-### v2.0.0
-- ⚡ TypeScript 全面重写，严格类型定义
-- 🏗️ Vite 构建系统，模块化打包
-- 🖥️ 纯桌面版，专注 Electron 体验
-- 🧩 主进程模块化拆分
+### 最新版本
 
-### v1.1.0
-- 🎨 Windows 11 Fluent Design 暗色主题
-- 📐 知识库/历史弹框优化
-- ✨ Think 按钮光效
-
-### v1.0.0
-- 🖥️ Electron Windows 桌面客户端首版
-- 📦 NSIS 安装包 + 绿色便携版
+**v3.0.0** — Tool Calling & Agent 记忆系统
+- 🔧 7 个本地工具 + Agent Loop 引擎 + 安全模型
+- 🧠 自动记忆提取 + 跨会话持久化 + 可视化管理
+- ⚡ 记忆检索 → RAG 检索 → Tool Calling 三层协作
 
 ---
 
