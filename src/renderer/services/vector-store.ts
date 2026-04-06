@@ -118,7 +118,6 @@ export class VectorStore {
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
-    const colId = items[0].collectionId;
     if (!this._vectorCache.has(colId)) {
       this._vectorCache.set(colId, new Map());
     }
