@@ -4,7 +4,7 @@
 
 import { state, KEYS } from '../state/state.js';
 import { debounce } from '../utils/utils.js';
-import { encryptData, decryptData, isMetonaFile } from '../services/crypto.js';
+import { encryptData, decryptData } from '../services/crypto.js';
 import { setMemoryEnabled } from '../services/memory-manager.js';
 import { setToolEnabled } from '../services/tool-registry.js';
 import { logSetting, logInfo, logWarn, logError, logSuccess } from '../services/log-service.js';
@@ -108,13 +108,15 @@ export function initSettingsModal(): void {
 
   document.querySelector('#btnExportAll')!.addEventListener('click', exportAllSessions);
 
-  const importFileInput = document.querySelector('#importFileInput') as HTMLInputElement;
-  document.querySelector('#btnImportSessions')!.addEventListener('click', () => importFileInput.click());
-  importFileInput.addEventListener('change', (e) => {
-    if ((e.target as HTMLInputElement).files!.length > 0) {
-      importSessions((e.target as HTMLInputElement).files![0]);
-      (e.target as HTMLInputElement).value = '';
-    }
+  // ── 导入会话：原生文件对话框 ──
+  document.querySelector('#btnImportSessions')!.addEventListener('click', async () => {
+    const bridge = (window as any).metonaDesktop;
+    if (!bridge) return;
+    const paths = await bridge.dialog.openFile({
+      filters: [{ name: 'Metona 备份', extensions: ['metona'] }]
+    });
+    if (!paths || paths.length === 0) return;
+    await importSessions(paths[0]);
   });
 
   // ── Tool Calling 设置 ──
@@ -198,10 +200,35 @@ async function exportAllSessions(): Promise<void> {
   try {
     const blob = await encryptData(backup);
     const ts = new Date().toISOString().slice(0, 10);
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `metona-backup-${ts}.metona`;
-    a.click();
+
+    // ── 原生保存对话框 ──
+    const bridge = (window as any).metonaDesktop;
+    if (bridge) {
+      const filePath = await bridge.dialog.saveFile({
+        defaultPath: `metona-backup-${ts}.metona`,
+        filters: [{ name: 'Metona 备份', extensions: ['metona'] }]
+      });
+      if (!filePath) return;
+      // blob → ArrayBuffer → base64 字符串，通过 base64 编码写入二进制文件
+      const buffer = await blob.arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+      let binary = '';
+      for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+      const b64 = btoa(binary);
+      const result = await bridge.fs.writeFile(filePath, b64, 'base64');
+      if (!result.success) {
+        showToast(`导出失败: ${result.error}`, 'error');
+        logError('导出失败', result.error);
+        return;
+      }
+    } else {
+      // 回退：浏览器下载
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `metona-backup-${ts}.metona`;
+      a.click();
+    }
+
     showToast(`已导出 ${sessions.length} 个会话（已加密）`, 'success');
     logSuccess(`导出完成: ${sessions.length} 个会话`);
   } catch (err) {
@@ -211,19 +238,29 @@ async function exportAllSessions(): Promise<void> {
   }
 }
 
-async function importSessions(file: File): Promise<void> {
+async function importSessions(filePath: string): Promise<void> {
   const db = state.get<ChatDB | null>(KEYS.DB);
   if (!db) return;
 
-  if (!isMetonaFile(file)) {
+  const fileName = filePath.split(/[/\\]/).pop() || filePath;
+  if (!fileName.endsWith('.metona')) {
     showToast('仅支持导入 .metona 格式文件', 'error');
     return;
   }
 
   try {
-    const buffer = await file.arrayBuffer();
-    const data = await decryptData(buffer);
-    logInfo('导入会话', `文件: ${file.name}`);
+    const bridge = (window as any).metonaDesktop;
+    const result = await bridge.fs.readFile(filePath);
+    if (!result.success) {
+      showToast(`读取文件失败: ${result.error}`, 'error');
+      return;
+    }
+    // IPC 返回 base64 编码的二进制，转 ArrayBuffer
+    const binary = atob(result.content as string);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    const data = await decryptData(bytes.buffer);
+    logInfo('导入会话', `文件: ${fileName}`);
 
     let sessions: ChatSession[];
     if (Array.isArray(data)) {

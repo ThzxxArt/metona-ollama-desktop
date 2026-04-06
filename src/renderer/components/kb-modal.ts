@@ -8,7 +8,7 @@ import {
   removeDocumentFromKB, getDocumentsInCollection, retrieveContext,
   buildRagSystemPrompt
 } from '../services/rag.js';
-import { fileToText, formatSize, escapeHtml, truncate } from '../utils/utils.js';
+import { formatSize, escapeHtml, truncate } from '../utils/utils.js';
 import { showToast } from './toast.js';
 import { showConfirm } from './prompt-modal.js';
 import { OllamaAPI } from '../api/ollama.js';
@@ -31,11 +31,16 @@ export function initKBModal(): void {
 
   document.querySelector('#btnNewCollection')!.addEventListener('click', createCollection);
 
-  document.querySelector('#btnUploadDoc')!.addEventListener('click', () => {
+  document.querySelector('#btnUploadDoc')!.addEventListener('click', async () => {
     if (!currentColId) { showToast('请先选择一个知识库集合', 'warning'); return; }
-    (document.querySelector('#kbFileInput') as HTMLInputElement).click();
+    const bridge = (window as any).metonaDesktop;
+    if (!bridge) return;
+    const paths = await bridge.dialog.openFile({
+      filters: [{ name: '文档', extensions: ['txt', 'md', 'py', 'js', 'ts', 'java', 'go', 'rs', 'cpp', 'c', 'h', 'hpp', 'rb', 'php', 'sh', 'html', 'css', 'json', 'yaml', 'yml', 'toml', 'xml', 'sql', 'csv'] }]
+    });
+    if (!paths || paths.length === 0) return;
+    await handleDocUpload(paths);
   });
-  document.querySelector('#kbFileInput')!.addEventListener('change', handleDocUpload);
 
   document.querySelector('#toggleRAG')!.addEventListener('change', (e) => {
     ragEnabled = (e.target as HTMLInputElement).checked;
@@ -216,47 +221,56 @@ async function createCollection(): Promise<void> {
   await refreshDocList();
 }
 
-async function handleDocUpload(e: Event): Promise<void> {
-  const fileArr = Array.from((e.target as HTMLInputElement).files || []);
-  (e.target as HTMLInputElement).value = '';
-
-  if (fileArr.length === 0) return;
+async function handleDocUpload(paths: string[]): Promise<void> {
+  if (paths.length === 0) return;
 
   const embedModel = (document.querySelector('#selectEmbedModel') as HTMLSelectElement).value;
   if (!embedModel) { showToast('请先选择一个嵌入模型', 'warning'); return; }
 
+  const bridge = (window as any).metonaDesktop;
   const progressEl = document.querySelector('#kbProgress') as HTMLElement;
   const progressTextEl = document.querySelector('#kbProgressText')!;
 
   let successCount = 0;
   let failCount = 0;
 
-  for (const file of fileArr) {
-    if (file.size > 5 * 1024 * 1024) {
-      showToast(`${file.name} 超过 5MB 限制`, 'warning');
-      failCount++;
-      continue;
-    }
+  for (const filePath of paths) {
+    const name = filePath.split(/[/\\]/).pop() || filePath;
 
     try {
       progressEl.style.display = '';
-      progressTextEl.textContent = `正在处理 ${file.name}...`;
+      progressTextEl.textContent = `正在处理 ${name}...`;
 
-      const content = await fileToText(file);
-      const result = await addDocumentToKB(
-        currentColId!, file.name, content, embedModel,
+      const result = await bridge.fs.readFile(filePath);
+      if (!result.success) {
+        showToast(`${name} 读取失败: ${result.error}`, 'error');
+        failCount++;
+        continue;
+      }
+      const content = result.content as string;
+      const size = new TextEncoder().encode(content).length;
+
+      if (size > 5 * 1024 * 1024) {
+        showToast(`${name} 超过 5MB 限制`, 'warning');
+        failCount++;
+        continue;
+      }
+
+      const kbResult = await addDocumentToKB(
+        currentColId!, name, content, embedModel,
         (done, total, msg) => {
-          progressTextEl.textContent = `${file.name}: ${msg} (${done}/${total})`;
+          progressTextEl.textContent = `${name}: ${msg} (${done}/${total})`;
         }
       );
 
-      showToast(`${file.name} 已添加到知识库（${result.chunkCount} 个分块）`, 'success');
-      logRAG(`文档上传: ${file.name}`, `${result.chunkCount} 个分块`);
+      showToast(`${name} 已添加到知识库（${kbResult.chunkCount} 个分块）`, 'success');
+      logRAG(`文档上传: ${name}`, `${kbResult.chunkCount} 个分块`);
       successCount++;
     } catch (err) {
       console.error('[KB] 文档处理失败:', err);
-      showToast(`${file.name} 处理失败: ${(err as Error).message}`, 'error');
-      logError(`RAG 文档处理失败: ${file.name}`, (err as Error).message);
+      const fileName = filePath.split(/[/\\]/).pop() || filePath;
+      showToast(`${fileName} 处理失败: ${(err as Error).message}`, 'error');
+      logError(`RAG 文档处理失败: ${fileName}`, (err as Error).message);
       failCount++;
     }
   }

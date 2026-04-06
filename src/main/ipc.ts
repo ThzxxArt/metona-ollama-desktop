@@ -46,9 +46,9 @@ export function setupIPC(): void {
     }
   });
 
-  ipcMain.handle('fs:writeFile', async (_, filePath: string, content: string) => {
+  ipcMain.handle('fs:writeFile', async (_, filePath: string, content: string, encoding?: string) => {
     try {
-      await fs.promises.writeFile(filePath, content, 'utf-8');
+      await fs.promises.writeFile(filePath, content, (encoding as BufferEncoding) || 'utf-8');
       return { success: true };
     } catch (err) {
       return { success: false, error: (err as Error).message };

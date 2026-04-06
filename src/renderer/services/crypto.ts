@@ -158,6 +158,3 @@ export async function decryptData(buffer: ArrayBuffer): Promise<unknown> {
   return JSON.parse(new TextDecoder().decode(jsonBytes));
 }
 
-export function isMetonaFile(file: File): boolean {
-  return file.name.endsWith('.metona');
-}

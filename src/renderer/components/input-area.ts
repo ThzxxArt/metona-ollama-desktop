@@ -3,7 +3,7 @@
  */
 
 import { state, KEYS } from '../state/state.js';
-import { fileToBase64, fileToText, detectLanguage, truncate, escapeHtml, formatSize } from '../utils/utils.js';
+import { detectLanguage, truncate, escapeHtml, formatSize } from '../utils/utils.js';
 import { getSelectedModel, isThinkEnabled, isVisionAvailable, isToolCallingSupported } from './model-bar.js';
 import {
   renderMessages, appendAssistantPlaceholder, appendSystemMessage,
@@ -21,8 +21,6 @@ import type { ChatSession, ChatMessage, OllamaStreamChunk, RagSource, FileConten
 
 let chatInputEl: HTMLTextAreaElement;
 let btnSendEl: HTMLButtonElement;
-let fileInputEl: HTMLInputElement;
-let textFileInputEl: HTMLInputElement;
 let imagePreviewEl: HTMLElement;
 let filePreviewEl: HTMLElement;
 let pendingImages: Array<{ name: string; base64: string }> = [];
@@ -50,18 +48,20 @@ function getFileIcon(filename: string): string {
   return map[ext] || '📄';
 }
 
-function isTextFile(file: File): boolean {
-  const name = file.name.toLowerCase();
-  if (name === 'dockerfile' || name === 'makefile') return true;
-  const ext = name.split('.').pop() || '';
+function isTextFile(name: string): boolean {
+  const lower = name.toLowerCase();
+  if (lower === 'dockerfile' || lower === 'makefile') return true;
+  const ext = lower.split('.').pop() || '';
   return TEXT_EXTENSIONS.has(ext);
+}
+
+function getBridge(): any {
+  return (window as any).metonaDesktop;
 }
 
 export function initInputArea(): void {
   chatInputEl = document.querySelector('#chatInput')!;
   btnSendEl = document.querySelector('#btnSend')!;
-  fileInputEl = document.querySelector('#fileInput')!;
-  textFileInputEl = document.querySelector('#textFileInput')!;
   imagePreviewEl = document.querySelector('#imagePreview')!;
   filePreviewEl = document.querySelector('#filePreview')!;
 
@@ -82,22 +82,30 @@ export function initInputArea(): void {
 
   chatInputEl.addEventListener('input', autoResizeTextarea);
 
-  document.querySelector('#btnAttachImg')!.addEventListener('click', () => {
+  // ── 图片上传：原生文件对话框 ──
+  document.querySelector('#btnAttachImg')!.addEventListener('click', async () => {
     if (!isVisionAvailable()) {
       showToast('当前模型不支持图片分析', 'warning');
       return;
     }
-    fileInputEl.click();
-  });
-  fileInputEl.addEventListener('change', (e) => {
-    handleImageSelect((e.target as HTMLInputElement).files!);
-    (e.target as HTMLInputElement).value = '';
+    const bridge = getBridge();
+    if (!bridge) return;
+    const paths = await bridge.dialog.openFile({
+      filters: [{ name: '图片', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'] }]
+    });
+    if (!paths || paths.length === 0) return;
+    await handleImagePaths(paths);
   });
 
-  document.querySelector('#btnAttachFile')!.addEventListener('click', () => textFileInputEl.click());
-  textFileInputEl.addEventListener('change', (e) => {
-    handleTextFileSelect((e.target as HTMLInputElement).files!);
-    (e.target as HTMLInputElement).value = '';
+  // ── 文件上传：原生文件对话框 ──
+  document.querySelector('#btnAttachFile')!.addEventListener('click', async () => {
+    const bridge = getBridge();
+    if (!bridge) return;
+    const paths = await bridge.dialog.openFile({
+      filters: [{ name: '文本/代码', extensions: Array.from(TEXT_EXTENSIONS) }]
+    });
+    if (!paths || paths.length === 0) return;
+    await handleTextFilePaths(paths);
   });
 
   imagePreviewEl.addEventListener('click', (e) => {
@@ -122,23 +130,32 @@ function autoResizeTextarea(): void {
   chatInputEl.style.height = Math.min(chatInputEl.scrollHeight, 120) + 'px';
 }
 
-async function handleImageSelect(files: FileList): Promise<void> {
+async function handleImagePaths(paths: string[]): Promise<void> {
+  const bridge = getBridge();
   const maxSize = 20 * 1024 * 1024;
-  for (const file of Array.from(files)) {
-    if (!file.type.startsWith('image/')) continue;
-    if (file.size > maxSize) {
-      appendSystemMessage(`⚠️ 图片 ${file.name} 超过 20MB 限制`);
-      continue;
-    }
+  for (const filePath of paths) {
+    const name = filePath.split(/[/\\]/).pop() || filePath;
     try {
-      const base64 = await fileToBase64(file);
-      pendingImages.push({ name: file.name, base64 });
-      logInfo(`图片已添加: ${file.name}`, formatSize(file.size));
-      renderImagePreviews();
+      const result = await bridge.fs.readFile(filePath);
+      if (!result.success) {
+        appendSystemMessage(`❌ 读取 ${name} 失败: ${result.error}`);
+        continue;
+      }
+      // IPC 返回的 content 是 UTF-8 字符串，转为 base64
+      const binary = Uint8Array.from(atob(result.content as string), c => c.charCodeAt(0));
+      const base64 = btoa(String.fromCharCode(...binary));
+      if (binary.length > maxSize) {
+        appendSystemMessage(`⚠️ 图片 ${name} 超过 20MB 限制`);
+        continue;
+      }
+      pendingImages.push({ name, base64 });
+      logInfo(`图片已添加: ${name}`, formatSize(binary.length));
     } catch (err) {
       console.error('[InputArea] 图片读取失败:', err);
+      appendSystemMessage(`❌ 读取 ${name} 失败`);
     }
   }
+  renderImagePreviews();
 }
 
 function renderImagePreviews(): void {
@@ -156,28 +173,36 @@ function renderImagePreviews(): void {
   `).join('');
 }
 
-async function handleTextFileSelect(files: FileList): Promise<void> {
-  for (const file of Array.from(files)) {
-    if (!isTextFile(file)) {
-      appendSystemMessage(`⚠️ ${file.name} 不是支持的文本/代码文件`);
-      continue;
-    }
-    if (file.size > MAX_FILE_SIZE) {
-      appendSystemMessage(`⚠️ ${file.name} 超过 500KB 限制（${formatSize(file.size)}）`);
-      continue;
-    }
-    if (pendingFiles.some(f => f.name === file.name && f.size === file.size)) {
-      appendSystemMessage(`ℹ️ ${file.name} 已添加`);
+async function handleTextFilePaths(paths: string[]): Promise<void> {
+  const bridge = getBridge();
+  for (const filePath of paths) {
+    const name = filePath.split(/[/\\]/).pop() || filePath;
+    if (!isTextFile(name)) {
+      appendSystemMessage(`⚠️ ${name} 不是支持的文本/代码文件`);
       continue;
     }
     try {
-      const content = await fileToText(file);
-      pendingFiles.push({ name: file.name, content, language: detectLanguage(file.name), size: file.size });
-      logInfo(`文件已添加: ${file.name}`, formatSize(file.size));
+      const result = await bridge.fs.readFile(filePath);
+      if (!result.success) {
+        appendSystemMessage(`❌ 读取 ${name} 失败: ${result.error}`);
+        continue;
+      }
+      const content = result.content as string;
+      const size = new TextEncoder().encode(content).length;
+      if (size > MAX_FILE_SIZE) {
+        appendSystemMessage(`⚠️ ${name} 超过 500KB 限制（${formatSize(size)}）`);
+        continue;
+      }
+      if (pendingFiles.some(f => f.name === name)) {
+        appendSystemMessage(`ℹ️ ${name} 已添加`);
+        continue;
+      }
+      pendingFiles.push({ name, content, language: detectLanguage(name), size });
+      logInfo(`文件已添加: ${name}`, formatSize(size));
       renderFilePreviews();
     } catch (err) {
       console.error('[InputArea] 文件读取失败:', err);
-      appendSystemMessage(`❌ 读取 ${file.name} 失败`);
+      appendSystemMessage(`❌ 读取 ${name} 失败`);
     }
   }
 }

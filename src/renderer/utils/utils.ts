@@ -59,30 +59,6 @@ export function downloadFile(filename: string, content: string, type: string): v
   URL.revokeObjectURL(url);
 }
 
-/** File → Base64（去前缀） */
-export function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
-      const base64 = result.split(',')[1];
-      resolve(base64);
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
-
-/** File → 文本内容 */
-export function fileToText(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = reject;
-    reader.readAsText(file);
-  });
-}
-
 /** 根据文件名检测语言标识（用于 Markdown 代码块） */
 export function detectLanguage(filename: string): string {
   const ext = filename.split('.').pop()?.toLowerCase() || '';

@@ -13,7 +13,7 @@ contextBridge.exposeInMainWorld('metonaDesktop', {
   },
   fs: {
     readFile: (filePath: string) => ipcRenderer.invoke('fs:readFile', filePath),
-    writeFile: (filePath: string, content: string) => ipcRenderer.invoke('fs:writeFile', filePath, content)
+    writeFile: (filePath: string, content: string, encoding?: string) => ipcRenderer.invoke('fs:writeFile', filePath, content, encoding)
   },
   tool: {
     execute: (toolName: string, args: Record<string, unknown>) => ipcRenderer.invoke('tool:execute', toolName, args),
