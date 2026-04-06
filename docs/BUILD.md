@@ -14,7 +14,7 @@
 ```bash
 git clone https://gitee.com/thzxx/metona-ollama.git
 cd metona-ollama
-git checkout metona-ollama-desktop-v2
+git checkout metona-ollama-desktop-v3
 ```
 
 ### 2. 安装依赖（使用国内镜像）
