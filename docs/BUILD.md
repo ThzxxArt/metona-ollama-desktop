@@ -68,7 +68,27 @@ ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm run dist
 
 设置后 4.22 秒下载完成，vs 之前直接超时。
 
-### 问题 4：winCodeSign 下载慢
+### 问题 4：Wine 未安装
+
+**现象**：构建时报错 `cannot find wine`，electron-builder 需要 Wine 来交叉编译 Windows 应用。
+
+**解决**：安装 Wine 以及 32 位支持：
+
+```bash
+# 启用 i386 架构
+dpkg --add-architecture i386
+
+# 如果阿里云 apt 源不可用，先切到官方源
+sed -i 's|http://mirrors.cloud.aliyuncs.com/ubuntu|http://archive.ubuntu.com/ubuntu|g' /etc/apt/sources.list
+apt-get update
+
+# 安装 Wine
+apt-get install -y wine wine32
+```
+
+> 💡 `wine32` 包是必须的，否则 electron-builder 的 32 位打包步骤会失败。
+
+### 问题 5：winCodeSign 下载慢
 
 **现象**：electron-builder 需要从 GitHub 下载 `winCodeSign-2.6.0`（5.6MB）。
 
@@ -133,6 +153,24 @@ curl -s "https://gitee.com/api/v5/repos/thzxx/metona-ollama/releases/$RELEASE_ID
 # 删除指定附件
 curl -X DELETE "https://gitee.com/api/v5/repos/thzxx/metona-ollama/releases/$RELEASE_ID/attach_files/$ASSET_ID?access_token=$TOKEN"
 ```
+
+## 构建日志
+
+### v3.0.0 构建记录（2026-04-06）
+
+**环境**：Ubuntu 24.04 (Linux 6.8.0-100-generic x64)，Node.js v22.22.1
+
+**遇到的问题**：
+1. apt 阿里云镜像源连接超时 → 切换到 Ubuntu 官方源
+2. 未安装 Wine → 需安装 `wine` 和 `wine32`（i386 架构）
+3. npm 使用默认源下载慢 → 切换到 npmmirror
+
+**构建结果**：
+- ✅ `Metona Ollama Setup 3.0.0.exe`（78MB，NSIS 安装包）
+- ✅ `MetonaOllama-Portable-3.0.0.exe`（78MB，便携版）
+- ✅ 发布到 Gitee Release v3.0.0（Release ID: 600370）
+
+**耗时**：约 20 分钟（含依赖安装 + Wine 安装 + 打包）
 
 ## 提速清单
 
