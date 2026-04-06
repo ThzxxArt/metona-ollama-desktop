@@ -90,7 +90,6 @@ export async function loadModels(): Promise<void> {
 
     filterEmbedModels(data.models);
   } catch (err) {
-    console.error('[ModelBar] 加载模型失败:', err);
     logError('加载模型列表失败', (err as Error).message);
     modelSelectEl.innerHTML = '<option value="">加载失败 - 检查连接</option>';
     badgeThinkEl.style.display = 'none'; badgeVisionEl.style.display = 'none';
@@ -169,7 +168,6 @@ async function checkModelCapability(modelName: string): Promise<void> {
     logDebug(`能力检测: ${modelName}`, capabilities.join(', '));
     applyCapability(modelName, caps);
   } catch (err) {
-    console.warn('[ModelBar] 获取模型能力失败:', err);
     logWarn(`能力检测失败: ${modelName}`, (err as Error).message);
     const fallback = { think: false, vision: false, tools: false, completion: true };
     modelCapabilityCache.set(modelName, fallback);

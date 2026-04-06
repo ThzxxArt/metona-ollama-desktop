@@ -232,7 +232,6 @@ async function exportAllSessions(): Promise<void> {
     showToast(`已导出 ${sessions.length} 个会话（已加密）`, 'success');
     logSuccess(`导出完成: ${sessions.length} 个会话`);
   } catch (err) {
-    console.error('[Settings] 导出失败:', err);
     showToast(`导出失败: ${(err as Error).message}`, 'error');
     logError('导出失败', (err as Error).message);
   }
@@ -276,7 +275,6 @@ async function importSessions(filePath: string): Promise<void> {
     showToast(`导入完成：${result.imported} 个会话${result.skipped > 0 ? `，跳过 ${result.skipped} 个` : ''}`, 'success', 4000);
     logSuccess(`导入完成: ${result.imported} 个, 跳过 ${result.skipped} 个`);
   } catch (err) {
-    console.error('[Settings] 导入失败:', err);
     showToast(`导入失败: ${(err as Error).message}`, 'error');
     logError('导入失败', (err as Error).message);
   }

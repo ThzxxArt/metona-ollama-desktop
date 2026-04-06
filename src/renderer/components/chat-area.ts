@@ -3,6 +3,7 @@
  */
 
 import { state, KEYS } from '../state/state.js';
+import { logError } from '../services/log-service.js';
 import { marked } from '../utils/marked-config.js';
 import { escapeHtml, formatTime } from '../utils/utils.js';
 import type { ChatSession, ChatMessage, ToolCallRecord } from '../types.js';
@@ -396,7 +397,7 @@ async function nativeSaveFile(defaultName: string, content: string): Promise<voi
     if (!filePath) return;
     const result = await bridge.fs.writeFile(filePath, content, 'utf-8');
     if (!result.success) {
-      console.error('[ChatArea] 导出失败:', result.error);
+      logError('导出失败', result.error);
     }
   } else {
     // 回退

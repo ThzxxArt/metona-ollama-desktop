@@ -41,7 +41,6 @@ export async function initMemoryManager(): Promise<void> {
   memoryCache = await db.getAllMemories();
   state.set('memoryEntries', memoryCache);
 
-  console.log(`[Memory] 初始化完成，加载 ${memoryCache.length} 条记忆`);
   logMemory(`初始化完成, 加载 ${memoryCache.length} 条`);
 }
 
@@ -323,7 +322,6 @@ ${conversationText.slice(0, 4000)}
     if (count > 0) logMemory(`自动提取 ${count} 条`);
     return count;
   } catch (err) {
-    console.warn('[Memory] 自动提取失败:', err);
     logWarn('记忆自动提取失败', (err as Error).message);
     return 0;
   }

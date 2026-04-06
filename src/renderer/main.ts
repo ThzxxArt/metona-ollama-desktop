@@ -26,7 +26,7 @@ import { setToolEnabled } from './services/tool-registry.js';
 import { initToolConfirmModal } from './components/tool-confirm-modal.js';
 import { initMemoryPanel } from './components/memory-panel.js';
 import { initLogPanel } from './services/log-service.js';
-import { logInfo, logSuccess, logError, logDebug, logInit } from './services/log-service.js';
+import { logInfo, logSuccess, logError, logDebug, logInit, logWarn } from './services/log-service.js';
 import type { ChatSession } from './types.js';
 
 function initHelpModal(): void {
@@ -50,8 +50,6 @@ function setupDesktopIntegration(): void {
   }
 
   logInit('桌面集成...');
-
-  console.log('[Desktop Integration] 初始化桌面集成...');
 
   bridge.onMenuAction((action: string) => {
     logInfo(`菜单操作: ${action}`);
@@ -87,11 +85,8 @@ function setupDesktopIntegration(): void {
     }
   });
 
-  console.log('[Desktop Integration] 桌面集成完成 ✓');
   logSuccess('桌面集成完成');
 }
-
-console.log('[Metona] TypeScript + Electron v3.0.0 ' + new Date().toISOString());
 
 function createNewSession(): ChatSession {
   const selectedModel = (document.querySelector('#modelSelect') as HTMLSelectElement)?.value || '';
@@ -121,7 +116,7 @@ async function startNewSession(): Promise<void> {
       await api.chat({ model, messages: [], keep_alive: 0 } as any);
       logDebug('释放旧模型显存');
     } catch (e) {
-      console.warn('[App] 释放显存失败:', e);
+      logWarn('释放显存失败', (e as Error).message);
     }
   }
 
@@ -248,10 +243,8 @@ async function init(): Promise<void> {
 
     (document.querySelector('#chatInput') as HTMLElement)?.focus();
 
-    console.log('[App] 初始化完成');
     logSuccess('应用初始化完成');
   } catch (err) {
-    console.error('[App] 初始化失败:', err);
     logError('初始化失败', (err as Error).message);
     if (!api!) {
       api = new OllamaAPI();
@@ -290,12 +283,12 @@ function bindGlobalEvents(): void {
   });
 
   window.addEventListener('error', (e) => {
-    console.error('[App] 未捕获错误:', e.error || e.message);
+    logError('未捕获错误', (e.error as Error)?.message || e.message);
     showToast(`发生错误: ${e.message}`, 'error', 5000);
   });
 
   window.addEventListener('unhandledrejection', (e) => {
-    console.error('[App] 未处理 Promise 拒绝:', e.reason);
+    logError('未处理 Promise 拒绝', (e.reason as Error)?.message || String(e.reason));
     const msg = e.reason?.message || String(e.reason);
     showToast(`操作失败: ${msg}`, 'error', 5000);
   });

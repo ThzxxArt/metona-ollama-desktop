@@ -4,7 +4,7 @@
  */
 
 import type { ToolDefinition, ToolResult } from '../types.js';
-import { logToolResult, logError } from './log-service.js';
+import { logToolStart, logToolResult, logError } from './log-service.js';
 
 export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
@@ -159,7 +159,7 @@ export async function executeTool(toolName: string, args: Record<string, unknown
   }
 
   try {
-    console.log('[ToolRegistry] 开始执行:', toolName, args);
+    logToolStart(toolName, JSON.stringify(args));
     // IPC 调用 + 25 秒硬超时（比 agent-engine 的 30 秒先触发）
     const result = await Promise.race([
       bridge.tool.execute(toolName, args),
@@ -167,11 +167,10 @@ export async function executeTool(toolName: string, args: Record<string, unknown
         setTimeout(() => reject(new Error(`工具 ${toolName} IPC 超时（25秒）`)), 25000)
       )
     ]);
-    console.log('[ToolRegistry] 执行完成:', toolName, result);
+    logToolResult(toolName, result.success, result.success ? undefined : result.error);
     return result;
   } catch (err) {
     logError(`工具异常: ${toolName}`, (err as Error).message);
-    console.error('[ToolRegistry] 执行异常:', toolName, err);
     return { success: false, error: (err as Error).message };
   }
 }

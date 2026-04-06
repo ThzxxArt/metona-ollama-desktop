@@ -68,7 +68,6 @@ export function sanitize(html: string): string {
 
     return root.innerHTML;
   } catch (e) {
-    console.warn('[Sanitizer] 净化失败:', e);
     return html;
   }
 }

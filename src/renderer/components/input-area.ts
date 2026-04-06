@@ -151,7 +151,7 @@ async function handleImagePaths(paths: string[]): Promise<void> {
       pendingImages.push({ name, base64 });
       logInfo(`图片已添加: ${name}`, formatSize(binary.length));
     } catch (err) {
-      console.error('[InputArea] 图片读取失败:', err);
+      logError('图片读取失败', (err as Error).message);
       appendSystemMessage(`❌ 读取 ${name} 失败`);
     }
   }
@@ -201,7 +201,7 @@ async function handleTextFilePaths(paths: string[]): Promise<void> {
       logInfo(`文件已添加: ${name}`, formatSize(size));
       renderFilePreviews();
     } catch (err) {
-      console.error('[InputArea] 文件读取失败:', err);
+      logError('文件读取失败', (err as Error).message);
       appendSystemMessage(`❌ 读取 ${name} 失败`);
     }
   }
@@ -445,7 +445,7 @@ export async function sendMessage(): Promise<void> {
           appendSystemMessage('🧠 知识库未检索到相关内容，使用通用知识回答', 'rag-status');
         }
       } catch (ragErr) {
-        console.error('[RAG] 检索失败:', ragErr);
+        logError('RAG 检索失败', (ragErr as Error).message);
         appendSystemMessage(`🧠 知识库检索失败: ${(ragErr as Error).message}`, 'rag-status');
       }
     }
@@ -520,9 +520,9 @@ export async function sendMessage(): Promise<void> {
           currentSession2.title
         ).then(count => {
           if (count > 0) {
-            console.log(`[Memory] 自动提取了 ${count} 条记忆`);
+            logInfo(`自动提取了 ${count} 条记忆`);
           }
-        }).catch(err => console.warn('[Memory] 提取失败:', err));
+        }).catch(err => logError('记忆提取失败', (err as Error).message));
       }
     }
   } catch (err) {
@@ -728,7 +728,6 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
       }
     });
   } catch (err) {
-    console.error('[AgentLoop] 错误:', err);
     logError('Agent Loop 错误', (err as Error).message);
 
     if ((err as Error).name === 'AbortError') {
@@ -793,6 +792,6 @@ async function saveCurrentSession(): Promise<void> {
   try {
     await db.saveSession(currentSession);
   } catch (err) {
-    console.error('[InputArea] 保存会话失败:', err);
+    logError('保存会话失败', (err as Error).message);
   }
 }

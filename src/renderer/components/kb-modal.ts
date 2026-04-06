@@ -12,7 +12,7 @@ import { formatSize, escapeHtml, truncate } from '../utils/utils.js';
 import { showToast } from './toast.js';
 import { showConfirm } from './prompt-modal.js';
 import { OllamaAPI } from '../api/ollama.js';
-import { logRAG, logError } from '../services/log-service.js';
+import { logRAG, logError, logWarn } from '../services/log-service.js';
 import type { VectorCollection, SearchResult } from '../types.js';
 
 let kbModalEl: HTMLElement;
@@ -85,7 +85,7 @@ export async function performRagRetrieval(query: string): Promise<{ context: str
     if (!context) return null;
     return { context, results, ragPrompt: buildRagSystemPrompt(context) };
   } catch (err) {
-    console.warn('[KB] RAG 检索失败:', err);
+    logWarn('RAG 检索失败', (err as Error).message);
     return null;
   }
 }
@@ -267,10 +267,8 @@ async function handleDocUpload(paths: string[]): Promise<void> {
       logRAG(`文档上传: ${name}`, `${kbResult.chunkCount} 个分块`);
       successCount++;
     } catch (err) {
-      console.error('[KB] 文档处理失败:', err);
-      const fileName = filePath.split(/[/\\]/).pop() || filePath;
-      showToast(`${fileName} 处理失败: ${(err as Error).message}`, 'error');
-      logError(`RAG 文档处理失败: ${fileName}`, (err as Error).message);
+      logError(`RAG 文档处理失败: ${name}`, (err as Error).message);
+      showToast(`${name} 处理失败: ${(err as Error).message}`, 'error');
       failCount++;
     }
   }
@@ -322,6 +320,6 @@ async function populateEmbedModels(): Promise<void> {
       select.innerHTML = '<option value="">未检测到嵌入模型，请先 ollama pull</option>';
     }
   } catch (err) {
-    console.warn('[KB] 加载模型列表失败:', err);
+    logWarn('加载嵌入模型列表失败', (err as Error).message);
   }
 }

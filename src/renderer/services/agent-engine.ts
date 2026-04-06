@@ -53,7 +53,6 @@ export async function runAgentLoop(
   // 检查模型是否支持 Tool Calling
   const modelSupportsTools = state.get<boolean>('modelSupportsTools', false);
   if (!modelSupportsTools) {
-    console.warn(`[AgentEngine] 模型 ${model} 未声明 tools 能力，Agent Loop 可能不稳定`);
     logWarn(`模型 ${model} 不支持 Tool Calling`, 'Agent Loop 可能不稳定');
   }
 
@@ -108,7 +107,6 @@ export async function runAgentLoop(
 
     // 全局超时检查
     if (Date.now() - loopStartTime > MAX_LOOP_TIME) {
-      console.warn('[AgentEngine] 达到最大运行时间（5分钟），自动停止');
       logWarn('Agent Loop 达到最大运行时间（5分钟），自动停止');
       callbacks.onDone(content || '（达到最大运行时间限制）', allToolRecords);
       return;
@@ -122,7 +120,6 @@ export async function runAgentLoop(
     }
 
     logAgentLoop(loopCount, MAX_LOOPS);
-    console.log(`[AgentEngine] ===== Loop #${loopCount} 开始, messages: ${messages.length}, tools: ${useTools} =====`);
 
     let thinking = '';
     content = '';
@@ -133,7 +130,6 @@ export async function runAgentLoop(
 
     try {
       // 带超时保护的流式调用
-      console.log('[AgentEngine] 开始流式调用, model:', model, 'think:', state.get<boolean>('thinkEnabled', false));
       await Promise.race([
         api.chatStream(
           {
@@ -188,7 +184,6 @@ export async function runAgentLoop(
         )
       ]);
     } catch (err) {
-      console.error('[AgentEngine] 流式调用错误:', (err as Error).message, 'aborted:', abortController.signal.aborted);
       if (abortController.signal.aborted) {
         logInfo('流式调用已中止');
         if (content || thinking) {
@@ -203,7 +198,6 @@ export async function runAgentLoop(
       }
       // 超时错误 — 保留已生成的内容
       if ((err as Error).message.includes('超时')) {
-        console.warn('[AgentEngine] 流式调用超时:', (err as Error).message);
         logError('流式调用超时（2分钟无数据）', (err as Error).message);
         if (content || thinking) {
           messages.push({
@@ -231,7 +225,6 @@ export async function runAgentLoop(
     messages.push(assistantMsg);
 
     logModelResponse(content.length, toolCalls.length);
-    console.log('[AgentEngine] 流式完成, toolCalls:', toolCalls.length, 'content:', content.length);
 
     if (toolCalls.length === 0) {
       logInfo('无工具调用，Agent Loop 结束');
@@ -239,27 +232,20 @@ export async function runAgentLoop(
       return;
     }
 
-    console.log('[AgentEngine] 开始处理工具调用:', toolCalls.map(c => c.function.name));
-
     for (const call of toolCalls) {
       // 检查是否已中止
       if (abortController.signal.aborted) {
-        console.log('[AgentEngine] Abort 信号已设置，退出');
         callbacks.onDone(content, allToolRecords.length > 0 ? allToolRecords : undefined);
         return;
       }
 
       callbacks.onToolCallStart(call);
       logToolStart(call.function.name, JSON.stringify(call.function.arguments));
-      console.log('[AgentEngine] 工具调用:', call.function.name, call.function.arguments);
 
       if (needsConfirmation(call.function.name)) {
-        console.log('[AgentEngine] 需要确认，弹出确认框:', call.function.name);
         const confirmed = await callbacks.onConfirmTool(call);
-        console.log('[AgentEngine] 用户确认结果:', confirmed, 'abort:', abortController.signal.aborted);
         // 确认后再次检查是否已中止
         if (abortController.signal.aborted) {
-          console.log('[AgentEngine] 确认后 Abort 信号已设置，退出');
           callbacks.onDone(content, allToolRecords.length > 0 ? allToolRecords : undefined);
           return;
         }
@@ -286,16 +272,11 @@ export async function runAgentLoop(
 
       try {
         // 工具执行超时保护
-        console.log('[AgentEngine] 执行工具:', call.function.name);
         logInfo(`执行工具: ${call.function.name}`, JSON.stringify(call.function.arguments));
         const result = await Promise.race([
-          executeTool(call.function.name, call.function.arguments).then(r => {
-            console.log('[AgentEngine] executeTool resolve:', call.function.name, r);
-            return r;
-          }).catch(err => {
-            console.error('[AgentEngine] executeTool reject:', call.function.name, err);
-            return { success: false, error: err?.message || String(err) } as ToolResult;
-          }),
+          executeTool(call.function.name, call.function.arguments).catch(err =>
+            ({ success: false, error: err?.message || String(err) }) as ToolResult
+          ),
           new Promise<ToolResult>((_, reject) =>
             setTimeout(() => reject(new Error('工具执行超时（30秒）')), TOOL_EXEC_TIMEOUT)
           )
@@ -309,18 +290,15 @@ export async function runAgentLoop(
         };
         allToolRecords.push(record);
 
-        console.log('[AgentEngine] 工具结果:', call.function.name, result.success, result);
         messages.push({
           role: 'tool',
           tool_name: call.function.name,
           content: JSON.stringify(result)
         });
-        console.log('[AgentEngine] 当前 messages 数量:', messages.length);
         callbacks.onToolCallResult(call.function.name, result, call);
         logToolResult(call.function.name, result.success, result.success ? undefined : result.error);
       } catch (err) {
         const errorMsg = (err as Error).message;
-        console.error(`[AgentEngine] 工具执行失败 (${call.function.name}):`, errorMsg);
         logError(`工具执行失败: ${call.function.name}`, errorMsg);
         const record: ToolCallRecord = {
           name: call.function.name,

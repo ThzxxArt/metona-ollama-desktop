@@ -230,7 +230,6 @@ export class VectorStore {
       return saved;
     }
 
-    console.log(`[VectorStore] 构建 IVF 索引: ${colId} (${vectors.length} 向量)`);
     const index = this._buildIVFIndex(vectors);
     index.collectionId = colId;
     index.version = this._indexVersion(vectors);

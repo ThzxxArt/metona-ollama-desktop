@@ -65,7 +65,6 @@ class AppState {
     }
     const old = this._state[key];
     if (old == null || typeof old !== 'object') {
-      console.warn(`[State] setIn 失败: ${key} 不是对象`);
       return;
     }
     const newRoot = Array.isArray(old) ? [...(old as unknown[])] : { ...(old as Record<string, unknown>) };
@@ -111,7 +110,6 @@ class AppState {
     if (!this._listeners.has(key)) return;
     for (const cb of this._listeners.get(key)!) {
       try { cb(value, old); } catch (e) {
-        console.error(`[State] 监听器错误 (${key}):`, e);
       }
     }
   }

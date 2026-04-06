@@ -19,12 +19,10 @@ export class ChatDB {
     return new Promise((resolve, reject) => {
       const request = indexedDB.open(this.dbName, this.version);
       request.onerror = () => {
-        console.error('[ChatDB] 数据库打开失败:', request.error);
         reject(request.error);
       };
       request.onsuccess = () => {
         this.db = request.result;
-        console.log('[ChatDB] 数据库已连接');
         resolve();
       };
       request.onupgradeneeded = (event) => {
