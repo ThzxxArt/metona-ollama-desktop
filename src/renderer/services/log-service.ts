@@ -43,29 +43,6 @@ export function initLogPanel(): void {
     logBodyEl = document.querySelector('#logPanelBody')!;
     logPanelEl = document.querySelector('#logPanel')!;
 
-    document.querySelector('#btnToggleLog')!.addEventListener('click', () => {
-      try {
-        const visible = logPanelEl!.style.display !== 'none';
-        logPanelEl!.style.display = visible ? 'none' : '';
-        document.querySelector('#mainWrap')!.classList.toggle('log-open', !visible);
-      } catch { /* ignore */ }
-    });
-
-    document.querySelector('#btnCloseLog')!.addEventListener('click', () => {
-      try {
-        logPanelEl!.style.display = 'none';
-        document.querySelector('#mainWrap')!.classList.remove('log-open');
-      } catch { /* ignore */ }
-    });
-
-    document.querySelector('#btnClearLog')!.addEventListener('click', () => {
-      try {
-        logs = [];
-        pendingEntries.length = 0;
-        if (logBodyEl) logBodyEl.innerHTML = '';
-      } catch { /* ignore */ }
-    });
-
     logBodyEl.addEventListener('scroll', () => {
       try {
         const el = logBodyEl!;

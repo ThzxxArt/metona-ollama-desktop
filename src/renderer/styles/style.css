@@ -110,22 +110,6 @@ html, body {
     color: var(--text-primary);
 }
 
-.log-panel-actions {
-    display: flex;
-    gap: 4px;
-}
-
-.log-btn {
-    width: 28px;
-    height: 28px;
-    padding: 0;
-}
-
-.log-btn svg {
-    width: 14px;
-    height: 14px;
-}
-
 .log-panel-body {
     flex: 1;
     overflow-y: auto;
