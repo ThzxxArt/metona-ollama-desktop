@@ -82,15 +82,21 @@ export function setupIPC(): void {
 
   // ── Tool Calling IPC ──
   ipcMain.handle('tool:execute', async (_, toolName: string, args: Record<string, unknown>) => {
-    switch (toolName) {
-      case 'read_file':          return handleReadFile(args as { path: string; encoding?: string; start_line?: number; end_line?: number });
-      case 'write_file':         return handleWriteFile(args as { path: string; content: string; encoding?: string });
-      case 'list_directory':     return handleListDir(args as { path: string; recursive?: boolean; max_depth?: number; include_hidden?: boolean; filter_extension?: string });
-      case 'search_files':       return handleSearchFiles(args as { path: string; query: string; search_type?: string; case_sensitive?: boolean; max_results?: number; file_extensions?: string[] });
-      case 'create_directory':   return handleCreateDir(args as { path: string });
-      case 'delete_file':        return handleDeleteFile(args as { path: string; recursive?: boolean });
-      case 'run_command':        return handleRunCommand(args as { command: string; cwd?: string; timeout?: number });
-      default:                   return { success: false, error: `未知工具: ${toolName}` };
+    try {
+      console.log('[IPC] tool:execute', toolName, JSON.stringify(args || {}).slice(0, 200));
+      switch (toolName) {
+        case 'read_file':          return await handleReadFile(args as { path: string; encoding?: string; start_line?: number; end_line?: number });
+        case 'write_file':         return await handleWriteFile(args as { path: string; content: string; encoding?: string });
+        case 'list_directory':     return await handleListDir(args as { path: string; recursive?: boolean; max_depth?: number; include_hidden?: boolean; filter_extension?: string });
+        case 'search_files':       return await handleSearchFiles(args as { path: string; query: string; search_type?: string; case_sensitive?: boolean; max_results?: number; file_extensions?: string[] });
+        case 'create_directory':   return await handleCreateDir(args as { path: string });
+        case 'delete_file':        return await handleDeleteFile(args as { path: string; recursive?: boolean });
+        case 'run_command':        return await handleRunCommand(args as { command: string; cwd?: string; timeout?: number });
+        default:                   return { success: false, error: `未知工具: ${toolName}` };
+      }
+    } catch (err) {
+      console.error('[IPC] tool:execute 异常:', toolName, err);
+      return { success: false, error: (err as Error).message || '工具执行异常' };
     }
   });
 

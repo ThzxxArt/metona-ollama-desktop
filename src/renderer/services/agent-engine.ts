@@ -283,9 +283,16 @@ export async function runAgentLoop(
       try {
         // 工具执行超时保护
         console.log('[AgentEngine] 执行工具:', call.function.name);
+        logInfo(`执行工具: ${call.function.name}`, JSON.stringify(call.function.arguments));
         const result = await Promise.race([
-          executeTool(call.function.name, call.function.arguments),
-          new Promise<never>((_, reject) =>
+          executeTool(call.function.name, call.function.arguments).then(r => {
+            console.log('[AgentEngine] executeTool resolve:', call.function.name, r);
+            return r;
+          }).catch(err => {
+            console.error('[AgentEngine] executeTool reject:', call.function.name, err);
+            return { success: false, error: err?.message || String(err) } as ToolResult;
+          }),
+          new Promise<ToolResult>((_, reject) =>
             setTimeout(() => reject(new Error('工具执行超时（30秒）')), TOOL_EXEC_TIMEOUT)
           )
         ]);

@@ -159,10 +159,19 @@ export async function executeTool(toolName: string, args: Record<string, unknown
   }
 
   try {
-    const result = await bridge.tool.execute(toolName, args);
+    console.log('[ToolRegistry] 开始执行:', toolName, args);
+    // IPC 调用 + 25 秒硬超时（比 agent-engine 的 30 秒先触发）
+    const result = await Promise.race([
+      bridge.tool.execute(toolName, args),
+      new Promise<ToolResult>((_, reject) =>
+        setTimeout(() => reject(new Error(`工具 ${toolName} IPC 超时（25秒）`)), 25000)
+      )
+    ]);
+    console.log('[ToolRegistry] 执行完成:', toolName, result);
     return result;
   } catch (err) {
     logError(`工具异常: ${toolName}`, (err as Error).message);
+    console.error('[ToolRegistry] 执行异常:', toolName, err);
     return { success: false, error: (err as Error).message };
   }
 }
