@@ -9,11 +9,46 @@
 - `refactor/modular-architecture`：重构分支，v4.0.3 合并到 master
 
 **桌面版分支**（从 master v4.0.3 分出）：
-- `metona-ollama-desktop-v1` → `metona-ollama-desktop-v1.1` → `metona-ollama-desktop-v2` → `metona-ollama-desktop-v3`（当前）
+- `metona-ollama-desktop-v1` → `metona-ollama-desktop-v1.1` → `metona-ollama-desktop-v2` → `metona-ollama-desktop-v3`
+- `refactor/modular-architecture`：桌面版重构分支（当前）
 
 ---
 
 ## 桌面版（Desktop）
+
+### Desktop v3.1.0 — 代码质量 & 桌面原生化
+
+- ♻️ **结构化日志系统**
+  - 渲染进程 58 处 `console.log/warn/error` 全部迁移至 `log-service.ts`
+  - 135 处结构化日志点覆盖全链路：初始化、连接、模型加载、工具调用、RAG 检索、记忆提取、流式响应、Agent Loop
+  - 日志级别分级（init/success/info/warn/error/debug），便于过滤排查
+- 🖥️ **文件对话框全面原生化**
+  - 图片上传 → `bridge.dialog.openFile()`（原生文件选择器 + 图片类型过滤）
+  - 文件上传 → `bridge.dialog.openFile()`（50+ 种文本/代码格式过滤）
+  - 知识库文档上传 → `bridge.dialog.openFile()`（文档格式过滤）
+  - 会话导入 → `bridge.dialog.openFile()`（.metona 格式过滤）
+  - 会话导出 → `bridge.dialog.saveFile()`（替代浏览器 blob 下载）
+  - 聊天导出（Markdown/HTML/TXT） → `bridge.dialog.saveFile()`（替代浏览器 blob 下载）
+- 🪙 **Token 消耗统计**
+  - Header 新增 🪙 图标 + 当前会话总 token 消耗实时显示
+  - `updateTotalTokens()` 在每轮对话完成后自动更新
+  - Agent Loop 和普通聊天均支持统计
+- 🧹 **代码清理**
+  - 移除浏览器专用工具函数：`fileToBase64()`、`fileToText()`、`downloadFile()`
+  - 所有文件 I/O 统一走 Electron IPC 桥接（`bridge.fs.readFile` / `bridge.fs.writeFile`）
+  - 清理废弃的 `DesktopBridge` 接口，统一使用 `MetonaDesktopAPI`
+  - 移除 `types.d.ts` 中废弃的 `DesktopBridge` 类型和 `__metonaBridge` 全局声明
+  - `fs.writeFile` 新增 `encoding` 参数支持（UTF-8 / base64）
+  - 会话导出（.metona 加密备份）改用 base64 编码写入二进制文件
+- 🔧 **编译修复**
+  - 修复 `vector-store.ts` 中 `colId` 变量重复声明导致编译失败
+  - 修复 `importSessions` 中 `result` 变量重复声明导致编译失败
+  - 修复 token 统计在 `eval_count=0` 时仍显示的显示问题
+- 📦 **构建工具**
+  - 新增 `build-release.sh` — 一键构建脚本（自动安装 Wine + npm 依赖 + electron-builder）
+  - 新增 `restore-build-cache.sh` — 构建资源本地缓存恢复（Electron 二进制等 145MB 资源）
+  - 更新 `docs/BUILD.md` — 新增快速构建 3 步指南、构建资源管理说明
+  - `.gitignore` 排除 build-resources 目录（本地缓存不进仓库）
 
 ### Desktop v3.0.0 — Tool Calling & Agent 记忆
 

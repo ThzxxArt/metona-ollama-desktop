@@ -74,15 +74,17 @@ AI 会自动从对话中学习并记住关键信息，跨会话持续积累，�
 - 历史记录 IndexedDB 持久化，支持搜索、分页
 - 导出格式：Markdown / HTML / TXT / .metona 加密备份
 - .metona 格式支持 AES-256-GCM 加密（HTTPS）或 XOR 混淆（HTTP）
+- 所有导入/导出均使用 Electron 原生文件对话框（不再依赖浏览器下载）
 
 ### 🖥️ 桌面原生
 | 特性 | 说明 |
 |------|------|
 | Fluent Design 主题 | Windows 11 暗色风格，Mica 毛玻璃材质 |
 | 执行日志面板 | 左侧面板实时显示应用运行日志（初始化、连接、模型加载、工具调用等），纯运行时不持久化，常驻显示不可关闭 |
+| Token 消耗统计 | Header 实时显示当前会话总 token 消耗 |
 | 系统托盘 | 最小化到托盘，双击恢复，右键菜单 |
 | 原生菜单 | 文件 / 编辑 / 视图 / 窗口 / 帮助完整菜单 |
-| 原生文件对话框 | Windows 文件选择器替代浏览器 input |
+| 原生文件对话框 | 文件选择/保存全部使用 Electron 原生对话框，支持文件类型过滤 |
 | 系统通知 | Windows 原生通知中心推送 |
 | 窗口管理 | 记忆窗口大小位置，支持置顶 |
 | 单实例锁 | 防止重复启动 |
@@ -151,8 +153,8 @@ v3.0 三大子系统协调运作：
 
 | 文件 | 类型 |
 |------|------|
-| `Metona Ollama Setup 3.0.0.exe` | NSIS 安装包（可选目录、创建快捷方式） |
-| `MetonaOllama-Portable-3.0.0.exe` | 绿色便携版（免安装，双击即用） |
+| `Metona Ollama Setup 3.1.0.exe` | NSIS 安装包（可选目录、创建快捷方式） |
+| `MetonaOllama-Portable-3.1.0.exe` | 绿色便携版（免安装，双击即用） |
 
 > ⚠️ 未签名版本，首次运行 Windows 可能弹出安全警告，点击「仍要运行」即可。
 
@@ -170,11 +172,14 @@ v3.0 三大子系统协调运作：
 ```bash
 git clone https://gitee.com/thzxx/metona-ollama.git
 cd metona-ollama
-git checkout metona-ollama-desktop-v3
+git checkout refactor/modular-architecture
 
 # 安装依赖（国内使用 npmmirror 加速）
 npm config set registry https://registry.npmmirror.com
 npm install
+
+# 恢复构建缓存（Electron 二进制等，首次从镜像下载）
+bash restore-build-cache.sh
 
 # 构建 TypeScript
 npm run build
@@ -187,6 +192,8 @@ ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm run dist
 ```
 
 > 💡 Linux 交叉编译需安装 Wine：`apt install wine`，详细构建指南见 [docs/BUILD.md](docs/BUILD.md)
+>
+> 💡 一键构建脚本：`bash build-release.sh`（自动安装 Wine + 依赖 + 构建）
 
 ### 常用命令
 
@@ -246,7 +253,7 @@ metona-ollama/
 │       │   ├── rag.ts                     # RAG 检索管线
 │       │   ├── vector-store.ts            # 向量存储 + IVF 索引
 │       │   ├── document-processor.ts      # 文档分块
-│       │   ├── preset-manager.ts          # 预设管理（兼容层）
+│       │   ├── log-service.ts             # 结构化执行日志
 │       │   └── crypto.ts                  # AES-256-GCM 加密
 │       ├── utils/
 │       │   ├── utils.ts                   # 工具函数
@@ -335,6 +342,14 @@ metona-ollama/
 完整更新日志和项目发展历程请查看 [docs/CHANGELOG.md](docs/CHANGELOG.md)。
 
 ### 最新版本
+
+**v3.1.0** — 代码质量 & 桌面原生化
+- ♻️ 渲染进程 58 处 console.log 全部迁移至结构化 log-service
+- 🖥️ 所有文件对话框（上传/保存/导入）改用 Electron 原生对话框
+- 🪙 Header 新增当前会话总 token 消耗统计
+- 🧹 移除浏览器专用代码（fileToBase64/fileToText/downloadFile），统一走 IPC 桥接
+- 🔧 修复 vector-store/importSessions 编译错误，修复 token 统计显示
+- 📦 新增 build-release.sh 一键构建 + restore-build-cache.sh 构建缓存恢复
 
 **v3.0.0-patch2** — 稳定性修复
 - 🔧 Tool Calling IPC 卡死修复（25 秒硬超时 + 多层保护）
