@@ -13,7 +13,9 @@ import { showToast } from './toast.js';
 import { isRagEnabled, performRagRetrieval } from './kb-modal.js';
 import { ChatDB } from '../db/chat-db.js';
 import { OllamaAPI } from '../api/ollama.js';
-import type { ChatSession, ChatMessage, OllamaStreamChunk, RagSource, FileContent, ChatFile } from '../types.js';
+import { runAgentLoop } from '../services/agent-engine.js';
+import { showToolConfirm } from './tool-confirm-modal.js';
+import type { ChatSession, ChatMessage, OllamaStreamChunk, RagSource, FileContent, ChatFile, ToolCallRecord } from '../types.js';
 
 let chatInputEl: HTMLTextAreaElement;
 let btnSendEl: HTMLButtonElement;
@@ -253,6 +255,15 @@ export async function sendMessage(): Promise<void> {
 
   const currentSession = state.get<ChatSession | null>(KEYS.CURRENT_SESSION);
   if (!currentSession) return;
+
+  // ── Tool Calling Agent Loop 分支 ──
+  const toolCallingEnabled = state.get<boolean>('toolCallingEnabled', false);
+  if (toolCallingEnabled) {
+    await sendMessageWithAgentLoop(text, currentSession, model);
+    return;
+  }
+
+  // ── 原有普通聊天流程 ──
 
   const now = Date.now();
   const msgsToAdd: ChatMessage[] = [];
@@ -513,6 +524,183 @@ export async function sendMessage(): Promise<void> {
       errMsg = '❌ Ollama 服务器错误，请检查 Ollama 日志';
     }
     appendSystemMessage(errMsg);
+  } finally {
+    state.set(KEYS.IS_STREAMING, false);
+    updateSendButton(false);
+    state.set(KEYS.ABORT_CONTROLLER, null);
+  }
+}
+
+async function sendMessageWithAgentLoop(text: string, currentSession: ChatSession, model: string): Promise<void> {
+  const now = Date.now();
+  const msgsToAdd: ChatMessage[] = [];
+  const userFiles: ChatFile[] = pendingFiles.map(f => ({ name: f.name, language: f.language, size: f.size }));
+  const images = pendingImages.map(img => img.base64);
+
+  if (pendingImages.length > 0) {
+    msgsToAdd.push({
+      role: 'user',
+      content: pendingImages.length === 1 ? `[上传了图片: ${pendingImages[0].name}]` : `[上传了 ${pendingImages.length} 张图片]`,
+      images,
+      timestamp: now
+    });
+  }
+
+  if (text || pendingFiles.length > 0) {
+    const msg: ChatMessage = {
+      role: 'user',
+      content: text || '',
+      timestamp: now
+    };
+    if (userFiles.length > 0) {
+      msg.files = userFiles;
+      msg._fileContents = pendingFiles.map(f => ({ language: f.language, content: f.content }));
+    }
+    msgsToAdd.push(msg);
+  }
+
+  const isFirstMsg = currentSession.messages.length === 0;
+  state.update(KEYS.CURRENT_SESSION, (session: any) => ({
+    ...session,
+    ...(isFirstMsg && {
+      title: truncate(text || (pendingFiles.length > 0 ? `[文件: ${pendingFiles.map(f => f.name).join(', ')}]` : '[图片消息]'), 30),
+      model
+    }),
+    messages: [...session.messages, ...msgsToAdd],
+    updatedAt: Date.now()
+  }));
+
+  const freshSession = state.get<ChatSession>(KEYS.CURRENT_SESSION);
+
+  enableAutoScroll();
+  renderMessages();
+  await saveCurrentSession();
+
+  chatInputEl.value = '';
+  pendingImages = [];
+  pendingFiles = [];
+  imagePreviewEl.style.display = 'none';
+  imagePreviewEl.innerHTML = '';
+  filePreviewEl.style.display = 'none';
+  filePreviewEl.innerHTML = '';
+  autoResizeTextarea();
+
+  appendAssistantPlaceholder();
+  state.set(KEYS.IS_STREAMING, true);
+  updateSendButton(true);
+
+  // 构建历史消息
+  const historyMessages = freshSession.messages
+    .filter(m => m.role === 'user' || m.role === 'assistant')
+    .slice(-20)
+    .map(m => {
+      let content = m.content || '';
+      if (m._fileContents && m._fileContents.length > 0) {
+        const fileParts = m._fileContents.map(f => `📄 文件：\n\`\`\`${f.language}\n${f.content}\n\`\`\``);
+        content = content ? content + '\n\n---\n' + fileParts.join('\n\n---\n') : fileParts.join('\n\n---\n');
+      }
+      return {
+        role: m.role,
+        content,
+        ...(m.images?.length && { images: m.images })
+      };
+    });
+
+  let assistantContent = '';
+  let thinkContent = '';
+
+  try {
+    await runAgentLoop(text || (pendingFiles.length > 0 ? `请分析 ${pendingFiles.map(f => f.name).join(', ')}` : ''), images, historyMessages, {
+      onThinking: (thinking) => {
+        thinkContent = thinking;
+        updateLastAssistantMessage(assistantContent, thinkContent || null, null);
+      },
+      onContent: (content) => {
+        assistantContent = content;
+        updateLastAssistantMessage(assistantContent, thinkContent || null, null);
+      },
+      onToolCallStart: (_call) => {
+        // 实时更新已由 agent-engine 的 callbacks 处理
+      },
+      onToolCallResult: (_name, _result, _call) => {
+        // 工具结果实时更新
+      },
+      onToolCallError: (_name, _error, _call) => {
+        // 工具错误实时更新
+      },
+      onConfirmTool: async (call) => {
+        return showToolConfirm(call);
+      },
+      onDone: async (finalContent, toolRecords) => {
+        assistantContent = finalContent;
+
+        const assistantMsg: ChatMessage = {
+          role: 'assistant',
+          content: assistantContent || '',
+          timestamp: Date.now(),
+          ...(thinkContent && { think: thinkContent }),
+          ...(toolRecords?.length && { toolCalls: toolRecords })
+        };
+        state.update(KEYS.CURRENT_SESSION, (session: any) => ({
+          ...session,
+          messages: [...session.messages, assistantMsg],
+          updatedAt: Date.now()
+        }));
+
+        updateLastAssistantMessage(assistantContent, thinkContent || null, null);
+        renderMessages();
+        await saveCurrentSession();
+      }
+    });
+  } catch (err) {
+    console.error('[AgentLoop] 错误:', err);
+
+    if ((err as Error).name === 'AbortError') {
+      const placeholder = document.querySelector('#messagesContainer .message.assistant.loading') as HTMLElement;
+      if (placeholder) {
+        placeholder.classList.remove('loading');
+        placeholder.querySelector('.loading-dots')?.remove();
+        placeholder.querySelector('.loading-text')?.remove();
+        const contentDiv = placeholder.querySelector('.msg-content');
+        if (contentDiv) {
+          let html = assistantContent ? safeMarkdown(assistantContent) : '';
+          html += '<p><code>[已停止]</code></p>';
+          contentDiv.innerHTML = html;
+        }
+      }
+      const partialMsg: ChatMessage = {
+        role: 'assistant',
+        content: assistantContent,
+        timestamp: Date.now(),
+        ...(thinkContent && { think: thinkContent }),
+        stopped: true
+      };
+      state.update(KEYS.CURRENT_SESSION, (session: any) => ({
+        ...session,
+        messages: [...session.messages, partialMsg],
+        updatedAt: Date.now()
+      }));
+      appendSystemMessage('⏹ 已停止生成');
+      await saveCurrentSession();
+    } else {
+      const placeholder = document.querySelector('#messagesContainer .message.assistant.loading') as HTMLElement;
+      if (placeholder) {
+        placeholder.classList.remove('loading');
+        placeholder.querySelector('.loading-dots')?.remove();
+        placeholder.querySelector('.loading-text')?.remove();
+        if (!assistantContent) placeholder.remove();
+        else {
+          const contentDiv = placeholder.querySelector('.msg-content');
+          if (contentDiv) contentDiv.innerHTML = safeMarkdown(assistantContent) + '<p><code>[已中断]</code></p>';
+        }
+      }
+
+      let errMsg = `❌ 错误: ${(err as Error).message}`;
+      if ((err as Error).message.includes('Failed to fetch') || (err as Error).message.includes('NetworkError')) {
+        errMsg = '❌ 连接失败。请检查 Ollama 是否正在运行';
+      }
+      appendSystemMessage(errMsg);
+    }
   } finally {
     state.set(KEYS.IS_STREAMING, false);
     updateSendButton(false);

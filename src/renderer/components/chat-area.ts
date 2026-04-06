@@ -5,7 +5,7 @@
 import { state, KEYS } from '../state/state.js';
 import { marked } from '../utils/marked-config.js';
 import { escapeHtml, formatTime, downloadFile } from '../utils/utils.js';
-import type { ChatSession, ChatMessage } from '../types.js';
+import type { ChatSession, ChatMessage, ToolCallRecord } from '../types.js';
 
 function getFileIcon(filename: string): string {
   const name = filename.toLowerCase();
@@ -175,6 +175,14 @@ export function appendMessageDOM(msg: ChatMessage, index: number): void {
     contentHtml += `<div class="rag-sources"><div class="rag-sources-header">🧠 基于知识库回答</div>${sourcesHtml}</div>`;
   }
 
+  if (msg.role === 'assistant' && msg.toolCalls && msg.toolCalls.length > 0) {
+    contentHtml += '<div class="tool-calls-container">';
+    for (const tc of msg.toolCalls) {
+      contentHtml += renderToolCallCard(tc);
+    }
+    contentHtml += '</div>';
+  }
+
   div.innerHTML = `
     <div class="msg-avatar">${avatar}</div>
     <div class="msg-body">
@@ -184,6 +192,93 @@ export function appendMessageDOM(msg: ChatMessage, index: number): void {
   `;
 
   messagesContainerEl.appendChild(div);
+}
+
+function renderToolCallCard(tc: ToolCallRecord): string {
+  const icons: Record<string, string> = {
+    read_file: '📄', write_file: '✏️', list_directory: '📁',
+    search_files: '🔍', create_directory: '📂', delete_file: '🗑️', run_command: '💻'
+  };
+  const names: Record<string, string> = {
+    read_file: '读取文件', write_file: '写入文件', list_directory: '列出目录',
+    search_files: '搜索文件', create_directory: '创建目录', delete_file: '删除文件', run_command: '执行命令'
+  };
+  const statusLabels: Record<string, string> = {
+    pending: '⏳ 等待确认', running: '🔄 执行中', success: '✅ 完成', error: '❌ 失败', cancelled: '🚫 已取消'
+  };
+
+  const icon = icons[tc.name] || '🔧';
+  const name = names[tc.name] || tc.name;
+  const status = statusLabels[tc.status] || tc.status;
+  const args = tc.arguments || {};
+
+  let paramsHtml = '';
+  if (args.path) paramsHtml += `<div class="tool-param">路径: <code>${escapeHtml(String(args.path))}</code></div>`;
+  if (args.command) paramsHtml += `<div class="tool-param">命令: <code>${escapeHtml(String(args.command))}</code></div>`;
+  if (args.query) paramsHtml += `<div class="tool-param">查询: <code>${escapeHtml(String(args.query))}</code></div>`;
+
+  let resultHtml = '';
+  if (tc.result) {
+    if (tc.result.success) {
+      const r = tc.result as Record<string, unknown>;
+      if (tc.name === 'read_file' && r.content) {
+        const content = String(r.content);
+        const lines = content.split('\n');
+        const preview = lines.slice(0, 20).join('\n');
+        resultHtml = `<pre class="tool-result-content">${escapeHtml(preview)}${lines.length > 20 ? `\n... (共 ${r.lines || lines.length} 行)` : ''}</pre>`;
+        resultHtml += `<div class="tool-result-meta">📄 ${(r.size as number || 0) > 0 ? formatFileSize(r.size as number) : ''} · ${r.lines || '?'} 行</div>`;
+      } else if (tc.name === 'list_directory' && r.entries) {
+        const entries = r.entries as Array<{ name: string; type: string; size: number | null }>;
+        resultHtml = entries.slice(0, 30).map(e =>
+          `<div class="tool-result-entry">${e.type === 'directory' ? '📁' : '📄'} ${escapeHtml(e.name)}${e.size != null ? ` (${formatFileSize(e.size)})` : ''}</div>`
+        ).join('');
+        if (entries.length > 30) resultHtml += `<div class="tool-result-entry">... 共 ${(r.total as number) || entries.length} 项</div>`;
+      } else if (tc.name === 'search_files' && r.results) {
+        const results = r.results as Array<{ path: string; matches: Array<{ line: number; text: string }> }>;
+        resultHtml = results.slice(0, 10).map(file =>
+          file.matches.slice(0, 3).map(m =>
+            `<div class="tool-result-entry">📄 ${escapeHtml(file.path)}:${m.line} ${escapeHtml(m.text).slice(0, 80)}</div>`
+          ).join('')
+        ).join('');
+        resultHtml += `<div class="tool-result-meta">共 ${r.total_files || '?'} 个文件，${r.total_matches || '?'} 处匹配</div>`;
+      } else if (tc.name === 'write_file') {
+        resultHtml = `<div class="tool-result-entry">✅ 已写入 ${escapeHtml(String(r.path || ''))} (${formatFileSize(r.bytesWritten as number || 0)})</div>`;
+      } else if (tc.name === 'create_directory') {
+        resultHtml = `<div class="tool-result-entry">✅ 已创建 ${escapeHtml(String(r.path || ''))}</div>`;
+      } else if (tc.name === 'delete_file') {
+        resultHtml = `<div class="tool-result-entry">✅ 已删除 ${escapeHtml(String(r.path || ''))}</div>`;
+      } else if (tc.name === 'run_command') {
+        const stdout = String(r.stdout || '').slice(0, 1000);
+        const stderr = String(r.stderr || '').slice(0, 500);
+        if (stdout) resultHtml += `<pre class="tool-result-content">${escapeHtml(stdout)}</pre>`;
+        if (stderr) resultHtml += `<pre class="tool-result-content tool-result-stderr">${escapeHtml(stderr)}</pre>`;
+        resultHtml += `<div class="tool-result-meta">exit: ${r.exitCode || 0} · ${r.duration || 0}ms</div>`;
+      } else {
+        resultHtml = `<div class="tool-result-entry">✅ 操作成功</div>`;
+      }
+    } else {
+      resultHtml = `<div class="tool-result-entry tool-result-error">❌ ${escapeHtml(tc.result.error || '未知错误')}</div>`;
+    }
+  }
+
+  return `<div class="tool-call-card tool-call-${tc.status}">
+    <div class="tool-call-header">
+      <span class="tool-call-icon">${icon}</span>
+      <span class="tool-call-name">${name}</span>
+      <span class="tool-call-status">${status}</span>
+    </div>
+    ${paramsHtml ? `<div class="tool-call-params">${paramsHtml}</div>` : ''}
+    ${resultHtml ? `<div class="tool-call-result">${resultHtml}</div>` : ''}
+  </div>`;
+}
+
+function formatFileSize(bytes: number): string {
+  if (!bytes) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let i = 0;
+  let size = bytes;
+  while (size >= 1024 && i < units.length - 1) { size /= 1024; i++; }
+  return `${size.toFixed(1)} ${units[i]}`;
 }
 
 export function updateLastAssistantMessage(content: string, think: string | null, stats: { eval_count?: number; total_duration?: number } | null, model?: string): void {

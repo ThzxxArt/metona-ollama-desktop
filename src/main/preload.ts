@@ -15,6 +15,11 @@ contextBridge.exposeInMainWorld('metonaDesktop', {
     readFile: (filePath: string) => ipcRenderer.invoke('fs:readFile', filePath),
     writeFile: (filePath: string, content: string) => ipcRenderer.invoke('fs:writeFile', filePath, content)
   },
+  tool: {
+    execute: (toolName: string, args: Record<string, unknown>) => ipcRenderer.invoke('tool:execute', toolName, args),
+    getConfig: () => ipcRenderer.invoke('tool:getConfig'),
+    setAllowedDirs: (dirs: string[]) => ipcRenderer.invoke('tool:setAllowedDirs', dirs)
+  },
   notify: (title: string, body: string) => ipcRenderer.invoke('notify', title, body),
   window: {
     minimize: () => ipcRenderer.invoke('window:minimize'),

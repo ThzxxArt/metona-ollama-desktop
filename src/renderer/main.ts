@@ -23,6 +23,7 @@ import { initKBModal } from './components/kb-modal.js';
 import { initPresetBar, initPresetModal } from './components/preset-bar.js';
 import { initPresetManager } from './services/preset-manager.js';
 import { initVectorStore } from './services/rag.js';
+import { initToolConfirmModal } from './components/tool-confirm-modal.js';
 import type { ChatSession } from './types.js';
 
 function initHelpModal(): void {
@@ -155,6 +156,7 @@ async function init(): Promise<void> {
     initPresetBar();
     initPresetModal();
     initHelpModal();
+    initToolConfirmModal();
     setupDesktopIntegration();
 
     bindGlobalEvents();
@@ -187,6 +189,16 @@ async function init(): Promise<void> {
     (document.querySelector('#inputNumCtx') as HTMLInputElement).value = String(numCtx);
     (document.querySelector('#inputTemperature') as HTMLInputElement).value = String(temperature);
     document.querySelector('#tempValue')!.textContent = parseFloat(temperature).toFixed(1);
+
+    // ── Tool Calling 设置 ──
+    const toolCallingEnabled = await db.getSetting('toolCallingEnabled', false);
+    const runCommandEnabled = await db.getSetting('runCommandEnabled', false);
+    state.set('toolCallingEnabled', toolCallingEnabled);
+    state.set('runCommandEnabled', runCommandEnabled);
+    const toggleTC = document.querySelector<HTMLInputElement>('#toggleToolCalling');
+    if (toggleTC) toggleTC.checked = toolCallingEnabled;
+    const toggleRC = document.querySelector<HTMLInputElement>('#toggleRunCommand');
+    if (toggleRC) toggleRC.checked = runCommandEnabled;
 
     (document.querySelector('#chatInput') as HTMLElement)?.focus();
 

@@ -5,7 +5,7 @@
 import type {
   OllamaChatParams, OllamaStreamChunk, OllamaModelsResponse,
   OllamaPsResponse, OllamaVersionResponse, OllamaModelDetail,
-  OllamaEmbedResponse
+  OllamaEmbedResponse, ToolDefinition
 } from '../types.js';
 
 export class OllamaAPI {
@@ -65,7 +65,7 @@ export class OllamaAPI {
   }
 
   async chatStream(
-    params: OllamaChatParams,
+    params: OllamaChatParams & { tools?: ToolDefinition[] },
     onChunk: (chunk: OllamaStreamChunk) => void,
     abortController?: AbortController
   ): Promise<void> {
@@ -78,6 +78,7 @@ export class OllamaAPI {
     if (params.system) body.system = params.system;
     if (params.keep_alive !== undefined) body.keep_alive = params.keep_alive;
     if (params.options) body.options = params.options;
+    if (params.tools?.length) body.tools = params.tools;
 
     const fetchOptions: RequestInit = {
       method: 'POST',

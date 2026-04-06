@@ -200,6 +200,34 @@
                 </div>
             </div>
             <div class="setting-group">
+                <label class="setting-label">
+                    🔧 工具调用（Tool Calling）
+                    <label class="toggle-label" style="margin-left:auto;display:inline-flex;">
+                        <input type="checkbox" id="toggleToolCalling">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </label>
+                <p class="text-muted" style="font-size:11px;margin-bottom:8px;">启用后，AI 可以在对话中主动调用本地工具（读写文件、搜索、创建目录等）。需要模型支持 Tool Calling。</p>
+                <div class="tool-settings" id="toolSettings">
+                    <div class="tool-list">
+                        <div class="tool-item"><span>📄 读取文件</span><span class="text-muted">自动</span></div>
+                        <div class="tool-item"><span>✏️ 写入文件</span><span class="text-muted">需确认</span></div>
+                        <div class="tool-item"><span>📁 列出目录</span><span class="text-muted">自动</span></div>
+                        <div class="tool-item"><span>🔍 搜索文件</span><span class="text-muted">自动</span></div>
+                        <div class="tool-item"><span>📂 创建目录</span><span class="text-muted">需确认</span></div>
+                        <div class="tool-item"><span>🗑️ 删除文件</span><span class="text-muted">需确认</span></div>
+                        <div class="tool-item">
+                            <span>💻 执行命令</span>
+                            <label class="toggle-label" style="margin:0;">
+                                <input type="checkbox" id="toggleRunCommand">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                    <p class="text-muted" style="font-size:11px;margin-top:8px;">⚠️ 高风险操作（写入/删除/命令执行）会弹出确认对话框。系统关键路径（/etc, /sys, ~/.ssh 等）已自动屏蔽。</p>
+                </div>
+            </div>
+            <div class="setting-group">
                 <label class="setting-label">显存管理</label>
                 <button class="btn btn-danger" id="btnReleaseVRAM">释放显存（卸载模型）</button>
             </div>
@@ -368,6 +396,23 @@
 <div class="lightbox-overlay" id="lightbox" style="display:none;">
     <button class="lightbox-close" id="lightboxClose">✕</button>
     <img class="lightbox-img" id="lightboxImg" src="" alt="预览">
+</div>
+
+<!-- ═══════════════ 工具调用确认对话框 ═══════════════ -->
+<div class="modal-overlay" id="toolConfirmModal" style="display:none;">
+    <div class="modal" style="max-width:520px;">
+        <div class="modal-header">
+            <h3 id="toolConfirmTitle">⚠️ 确认操作</h3>
+        </div>
+        <div class="modal-body" id="toolConfirmBody">
+            <p>AI 请求执行一个需要确认的操作。</p>
+        </div>
+        <div class="preset-modal-actions" style="padding:12px 20px 16px;">
+            <div style="flex:1;"></div>
+            <button class="btn btn-outline" id="toolCancelBtn">❌ 取消</button>
+            <button class="btn btn-primary" id="toolConfirmBtn">✅ 确认执行</button>
+        </div>
+    </div>
 </div>
 
 <!-- ═══════════════ Toast 通知容器 ═══════════════ -->

@@ -1,11 +1,13 @@
 // ── Ollama API 类型 ──
 
 export interface OllamaMessage {
-  role: 'user' | 'assistant' | 'system';
+  role: 'user' | 'assistant' | 'system' | 'tool';
   content: string;
   images?: string[];
   thinking?: string;
   reasoning_content?: string;
+  tool_calls?: ToolCall[];
+  tool_name?: string;
 }
 
 export interface OllamaChatParams {
@@ -14,6 +16,7 @@ export interface OllamaChatParams {
   stream?: boolean;
   think?: boolean;
   system?: string;
+  tools?: ToolDefinition[];
   keep_alive?: number | string;
   options?: {
     num_ctx?: number;
@@ -29,6 +32,7 @@ export interface OllamaStreamChunk {
     content?: string;
     thinking?: string;
     reasoning_content?: string;
+    tool_calls?: ToolCall[];
   };
   done?: boolean;
   eval_count?: number;
@@ -100,6 +104,7 @@ export interface ChatMessage {
   _fileContents?: FileContent[];
   ragSources?: RagSource[];
   stopped?: boolean;
+  toolCalls?: ToolCallRecord[];
 }
 
 export interface ChatSession {
@@ -172,6 +177,11 @@ export interface MetonaDesktopAPI {
     readFile: (filePath: string) => Promise<{ success: boolean; content?: string; name?: string; error?: string }>;
     writeFile: (filePath: string, content: string) => Promise<{ success: boolean; error?: string }>;
   };
+  tool: {
+    execute: (toolName: string, args: Record<string, unknown>) => Promise<ToolResult>;
+    getConfig: () => Promise<{ allowedDirs: string[]; blockedDirs: string[] }>;
+    setAllowedDirs: (dirs: string[]) => Promise<void>;
+  };
   notify: (title: string, body: string) => void;
   window: {
     minimize: () => void;
@@ -238,7 +248,62 @@ export type StateKey =
   | 'temperature'
   | 'thinkEnabled'
   | 'presets'
-  | 'activePresetId';
+  | 'activePresetId'
+  | 'toolCallingEnabled'
+  | 'runCommandEnabled';
+
+// ═══════════════════════════════════════════════════════════
+// Tool Calling 类型
+// ═══════════════════════════════════════════════════════════
+
+export interface ToolParameterProperty {
+  type: string;
+  description?: string;
+  enum?: string[];
+  items?: { type: string };
+}
+
+export interface ToolParameters {
+  type: 'object';
+  required?: string[];
+  properties: Record<string, ToolParameterProperty>;
+}
+
+export interface ToolFunctionDefinition {
+  name: string;
+  description: string;
+  parameters: ToolParameters;
+}
+
+export interface ToolDefinition {
+  type: 'function';
+  function: ToolFunctionDefinition;
+}
+
+export interface ToolCall {
+  type: 'function';
+  function: {
+    name: string;
+    arguments: Record<string, unknown>;
+  };
+}
+
+export interface ToolResult {
+  success: boolean;
+  error?: string;
+  [key: string]: unknown;
+}
+
+export interface ToolCallRecord {
+  name: string;
+  arguments: Record<string, unknown>;
+  result: ToolResult | null;
+  status: 'pending' | 'running' | 'success' | 'error' | 'cancelled';
+  confirmed?: boolean;
+  timestamp: number;
+}
+
+export type AgentState = 'idle' | 'sending' | 'accumulating' | 'executing' | 'confirming' | 'done';
 
 // ── Window global 声明 ──
 
@@ -248,3 +313,5 @@ declare global {
     __metonaBridge?: DesktopBridge;
   }
 }
+
+export {};

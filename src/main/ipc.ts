@@ -7,6 +7,16 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { mainWindow } from './main.js';
 import { showNotification } from './utils.js';
+import {
+  handleReadFile,
+  handleWriteFile,
+  handleListDir,
+  handleSearchFiles,
+  handleCreateDir,
+  handleDeleteFile,
+  handleRunCommand
+} from './tool-handlers.js';
+import { getAllowedDirs, getBlockedDirs, setAllowedDirs } from './tool-security.js';
 
 export function setupIPC(): void {
   ipcMain.handle('dialog:openFile', async (_, options?: { filters?: Array<{ name: string; extensions: string[] }> }) => {
@@ -68,5 +78,28 @@ export function setupIPC(): void {
     if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('mailto:')) {
       shell.openExternal(url);
     }
+  });
+
+  // ── Tool Calling IPC ──
+  ipcMain.handle('tool:execute', async (_, toolName: string, args: Record<string, unknown>) => {
+    switch (toolName) {
+      case 'read_file':          return handleReadFile(args as { path: string; encoding?: string; start_line?: number; end_line?: number });
+      case 'write_file':         return handleWriteFile(args as { path: string; content: string; encoding?: string });
+      case 'list_directory':     return handleListDir(args as { path: string; recursive?: boolean; max_depth?: number; include_hidden?: boolean; filter_extension?: string });
+      case 'search_files':       return handleSearchFiles(args as { path: string; query: string; search_type?: string; case_sensitive?: boolean; max_results?: number; file_extensions?: string[] });
+      case 'create_directory':   return handleCreateDir(args as { path: string });
+      case 'delete_file':        return handleDeleteFile(args as { path: string; recursive?: boolean });
+      case 'run_command':        return handleRunCommand(args as { command: string; cwd?: string; timeout?: number });
+      default:                   return { success: false, error: `未知工具: ${toolName}` };
+    }
+  });
+
+  ipcMain.handle('tool:getConfig', () => ({
+    allowedDirs: getAllowedDirs(),
+    blockedDirs: getBlockedDirs()
+  }));
+
+  ipcMain.handle('tool:setAllowedDirs', (_, dirs: string[]) => {
+    setAllowedDirs(dirs);
   });
 }

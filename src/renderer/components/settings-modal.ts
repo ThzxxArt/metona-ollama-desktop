@@ -103,6 +103,29 @@ export function initSettingsModal(): void {
       (e.target as HTMLInputElement).value = '';
     }
   });
+
+  // ── Tool Calling 设置 ──
+  const toggleToolCalling = document.querySelector('#toggleToolCalling') as HTMLInputElement;
+  if (toggleToolCalling) {
+    toggleToolCalling.addEventListener('change', async () => {
+      const db = state.get<ChatDB | null>(KEYS.DB);
+      state.set('toolCallingEnabled', toggleToolCalling.checked);
+      if (db) await db.saveSetting('toolCallingEnabled', toggleToolCalling.checked);
+      showToast(toggleToolCalling.checked ? '工具调用已开启' : '工具调用已关闭', 'info');
+    });
+  }
+
+  const toggleRunCommand = document.querySelector('#toggleRunCommand') as HTMLInputElement;
+  if (toggleRunCommand) {
+    toggleRunCommand.addEventListener('change', async () => {
+      const db = state.get<ChatDB | null>(KEYS.DB);
+      state.set('runCommandEnabled', toggleRunCommand.checked);
+      if (db) await db.saveSetting('runCommandEnabled', toggleRunCommand.checked);
+      if (toggleRunCommand.checked) {
+        showToast('⚠️ 命令执行已开启，请谨慎使用', 'warning');
+      }
+    });
+  }
 }
 
 export function openSettingsModal(): void {
