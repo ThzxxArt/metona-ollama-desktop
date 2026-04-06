@@ -4,7 +4,7 @@
 
 import { state, KEYS } from '../state/state.js';
 import { fileToBase64, fileToText, detectLanguage, truncate, escapeHtml, formatSize } from '../utils/utils.js';
-import { getSelectedModel, isThinkEnabled, isVisionAvailable } from './model-bar.js';
+import { getSelectedModel, isThinkEnabled, isVisionAvailable, isToolCallingSupported } from './model-bar.js';
 import {
   renderMessages, appendAssistantPlaceholder, appendSystemMessage,
   updateLastAssistantMessage, clearMessages, safeMarkdown, enableAutoScroll
@@ -260,6 +260,10 @@ export async function sendMessage(): Promise<void> {
   // ── Tool Calling Agent Loop 分支 ──
   const toolCallingEnabled = state.get<boolean>('toolCallingEnabled', false);
   if (toolCallingEnabled) {
+    // 检查模型是否支持 Tool Calling
+    if (!isToolCallingSupported()) {
+      appendSystemMessage('⚠️ 当前模型未声明支持 Tool Calling，Agent Loop 可能不稳定。建议使用 Qwen3、Llama 3.1+ 或 Mistral 等支持工具调用的模型。');
+    }
     await sendMessageWithAgentLoop(text, currentSession, model);
     return;
   }

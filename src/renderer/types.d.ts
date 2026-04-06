@@ -51,6 +51,13 @@ export interface OllamaModelDetail {
   [key: string]: unknown;
 }
 
+export interface ModelCaps {
+  think: boolean;
+  vision: boolean;
+  tools: boolean;
+  completion: boolean;
+}
+
 export interface OllamaVersionResponse {
   version: string;
 }

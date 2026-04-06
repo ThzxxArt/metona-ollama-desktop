@@ -20,6 +20,11 @@ import type {
   ToolCallRecord
 } from '../types.js';
 
+const MAX_LOOPS = 10;
+const MAX_LOOP_TIME = 300000;        // 5 分钟总超时
+const TOOL_EXEC_TIMEOUT = 30000;     // 工具执行超时 30 秒
+const STREAM_TIMEOUT = 120000;       // 单次流式调用超时 2 分钟
+
 export interface AgentCallbacks {
   onThinking: (text: string) => void;
   onContent: (text: string) => void;
@@ -42,6 +47,12 @@ export async function runAgentLoop(
   if (!api || !model) {
     showToast('请先选择模型', 'error');
     return;
+  }
+
+  // 检查模型是否支持 Tool Calling
+  const modelSupportsTools = state.get<boolean>('modelSupportsTools', false);
+  if (!modelSupportsTools) {
+    console.warn(`[AgentEngine] 模型 ${model} 未声明 tools 能力，Agent Loop 可能不稳定`);
   }
 
   const messages: OllamaMessage[] = [];
@@ -84,12 +95,11 @@ export async function runAgentLoop(
   const useTools = tools.length > 0;
 
   let loopCount = 0;
-  const maxLoops = 10;
   const allToolRecords: ToolCallRecord[] = [];
   const loopStartTime = Date.now();
-  const MAX_LOOP_TIME = 300000; // 5分钟总超时
+  let content = '';
 
-  while (loopCount < maxLoops) {
+  while (loopCount < MAX_LOOPS) {
     loopCount++;
 
     // 全局超时检查
@@ -106,55 +116,61 @@ export async function runAgentLoop(
     }
 
     let thinking = '';
-    let content = '';
+    content = '';
     const toolCalls: ToolCall[] = [];
 
     const abortController = new AbortController();
     state.set(KEYS.ABORT_CONTROLLER, abortController);
 
     try {
-      await api.chatStream(
-        {
-          model,
-          messages,
-          stream: true,
-          think: state.get<boolean>('thinkEnabled', false),
-          options: {
-            num_ctx: state.get<number>(KEYS.NUM_CTX, 24576),
-            temperature: state.get<number>('temperature', 0.7)
+      // 带超时保护的流式调用
+      await Promise.race([
+        api.chatStream(
+          {
+            model,
+            messages,
+            stream: true,
+            think: state.get<boolean>('thinkEnabled', false),
+            options: {
+              num_ctx: state.get<number>(KEYS.NUM_CTX, 24576),
+              temperature: state.get<number>('temperature', 0.7)
+            },
+            ...(useTools && { tools })
           },
-          ...(useTools && { tools })
-        },
-        (chunk: OllamaStreamChunk) => {
-          if (chunk.message?.thinking) {
-            thinking += chunk.message.thinking;
-            callbacks.onThinking(thinking);
-          }
-          if (chunk.message?.content) {
-            content += chunk.message.content;
-            callbacks.onContent(content);
-          }
-          if (chunk.message?.tool_calls?.length) {
-            for (const tc of chunk.message.tool_calls) {
-              if (tc.function?.name) {
-                toolCalls.push({
-                  type: 'function',
-                  function: {
-                    name: tc.function.name,
-                    arguments: tc.function.arguments || {}
+          (chunk: OllamaStreamChunk) => {
+            if (chunk.message?.thinking) {
+              thinking += chunk.message.thinking;
+              callbacks.onThinking(thinking);
+            }
+            if (chunk.message?.content) {
+              content += chunk.message.content;
+              callbacks.onContent(content);
+            }
+            if (chunk.message?.tool_calls?.length) {
+              for (const tc of chunk.message.tool_calls) {
+                if (tc.function?.name) {
+                  toolCalls.push({
+                    type: 'function',
+                    function: {
+                      name: tc.function.name,
+                      arguments: tc.function.arguments || {}
+                    }
+                  });
+                } else if (toolCalls.length > 0) {
+                  const last = toolCalls[toolCalls.length - 1];
+                  if (tc.function?.arguments && typeof tc.function.arguments === 'object') {
+                    Object.assign(last.function.arguments, tc.function.arguments);
                   }
-                });
-              } else if (toolCalls.length > 0) {
-                const last = toolCalls[toolCalls.length - 1];
-                if (tc.function?.arguments && typeof tc.function.arguments === 'object') {
-                  Object.assign(last.function.arguments, tc.function.arguments);
                 }
               }
             }
-          }
-        },
-        abortController
-      );
+          },
+          abortController
+        ),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('模型响应超时（2分钟无数据）')), STREAM_TIMEOUT)
+        )
+      ]);
     } catch (err) {
       if (abortController.signal.aborted) {
         if (content || thinking) {
@@ -165,6 +181,19 @@ export async function runAgentLoop(
           });
         }
         callbacks.onDone(content, allToolRecords.length > 0 ? allToolRecords : undefined);
+        return;
+      }
+      // 超时错误 — 保留已生成的内容
+      if ((err as Error).message.includes('超时')) {
+        console.warn('[AgentEngine] 流式调用超时:', (err as Error).message);
+        if (content || thinking) {
+          messages.push({
+            role: 'assistant',
+            content: content || '（模型响应超时）',
+            ...(thinking && { thinking })
+          });
+        }
+        callbacks.onDone(content || '（模型响应超时，已自动中断）', allToolRecords.length > 0 ? allToolRecords : undefined);
         return;
       }
       throw err;
@@ -222,12 +251,11 @@ export async function runAgentLoop(
       }
 
       try {
-        // 工具执行超时保护（30秒）
-        const TOOL_TIMEOUT = 30000;
+        // 工具执行超时保护
         const result = await Promise.race([
           executeTool(call.function.name, call.function.arguments),
           new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error('工具执行超时（30秒）')), TOOL_TIMEOUT)
+            setTimeout(() => reject(new Error('工具执行超时（30秒）')), TOOL_EXEC_TIMEOUT)
           )
         ]);
         const record: ToolCallRecord = {

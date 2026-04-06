@@ -113,7 +113,16 @@ export function initSettingsModal(): void {
       const db = state.get<ChatDB | null>(KEYS.DB);
       state.set('toolCallingEnabled', toggleToolCalling.checked);
       if (db) await db.saveSetting('toolCallingEnabled', toggleToolCalling.checked);
-      showToast(toggleToolCalling.checked ? '工具调用已开启' : '工具调用已关闭', 'info');
+      if (toggleToolCalling.checked) {
+        const modelSupportsTools = state.get<boolean>('modelSupportsTools', false);
+        if (!modelSupportsTools) {
+          showToast('⚠️ 当前模型可能不支持 Tool Calling，建议使用 Qwen3、Llama 3.1+ 等模型', 'warning', 5000);
+        } else {
+          showToast('工具调用已开启', 'info');
+        }
+      } else {
+        showToast('工具调用已关闭', 'info');
+      }
     });
   }
 

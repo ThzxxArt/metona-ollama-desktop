@@ -6,21 +6,23 @@ import { state, KEYS } from '../state/state.js';
 import { formatSize } from '../utils/utils.js';
 import { OllamaAPI } from '../api/ollama.js';
 import { ChatDB } from '../db/chat-db.js';
-import type { OllamaModelDetail } from '../types.js';
+import type { OllamaModelDetail, ModelCaps } from '../types.js';
 
 let modelSelectEl: HTMLSelectElement;
 let badgeThinkEl: HTMLElement;
 let badgeVisionEl: HTMLElement;
+let badgeToolsEl: HTMLElement;
 let thinkCheckbox: HTMLInputElement;
 let thinkWrap: HTMLElement;
 let btnAttachImg: HTMLButtonElement;
 
-const modelCapabilityCache = new Map<string, { think: boolean; vision: boolean; completion: boolean }>();
+const modelCapabilityCache = new Map<string, ModelCaps>();
 
 export function initModelBar(): void {
   modelSelectEl = document.querySelector('#modelSelect')!;
   badgeThinkEl = document.querySelector('#badgeThink')!;
   badgeVisionEl = document.querySelector('#badgeVision')!;
+  badgeToolsEl = document.querySelector('#badgeTools')!;
   thinkCheckbox = document.querySelector('#toggleThink')!;
   thinkWrap = document.querySelector('#thinkToggleWrap')!;
   btnAttachImg = document.querySelector('#btnAttachImg')!;
@@ -38,6 +40,8 @@ export function initModelBar(): void {
       setVisionAvailable(false);
       badgeThinkEl.style.display = 'none';
       badgeVisionEl.style.display = 'none';
+      badgeToolsEl.style.display = 'none';
+      state.set('modelSupportsTools', false);
     }
   });
 }
@@ -99,6 +103,7 @@ async function filterEmbedModels(models: Array<{ name: string }>): Promise<void>
       modelCapabilityCache.set(m.name, {
         think: caps.includes('thinking'),
         vision: caps.includes('vision'),
+        tools: caps.includes('tools'),
         completion: isCompletion,
       });
       if (!isCompletion) {
@@ -132,23 +137,26 @@ async function checkModelCapability(modelName: string): Promise<void> {
     const caps = {
       think: capabilities.includes('thinking'),
       vision: capabilities.includes('vision'),
+      tools: capabilities.includes('tools'),
       completion: capabilities.includes('completion'),
     };
     modelCapabilityCache.set(modelName, caps);
     applyCapability(modelName, caps);
   } catch (err) {
     console.warn('[ModelBar] 获取模型能力失败:', err);
-    const fallback = { think: false, vision: false, completion: true };
+    const fallback = { think: false, vision: false, tools: false, completion: true };
     modelCapabilityCache.set(modelName, fallback);
     applyCapability(modelName, fallback);
   }
 }
 
-function applyCapability(_modelName: string, caps: { think: boolean; vision: boolean }): void {
+function applyCapability(_modelName: string, caps: { think: boolean; vision: boolean; tools: boolean }): void {
   setThinkAvailable(caps.think);
   setVisionAvailable(caps.vision);
   badgeThinkEl.style.display = caps.think ? '' : 'none';
   badgeVisionEl.style.display = caps.vision ? '' : 'none';
+  badgeToolsEl.style.display = caps.tools ? '' : 'none';
+  state.set('modelSupportsTools', caps.tools);
 }
 
 function setThinkAvailable(available: boolean): void {
@@ -192,4 +200,12 @@ export function setSelectedModel(modelName: string): void {
 
 export function isThinkEnabled(): boolean {
   return thinkCheckbox.checked && !thinkCheckbox.disabled;
+}
+
+/** 检查当前选中的模型是否支持 Tool Calling */
+export function isToolCallingSupported(): boolean {
+  const model = modelSelectEl?.value;
+  if (!model) return false;
+  const caps = modelCapabilityCache.get(model);
+  return caps?.tools === true;
 }

@@ -377,6 +377,12 @@ html, body {
     border-color: rgba(179, 136, 255, 0.15);
 }
 
+.tools-badge {
+    color: #FFB74D;
+    background: rgba(255, 183, 77, 0.06);
+    border-color: rgba(255, 183, 77, 0.15);
+}
+
 /* ── 温度滑块 ── */
 .temp-slider {
     width: 100%;
