@@ -16,6 +16,28 @@
 ## 桌面版（Desktop）
 
 ### Desktop v3.0.0 — Tool Calling & Agent 记忆
+
+#### v3.0.0-patch2 — 稳定性修复
+- 🔧 **Tool Calling IPC 卡死修复**
+  - `executeTool()` 新增 25 秒 IPC 硬超时，防止主进程无响应时无限挂起
+  - `agent-engine.ts` 内 `.catch` 捕获异常，防止 reject 逃逸
+  - 主进程 `tool:execute` 外层 try-catch，确保始终返回响应
+  - 全链路 console.log 便于 DevTools 排查
+- 🔧 **Electron contextIsolation 兼容**
+  - 新增 `prompt-modal.ts` 自定义弹窗组件（替代原生 `window.prompt()` / `window.confirm()`）
+  - 替换 memory-panel / kb-modal / settings-modal / history-modal 中全部 7 处原生调用
+- 🔧 **日志面板改造**
+  - 默认常驻显示，移除关闭/清空/切换按钮
+  - 新增 earlyBuffer 缓冲机制，initLogPanel 前的日志不再丢失
+  - initLogPanel() 移至 init() 最先执行
+  - 确认为纯运行时日志，不持久化
+- 🔧 **启动稳定性**
+  - init() 中防御性重置 IS_STREAMING / IS_HISTORY_VIEW / toolCallingEnabled 等状态
+  - catch 路径也重置关键状态并初始化日志面板
+- 🔧 **新建会话修复** — 新建会话时强制中断正在进行的生成，恢复发送按钮
+- 📝 对齐 Ollama 官方 Tool Calling JavaScript 文档
+
+#### v3.0.0 — Tool Calling & Agent 记忆
 - 🔧 **Tool Calling — AI 本地文件操作系统**
   - 7 个工具：`read_file` / `write_file` / `list_directory` / `search_files` / `create_directory` / `delete_file` / `run_command`
   - Agent Loop 引擎：流式多轮工具调用循环，支持并行调用（最大 10 轮）

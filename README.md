@@ -335,6 +335,13 @@ metona-ollama/
 
 ### 最新版本
 
+**v3.0.0-patch2** — 稳定性修复
+- 🔧 Tool Calling IPC 卡死修复（25 秒硬超时 + 多层保护）
+- 🔧 Electron contextIsolation 兼容（自定义 prompt/confirm 弹窗）
+- 🔧 日志面板默认常驻显示，启动日志不再丢失
+- 🔧 新建会话时强制中断生成并恢复发送按钮
+- 📝 对齐 Ollama 官方 Tool Calling 文档
+
 **v3.0.0** — Tool Calling & Agent 记忆系统
 - 🔧 7 个本地工具 + Agent Loop 引擎 + 安全模型
 - 🧠 自动记忆提取 + 跨会话持久化 + 可视化管理
