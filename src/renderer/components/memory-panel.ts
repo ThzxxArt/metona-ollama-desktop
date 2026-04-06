@@ -45,7 +45,7 @@ export function initMemoryPanel(): void {
       <h3>🧠 Agent 记忆</h3>
       <div class="memory-panel-actions">
         <label class="memory-toggle" title="自动记忆">
-          <input type="checkbox" id="toggleMemoryEnabled" checked>
+          <input type="checkbox" id="toggleMemoryPanelEnabled" checked>
           <span class="toggle-slider-sm"></span>
         </label>
         <button class="icon-btn sm" id="btnCloseMemoryPanel" title="关闭">
@@ -79,7 +79,7 @@ export function initMemoryPanel(): void {
   bar.querySelector('#btnMemoryPanel')!.addEventListener('click', togglePanel);
   panel.querySelector('#btnCloseMemoryPanel')!.addEventListener('click', () => setPanelOpen(false));
 
-  const toggleMemory = panel.querySelector('#toggleMemoryEnabled') as HTMLInputElement;
+  const toggleMemory = panel.querySelector('#toggleMemoryPanelEnabled') as HTMLInputElement;
   toggleMemory.checked = isMemoryEnabled();
   toggleMemory.addEventListener('change', () => {
     setMemoryEnabled(toggleMemory.checked);

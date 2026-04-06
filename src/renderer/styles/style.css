@@ -80,6 +80,7 @@ html, body {
     display: flex;
     flex-direction: column;
     height: 100vh;
+    position: relative;
 }
 
 /* ═══ 顶部导航 ═══ */
@@ -920,6 +921,8 @@ html, body {
     backdrop-filter: saturate(180%) blur(20px);
     -webkit-backdrop-filter: saturate(180%) blur(20px);
     border-top: 1px solid var(--border-subtle);
+    z-index: 20;
+    pointer-events: auto;
 }
 
 .image-preview {
@@ -1050,6 +1053,8 @@ html, body {
     max-height: 120px;
     line-height: 1.5;
     transition: var(--transition);
+    pointer-events: auto;
+    user-select: text;
 }
 
 .chat-input:focus {
