@@ -190,6 +190,7 @@ export function openHistoryModal(): void {
   (document.querySelector('#historySearchInput') as HTMLInputElement).value = '';
   (document.querySelector('#historySearchClear') as HTMLElement).style.display = 'none';
   loadHistory();
+  logSession('打开历史记录');
   historyModalEl.style.display = '';
 }
 

@@ -78,6 +78,7 @@ export async function updateRunningModels(): Promise<void> {
     const data = await api.psModels();
     if (!data.models || data.models.length === 0) {
       container.innerHTML = '<p class="text-muted">无运行中的模型</p>';
+      logDebug('运行中模型: 0');
       return;
     }
     container.innerHTML = data.models.map(m => `
@@ -86,6 +87,7 @@ export async function updateRunningModels(): Promise<void> {
         <span class="model-vram">${formatSize(m.size_vram || 0)} VRAM</span>
       </div>
     `).join('');
+    logDebug(`运行中模型: ${data.models.length}`, data.models.map(m => m.name).join(', '));
   } catch {
     container.innerHTML = '<p class="text-muted">无法获取运行信息</p>';
   }

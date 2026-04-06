@@ -3,6 +3,7 @@
  */
 
 import type { VectorCollection, VectorItem, SearchResult } from '../types.js';
+import { logRAG, logDebug } from './log-service.js';
 
 const MIN_IVF_SIZE = 200;
 const DEFAULT_K = 20;
@@ -30,7 +31,7 @@ export class VectorStore {
     return new Promise((resolve, reject) => {
       const req = indexedDB.open(this.dbName, 2);
       req.onerror = () => reject(req.error);
-      req.onsuccess = () => { this.db = req.result; resolve(); };
+      req.onsuccess = () => { this.db = req.result; logDebug('向量数据库已连接'); resolve(); };
       req.onupgradeneeded = (e) => {
         const db = (e.target as IDBOpenDBRequest).result;
         if (!db.objectStoreNames.contains('vectors')) {
@@ -60,7 +61,7 @@ export class VectorStore {
     };
     return new Promise((resolve, reject) => {
       const req = this._tx('collections', 'readwrite').put(col);
-      req.onsuccess = () => resolve(col);
+      req.onsuccess = () => { logRAG(`创建集合: ${name}`, col.id); resolve(col); };
       req.onerror = () => reject(req.error);
     });
   }
@@ -92,6 +93,7 @@ export class VectorStore {
 
   async deleteCollection(colId: string): Promise<void> {
     const vectors = await this.getVectorsByCollection(colId);
+    logRAG(`删除集合`, `${colId} (${vectors.length} 向量)`);
     await new Promise<void>((resolve, reject) => {
       const tx = this.db!.transaction(['vectors', 'collections', 'indexes'], 'readwrite');
       const vStore = tx.objectStore('vectors');
@@ -107,6 +109,8 @@ export class VectorStore {
 
   async addVectors(items: VectorItem[]): Promise<void> {
     if (items.length === 0) return;
+    const colId = items[0].collectionId;
+    logDebug(`写入向量`, `${colId}: ${items.length} 条`);
     await new Promise<void>((resolve, reject) => {
       const tx = this.db!.transaction('vectors', 'readwrite');
       const store = tx.objectStore('vectors');
@@ -142,6 +146,7 @@ export class VectorStore {
   async deleteVectorsByDocument(colId: string, docId: string): Promise<void> {
     const vectors = await this.getVectorsByCollection(colId);
     const docVectors = vectors.filter(v => v.docId === docId);
+    logDebug(`删除文档向量`, `${docId}: ${docVectors.length} 条`);
     await new Promise<void>((resolve, reject) => {
       const tx = this.db!.transaction('vectors', 'readwrite');
       const store = tx.objectStore('vectors');
@@ -160,15 +165,15 @@ export class VectorStore {
     const vectors = await this.getVectorsByCollection(colId);
     if (vectors.length === 0) return [];
 
+    let results: SearchResult[];
     if (vectors.length < MIN_IVF_SIZE) {
-      return this._bruteForceSearch(vectors, queryEmbedding, topK);
+      results = this._bruteForceSearch(vectors, queryEmbedding, topK);
+    } else {
+      const index = await this._getIndex(colId, vectors);
+      results = index ? this._ivfSearch(vectors, index, queryEmbedding, topK) : this._bruteForceSearch(vectors, queryEmbedding, topK);
     }
-
-    const index = await this._getIndex(colId, vectors);
-    if (!index) {
-      return this._bruteForceSearch(vectors, queryEmbedding, topK);
-    }
-    return this._ivfSearch(vectors, index, queryEmbedding, topK);
+    logDebug(`向量搜索`, `${colId}: ${vectors.length} 向量中检索到 ${results.length} 个结果`);
+    return results;
   }
 
   private _bruteForceSearch(vectors: VectorItem[], queryEmbedding: number[], topK: number): SearchResult[] {

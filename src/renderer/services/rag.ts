@@ -14,6 +14,7 @@ export async function initVectorStore(): Promise<VectorStore> {
   if (vectorStore) return vectorStore;
   vectorStore = new VectorStore();
   await vectorStore.init();
+  logRAG('向量存储已初始化');
   return vectorStore;
 }
 
@@ -34,6 +35,7 @@ export async function embedText(text: string, model: string): Promise<number[]> 
 export async function embedBatch(texts: string[], model: string, onProgress?: (done: number, total: number) => void): Promise<number[][]> {
   const results: number[][] = [];
   const batchSize = 5;
+  logDebug(`嵌入批次`, `${texts.length} 个文本, 模型: ${model}`);
   for (let i = 0; i < texts.length; i += batchSize) {
     const batch = texts.slice(i, i + batchSize);
     const embeddings = await Promise.all(batch.map(t => embedText(t, model)));
@@ -87,6 +89,7 @@ export async function removeDocumentFromKB(colId: string, docId: string): Promis
   const vs = await initVectorStore();
   const allVectors = await vs.getVectorsByCollection(colId);
   const docVectors = allVectors.filter(v => v.docId === docId);
+  logRAG(`删除文档`, `${docId} (${docVectors.length} 个分块)`);
 
   await vs.deleteVectorsByDocument(colId, docId);
 
@@ -119,6 +122,7 @@ export async function retrieveContext(query: string, colId: string, topK = 5): P
   const embedModel = col.embeddingModel;
   if (!embedModel) throw new Error('未配置嵌入模型');
 
+  logRAG('开始检索', col.name);
   const queryEmbedding = await embedText(query, embedModel);
   const results = await vs.search(colId, queryEmbedding, topK);
   if (results.length === 0) return { context: '', results: [] };

@@ -3,7 +3,7 @@
  */
 
 import { state, KEYS } from '../state/state.js';
-import { logError } from '../services/log-service.js';
+import { logError, logSession } from '../services/log-service.js';
 import { marked } from '../utils/marked-config.js';
 import { escapeHtml, formatTime } from '../utils/utils.js';
 import type { ChatSession, ChatMessage, ToolCallRecord } from '../types.js';
@@ -420,6 +420,7 @@ export async function exportAsMarkdown(session: ChatSession): Promise<void> {
     if (m.think) md += `> **思考:** ${m.think}\n\n`;
   });
   await nativeSaveFile(`${session.title}.md`, md);
+  logSession('导出', `${session.title}.md`);
 }
 
 export async function exportAsHtml(session: ChatSession): Promise<void> {
@@ -435,6 +436,7 @@ code{background:rgba(0,0,0,0.2);padding:2px 6px;border-radius:4px;}</style></hea
   });
   html += '</body></html>';
   await nativeSaveFile(`${session.title}.html`, html);
+  logSession('导出', `${session.title}.html`);
 }
 
 export async function exportAsTxt(session: ChatSession): Promise<void> {
@@ -443,4 +445,5 @@ export async function exportAsTxt(session: ChatSession): Promise<void> {
     txt += `[${m.role === 'user' ? '用户' : 'AI'}]\n${m.content || ''}\n\n`;
   });
   await nativeSaveFile(`${session.title}.txt`, txt);
+  logSession('导出', `${session.title}.txt`);
 }

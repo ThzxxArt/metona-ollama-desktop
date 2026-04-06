@@ -98,6 +98,7 @@ function updateRagBadge(): void {
 
 async function openKBModal(): Promise<void> {
   kbModalEl.style.display = '';
+  logRAG('打开知识库管理');
   await refreshCollections();
   await populateEmbedModels();
 }
