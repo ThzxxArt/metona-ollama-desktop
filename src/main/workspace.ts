@@ -86,9 +86,12 @@ export function startProcess(
   }
 
   try {
-    const proc = spawn('bash', ['-c', command], {
+    const isWin = process.platform === 'win32';
+    const shell = isWin ? 'cmd.exe' : 'bash';
+    const shellArgs = isWin ? ['/c', command] : ['-c', command];
+    const proc = spawn(shell, shellArgs, {
       cwd: workDir,
-      env: { ...process.env, TERM: 'xterm-256color' },
+      env: { ...process.env, ...(isWin ? {} : { TERM: 'xterm-256color' }) },
       stdio: ['pipe', 'pipe', 'pipe']
     });
 
