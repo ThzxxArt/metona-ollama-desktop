@@ -2715,7 +2715,7 @@ html, body {
     margin-left: auto;
 }
 
-.ws-tab {
+.ws-header-tab {
     background: transparent;
     border: 1px solid transparent;
     color: var(--text-secondary, #999);
@@ -2727,12 +2727,12 @@ html, body {
     transition: all 0.15s;
 }
 
-.ws-tab:hover {
+.ws-header-tab:hover {
     background: var(--bg-card-hover, #323232);
     color: var(--text-primary, #fff);
 }
 
-.ws-tab.active {
+.ws-header-tab.active {
     background: var(--bg-layer, #383838);
     color: var(--accent, #60CDFF);
     border-color: var(--border-strong, rgba(255,255,255,0.12));
@@ -2763,18 +2763,30 @@ html, body {
 }
 
 .ws-term-tab-bar .ws-tab {
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--text-secondary, #999);
     font-size: 11px;
     padding: 3px 8px;
     border-radius: 4px 4px 0 0;
     border-bottom: none;
+    cursor: pointer;
     display: flex;
     align-items: center;
     gap: 4px;
     flex-shrink: 0;
+    transition: all 0.15s;
+    font-family: 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
+}
+
+.ws-term-tab-bar .ws-tab:hover {
+    background: var(--bg-card-hover, #323232);
+    color: var(--text-primary, #fff);
 }
 
 .ws-term-tab-bar .ws-tab.active {
     background: var(--bg-solid, #202020);
+    color: var(--accent, #60CDFF);
     border-color: var(--border-default, rgba(255,255,255,0.08));
     border-bottom: 1px solid var(--bg-solid, #202020);
 }
@@ -2914,6 +2926,11 @@ html, body {
     padding: 6px 8px;
     border-bottom: 1px solid var(--border-default, rgba(255,255,255,0.08));
     background: var(--bg-layer-alt, #2a2a2a);
+    min-height: 36px;
+}
+
+.ws-file-toolbar .ws-toolbar-btn {
+    flex-shrink: 0;
 }
 
 .ws-file-path {

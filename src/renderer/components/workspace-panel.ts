@@ -3,8 +3,7 @@
  * 包含命令行和文件两个 Tab
  */
 
-import { logInfo, logError, logDebug, logWarn } from '../services/log-service.js';
-import type { WorkspaceFileEntry } from '../types.js';
+import { logInfo, logError, logDebug } from '../services/log-service.js';
 
 // ── 状态 ──
 interface TerminalSession {
@@ -473,8 +472,12 @@ export function renderPanel(): void {
   const termTab = document.querySelector('#wsTabTerminal') as HTMLElement;
   const filesTab = document.querySelector('#wsTabFiles') as HTMLElement;
 
-  if (termTab) termTab.classList.toggle('active', activeTab === 'terminal');
-  if (filesTab) filesTab.classList.toggle('active', activeTab === 'files');
+  if (termTab) {
+    termTab.classList.toggle('active', activeTab === 'terminal');
+  }
+  if (filesTab) {
+    filesTab.classList.toggle('active', activeTab === 'files');
+  }
 
   const termContent = document.querySelector('#wsTerminalContent') as HTMLElement;
   const filesContent = document.querySelector('#wsFilesContent') as HTMLElement;
