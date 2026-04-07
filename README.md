@@ -1,6 +1,8 @@
-# 🦙 Metona Ollama
+# 🦙 Metona Ollama Desktop
 
 基于 TypeScript + Electron 的 [Ollama](https://ollama.com) 桌面 AI 聊天客户端，专为 Windows 打造。
+
+> 💻 桌面版仓库 | 🌐 [Web 版历史存档](https://gitee.com/thzxx/metona-ollama-web)
 
 ![版本](https://img.shields.io/badge/version-3.1.1--desktop-brightgreen)
 ![平台](https://img.shields.io/badge/platform-Windows%20x64-blue)
@@ -149,7 +151,7 @@ v3.0 三大子系统协调运作：
 
 ## 📥 下载
 
-从 [Releases](https://gitee.com/thzxx/metona-ollama/releases) 页面下载：
+从 [Releases](https://gitee.com/thzxx/metona-ollama-desktop/releases) 页面下载：
 
 | 文件 | 类型 |
 |------|------|
@@ -170,8 +172,8 @@ v3.0 三大子系统协调运作：
 ### 构建步骤
 
 ```bash
-git clone https://gitee.com/thzxx/metona-ollama.git
-cd metona-ollama
+git clone https://gitee.com/thzxx/metona-ollama-desktop.git
+cd metona-ollama-desktop
 git checkout metona-ollama-desktop-v3.1.1
 
 # 安装依赖（国内使用 npmmirror 加速）
@@ -212,7 +214,7 @@ npm run dist:portable    # 仅便携版
 ## 📁 项目结构
 
 ```
-metona-ollama/
+metona-ollama-desktop/
 ├── src/
 │   ├── main/                              # Electron 主进程
 │   │   ├── main.ts                        # 应用入口、窗口管理

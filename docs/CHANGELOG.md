@@ -4,7 +4,8 @@
 
 **桌面版主线**（`master`）：
 - `metona-ollama-desktop-v1` → `metona-ollama-desktop-v1.1` → `metona-ollama-desktop-v2` → `metona-ollama-desktop-v3` → `metona-ollama-desktop-v3.1.1`（当前）
-- `refactor/modular-architecture`：v3.1.1 重构分支，已合并到 master
+
+**Web 版历史**已独立为 [metona-ollama-web](https://gitee.com/thzxx/metona-ollama-web) 仓库（v1.1.0 ~ v4.0.3）。
 
 ---
 
@@ -103,77 +104,3 @@
 
 ---
 
-## Web 版
-
-### v4.0.3 — 帮助弹框优化
-- 📖 帮助弹框新增 Agent 预设说明，完善设置描述
-
-### v4.0.2 — 预设系统修复
-- 🔧 切换预设时 Think 按钮在模型不支持时不显示激活态
-- 📝 README 新增 Agent 预设系统详细说明
-
-### v4.0.1 — 温度控制
-- 🎛️ 设置面板新增温度 (Temperature) 滑块控制
-
-### v4.0.0 — Agent 预设系统
-- 🤖 **Agent 预设系统** — 一键切换角色/工作模式
-
-### v3.2.0 — IVF 索引优化
-- ⚡ **IVF 倒排索引优化** — K-Means 聚类 + nprobe 近邻检索，向量搜索性能大幅提升
-- 🎨 知识库弹框和帮助弹框视觉优化
-- ♻️ state 管理优化 — 结构化浅比较 + update/setIn/batch API
-- 🔧 setSelectedModel 触发 change 事件，恢复模型能力检测
-- 🔧 RAG 临时状态消息时序修复
-
-### v3.1.1 — 嵌入模型过滤
-- 🔧 模型下拉框过滤嵌入模型
-
-### v3.1.0 — RAG 来源修复
-- 🔧 **7 个 RAG 修复**：消息不显示、loading 不消失、状态消息时序、RAG 来源历史展示
-- 🔧 流结束后手动插入 RAG 来源到 DOM
-
-### v3.0.2 — 显存管理
-- ✨ 新建会话时自动释放显存，清理模型上下文
-- 🔧 RAG 上下文根据 numCtx 动态计算可用预算，智能截取
-- 🔧 RAG 请求增加 system prompt 长度限制（12000 字节）
-
-### v3.0.1 — 嵌入模型检测
-- 🔧 嵌入模型检测改用 `/api/show` capabilities 判断
-- 🔧 嵌入模型下拉仅显示 embedding 模型
-
-### v3.0.0 — RAG 本地知识库
-- 📚 **RAG 本地知识库**
-  - 文档上传 → 自动分块 → 向量化 → IndexedDB 持久化
-  - 语义检索增强问答，多集合管理
-  - IVF 索引（K-Means 聚类 + 倒排索引）
-  - 嵌入模型自动检测
-  - RAG 回复显示知识库来源（文件名 + 相似度分数）
-  - RAG 检索过程可视化
-  - 帮助按钮和使用说明弹框
-- 🔧 嵌入模型下拉优化、知识库弹框布局修复
-- 🔧 修复文档上传无反馈 bug
-
-### v2.2.0 — 数据安全
-- 🔒 **会话导出加密** — `.metona` 格式，AES-256-GCM（HTTPS）或 XOR（HTTP）
-- 🎯 **模型选择增强**
-  - 选中模型持久化为默认，刷新后自动恢复
-  - 模型列表按名称排序，同名称按大小升序
-  - 模型下拉框展示磁盘实际文件大小
-- 🔧 修复刷新后模型选择恢复、chatAreaEl 重复声明
-
-### v2.1.0 — 文件 & 交互增强
-- 🧠 **智能滚动** — 流式回复时可向上查看历史，浮动按钮回到底部
-- 👁️ **Vision 能力检测** — 不支持时禁用图片上传
-- 📁 **多格式文件上传** — 支持 50+ 种文本/代码格式（≤500KB）
-- 🔧 禁用按钮保留 hover 提示、文件图标按类型区分
-
-### v2.0.0 — 架构重构
-- ♻️ **模块化架构重构** — 项目文件归类整理
-- ✨ 强制停止 AI 回复 — 真正中止 Ollama 接口请求
-- 🎛️ 重新设计模型选择栏与 Think 模式
-- 🎨 导航按钮和 Think 按钮渐变风格
-- 🔧 修复消息渲染（undefined、sanitize）、历史记录分页
-
-### v1.1.0 — 初始版本
-- 🚀 Metona Ollama Client v1.1.0
-- 📄 MIT License
