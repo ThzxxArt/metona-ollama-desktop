@@ -3,13 +3,26 @@
 ## 分支结构
 
 **桌面版主线**（`master`）：
-- `metona-ollama-desktop-v1` → `metona-ollama-desktop-v1.1` → `metona-ollama-desktop-v2` → `metona-ollama-desktop-v3` → `metona-ollama-desktop-v3.2.0`（当前）
+- `metona-ollama-desktop-v1` → `metona-ollama-desktop-v1.1` → `metona-ollama-desktop-v2` → `metona-ollama-desktop-v3` → `metona-ollama-desktop-v3.2.0` → `metona-ollama-desktop-v3.2.1`（当前）
 
 **Web 版历史**已独立为 [metona-ollama-web](https://gitee.com/thzxx/metona-ollama-web) 仓库（v1.1.0 ~ v4.0.3）。
 
 ---
 
 ## 桌面版（Desktop）
+
+### Desktop v3.2.1 — 日志统一 & 构建优化
+
+- ♻️ **主进程日志接入执行日志面板**
+  - 清除 `ipc.ts` 4 处 `console.log/error`，新增 `sendLog()` 函数通过 IPC 推送到渲染进程
+  - 清除 `workspace.ts` 1 处 `console.log`，统一走 `sendLog()`
+  - `preload.ts` 新增 `onMainLog` 监听通道
+  - `main.ts` 监听 `main:log` 事件转发到 `addLog()`，全项目零 `console.log`
+- 📦 **移除便携版**
+  - `package.json` 移除 `portable` 构建目标、`dist:portable` 脚本和 `portable` 配置块
+  - Gitee 清理 v1.0.0 ~ v3.1.1 旧版本便携版附件，释放仓库配额
+- 🗑️ 删除 `docs/V3-TOOL-CALLING.md`
+- 📝 更新 README.md（下载说明、常用命令、项目结构）和 docs/BUILD.md
 
 ### Desktop v3.2.0 — 工作空间面板 & 构建优化
 

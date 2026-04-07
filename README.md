@@ -389,6 +389,11 @@ metona-ollama-desktop/
 
 ### 最新版本
 
+**v3.2.1** — 日志统一 & 构建优化
+- ♻️ 主进程 5 处 `console.log/error` 全部清除，通过 IPC 接入执行日志面板
+- 📦 移除便携版构建目标，后续仅提供 NSIS 安装包
+- 🗑️ 删除 `docs/V3-TOOL-CALLING.md`，更新 README 和 CHANGELOG
+
 **v3.2.0** — 工作空间面板
 - 🖥️ 右侧可折叠工作空间面板：命令行 Tab + 文件浏览器 Tab
 - 💻 终端界面：实时流式输出、ANSI 颜色支持、多终端 Tab、无超时限制
