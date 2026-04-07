@@ -191,8 +191,9 @@ v3.2 四大子系统协调运作：
 | 文件 | 类型 |
 |------|------|
 | `Metona Ollama Setup 3.2.0.exe` | NSIS 安装包（可选目录、创建快捷方式） |
-| `MetonaOllama-Portable-3.2.0.exe` | 绿色便携版（免安装，双击即用） |
 
+> ⚠️ v3.2.0 起不再提供便携版，仅保留 NSIS 安装包。
+>
 > ⚠️ 未签名版本，首次运行 Windows 可能弹出安全警告，点击「仍要运行」即可。
 
 ---
@@ -239,9 +240,8 @@ npm run build:renderer   # 仅构建渲染进程（Vite）
 npm run build:main       # 仅构建主进程（tsc）
 npm run build            # 构建全部
 npm start                # 构建并运行
-npm run dist             # 构建 Windows 安装包（NSIS + Portable）
+npm run dist             # 构建 Windows 安装包（NSIS）
 npm run dist:nsis        # 仅 NSIS 安装包
-npm run dist:portable    # 仅便携版
 ```
 
 ---
@@ -302,7 +302,7 @@ metona-ollama-desktop/
 ├── assets/icons/                          # 图标资源
 ├── docs/
 │   ├── BUILD.md                           # 构建指南
-│   └── V3-TOOL-CALLING.md                # Tool Calling 设计文档
+│   └── CHANGELOG.md                       # 更新日志
 ├── vite.config.ts                         # Vite 配置
 ├── tsconfig.json / tsconfig.main.json     # TypeScript 配置
 ├── package.json                           # 项目配置 + electron-builder

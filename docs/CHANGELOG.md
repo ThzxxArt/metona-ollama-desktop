@@ -11,8 +11,15 @@
 
 ## 桌面版（Desktop）
 
-### Desktop v3.2.0 — 代码质量 & 桌面原生化
+### Desktop v3.2.0 — 工作空间面板 & 构建优化
 
+- 🖥️ **工作空间面板**
+  - 右侧面板：命令行 Tab + 文件浏览器 Tab，宽度可拖拽调整
+  - 终端界面：实时流式输出、ANSI 颜色支持、多终端 Tab、无超时限制
+  - 文件浏览器：目录树、文件预览（带行号）、上级目录导航
+  - IPC 双向通信：`on/send` 模式实现流式推送，独立于 Agent Loop 超时体系
+  - 设置面板新增工作空间目录配置（默认 `userData/workspace`）
+  - 窗口关闭时自动 SIGTERM 所有子进程，防止进程泄漏
 - ♻️ **结构化日志系统**
   - 渲染进程 58 处 `console.log/warn/error` 全部迁移至 `log-service.ts`
   - 135 处结构化日志点覆盖全链路：初始化、连接、模型加载、工具调用、RAG 检索、记忆提取、流式响应、Agent Loop
@@ -44,6 +51,10 @@
   - 新增 `restore-build-cache.sh` — 构建资源本地缓存恢复（Electron 二进制等 145MB 资源）
   - 更新 `docs/BUILD.md` — 新增快速构建 3 步指南、构建资源管理说明
   - `.gitignore` 排除 build-resources 目录（本地缓存不进仓库）
+- 📦 **构建优化**
+  - 移除便携版构建目标，后续仅提供 NSIS 安装包
+  - 清理 `package.json` 中 portable 相关配置
+  - 更新 `docs/BUILD.md` 构建指南
 
 ### Desktop v3.0.0 — Tool Calling & Agent 记忆
 
