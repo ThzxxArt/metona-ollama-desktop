@@ -30,7 +30,8 @@ const TOOL_USAGE_GUIDE = `【工具使用规则】
 1. 路径上下文：当用户说"修改这个文件"、"删除它"、"查看里面"等未指定路径时，必须从本次对话中最近的工具调用结果中提取路径。例如用户之前让你读取了 /home/user/project/config.json，后续说"修改配置"就应继续使用该路径，而不是推测新路径。
 2. 工具调用结果中的 path 字段是权威的文件路径，优先使用它。
 3. 如果对话中从未出现过相关路径，应先用 search_files 或 list_directory 定位，不要凭空猜测路径。
-4. 对同一文件的连续操作（读取→修改、读取→删除），路径必须一致。`;
+4. 对同一文件的连续操作（读取→修改、读取→删除），路径必须一致。
+5. 当用户要求执行命令时，使用 run_command 工具执行。执行完成后，将 stdout/stderr 的结果告知用户。对于需要实时查看进度的长时间运行命令（如 npm install、ollama pull），建议用户在工作空间面板中手动执行。`;
 
 export interface AgentCallbacks {
   onThinking: (text: string) => void;

@@ -162,10 +162,12 @@ export async function initWorkspacePanel(): Promise<void> {
 
   // 监听进程输出
   bridge.workspace.onOutput((data) => {
+    logDebug('工作空间收到输出', `ID: ${data.id} | ${data.type} | ${data.data.length}字节`);
     appendTerminalOutput(data.id, data.type, data.data);
   });
 
   bridge.workspace.onExit((data) => {
+    logDebug('工作空间收到退出', `ID: ${data.id} | code: ${data.code}`);
     handleProcessExit(data.id, data.code);
   });
 
@@ -323,10 +325,16 @@ function getActiveSession(): TerminalSession | undefined {
 
 function executeCommand(command: string): void {
   const session = getActiveSession();
-  if (!session) return;
+  if (!session) {
+    logError('工作空间执行失败', '无活跃终端会话');
+    return;
+  }
 
   const bridge = window.metonaDesktop;
-  if (!bridge?.isDesktop) return;
+  if (!bridge?.isDesktop) {
+    logError('工作空间执行失败', '非桌面环境');
+    return;
+  }
 
   // 显示命令
   session.lines.push({ type: 'system', text: `$ ${command}` });
@@ -336,13 +344,16 @@ function executeCommand(command: string): void {
   renderTerminal();
 
   const cwd = currentFileDir || workspaceDir;
+  logInfo('工作空间执行命令', `ID: ${session.id} | ${command.slice(0, 100)} | cwd: ${cwd}`);
   bridge.workspace.exec({ id: session.id, command, cwd });
-  logInfo('工作空间执行命令', command.slice(0, 100));
 }
 
 function appendTerminalOutput(sessionId: string, type: 'stdout' | 'stderr', data: string): void {
   const session = terminalSessions.find(s => s.id === sessionId);
-  if (!session) return;
+  if (!session) {
+    logDebug('工作空间输出丢失', `未找到会话: ${sessionId}`);
+    return;
+  }
 
   // 按行分割，处理 \r 进度更新
   const lines = data.split('\n');
@@ -375,11 +386,15 @@ function appendTerminalOutput(sessionId: string, type: 'stdout' | 'stderr', data
 
 function handleProcessExit(sessionId: string, code: number | null): void {
   const session = terminalSessions.find(s => s.id === sessionId);
-  if (!session) return;
+  if (!session) {
+    logDebug('工作空间退出信号丢失', `未找到会话: ${sessionId}`);
+    return;
+  }
 
   session.running = false;
   const exitMsg = code === 0 ? '✓ 进程正常退出' : `✗ 进程退出 (code: ${code})`;
   session.lines.push({ type: 'system', text: exitMsg });
+  logInfo('工作空间进程退出', `ID: ${sessionId} | code: ${code}`);
 
   renderTerminal();
 

@@ -61,14 +61,18 @@ export function startProcess(
   // 安全检查
   const cmdCheck = checkCommandAllowed(command);
   if (!cmdCheck.ok) {
+    sendLog('warn', `🖥️ 命令被拦截`, `${command.slice(0, 100)} | ${cmdCheck.reason}`);
     return { success: false, error: cmdCheck.reason };
   }
 
   const workDir = cwd ? path.resolve(cwd) : _workspaceDir;
   const dirCheck = checkPathAllowed(workDir, 'read');
   if (!dirCheck.ok) {
+    sendLog('warn', `🖥️ 目录被拦截`, `${workDir} | ${dirCheck.reason}`);
     return { success: false, error: dirCheck.reason };
   }
+
+  sendLog('info', `🖥️ spawn`, `ID: ${id} | ${command.slice(0, 100)} | cwd: ${workDir}`);
 
   // 确保目录存在
   if (!fs.existsSync(workDir)) {
@@ -100,17 +104,20 @@ export function startProcess(
 
     proc.on('close', (code) => {
       activeProcesses.delete(id);
+      sendLog(code === 0 ? 'success' : 'warn', `🖥️ 进程退出`, `ID: ${id} | code: ${code}`);
       onExit(code);
     });
 
     proc.on('error', (err) => {
       activeProcesses.delete(id);
+      sendLog('error', `🖥️ 进程启动失败`, `ID: ${id} | ${err.message}`);
       onOutput('stderr', `进程启动失败: ${err.message}\n`);
       onExit(1);
     });
 
     return { success: true };
   } catch (err) {
+    sendLog('error', `🖥️ spawn 异常`, `ID: ${id} | ${(err as Error).message}`);
     return { success: false, error: (err as Error).message };
   }
 }
@@ -118,13 +125,18 @@ export function startProcess(
 /** 停止指定进程 */
 export function killProcess(id: string): boolean {
   const proc = activeProcesses.get(id);
-  if (!proc) return false;
+  if (!proc) {
+    sendLog('warn', `🖥️ kill 未找到进程`, `ID: ${id}`);
+    return false;
+  }
   try {
     proc.kill('SIGTERM');
     activeProcesses.delete(id);
+    sendLog('info', `🖥️ 进程已终止`, `ID: ${id}`);
     return true;
   } catch {
     activeProcesses.delete(id);
+    sendLog('warn', `🖥️ kill 异常`, `ID: ${id}`);
     return false;
   }
 }
