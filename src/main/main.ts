@@ -165,4 +165,6 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   isQuitting = true;
+  // 通知渲染进程释放显存
+  mainWindow?.webContents.send('app-quit');
 });

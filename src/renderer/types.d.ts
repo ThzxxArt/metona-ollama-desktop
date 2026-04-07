@@ -214,6 +214,7 @@ export interface MetonaDesktopAPI {
   openExternal: (url: string) => void;
   onMenuAction: (callback: (action: string) => void) => void;
   onTrayAction: (callback: (action: string) => void) => void;
+  onAppQuit: (callback: () => void) => void;
   removeAllListeners: (channel: string) => void;
 }
 

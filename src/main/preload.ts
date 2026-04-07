@@ -33,6 +33,9 @@ contextBridge.exposeInMainWorld('metonaDesktop', {
   onTrayAction: (callback: (action: string) => void) => {
     ipcRenderer.on('tray-action', (_: unknown, action: string) => callback(action));
   },
+  onAppQuit: (callback: () => void) => {
+    ipcRenderer.on('app-quit', () => callback());
+  },
   removeAllListeners: (channel: string) => {
     ipcRenderer.removeAllListeners(channel);
   }

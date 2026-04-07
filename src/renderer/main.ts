@@ -77,6 +77,15 @@ function setupDesktopIntegration(): void {
     }
   }) as EventListener);
 
+  // 退出时释放显存
+  bridge.onAppQuit(() => {
+    const api = state.get<OllamaAPI | null>(KEYS.API);
+    const model = state.get<string>('_defaultModel', '');
+    if (api && model) {
+      api.chat({ model, messages: [], keep_alive: 0 } as any).catch(() => {});
+    }
+  });
+
   // 桌面端快捷键
   document.addEventListener('keydown', (e) => {
     if (e.ctrlKey && e.key === 'n') {
