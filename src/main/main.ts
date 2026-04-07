@@ -9,6 +9,7 @@ import { setupIPC } from './ipc.js';
 import { createTray } from './tray.js';
 import { createMenu } from './menu.js';
 import { showNotification } from './utils.js';
+import { ensureWorkspaceDir, killAllProcesses } from './workspace.js';
 
 const APP_NAME = 'Metona Ollama';
 const ICON_PATH = path.join(__dirname, '..', '..', 'assets', 'icons', 'llama.png');
@@ -143,6 +144,7 @@ if (!gotTheLock) {
 }
 
 app.whenReady().then(() => {
+  ensureWorkspaceDir();
   setupIPC();
   createMainWindow();
   createTray();
@@ -165,6 +167,8 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   isQuitting = true;
+  // 清理所有工作空间进程
+  killAllProcesses();
   // 通知渲染进程释放显存
   mainWindow?.webContents.send('app-quit');
 });

@@ -25,6 +25,7 @@ import { initMemoryManager } from './services/memory-manager.js';
 import { setToolEnabled } from './services/tool-registry.js';
 import { initToolConfirmModal } from './components/tool-confirm-modal.js';
 import { initMemoryPanel } from './components/memory-panel.js';
+import { initWorkspacePanel } from './components/workspace-panel.js';
 import { initLogPanel } from './services/log-service.js';
 import { logInfo, logSuccess, logError, logDebug, logInit, logWarn } from './services/log-service.js';
 import type { ChatSession } from './types.js';
@@ -202,6 +203,7 @@ async function init(): Promise<void> {
     initHelpModal();
     initToolConfirmModal();
     initMemoryPanel();
+    initWorkspacePanel();
     setupDesktopIntegration();
 
     bindGlobalEvents();

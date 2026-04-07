@@ -167,6 +167,53 @@ export function initSettingsModal(): void {
       logSetting('Agent 记忆', toggleMemory.checked ? '开启' : '关闭');
     });
   }
+
+  // ── 工作空间目录设置 ──
+  const inputWorkspaceDir = document.querySelector('#inputWorkspaceDir') as HTMLInputElement;
+  const btnBrowseWorkspace = document.querySelector('#btnBrowseWorkspace') as HTMLButtonElement;
+  if (inputWorkspaceDir) {
+    // 加载当前工作空间目录
+    const bridge = (window as any).metonaDesktop;
+    if (bridge?.isDesktop) {
+      bridge.workspace.getDir().then((info: { dir: string }) => {
+        inputWorkspaceDir.value = info.dir;
+      }).catch(() => {});
+    }
+  }
+  if (btnBrowseWorkspace) {
+    btnBrowseWorkspace.addEventListener('click', async () => {
+      const bridge = (window as any).metonaDesktop;
+      if (!bridge?.isDesktop) return;
+      const paths = await bridge.dialog.openFile({
+        filters: [{ name: '文件夹', extensions: ['*'] }]
+      });
+      // Electron openFile 对话框不能直接选文件夹，这里用 saveFile 代替
+      // 或者让用户手动输入路径
+      showToast('请在输入框中直接修改路径', 'info');
+    });
+    // 双击输入框解锁编辑
+    inputWorkspaceDir.addEventListener('dblclick', () => {
+      inputWorkspaceDir.removeAttribute('readonly');
+      inputWorkspaceDir.focus();
+    });
+    inputWorkspaceDir.addEventListener('blur', async () => {
+      inputWorkspaceDir.setAttribute('readonly', '');
+      const newDir = inputWorkspaceDir.value.trim();
+      if (!newDir) return;
+      const bridge = (window as any).metonaDesktop;
+      if (!bridge?.isDesktop) return;
+      const result = await bridge.workspace.setDir(newDir);
+      if (result.success) {
+        showToast('工作空间目录已更新', 'success');
+        logSetting('工作空间目录', result.dir);
+      } else {
+        showToast(`设置失败: ${result.error}`, 'error');
+        // 恢复原值
+        const info = await bridge.workspace.getDir();
+        inputWorkspaceDir.value = info.dir;
+      }
+    });
+  }
 }
 
 export function openSettingsModal(): void {

@@ -38,5 +38,23 @@ contextBridge.exposeInMainWorld('metonaDesktop', {
   },
   removeAllListeners: (channel: string) => {
     ipcRenderer.removeAllListeners(channel);
+  },
+  workspace: {
+    getDir: () => ipcRenderer.invoke('workspace:getDir'),
+    setDir: (dir: string) => ipcRenderer.invoke('workspace:setDir', dir),
+    listDir: (dirPath?: string) => ipcRenderer.invoke('workspace:listDir', dirPath),
+    readFile: (filePath: string) => ipcRenderer.invoke('workspace:readFile', filePath),
+    exec: (params: { id: string; command: string; cwd?: string }) => {
+      ipcRenderer.send('workspace:exec', params);
+    },
+    kill: (id: string) => {
+      ipcRenderer.send('workspace:kill', id);
+    },
+    onOutput: (callback: (data: { id: string; type: 'stdout' | 'stderr'; data: string }) => void) => {
+      ipcRenderer.on('workspace:output', (_: unknown, data: { id: string; type: 'stdout' | 'stderr'; data: string }) => callback(data));
+    },
+    onExit: (callback: (data: { id: string; code: number | null }) => void) => {
+      ipcRenderer.on('workspace:exit', (_: unknown, data: { id: string; code: number | null }) => callback(data));
+    }
   }
 });

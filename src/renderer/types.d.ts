@@ -189,6 +189,19 @@ export interface DocInfo {
 
 // ── 桌面 Bridge 类型 ──
 
+export interface WorkspaceFileEntry {
+  name: string;
+  type: 'file' | 'directory';
+  size: number | null;
+  modified: string;
+}
+
+export interface WorkspaceDirResult {
+  success: boolean;
+  entries?: WorkspaceFileEntry[];
+  error?: string;
+}
+
 export interface MetonaDesktopAPI {
   isDesktop: boolean;
   info: () => Promise<AppInfo>;
@@ -216,6 +229,16 @@ export interface MetonaDesktopAPI {
   onTrayAction: (callback: (action: string) => void) => void;
   onAppQuit: (callback: () => void) => void;
   removeAllListeners: (channel: string) => void;
+  workspace: {
+    getDir: () => Promise<{ dir: string; defaultDir: string }>;
+    setDir: (dir: string) => Promise<{ success: boolean; dir?: string; error?: string }>;
+    listDir: (dirPath?: string) => Promise<WorkspaceDirResult>;
+    readFile: (filePath: string) => Promise<{ success: boolean; content?: string; path?: string; error?: string; truncated?: boolean; lines?: number }>;
+    exec: (params: { id: string; command: string; cwd?: string }) => void;
+    kill: (id: string) => void;
+    onOutput: (callback: (data: { id: string; type: 'stdout' | 'stderr'; data: string }) => void) => void;
+    onExit: (callback: (data: { id: string; code: number | null }) => void) => void;
+  };
 }
 
 export interface AppInfo {

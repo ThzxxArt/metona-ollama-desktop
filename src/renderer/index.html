@@ -65,6 +65,12 @@
                     <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
                 </svg>
             </button>
+            <button class="icon-btn" id="btnWorkspace" title="工作空间">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+                    <rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
+                </svg>
+            </button>
             <button class="icon-btn" id="btnSettings" title="设置">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
@@ -167,6 +173,83 @@
     </div>
 </div><!-- /.main-wrap -->
 
+<!-- ═══════════════ 工作空间面板（右侧）═══════════════ -->
+<aside class="workspace-panel" id="workspacePanel" style="display:none;">
+    <div class="ws-resizer" id="wsResizer"></div>
+    <div class="ws-header">
+        <span class="ws-title">🖥️ 工作空间</span>
+        <div class="ws-tabs">
+            <button class="ws-tab active" id="wsTabTerminal">💻 命令行</button>
+            <button class="ws-tab" id="wsTabFiles">📁 文件</button>
+        </div>
+        <button class="icon-btn ws-toggle-btn" id="btnWorkspaceClose" title="收起面板">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="9 18 15 12 9 6"/>
+            </svg>
+        </button>
+    </div>
+
+    <!-- 终端 Tab -->
+    <div class="ws-content" id="wsTerminalContent">
+        <div class="ws-term-tab-bar" id="wsTermTabBar"></div>
+        <div class="ws-term-output" id="wsTermOutput"></div>
+        <div class="ws-term-toolbar">
+            <input class="ws-term-input" id="wsTermInput" type="text" placeholder="输入命令，Enter 执行..." spellcheck="false">
+            <button class="ws-toolbar-btn" id="wsExecBtn" title="执行">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polygon points="5 3 19 12 5 21 5 3"/>
+                </svg>
+            </button>
+            <button class="ws-toolbar-btn ws-stop-btn" id="wsStopBtn" title="停止" disabled>
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                    <rect x="6" y="6" width="12" height="12" rx="1"/>
+                </svg>
+            </button>
+            <button class="ws-toolbar-btn" id="wsClearBtn" title="清空">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="3 6 5 6 21 6"/>
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                </svg>
+            </button>
+            <button class="ws-toolbar-btn" id="wsNewTabBtn" title="新建终端">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                </svg>
+            </button>
+        </div>
+    </div>
+
+    <!-- 文件 Tab -->
+    <div class="ws-content" id="wsFilesContent" style="display:none;">
+        <div class="ws-file-toolbar">
+            <button class="ws-toolbar-btn" id="wsFileUpBtn" title="上级目录">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="15 18 9 12 15 6"/>
+                </svg>
+            </button>
+            <span class="ws-file-path" id="wsFilePath">~</span>
+            <button class="ws-toolbar-btn" id="wsFileRefreshBtn" title="刷新">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="23 4 23 10 17 10"/>
+                    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                </svg>
+            </button>
+        </div>
+        <div class="ws-file-list" id="wsFileList"></div>
+        <div class="ws-preview" id="wsPreview" style="display:none;">
+            <div class="ws-preview-header">
+                <span class="ws-preview-title" id="wsPreviewTitle"></span>
+                <button class="icon-btn" id="wsPreviewClose">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="ws-preview-content" id="wsPreviewContent"></div>
+        </div>
+    </div>
+</aside>
+
 <!-- ═══════════════ 设置模态框 ═══════════════ -->
 <div class="modal-overlay" id="settingsModal" style="display:none;">
     <div class="modal">
@@ -245,6 +328,14 @@
                 </div>
             </div>
             <div class="setting-group">
+                <label class="setting-label">🖥️ 工作空间目录</label>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <input class="setting-input" id="inputWorkspaceDir" type="text" placeholder="默认: 应用数据目录/workspace" style="margin-bottom:0;flex:1;" readonly>
+                    <button class="btn btn-sm btn-outline" id="btnBrowseWorkspace">📂 浏览</button>
+                </div>
+                <p class="text-muted" style="margin-top:4px;font-size:11px;">工作空间用于存放 AI 执行命令时的工作文件。命令行默认在此目录执行。</p>
+            </div>
+            <div class="setting-group">
                 <label class="setting-label">
                     🧠 Agent 记忆系统
                     <label class="toggle-label" style="margin-left:auto;display:inline-flex;">
@@ -318,6 +409,7 @@
             <div class="help-section"><h4>📚 知识库 (RAG)</h4><ul><li>点击顶部 📚 按钮打开知识库管理</li><li>创建集合 → 选择嵌入模型（推荐 <code>nomic-embed-text</code> 等）</li><li>上传文档，自动分块并生成向量索引</li><li>开启 RAG 检索后，聊天时自动检索相关文档注入回答</li></ul></div>
             <div class="help-section"><h4>🧠 Agent 记忆系统</h4><ul><li>AI 会从对话中<strong>自动提取关键信息</strong>（事实/偏好/规则/事件），跨会话持续积累</li><li>对话满 <strong>6 条消息</strong>后自动触发记忆提取</li><li>新对话时自动检索相关记忆并注入上下文，让 AI "记住"你</li><li>点击顶部 🧠 按钮打开记忆面板：搜索、筛选、编辑、删除记忆条目</li><li>记忆持久化到 IndexedDB，清除浏览器数据会丢失</li></ul></div>
             <div class="help-section"><h4>🕐 历史记录</h4><ul><li>所有会话自动保存到 IndexedDB</li><li>点击 🕐 按钮查看、搜索、恢复历史会话</li><li>支持导出 <code>.metona</code> 加密备份文件</li></ul></div>
+            <div class="help-section"><h4>🖥️ 工作空间</h4><ul><li>点击顶部 🖥️ 按钮打开右侧工作空间面板</li><li><strong>命令行 Tab</strong> — 终端界面，实时显示命令输出，支持长时间运行（如 <code>ollama pull</code>）</li><li><strong>文件 Tab</strong> — 浏览工作空间目录，点击文件预览内容</li><li>支持多终端 Tab，每个 Tab 独立进程，可随时停止</li><li>命令在工作空间目录执行，可在设置中修改路径</li><li>AI 建议执行命令时，可在工作空间中运行并实时查看进度</li></ul></div>
             <div class="help-section"><h4>⚡ 快捷键</h4><table class="help-shortcuts"><tr><td><kbd>Enter</kbd></td><td>发送消息</td></tr><tr><td><kbd>Shift + Enter</kbd></td><td>换行</td></tr><tr><td><kbd>Ctrl + K</kbd></td><td>知识库管理</td></tr><tr><td><kbd>Ctrl + M</kbd></td><td>记忆面板</td></tr><tr><td><kbd>Esc</kbd></td><td>关闭弹窗</td></tr></table></div>
         </div>
     </div>

@@ -17,6 +17,7 @@ import {
   handleRunCommand
 } from './tool-handlers.js';
 import { getAllowedDirs, getBlockedDirs, setAllowedDirs } from './tool-security.js';
+import { startProcess, killProcess, getWorkspaceDir, setWorkspaceDir, listWorkspaceDir } from './workspace.js';
 
 export function setupIPC(): void {
   ipcMain.handle('dialog:openFile', async (_, options?: { filters?: Array<{ name: string; extensions: string[] }> }) => {
@@ -107,5 +108,62 @@ export function setupIPC(): void {
 
   ipcMain.handle('tool:setAllowedDirs', (_, dirs: string[]) => {
     setAllowedDirs(dirs);
+  });
+
+  // ── Workspace IPC ──
+
+  // 获取工作空间目录
+  ipcMain.handle('workspace:getDir', () => {
+    return { dir: getWorkspaceDir(), defaultDir: getWorkspaceDir() };
+  });
+
+  // 设置工作空间目录
+  ipcMain.handle('workspace:setDir', (_, dir: string) => {
+    try {
+      setWorkspaceDir(dir);
+      return { success: true, dir: getWorkspaceDir() };
+    } catch (err) {
+      return { success: false, error: (err as Error).message };
+    }
+  });
+
+  // 列出工作空间目录
+  ipcMain.handle('workspace:listDir', (_, dirPath?: string) => {
+    return listWorkspaceDir(dirPath);
+  });
+
+  // 读取工作空间文件（复用 tool-handlers）
+  ipcMain.handle('workspace:readFile', async (_, filePath: string) => {
+    return handleReadFile({ path: filePath });
+  });
+
+  // 启动命令（流式输出，通过 workspace:output 事件推送）
+  ipcMain.on('workspace:exec', (event, { id, command, cwd }: { id: string; command: string; cwd?: string }) => {
+    console.log('[IPC] workspace:exec', id, command.slice(0, 200));
+
+    const result = startProcess(
+      id,
+      command,
+      cwd,
+      (type, data) => {
+        // 流式推送输出到渲染进程
+        event.sender.send('workspace:output', { id, type, data });
+      },
+      (code) => {
+        // 通知进程结束
+        event.sender.send('workspace:exit', { id, code });
+      }
+    );
+
+    if (!result.success) {
+      event.sender.send('workspace:output', { id, type: 'stderr', data: result.error + '\n' });
+      event.sender.send('workspace:exit', { id, code: 1 });
+    }
+  });
+
+  // 停止命令
+  ipcMain.on('workspace:kill', (_, id: string) => {
+    console.log('[IPC] workspace:kill', id);
+    killProcess(id);
   });
 }
