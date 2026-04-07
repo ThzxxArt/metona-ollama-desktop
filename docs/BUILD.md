@@ -140,6 +140,12 @@ electron-builder 会自动处理所有依赖下载（Electron、NSIS、winCodeSi
 
 ## 构建日志
 
+### v3.2.1（2026-04-07） — metona-ollama-desktop 仓库
+
+- ✅ `Metona Ollama Setup 3.2.1.exe`（78MB）
+- ✅ Gitee Release v3.2.1-desktop（ID: 600984，仓库 thzxx/metona-ollama-desktop）
+- ♻️ 移除便携版构建，仅保留 NSIS 安装包
+
 ### v3.2.0（2026-04-07） — metona-ollama-desktop 仓库
 
 - ✅ `Metona Ollama Setup 3.2.0.exe`（78MB）
