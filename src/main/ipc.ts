@@ -22,7 +22,7 @@ import {
   handleRunCommand
 } from './tool-handlers.js';
 import { getAllowedDirs, getBlockedDirs, setAllowedDirs } from './tool-security.js';
-import { startProcess, killProcess, getWorkspaceDir, setWorkspaceDir, listWorkspaceDir } from './workspace.js';
+import { startProcess, killProcess, getWorkspaceDir, setWorkspaceDir, listWorkspaceDir, execWorkspaceCommand } from './workspace.js';
 
 export function setupIPC(): void {
   ipcMain.handle('dialog:openFile', async (_, options?: { filters?: Array<{ name: string; extensions: string[] }> }) => {
@@ -170,5 +170,11 @@ export function setupIPC(): void {
   ipcMain.on('workspace:kill', (_, id: string) => {
     sendLog('info', `🖥️ workspace:kill`, `ID: ${id}`);
     killProcess(id);
+  });
+
+  // 无超时工具命令执行（AI Tool Calling 集成）
+  ipcMain.handle('workspace:execTool', async (_, command: string, cwd?: string) => {
+    sendLog('info', `🔧 workspace:execTool`, `${command.slice(0, 200)} | cwd: ${cwd || '默认'}`);
+    return execWorkspaceCommand(command, cwd);
   });
 }

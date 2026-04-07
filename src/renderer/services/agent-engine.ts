@@ -13,6 +13,7 @@ import {
 import { searchMemories, buildMemoryContext, markMemoryUsed, isMemoryEnabled } from './memory-manager.js';
 import { showToast } from '../components/toast.js';
 import { logInfo, logWarn, logError, logToolStart, logToolResult, logThink, logStream, logAgentLoop, logModelResponse } from './log-service.js';
+import { getWorkspaceDirPath } from '../components/workspace-panel.js';
 import type {
   OllamaMessage,
   OllamaStreamChunk,
@@ -31,7 +32,9 @@ const TOOL_USAGE_GUIDE = `【工具使用规则】
 2. 工具调用结果中的 path 字段是权威的文件路径，优先使用它。
 3. 如果对话中从未出现过相关路径，应先用 search_files 或 list_directory 定位，不要凭空猜测路径。
 4. 对同一文件的连续操作（读取→修改、读取→删除），路径必须一致。
-5. 当用户要求执行命令时，使用 run_command 工具执行。执行完成后，将 stdout/stderr 的结果告知用户。对于需要实时查看进度的长时间运行命令（如 npm install、ollama pull），建议用户在工作空间面板中手动执行。`;
+5. 当用户要求执行命令时，使用 run_command 工具执行。run_command 通过工作空间进程管理执行，无超时限制，支持长时间运行的命令。执行完成后，将 stdout/stderr 的结果告知用户。
+6. 如果 run_command 返回 userTerminated=true，说明用户手动终止了命令，请据此告知用户。
+7. 如果返回 truncated=true，说明命令输出超过 5MB 被截断，应告知用户完整输出可在工作空间面板查看。`;
 
 export interface AgentCallbacks {
   onThinking: (text: string) => void;
@@ -81,6 +84,15 @@ export async function runAgentLoop(
         await markMemoryUsed(m.id);
       }
     }
+  }
+
+  // 注入工作空间上下文
+  const workspaceDir = getWorkspaceDirPath();
+  if (workspaceDir) {
+    systemPromptParts.push(`【工作空间】
+当前工作空间目录: ${workspaceDir}
+你可以使用 run_command 工具在此目录下执行命令，所有命令通过工作空间进程管理执行，无超时限制。
+文件操作工具（read_file、write_file 等）的相对路径基于此目录解析。`);
   }
 
   if (systemPromptParts.length > 0) {
@@ -287,16 +299,23 @@ export async function runAgentLoop(
       }
 
       try {
-        // 工具执行超时保护
+        // 工具执行（run_command 无超时，其他工具 30 秒超时）
         logInfo(`执行工具: ${call.function.name}`, JSON.stringify(call.function.arguments));
-        const result = await Promise.race([
-          executeTool(call.function.name, call.function.arguments).catch(err =>
-            ({ success: false, error: err?.message || String(err) }) as ToolResult
-          ),
-          new Promise<ToolResult>((_, reject) =>
-            setTimeout(() => reject(new Error('工具执行超时（30秒）')), TOOL_EXEC_TIMEOUT)
-          )
-        ]);
+        let result: ToolResult;
+        if (call.function.name === 'run_command') {
+          // run_command 通过 workspace IPC 执行，无超时限制
+          result = await executeTool(call.function.name, call.function.arguments);
+        } else {
+          // 其他工具保持 30 秒超时保护
+          result = await Promise.race([
+            executeTool(call.function.name, call.function.arguments).catch(err =>
+              ({ success: false, error: err?.message || String(err) }) as ToolResult
+            ),
+            new Promise<ToolResult>((_, reject) =>
+              setTimeout(() => reject(new Error('工具执行超时（30秒）')), TOOL_EXEC_TIMEOUT)
+            )
+          ]);
+        }
         const record: ToolCallRecord = {
           name: call.function.name,
           arguments: call.function.arguments,

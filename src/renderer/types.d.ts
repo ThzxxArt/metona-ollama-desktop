@@ -239,6 +239,8 @@ export interface MetonaDesktopAPI {
     kill: (id: string) => void;
     onOutput: (callback: (data: { id: string; type: 'stdout' | 'stderr'; data: string }) => void) => void;
     onExit: (callback: (data: { id: string; code: number | null }) => void) => void;
+    /** 无超时工具命令执行，用于 AI Tool Calling 集成 */
+    execTool: (command: string, cwd?: string) => Promise<{ success: boolean; stdout: string; stderr: string; exitCode: number | null; duration: number; userTerminated: boolean; truncated: boolean }>;
   };
 }
 

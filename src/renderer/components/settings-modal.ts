@@ -150,9 +150,10 @@ export function initSettingsModal(): void {
       if (db) await db.saveSetting('runCommandEnabled', toggleRunCommand.checked);
       setToolEnabled('run_command', toggleRunCommand.checked);
       if (toggleRunCommand.checked) {
-        showToast('⚠️ 命令执行已开启，请谨慎使用', 'warning');
-        logWarn('命令执行已开启（高风险）');
+        showToast('命令执行已开启（每次执行需确认）', 'info');
+        logInfo('命令执行已开启');
       } else {
+        showToast('命令执行已关闭', 'info');
         logInfo('命令执行已关闭');
       }
     });

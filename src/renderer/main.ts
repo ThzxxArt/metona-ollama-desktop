@@ -191,7 +191,7 @@ async function init(): Promise<void> {
 
     // ── 防御性重置：确保首次启动不会遗留脏状态 ──
     state.set('toolCallingEnabled', false);
-    state.set('runCommandEnabled', false);
+    state.set('runCommandEnabled', true);  // 默认开启（需确认）
     state.set('memoryEnabled', true);
     state.set('thinkEnabled', false);
 
@@ -245,10 +245,10 @@ async function init(): Promise<void> {
 
     // ── Tool Calling 设置 ──
     const toolCallingEnabled = await db.getSetting('toolCallingEnabled', false);
-    const runCommandEnabled = await db.getSetting('runCommandEnabled', false);
+    const runCommandEnabled = await db.getSetting('runCommandEnabled', true);  // 默认开启（需确认）
     state.set('toolCallingEnabled', toolCallingEnabled);
     state.set('runCommandEnabled', runCommandEnabled);
-    if (runCommandEnabled) setToolEnabled('run_command', true);
+    if (!runCommandEnabled) setToolEnabled('run_command', false);  // 仅在用户明确关闭时禁用
     const toggleTC = document.querySelector<HTMLInputElement>('#toggleToolCalling');
     if (toggleTC) toggleTC.checked = toolCallingEnabled;
     const toggleRC = document.querySelector<HTMLInputElement>('#toggleRunCommand');

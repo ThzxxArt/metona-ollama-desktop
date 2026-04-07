@@ -108,14 +108,13 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'run_command',
-      description: 'Execute a shell command. DANGEROUS: disabled by default, must be enabled in settings.',
+      description: 'Execute a shell command via workspace. No timeout limit — runs until the process exits. Requires user confirmation. Output is streamed in real-time through the workspace process.',
       parameters: {
         type: 'object',
         required: ['command'],
         properties: {
           command: { type: 'string', description: 'Shell command to execute.' },
-          cwd: { type: 'string', description: 'Working directory.' },
-          timeout: { type: 'integer', description: 'Timeout ms. Max 120000.' }
+          cwd: { type: 'string', description: 'Working directory. Defaults to workspace directory.' }
         }
       }
     }
@@ -130,7 +129,8 @@ export function needsConfirmation(toolName: string): boolean {
 
 let enabledTools: Set<string> = new Set([
   'read_file', 'list_directory', 'search_files',
-  'write_file', 'create_directory', 'delete_file'
+  'write_file', 'create_directory', 'delete_file',
+  'run_command'  // 默认启用，需要用户确认
 ]);
 
 export function setToolEnabled(toolName: string, enabled: boolean): void {
@@ -160,7 +160,29 @@ export async function executeTool(toolName: string, args: Record<string, unknown
 
   try {
     logToolStart(toolName, JSON.stringify(args));
-    // IPC 调用 + 25 秒硬超时（比 agent-engine 的 30 秒先触发）
+
+    // run_command 走 workspace 无超时 IPC，其他工具走标准 IPC
+    if (toolName === 'run_command') {
+      const command = args.command as string;
+      const cwd = args.cwd as string | undefined;
+      if (!command) {
+        return { success: false, error: '缺少 command 参数' };
+      }
+      logInfo(`Workspace 命令执行: ${command.slice(0, 100)}`);
+      const result = await bridge.workspace.execTool(command, cwd);
+      logToolResult('run_command', result.success, result.success ? undefined : result.stderr?.slice(0, 200));
+      return {
+        success: result.success,
+        stdout: result.stdout,
+        stderr: result.stderr,
+        exitCode: result.exitCode,
+        duration: result.duration,
+        userTerminated: result.userTerminated,
+        truncated: result.truncated
+      };
+    }
+
+    // 其他工具：IPC 调用 + 25 秒硬超时
     const result = await Promise.race([
       bridge.tool.execute(toolName, args),
       new Promise<ToolResult>((_, reject) =>
