@@ -103,7 +103,7 @@ npm run dist           # 全部（NSIS + Portable）
 TOKEN="your_access_token"
 curl -X POST "https://gitee.com/api/v5/repos/thzxx/metona-ollama/releases?access_token=$TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"tag_name":"v3.1.1","name":"v3.1.1","body":"Release notes","target_commitish":"refactor/modular-architecture"}'
+  -d '{"tag_name":"v3.2.0","name":"v3.2.0","body":"Release notes","target_commitish":"refactor/modular-architecture"}'
 ```
 
 ### 上传附件
@@ -112,9 +112,9 @@ curl -X POST "https://gitee.com/api/v5/repos/thzxx/metona-ollama/releases?access
 TOKEN="your_access_token"
 RELEASE_ID="600564"
 curl -X POST "https://gitee.com/api/v5/repos/thzxx/metona-ollama/releases/$RELEASE_ID/attach_files?access_token=$TOKEN" \
-  -H "Content-Type: multipart/form-data" -F "file=@release/Metona Ollama Setup 3.1.1.exe"
+  -H "Content-Type: multipart/form-data" -F "file=@release/Metona Ollama Setup 3.2.0.exe"
 curl -X POST "https://gitee.com/api/v5/repos/thzxx/metona-ollama/releases/$RELEASE_ID/attach_files?access_token=$TOKEN" \
-  -H "Content-Type: multipart/form-data" -F "file=@release/MetonaOllama-Portable-3.1.1.exe"
+  -H "Content-Type: multipart/form-data" -F "file=@release/MetonaOllama-Portable-3.2.0.exe"
 ```
 
 ## 故障排查
@@ -142,11 +142,11 @@ electron-builder 会自动处理所有依赖下载（Electron、NSIS、winCodeSi
 
 ## 构建日志
 
-### v3.1.1（2026-04-07） — metona-ollama-desktop 仓库
+### v3.2.0（2026-04-07） — metona-ollama-desktop 仓库
 
-- ✅ `Metona Ollama Setup 3.1.1.exe`（78MB）
-- ✅ `MetonaOllama-Portable-3.1.1.exe`（78MB）
-- ✅ Gitee Release v3.1.1-desktop（ID: 600739，仓库 thzxx/metona-ollama-desktop）
+- ✅ `Metona Ollama Setup 3.2.0.exe`（78MB）
+- ✅ `MetonaOllama-Portable-3.2.0.exe`（78MB）
+- ✅ Gitee Release v3.2.0-desktop（ID: 600739，仓库 thzxx/metona-ollama-desktop）
 - ⚠️ 构建中遇到问题：npmmirror 缺 electron zip、npm install 卡顿、需安装 Wine。详见上方故障排查。
 
 ### v3.0.0（2026-04-06）

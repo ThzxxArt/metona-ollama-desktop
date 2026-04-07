@@ -3,7 +3,7 @@
 ## 分支结构
 
 **桌面版主线**（`master`）：
-- `metona-ollama-desktop-v1` → `metona-ollama-desktop-v1.1` → `metona-ollama-desktop-v2` → `metona-ollama-desktop-v3` → `metona-ollama-desktop-v3.1.1`（当前）
+- `metona-ollama-desktop-v1` → `metona-ollama-desktop-v1.1` → `metona-ollama-desktop-v2` → `metona-ollama-desktop-v3` → `metona-ollama-desktop-v3.2.0`（当前）
 
 **Web 版历史**已独立为 [metona-ollama-web](https://gitee.com/thzxx/metona-ollama-web) 仓库（v1.1.0 ~ v4.0.3）。
 
@@ -11,7 +11,7 @@
 
 ## 桌面版（Desktop）
 
-### Desktop v3.1.1 — 代码质量 & 桌面原生化
+### Desktop v3.2.0 — 代码质量 & 桌面原生化
 
 - ♻️ **结构化日志系统**
   - 渲染进程 58 处 `console.log/warn/error` 全部迁移至 `log-service.ts`
