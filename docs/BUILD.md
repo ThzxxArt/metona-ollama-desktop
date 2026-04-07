@@ -121,19 +121,33 @@ curl -X POST "https://gitee.com/api/v5/repos/thzxx/metona-ollama/releases/$RELEA
 
 | 问题 | 解决方案 |
 |------|----------|
-| apt 源超时 | `sed -i 's\|mirrors.cloud.aliyuncs.com\|archive.ubuntu.com\|g' /etc/apt/sources.list` |
-| npm 超时 | `npm config set registry https://registry.npmmirror.com` |
-| Electron 下载超时 | 设 `ELECTRON_MIRROR` 或用 `restore-build-cache.sh` |
+| apt 源超时（mirrors.cloud.aliyuncs.com 不可达） | `sed -i 's\|mirrors.cloud.aliyuncs.com\|archive.ubuntu.com\|g' /etc/apt/sources.list && apt-get update` |
+| npm install 卡住无输出 | 终止后重试 `npm install --prefer-offline`，通常首次已装大部分包，二次秒完成 |
+| npmmirror 缺少 Electron 包（restore-build-cache.sh 失败，NoSuchKey） | npmmirror 可能未同步特定版本。跳过缓存脚本，直接 `npm run dist`，electron-builder 会自动从 npmmirror 下载（`ELECTRON_MIRROR` 环境变量生效） |
+| electron-builder 报错 "wine is required" | Wine 是签名步骤的硬依赖，必须安装：`dpkg --add-architecture i386 && apt-get update && apt-get install -y wine wine32` |
+| apt 源 i386 架构下载失败 | 先确保主源可用（切 archive.ubuntu.com），再 `apt-get update`，最后装 wine |
+| Electron 下载超时 | 设 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/` 或直接用 `npm run dist`（electron-builder 自动处理） |
 | NSIS/winCodeSign 下载超时 | `GITHUB_PROXY=https://gh-proxy.com/ bash restore-build-cache.sh` |
 | "symbol already declared" | 检查 TS 文件中的重复 `const`/`let` 声明 |
 
+### ⚠️ 已知问题：npmmirror 与 restore-build-cache.sh 兼容性
+
+`restore-build-cache.sh` 第一步从 npmmirror 下载 Electron zip 时可能遇到 **NoSuchKey** 错误，因为 npmmirror 未同步该版本。此时脚本会因 `set -e` 直接退出，后续 NSIS/winCodeSign 缓存也不会恢复。
+
+**推荐做法**：跳过 `restore-build-cache.sh`，直接执行：
+```bash
+ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm run dist
+```
+electron-builder 会自动处理所有依赖下载（Electron、NSIS、winCodeSign），虽然首次较慢（~5分钟），但无需手动管理缓存。
+
 ## 构建日志
 
-### v3.1.1（2026-04-07）
+### v3.1.1（2026-04-07） — metona-ollama-desktop 仓库
 
 - ✅ `Metona Ollama Setup 3.1.1.exe`（78MB）
 - ✅ `MetonaOllama-Portable-3.1.1.exe`（78MB）
-- ✅ Gitee Release v3.1.1（ID: 600564）
+- ✅ Gitee Release v3.1.1-desktop（ID: 600739，仓库 thzxx/metona-ollama-desktop）
+- ⚠️ 构建中遇到问题：npmmirror 缺 electron zip、npm install 卡顿、需安装 Wine。详见上方故障排查。
 
 ### v3.0.0（2026-04-06）
 
