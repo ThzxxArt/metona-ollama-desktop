@@ -84,8 +84,7 @@ ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm run dist
 npm start              # 开发运行
 npm run pack           # 仅构建目录（不打包）
 npm run dist:nsis      # 仅 NSIS 安装包
-npm run dist:portable  # 仅绿色便携版
-npm run dist           # 全部（NSIS + Portable）
+npm run dist           # NSIS 安装包
 ```
 
 ## 构建产物
@@ -93,7 +92,8 @@ npm run dist           # 全部（NSIS + Portable）
 | 文件 | 说明 |
 |------|------|
 | `release/Metona Ollama Setup X.X.X.exe` | NSIS 安装包（可选目录、创建快捷方式） |
-| `release/MetonaOllama-Portable-X.X.X.exe` | 绿色便携版（免安装，双击即用） |
+
+> v3.2.0 起不再提供绿色便携版，仅保留 NSIS 安装包。
 
 ## 发布到 Gitee
 
@@ -113,8 +113,6 @@ TOKEN="your_access_token"
 RELEASE_ID="600564"
 curl -X POST "https://gitee.com/api/v5/repos/thzxx/metona-ollama/releases/$RELEASE_ID/attach_files?access_token=$TOKEN" \
   -H "Content-Type: multipart/form-data" -F "file=@release/Metona Ollama Setup 3.2.0.exe"
-curl -X POST "https://gitee.com/api/v5/repos/thzxx/metona-ollama/releases/$RELEASE_ID/attach_files?access_token=$TOKEN" \
-  -H "Content-Type: multipart/form-data" -F "file=@release/MetonaOllama-Portable-3.2.0.exe"
 ```
 
 ## 故障排查

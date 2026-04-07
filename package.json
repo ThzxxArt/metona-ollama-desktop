@@ -14,8 +14,7 @@
     "start": "npm run build && electron . --no-sandbox",
     "pack": "npm run build && electron-builder --dir",
     "dist": "npm run build && electron-builder --win",
-    "dist:nsis": "npm run build && electron-builder --win nsis",
-    "dist:portable": "npm run build && electron-builder --win portable"
+    "dist:nsis": "npm run build && electron-builder --win nsis"
   },
   "build": {
     "appId": "com.metona.ollama-desktop",
@@ -33,10 +32,6 @@
         {
           "target": "nsis",
           "arch": ["x64"]
-        },
-        {
-          "target": "portable",
-          "arch": ["x64"]
         }
       ],
       "icon": "assets/icons/llama.ico",
@@ -51,9 +46,6 @@
       "installerIcon": "assets/icons/llama.ico",
       "uninstallerIcon": "assets/icons/llama.ico",
       "installerHeaderIcon": "assets/icons/llama.ico"
-    },
-    "portable": {
-      "artifactName": "MetonaOllama-Portable-${version}.exe"
     }
   },
   "devDependencies": {
