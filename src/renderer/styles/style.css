@@ -2421,50 +2421,6 @@ html, body {
    Agent 记忆系统
    ═══════════════════════════════════════════════════════════════ */
 
-/* ── 记忆状态栏 ── */
-.memory-bar {
-    display: flex;
-    align-items: center;
-    padding: 2px 16px;
-    background: rgba(255, 255, 255, 0.02);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
-}
-
-.memory-bar-btn {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    background: none;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 16px;
-    padding: 4px 12px;
-    color: var(--text-secondary, rgba(255, 255, 255, 0.6));
-    cursor: pointer;
-    font-size: 12px;
-    transition: all 0.2s;
-}
-
-.memory-bar-btn:hover {
-    background: rgba(255, 255, 255, 0.05);
-    border-color: rgba(0, 245, 212, 0.3);
-    color: var(--text-primary, #fff);
-}
-
-.memory-bar-btn svg {
-    width: 14px;
-    height: 14px;
-}
-
-.memory-bar-count {
-    background: rgba(0, 245, 212, 0.15);
-    color: var(--accent-cyan, #00f5d4);
-    padding: 0 6px;
-    border-radius: 8px;
-    font-size: 11px;
-    min-width: 18px;
-    text-align: center;
-}
-
 /* ── 记忆面板 ── */
 .memory-panel {
     position: absolute;

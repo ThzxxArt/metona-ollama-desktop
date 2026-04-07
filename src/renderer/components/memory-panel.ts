@@ -18,23 +18,9 @@ let panelEl: HTMLElement;
 let isOpen = false;
 
 export function initMemoryPanel(): void {
-  const modelBar = document.querySelector('.model-bar');
-  if (!modelBar) return;
-
-  // 创建记忆状态栏
-  const bar = document.createElement('div');
-  bar.className = 'memory-bar';
-  bar.innerHTML = `
-    <button class="memory-bar-btn" id="btnMemoryPanel" title="Agent 记忆">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M12 2a7 7 0 0 1 7 7c0 2.38-1.19 4.47-3 5.74V17a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1v-2.26C6.19 13.47 5 11.38 5 9a7 7 0 0 1 7-7z"/>
-        <line x1="9" y1="21" x2="15" y2="21"/>
-      </svg>
-      <span class="memory-bar-label">记忆</span>
-      <span class="memory-bar-count" id="memoryCount">0</span>
-    </button>
-  `;
-  modelBar.after(bar);
+  // 绑定 header 中的记忆按钮
+  const btnMemory = document.querySelector('#btnMemory');
+  if (!btnMemory) return;
 
   // 创建记忆面板
   const panel = document.createElement('div');
@@ -77,7 +63,7 @@ export function initMemoryPanel(): void {
   panelEl = panel;
 
   // 绑定事件
-  bar.querySelector('#btnMemoryPanel')!.addEventListener('click', togglePanel);
+  btnMemory.addEventListener('click', togglePanel);
   panel.querySelector('#btnCloseMemoryPanel')!.addEventListener('click', () => setPanelOpen(false));
 
   const toggleMemory = panel.querySelector('#toggleMemoryPanelEnabled') as HTMLInputElement;
@@ -125,8 +111,8 @@ function setPanelOpen(open: boolean): void {
 
 function updateMemoryCount(): void {
   const count = getMemoryCache().length;
-  const countEl = document.querySelector('#memoryCount');
-  if (countEl) countEl.textContent = String(count);
+  const btn = document.querySelector('#btnMemory');
+  if (btn) btn.setAttribute('title', count > 0 ? `Agent 记忆 (${count})` : 'Agent 记忆');
 }
 
 function renderMemoryList(): void {
