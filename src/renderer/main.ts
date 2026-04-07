@@ -26,7 +26,7 @@ import { setToolEnabled } from './services/tool-registry.js';
 import { initToolConfirmModal } from './components/tool-confirm-modal.js';
 import { initMemoryPanel } from './components/memory-panel.js';
 import { initWorkspacePanel } from './components/workspace-panel.js';
-import { initLogPanel } from './services/log-service.js';
+import { initLogPanel, addLog } from './services/log-service.js';
 import { logInfo, logSuccess, logError, logDebug, logInit, logWarn } from './services/log-service.js';
 import type { ChatSession } from './types.js';
 
@@ -77,6 +77,11 @@ function setupDesktopIntegration(): void {
       document.title = 'Metona Ollama';
     }
   }) as EventListener);
+
+  // 主进程日志转发到日志面板
+  bridge.onMainLog((data: { level: string; message: string; detail?: string }) => {
+    addLog(data.level as any, data.message, data.detail);
+  });
 
   // 退出时释放显存
   bridge.onAppQuit(() => {

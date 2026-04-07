@@ -39,6 +39,9 @@ contextBridge.exposeInMainWorld('metonaDesktop', {
   removeAllListeners: (channel: string) => {
     ipcRenderer.removeAllListeners(channel);
   },
+  onMainLog: (callback: (data: { level: string; message: string; detail?: string }) => void) => {
+    ipcRenderer.on('main:log', (_: unknown, data: { level: string; message: string; detail?: string }) => callback(data));
+  },
   workspace: {
     getDir: () => ipcRenderer.invoke('workspace:getDir'),
     setDir: (dir: string) => ipcRenderer.invoke('workspace:setDir', dir),

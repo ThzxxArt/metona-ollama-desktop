@@ -7,7 +7,13 @@ import { spawn, ChildProcess } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { app } from 'electron';
+import { mainWindow } from './main.js';
 import { checkPathAllowed, checkCommandAllowed } from './tool-security.js';
+
+/** 发送日志到渲染进程日志面板 */
+function sendLog(level: 'info' | 'success' | 'warn' | 'error' | 'debug', message: string, detail?: string): void {
+  mainWindow?.webContents.send('main:log', { level, message, detail });
+}
 
 export const DEFAULT_WORKSPACE_DIR = path.join(app.getPath('userData'), 'workspace');
 
@@ -18,7 +24,7 @@ const activeProcesses = new Map<string, ChildProcess>();
 export function ensureWorkspaceDir(): void {
   if (!fs.existsSync(DEFAULT_WORKSPACE_DIR)) {
     fs.mkdirSync(DEFAULT_WORKSPACE_DIR, { recursive: true });
-    console.log('[Workspace] 创建默认工作空间目录:', DEFAULT_WORKSPACE_DIR);
+    sendLog('info', `📁 创建默认工作空间目录`, DEFAULT_WORKSPACE_DIR);
   }
 }
 

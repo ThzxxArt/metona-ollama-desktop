@@ -7,6 +7,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { mainWindow } from './main.js';
 import { showNotification } from './utils.js';
+
+/** 发送日志到渲染进程日志面板 */
+function sendLog(level: 'info' | 'success' | 'warn' | 'error' | 'debug', message: string, detail?: string): void {
+  mainWindow?.webContents.send('main:log', { level, message, detail });
+}
 import {
   handleReadFile,
   handleWriteFile,
@@ -84,7 +89,7 @@ export function setupIPC(): void {
   // ── Tool Calling IPC ──
   ipcMain.handle('tool:execute', async (_, toolName: string, args: Record<string, unknown>) => {
     try {
-      console.log('[IPC] tool:execute', toolName, JSON.stringify(args || {}).slice(0, 200));
+      sendLog('debug', `🔧 tool:execute ${toolName}`, JSON.stringify(args || {}).slice(0, 200));
       switch (toolName) {
         case 'read_file':          return await handleReadFile(args as { path: string; encoding?: string; start_line?: number; end_line?: number });
         case 'write_file':         return await handleWriteFile(args as { path: string; content: string; encoding?: string });
@@ -96,7 +101,7 @@ export function setupIPC(): void {
         default:                   return { success: false, error: `未知工具: ${toolName}` };
       }
     } catch (err) {
-      console.error('[IPC] tool:execute 异常:', toolName, err);
+      sendLog('error', `❌ tool:execute 异常: ${toolName}`, String(err));
       return { success: false, error: (err as Error).message || '工具执行异常' };
     }
   });
@@ -139,7 +144,7 @@ export function setupIPC(): void {
 
   // 启动命令（流式输出，通过 workspace:output 事件推送）
   ipcMain.on('workspace:exec', (event, { id, command, cwd }: { id: string; command: string; cwd?: string }) => {
-    console.log('[IPC] workspace:exec', id, command.slice(0, 200));
+    sendLog('info', `🖥️ workspace:exec`, `ID: ${id} | ${command.slice(0, 200)}`);
 
     const result = startProcess(
       id,
@@ -163,7 +168,7 @@ export function setupIPC(): void {
 
   // 停止命令
   ipcMain.on('workspace:kill', (_, id: string) => {
-    console.log('[IPC] workspace:kill', id);
+    sendLog('info', `🖥️ workspace:kill`, `ID: ${id}`);
     killProcess(id);
   });
 }

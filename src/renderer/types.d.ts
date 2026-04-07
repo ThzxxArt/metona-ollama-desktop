@@ -229,6 +229,7 @@ export interface MetonaDesktopAPI {
   onTrayAction: (callback: (action: string) => void) => void;
   onAppQuit: (callback: () => void) => void;
   removeAllListeners: (channel: string) => void;
+  onMainLog: (callback: (data: { level: string; message: string; detail?: string }) => void) => void;
   workspace: {
     getDir: () => Promise<{ dir: string; defaultDir: string }>;
     setDir: (dir: string) => Promise<{ success: boolean; dir?: string; error?: string }>;
