@@ -3,13 +3,21 @@
 ## 分支结构
 
 **桌面版主线**（`master`）：
-- `metona-ollama-desktop-v1` → `metona-ollama-desktop-v1.1` → `metona-ollama-desktop-v2` → `metona-ollama-desktop-v3` → `metona-ollama-desktop-v3.2.0` → `metona-ollama-desktop-v3.2.1` → `metona-ollama-desktop-v3.2.2` → `metona-ollama-desktop-v3.2.3` → `metona-ollama-desktop-v3.2.4`（当前）
+- `metona-ollama-desktop-v1.1` → `metona-ollama-desktop-v2` → `metona-ollama-desktop-v3.0.0` → `metona-ollama-desktop-v3.1.0` → `metona-ollama-desktop-v3.1.1` → `metona-ollama-desktop-v3.2.0` → `metona-ollama-desktop-v3.2.1` → `metona-ollama-desktop-v3.2.2` → `metona-ollama-desktop-v3.2.3` → `metona-ollama-desktop-v3.2.4` → `metona-ollama-desktop-v3.2.5`（当前）
 
 **Web 版历史**已独立为 [metona-ollama-web](https://gitee.com/thzxx/metona-ollama-web) 仓库（v1.1.0 ~ v4.0.3）。
 
 ---
 
 ## 桌面版（Desktop）
+
+### Desktop v3.2.5 — 工具路径修复 & 安全性增强
+
+- 🔧 **修复工具相对路径解析错误**
+  - 所有文件系统工具（`read_file` / `write_file` / `list_directory` / `search_files` / `create_directory` / `delete_file`）的相对路径此前用 `path.resolve()` 解析到进程当前工作目录，导致 AI 创建的文件实际写到了错误位置
+  - 新增 `resolvePath()` 辅助函数：相对路径统一基于 `getWorkspaceDir()`（工作空间目录）解析，绝对路径保持不变
+- 📦 **构建产物**
+  - `Metona Ollama Setup 3.2.5.exe`
 
 ### Desktop v3.2.4 — AI 命令执行走工作空间终端 & Bug 修复
 
