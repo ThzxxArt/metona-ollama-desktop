@@ -182,14 +182,14 @@ export async function initWorkspacePanel(): Promise<void> {
     handleProcessExit(data.id, data.code);
   });
 
-  // 监听 AI Tool Calling 实时输出，流式推送到终端面板
-  bridge.workspace.onToolOutput((data) => {
+  // 监听 AI 命令实时输出，流式推送到终端面板
+  bridge.workspace.onCmdOutput((data) => {
     appendToolStreamOutput(data.command, data.type, data.data);
   });
 
-  // 监听 AI Tool Calling 命令执行完毕
-  bridge.workspace.onToolDone((data) => {
-    logDebug('工作空间工具命令完成', `command: ${data.command.slice(0, 50)} | exitCode: ${data.exitCode}`);
+  // 监听 AI 命令执行完毕
+  bridge.workspace.onCmdDone((data) => {
+    logDebug('工作空间 AI 命令完成', `command: ${data.command.slice(0, 50)} | exitCode: ${data.exitCode}`);
     handleToolDone(data.command, data.exitCode);
   });
 
@@ -383,8 +383,8 @@ function killCurrentProcess(): void {
     bridge.workspace.kill(session.id);
   }
 
-  // 终止当前 AI 工具命令
-  bridge.workspace.killTool();
+  // 终止当前 AI 命令
+  bridge.workspace.cmdKill();
 
   const cmd = currentAiCommand;
   session.lines.push({ type: 'system', text: '■ 命令已手动终止' });

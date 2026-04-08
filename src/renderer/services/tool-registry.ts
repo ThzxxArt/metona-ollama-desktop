@@ -161,14 +161,14 @@ export async function executeTool(toolName: string, args: Record<string, unknown
   try {
     logToolStart(toolName, JSON.stringify(args));
 
-    // run_command 走 workspace 无超时 IPC，其他工具走标准 IPC
+    // run_command 走 workspace IPC
     if (toolName === 'run_command') {
       const command = args.command as string;
       const cwd = args.cwd as string | undefined;
       if (!command) {
         return { success: false, error: '缺少 command 参数' };
       }
-      logInfo(`Workspace 命令执行: ${command.slice(0, 100)}`);
+      logInfo(`工作空间命令执行: ${command.slice(0, 100)}`);
       const result = await bridge.workspace.execTool(command, cwd);
       logToolResult('run_command', result.success, result.success ? undefined : result.stderr?.slice(0, 200));
       return {
@@ -176,9 +176,7 @@ export async function executeTool(toolName: string, args: Record<string, unknown
         stdout: result.stdout,
         stderr: result.stderr,
         exitCode: result.exitCode,
-        duration: result.duration,
-        userTerminated: result.userTerminated,
-        truncated: result.truncated
+        duration: result.duration
       };
     }
 

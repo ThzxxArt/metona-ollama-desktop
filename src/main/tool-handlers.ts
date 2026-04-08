@@ -5,8 +5,10 @@
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { spawn } from 'child_process';
 import { checkPathAllowed, checkCommandAllowed } from './tool-security.js';
-import { execWorkspaceCommand } from './workspace.js';
+import { mainWindow } from './main.js';
+import { getWorkspaceDir } from './workspace.js';
 
 export interface ToolResult {
   success: boolean;
@@ -262,29 +264,82 @@ export async function handleDeleteFile(params: { path: string; recursive?: boole
   }
 }
 
+/** 当前工具命令进程（用于用户手动终止） */
+let _toolProc: ReturnType<typeof spawn> | null = null;
+
 export async function handleRunCommand(params: { command: string; cwd?: string; timeout?: number }): Promise<ToolResult> {
   try {
     const cmdCheck = checkCommandAllowed(params.command);
     if (!cmdCheck.ok) return { success: false, error: cmdCheck.reason };
 
-    // 通过 workspace 子进程执行，复用安全检查和进程管理
-    const result = await execWorkspaceCommand(params.command, params.cwd);
+    const cwd = params.cwd ? path.resolve(params.cwd) : getWorkspaceDir();
+    const dirCheck = checkPathAllowed(cwd, 'read');
+    if (!dirCheck.ok) return { success: false, error: dirCheck.reason };
 
-    return {
-      success: result.success,
-      stdout: result.stdout,
-      stderr: result.stderr,
-      exitCode: result.exitCode,
-      duration: result.duration
-    };
+    return new Promise((resolve) => {
+      const isWin = process.platform === 'win32';
+      const shell = isWin ? 'cmd.exe' : 'bash';
+      const shellArgs = isWin ? ['/c', params.command] : ['-c', params.command];
+      const startTime = Date.now();
+
+      _toolProc = spawn(shell, shellArgs, {
+        cwd,
+        env: { ...process.env, ...(isWin ? {} : { TERM: 'xterm-256color' }) },
+        stdio: ['pipe', 'pipe', 'pipe']
+      });
+
+      let stdout = '';
+      let stderr = '';
+
+      // 实时推送到工作空间终端
+      _toolProc.stdout?.on('data', (data: Buffer) => {
+        const str = data.toString();
+        stdout += str;
+        mainWindow?.webContents.send('cmd:output', { command: params.command, type: 'stdout', data: str });
+      });
+
+      _toolProc.stderr?.on('data', (data: Buffer) => {
+        const str = data.toString();
+        stderr += str;
+        mainWindow?.webContents.send('cmd:output', { command: params.command, type: 'stderr', data: str });
+      });
+
+      _toolProc.on('close', (code) => {
+        _toolProc = null;
+        const duration = Date.now() - startTime;
+        mainWindow?.webContents.send('cmd:done', { command: params.command, exitCode: code });
+        resolve({
+          success: code === 0,
+          stdout,
+          stderr,
+          exitCode: code,
+          duration
+        });
+      });
+
+      _toolProc.on('error', (err) => {
+        _toolProc = null;
+        const duration = Date.now() - startTime;
+        mainWindow?.webContents.send('cmd:done', { command: params.command, exitCode: 1 });
+        resolve({
+          success: false,
+          stdout,
+          stderr: stderr + (stderr ? '\n' : '') + err.message,
+          exitCode: 1,
+          error: err.message,
+          duration
+        });
+      });
+    });
   } catch (err) {
-    const error = err as { message: string };
-    return {
-      success: false,
-      stdout: '',
-      stderr: error.message,
-      exitCode: 1,
-      error: error.message
-    };
+    return { success: false, stdout: '', stderr: (err as Error).message, exitCode: 1, error: (err as Error).message };
   }
+}
+
+/** 终止当前工具命令进程 */
+export function killToolProcess(): boolean {
+  if (!_toolProc) return false;
+  try { _toolProc.kill('SIGTERM'); } catch { /* ignore */ }
+  _toolProc = null;
+  return true;
 }

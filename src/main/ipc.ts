@@ -19,10 +19,11 @@ import {
   handleSearchFiles,
   handleCreateDir,
   handleDeleteFile,
-  handleRunCommand
+  handleRunCommand,
+  killToolProcess
 } from './tool-handlers.js';
 import { getAllowedDirs, getBlockedDirs, setAllowedDirs } from './tool-security.js';
-import { startProcess, killProcess, getWorkspaceDir, setWorkspaceDir, listWorkspaceDir, execWorkspaceCommand, terminateCurrentToolCommand } from './workspace.js';
+import { startProcess, killProcess, getWorkspaceDir, setWorkspaceDir, listWorkspaceDir } from './workspace.js';
 
 export function setupIPC(): void {
   ipcMain.handle('dialog:openFile', async (_, options?: { filters?: Array<{ name: string; extensions: string[] }> }) => {
@@ -172,24 +173,10 @@ export function setupIPC(): void {
     killProcess(id);
   });
 
-  // 无超时工具命令执行（AI Tool Calling 集成）
-  ipcMain.handle('workspace:execTool', async (event, command: string, cwd?: string) => {
-    sendLog('info', `🔧 workspace:execTool`, `${command.slice(0, 200)} | cwd: ${cwd || '默认'}`);
-
-    const result = await execWorkspaceCommand(command, cwd, (type, data) => {
-      // 实时推送到工作空间终端
-      event.sender.send('workspace:toolOutput', { command, type, data });
-    });
-
-    // 通知命令执行完毕
-    event.sender.send('workspace:toolDone', { command, exitCode: result.exitCode });
-    return result;
-  });
-
   // 终止当前 AI 工具命令
-  ipcMain.handle('workspace:killTool', async () => {
-    const killed = terminateCurrentToolCommand();
-    sendLog('info', `🔧 workspace:killTool`, killed ? '已终止' : '无正在运行的工具命令');
+  ipcMain.handle('cmd:kill', async () => {
+    const killed = killToolProcess();
+    sendLog('info', `🔧 cmd:kill`, killed ? '已终止' : '无正在运行的工具命令');
     return { killed };
   });
 }
