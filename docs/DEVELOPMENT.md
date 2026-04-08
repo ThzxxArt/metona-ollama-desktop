@@ -170,11 +170,13 @@ import {
 
 ### 5.3 工作空间与 AI 集成
 
-- AI 通过 `run_command` 工具调用工作空间进程管理
-- 执行路径：`tool-registry.ts` → `bridge.workspace.execTool()` → IPC → `workspace.ts execWorkspaceCommand()`
-- 无超时限制，进程自然结束后返回完整输出
-- 输出上限：5MB（超出标记 `truncated=true`）
-- 用户可随时通过设置禁用 `run_command`
+- AI 通过 `run_command` 工具执行命令，命令在工作空间终端实时显示
+- 执行路径：`tool-registry.ts` → `bridge.workspace.execTool()` → IPC `tool:execute` → `handleRunCommand()` → `spawn` 子进程
+- 主进程 `handleRunCommand` 执行命令，stdout/stderr 通过 `cmd:output` 实时推送到渲染进程终端面板
+- 进程结束后通过 `cmd:done` 通知渲染进程，结果回传 AI
+- 用户可通过工作空间面板停止按钮终止命令（`cmd:kill`）
+- 命令执行前经过 `checkCommandAllowed()` 安全检查
+- 用户确认后才执行（Agent Loop 的 `needsConfirmation` 机制）
 
 ---
 
