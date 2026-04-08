@@ -210,7 +210,7 @@ v3.2 四大子系统协调运作：
 ```bash
 git clone https://gitee.com/thzxx/metona-ollama-desktop.git
 cd metona-ollama-desktop
-git checkout metona-ollama-desktop-v3.2.1
+git checkout metona-ollama-desktop-v3.2.2
 
 # 安装依赖（国内使用 npmmirror 加速）
 npm config set registry https://registry.npmmirror.com
@@ -388,6 +388,11 @@ metona-ollama-desktop/
 完整更新日志和项目发展历程请查看 [docs/CHANGELOG.md](docs/CHANGELOG.md)。
 
 ### 最新版本
+
+**v3.2.2** — 工作空间深度集成 & AI Tool Calling 增强
+- 🔧 工作空间与 AI Tool Calling 深度集成，新增 `run_command` 工具在工作空间中可视化执行
+- 📦 构建流程优化：补充手动缓存下载方案，修复 npm install Electron 下载超时问题
+- 📝 更新 docs/BUILD.md：新增故障排查条目和手动缓存完整命令
 
 **v3.2.1** — 日志统一 & 构建优化
 - ♻️ 主进程 5 处 `console.log/error` 全部清除，通过 IPC 接入执行日志面板

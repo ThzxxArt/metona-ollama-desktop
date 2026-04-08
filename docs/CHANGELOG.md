@@ -3,13 +3,30 @@
 ## 分支结构
 
 **桌面版主线**（`master`）：
-- `metona-ollama-desktop-v1` → `metona-ollama-desktop-v1.1` → `metona-ollama-desktop-v2` → `metona-ollama-desktop-v3` → `metona-ollama-desktop-v3.2.0` → `metona-ollama-desktop-v3.2.1`（当前）
+- `metona-ollama-desktop-v1` → `metona-ollama-desktop-v1.1` → `metona-ollama-desktop-v2` → `metona-ollama-desktop-v3` → `metona-ollama-desktop-v3.2.0` → `metona-ollama-desktop-v3.2.1` → `metona-ollama-desktop-v3.2.2`（当前）
 
 **Web 版历史**已独立为 [metona-ollama-web](https://gitee.com/thzxx/metona-ollama-web) 仓库（v1.1.0 ~ v4.0.3）。
 
 ---
 
 ## 桌面版（Desktop）
+
+### Desktop v3.2.2 — 工作空间深度集成 & 构建修复
+
+- 🔧 **工作空间与 AI Tool Calling 深度集成**
+  - 工作空间命令行新增「执行」按钮，AI 建议的 `run_command` 工具调用可在工作空间终端中可视化执行
+  - 工具调用结果实时流式输出到工作空间终端面板，支持长时间运行命令
+  - 完善 IPC 通信链路：`preload.ts` 新增 workspace API 桥接、`ipc.ts` 新增对应 handler
+- 📦 **构建流程修复与优化**
+  - 修复 `npm install` 时 Electron "socket hang up" 问题（需设置 `ELECTRON_MIRROR`）
+  - 修复 electron-builder 构建时 winCodeSign 从 GitHub 下载 EOF 错误（使用 ghfast.top 代理）
+  - 修复 `restore-build-cache.sh` 因 npmmirror 缺包导致全部缓存跳过的问题
+  - 新增手动缓存下载方案：逐项下载 winCodeSign/NSIS/NSIS Resources 的完整命令
+  - `docs/BUILD.md` 故障排查表新增 3 条条目，附完整手动缓存命令
+- 📝 **文档更新**
+  - 更新 README.md 最新版本说明和构建分支引用
+  - 更新 docs/CHANGELOG.md 版本分支结构
+  - 更新 docs/BUILD.md 构建日志（v3.2.2 记录 5 个问题及处理步骤）
 
 ### Desktop v3.2.1 — 日志统一 & 构建优化
 
