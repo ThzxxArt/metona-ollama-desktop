@@ -3,13 +3,26 @@
 ## 分支结构
 
 **桌面版主线**（`master`）：
-- `metona-ollama-desktop-v1` → `metona-ollama-desktop-v1.1` → `metona-ollama-desktop-v2` → `metona-ollama-desktop-v3` → `metona-ollama-desktop-v3.2.0` → `metona-ollama-desktop-v3.2.1` → `metona-ollama-desktop-v3.2.2`（当前）
+- `metona-ollama-desktop-v1` → `metona-ollama-desktop-v1.1` → `metona-ollama-desktop-v2` → `metona-ollama-desktop-v3` → `metona-ollama-desktop-v3.2.0` → `metona-ollama-desktop-v3.2.1` → `metona-ollama-desktop-v3.2.2` → `metona-ollama-desktop-v3.2.3`（当前）
 
 **Web 版历史**已独立为 [metona-ollama-web](https://gitee.com/thzxx/metona-ollama-web) 仓库（v1.1.0 ~ v4.0.3）。
 
 ---
 
 ## 桌面版（Desktop）
+
+### Desktop v3.2.3 — 工作空间面板常驻显示 & Bug 修复
+
+- 🖥️ **工作空间面板改为常驻显示**
+  - 类似执行日志面板，固定显示不可关闭，移除关闭按钮和 header 中的切换按钮
+  - 固定宽度 480px，移除拖拽调整宽度功能（`wsResizer` 及 `setupResizer()` 全部删除）
+  - `main-wrap` 始终带 `with-workspace` class，面板初始化即可见（`panelVisible = true`）
+  - 删除 `togglePanel()` 函数及相关事件绑定
+- 🔧 **Bug 修复**
+  - 修复 `tool-registry.ts` 使用 `logInfo` 但未导入导致 `run_command` 工具调用报 "logInfo is not defined" 异常
+- 📦 **构建产物**
+  - `Metona Ollama Setup 3.2.3.exe`（78MB）
+  - Gitee Release v3.2.3-desktop（ID: 601248）
 
 ### Desktop v3.2.2 — 工作空间深度集成 & 构建修复
 

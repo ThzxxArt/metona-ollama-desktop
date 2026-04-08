@@ -4,7 +4,7 @@
 
 > 💻 桌面版仓库 | 🌐 [Web 版历史存档](https://gitee.com/thzxx/metona-ollama-web)
 
-![版本](https://img.shields.io/badge/version-3.2.2--desktop-brightgreen)
+![版本](https://img.shields.io/badge/version-3.2.3--desktop-brightgreen)
 ![平台](https://img.shields.io/badge/platform-Windows%20x64-blue)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178c6)
 ![Electron](https://img.shields.io/badge/Electron-33-47848f)
@@ -190,7 +190,7 @@ v3.2 四大子系统协调运作：
 
 | 文件 | 类型 |
 |------|------|
-| `Metona Ollama Setup 3.2.2.exe` | NSIS 安装包（可选目录、创建快捷方式） |
+| `Metona Ollama Setup 3.2.3.exe` | NSIS 安装包（可选目录、创建快捷方式） |
 
 > ⚠️ v3.2.0 起不再提供便携版，仅保留 NSIS 安装包。
 >
@@ -210,7 +210,7 @@ v3.2 四大子系统协调运作：
 ```bash
 git clone https://gitee.com/thzxx/metona-ollama-desktop.git
 cd metona-ollama-desktop
-git checkout metona-ollama-desktop-v3.2.2
+git checkout metona-ollama-desktop-v3.2.3
 
 # 安装依赖（国内使用 npmmirror 加速）
 npm config set registry https://registry.npmmirror.com
@@ -388,6 +388,10 @@ metona-ollama-desktop/
 完整更新日志和项目发展历程请查看 [docs/CHANGELOG.md](docs/CHANGELOG.md)。
 
 ### 最新版本
+
+**v3.2.3** — 工作空间面板常驻显示 & Bug 修复
+- 🖥️ 工作空间面板改为常驻显示（类似执行日志面板），固定宽度 480px，移除关闭按钮和拖拽手柄
+- 🔧 修复 `tool-registry.ts` 缺少 `logInfo` 导入导致 `run_command` 工具调用异常
 
 **v3.2.2** — 工作空间深度集成 & AI Tool Calling 增强
 - 🔧 工作空间与 AI Tool Calling 深度集成，新增 `run_command` 工具在工作空间中可视化执行
