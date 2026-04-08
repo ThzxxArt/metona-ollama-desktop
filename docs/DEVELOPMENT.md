@@ -221,6 +221,24 @@ npm start              # 构建并运行
 npm run dist           # 构建 Windows 安装包
 ```
 
+### 版本号更新
+
+更新版本号时，需同步修改以下文件：
+
+| 文件 | 内容 |
+|------|------|
+| `package.json` | `"version": "X.Y.Z"` |
+| `src/renderer/index.html` | `<span class="app-version">vX.Y.Z</span>` |
+| `README.md` | 版本徽章、下载文件名、构建分支引用 |
+| `docs/BUILD.md` | 构建分支引用、新增构建日志条目 |
+| `docs/CHANGELOG.md` | 版本分支结构链、新增版本说明条目 |
+
+### 更新日志
+
+- **所有更新日志只写在 `docs/CHANGELOG.md`**
+- `README.md` 不写历史版本记录，只保留一行链接指向 `docs/CHANGELOG.md`
+- 版本分支结构链在 `docs/CHANGELOG.md` 顶部维护
+
 ### 7.2 发布流程
 
 1. 更新 `package.json` 版本号
@@ -239,8 +257,15 @@ npm run dist           # 构建 Windows 安装包
 
 - `master` — 稳定发布版本
 - `develop` — 开发主分支
+- `metona-ollama-desktop-vX.Y.Z` — 每个版本对应的发布分支
 - `feature/*` — 功能开发
 - `fix/*` — Bug 修复
+
+### 提交规则
+
+- **默认只推送到当前所在分支**
+- 需要同步到其他分支时，用户会明确指定
+- 不要自作主张往多个分支推送
 
 ### Commit 规范
 
