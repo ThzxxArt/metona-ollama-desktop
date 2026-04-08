@@ -53,6 +53,15 @@ export function setupIPC(): void {
     }
   });
 
+  ipcMain.handle('fs:readFileBase64', async (_, filePath: string) => {
+    try {
+      const buf = await fs.promises.readFile(filePath);
+      return { success: true, content: buf.toString('base64'), size: buf.length, name: path.basename(filePath) };
+    } catch (err) {
+      return { success: false, error: (err as Error).message };
+    }
+  });
+
   ipcMain.handle('fs:writeFile', async (_, filePath: string, content: string, encoding?: string) => {
     try {
       await fs.promises.writeFile(filePath, content, (encoding as BufferEncoding) || 'utf-8');

@@ -211,6 +211,7 @@ export interface MetonaDesktopAPI {
   };
   fs: {
     readFile: (filePath: string) => Promise<{ success: boolean; content?: string; name?: string; error?: string }>;
+    readFileBase64: (filePath: string) => Promise<{ success: boolean; content?: string; size?: number; name?: string; error?: string }>;
     writeFile: (filePath: string, content: string, encoding?: string) => Promise<{ success: boolean; error?: string }>;
   };
   tool: {

@@ -298,12 +298,12 @@ async function importSessions(filePath: string): Promise<void> {
 
   try {
     const bridge = (window as any).metonaDesktop;
-    const result = await bridge.fs.readFile(filePath);
+    const result = await bridge.fs.readFileBase64(filePath);
     if (!result.success) {
       showToast(`读取文件失败: ${result.error}`, 'error');
       return;
     }
-    // IPC 返回 base64 编码的二进制，转 ArrayBuffer
+    // 主进程返回 base64，直接解码为二进制
     const binary = atob(result.content as string);
     const bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);

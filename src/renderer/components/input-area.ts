@@ -136,20 +136,19 @@ async function handleImagePaths(paths: string[]): Promise<void> {
   for (const filePath of paths) {
     const name = filePath.split(/[/\\]/).pop() || filePath;
     try {
-      const result = await bridge.fs.readFile(filePath);
+      const result = await bridge.fs.readFileBase64(filePath);
       if (!result.success) {
         appendSystemMessage(`❌ 读取 ${name} 失败: ${result.error}`);
         continue;
       }
-      // IPC 返回的 content 是 UTF-8 字符串，转为 base64
-      const binary = Uint8Array.from(atob(result.content as string), c => c.charCodeAt(0));
-      const base64 = btoa(String.fromCharCode(...binary));
-      if (binary.length > maxSize) {
+      const size = result.size ?? 0;
+      if (size > maxSize) {
         appendSystemMessage(`⚠️ 图片 ${name} 超过 20MB 限制`);
         continue;
       }
+      const base64 = result.content!;
       pendingImages.push({ name, base64 });
-      logInfo(`图片已添加: ${name}`, formatSize(binary.length));
+      logInfo(`图片已添加: ${name}`, formatSize(size));
     } catch (err) {
       logError('图片读取失败', (err as Error).message);
       appendSystemMessage(`❌ 读取 ${name} 失败`);
