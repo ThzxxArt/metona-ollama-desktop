@@ -126,7 +126,42 @@ curl -X POST "https://gitee.com/api/v5/repos/thzxx/metona-ollama/releases/$RELEA
 | apt 源 i386 架构下载失败 | 先确保主源可用（切 archive.ubuntu.com），再 `apt-get update`，最后装 wine |
 | Electron 下载超时 | 设 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/` 或直接用 `npm run dist`（electron-builder 自动处理） |
 | NSIS/winCodeSign 下载超时 | `GITHUB_PROXY=https://gh-proxy.com/ bash restore-build-cache.sh` |
+| winCodeSign 下载 EOF 错误（github.com 连接中断） | 手动下载并缓存（见下方） |
+| npm install 时 Electron "socket hang up" | 设置 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/` 后重试 |
+| restore-build-cache.sh 因 Electron 失败导致后续缓存全部跳过 | 跳过脚本，手动下载缺失资源（见下方） |
 | "symbol already declared" | 检查 TS 文件中的重复 `const`/`let` 声明 |
+
+### 手动下载构建缓存（逐项修复）
+
+当 `restore-build-cache.sh` 部分失败时，可手动下载缺失资源：
+
+```bash
+GITHUB_PROXY="https://ghfast.top/"
+GITHUB_ORIG="https://github.com/electron-userland/electron-builder-binaries/releases/download"
+CACHE="$HOME/.cache/electron-builder"
+
+# winCodeSign（构建签名步骤硬依赖）
+mkdir -p "$CACHE/winCodeSign"
+wget -O "/tmp/winCodeSign-2.6.0.7z" \
+  "${GITHUB_PROXY}${GITHUB_ORIG}/winCodeSign-2.6.0/winCodeSign-2.6.0.7z"
+cd "$CACHE/winCodeSign" && 7z x -y "/tmp/winCodeSign-2.6.0.7z" -o"winCodeSign-2.6.0"
+
+# NSIS
+mkdir -p "$CACHE/nsis"
+wget -O "/tmp/nsis-3.0.4.1.7z" \
+  "${GITHUB_PROXY}${GITHUB_ORIG}/nsis-3.0.4.1/nsis-3.0.4.1.7z"
+cd "$CACHE/nsis" && 7z x -y "/tmp/nsis-3.0.4.1.7z" -o"nsis-3.0.4.1"
+
+# NSIS Resources
+wget -O "/tmp/nsis-resources-3.4.1.7z" \
+  "${GITHUB_PROXY}${GITHUB_ORIG}/nsis-resources-3.4.1/nsis-resources-3.4.1.7z"
+cd "$CACHE/nsis" && 7z x -y "/tmp/nsis-resources-3.4.1.7z" -o"nsis-resources-3.4.1"
+
+# 清理临时文件
+rm -f /tmp/winCodeSign-2.6.0.7z /tmp/nsis-3.0.4.1.7z /tmp/nsis-resources-3.4.1.7z
+```
+
+> Electron 无需手动下载——设置 `ELECTRON_MIRROR` 后 electron-builder 会自动处理。
 
 ### ⚠️ 已知问题：npmmirror 与 restore-build-cache.sh 兼容性
 
@@ -139,6 +174,18 @@ ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm run dist
 electron-builder 会自动处理所有依赖下载（Electron、NSIS、winCodeSign），虽然首次较慢（~5分钟），但无需手动管理缓存。
 
 ## 构建日志
+
+### v3.2.2（2026-04-08） — metona-ollama-desktop 仓库
+
+- ✅ `Metona Ollama Setup 3.2.2.exe`（78MB）
+- ✅ Gitee Release v3.2.2-desktop（ID: 600992，仓库 thzxx/metona-ollama-desktop）
+- ✅ 分支 `metona-ollama-desktop-v3.2.2` 已创建并推送
+- ⚠️ 构建问题及处理：
+  1. apt 源 `mirrors.cloud.aliyuncs.com` 不可达 → 切换 `archive.ubuntu.com`
+  2. npm install 时 Electron socket hang up → 设 `ELECTRON_MIRROR` 重试成功
+  3. restore-build-cache.sh 第一步失败（npmmirror NoSuchKey）→ 跳过脚本
+  4. electron-builder 直接构建时 winCodeSign 从 GitHub 下载 EOF → 使用 ghfast.top 代理手动下载缓存
+  5. 手动缓存 NSIS 和 NSIS Resources 后重新构建成功
 
 ### v3.2.1（2026-04-07） — metona-ollama-desktop 仓库
 
