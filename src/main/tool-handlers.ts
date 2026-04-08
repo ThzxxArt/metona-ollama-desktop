@@ -15,6 +15,12 @@ function sendLog(level: 'info' | 'success' | 'warn' | 'error' | 'debug', message
   mainWindow?.webContents.send('main:log', { level, message, detail });
 }
 
+/** 解析路径：相对路径基于工作空间目录 */
+function resolvePath(inputPath: string): string {
+  if (path.isAbsolute(inputPath)) return path.resolve(inputPath);
+  return path.resolve(getWorkspaceDir(), inputPath);
+}
+
 export interface ToolResult {
   success: boolean;
   [key: string]: unknown;
@@ -22,7 +28,7 @@ export interface ToolResult {
 
 export async function handleReadFile(params: { path: string; encoding?: string; start_line?: number; end_line?: number }): Promise<ToolResult> {
   try {
-    const filePath = path.resolve(params.path);
+    const filePath = resolvePath(params.path);
     const allowed = checkPathAllowed(filePath, 'read');
     if (!allowed.ok) return { success: false, error: allowed.reason };
 
@@ -68,7 +74,7 @@ export async function handleReadFile(params: { path: string; encoding?: string; 
 
 export async function handleWriteFile(params: { path: string; content: string; encoding?: string }): Promise<ToolResult> {
   try {
-    const filePath = path.resolve(params.path);
+    const filePath = resolvePath(params.path);
     const allowed = checkPathAllowed(filePath, 'write');
     if (!allowed.ok) return { success: false, error: allowed.reason };
 
@@ -101,7 +107,7 @@ export async function handleWriteFile(params: { path: string; content: string; e
 
 export async function handleListDir(params: { path: string; recursive?: boolean; max_depth?: number; include_hidden?: boolean; filter_extension?: string }): Promise<ToolResult> {
   try {
-    const dirPath = path.resolve(params.path);
+    const dirPath = resolvePath(params.path);
     const allowed = checkPathAllowed(dirPath, 'read');
     if (!allowed.ok) return { success: false, error: allowed.reason };
 
@@ -143,7 +149,7 @@ export async function handleListDir(params: { path: string; recursive?: boolean;
 
 export async function handleSearchFiles(params: { path: string; query: string; search_type?: string; case_sensitive?: boolean; max_results?: number; file_extensions?: string[] }): Promise<ToolResult> {
   try {
-    const rootPath = path.resolve(params.path);
+    const rootPath = resolvePath(params.path);
     const allowed = checkPathAllowed(rootPath, 'read');
     if (!allowed.ok) return { success: false, error: allowed.reason };
 
@@ -235,7 +241,7 @@ export async function handleSearchFiles(params: { path: string; query: string; s
 
 export async function handleCreateDir(params: { path: string }): Promise<ToolResult> {
   try {
-    const dirPath = path.resolve(params.path);
+    const dirPath = resolvePath(params.path);
     const allowed = checkPathAllowed(dirPath, 'write');
     if (!allowed.ok) return { success: false, error: allowed.reason };
 
@@ -248,7 +254,7 @@ export async function handleCreateDir(params: { path: string }): Promise<ToolRes
 
 export async function handleDeleteFile(params: { path: string; recursive?: boolean }): Promise<ToolResult> {
   try {
-    const filePath = path.resolve(params.path);
+    const filePath = resolvePath(params.path);
     const allowed = checkPathAllowed(filePath, 'write');
     if (!allowed.ok) return { success: false, error: allowed.reason };
 
