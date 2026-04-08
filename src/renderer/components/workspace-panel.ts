@@ -31,8 +31,7 @@ interface FileNode {
 
 let panelVisible = true; // 常驻显示，不可关闭
 let activeTab: 'terminal' | 'files' = 'terminal';
-let terminalSessions: TerminalSession[] = [];
-let activeTerminalId = '';
+let terminal: TerminalSession | null = null; // 唯一终端
 let workspaceDir = '';
 let currentFileDir = '';
 let fileTree: FileNode[] = [];
@@ -196,8 +195,14 @@ export async function initWorkspacePanel(): Promise<void> {
   // 绑定 UI 事件
   bindEvents();
 
-  // 创建默认终端
-  createTerminalSession('终端 1');
+  // 创建唯一终端
+  terminal = {
+    id: genId(),
+    title: '终端',
+    lines: [],
+    running: false,
+    autoScroll: true
+  };
 
   logInfo('工作空间面板已初始化');
 }
@@ -212,12 +217,6 @@ function bindEvents(): void {
 
   // 清空按钮
   document.querySelector('#wsClearBtn')?.addEventListener('click', clearTerminal);
-
-  // 新建终端 Tab
-  document.querySelector('#wsNewTabBtn')?.addEventListener('click', () => {
-    const num = terminalSessions.length + 1;
-    createTerminalSession(`终端 ${num}`);
-  });
 
   // 文件刷新
   document.querySelector('#wsFileRefreshBtn')?.addEventListener('click', () => {
@@ -250,22 +249,8 @@ function switchTab(tab: 'terminal' | 'files'): void {
 }
 
 // ── 终端管理 ──
-function createTerminalSession(title: string): string {
-  const session: TerminalSession = {
-    id: genId(),
-    title,
-    lines: [],
-    running: false,
-    autoScroll: true
-  };
-  terminalSessions.push(session);
-  activeTerminalId = session.id;
-  renderPanel();
-  return session.id;
-}
-
 function getActiveSession(): TerminalSession | undefined {
-  return terminalSessions.find(s => s.id === activeTerminalId);
+  return terminal ?? undefined;
 }
 
 /** AI Tool Calling 实时输出 → 流式追加到活跃终端 */
@@ -318,11 +303,11 @@ function handleToolDone(command: string, exitCode: number | null): void {
 }
 
 function appendTerminalOutput(sessionId: string, type: 'stdout' | 'stderr', data: string): void {
-  const session = terminalSessions.find(s => s.id === sessionId);
-  if (!session) {
-    logDebug('工作空间输出丢失', `未找到会话: ${sessionId}`);
+  if (!terminal || terminal.id !== sessionId) {
+    logDebug('工作空间输出丢失', `未匹配终端: ${sessionId}`);
     return;
   }
+  const session = terminal;
 
   // 按行分割，处理 \r 进度更新
   const lines = data.split('\n');
@@ -354,11 +339,11 @@ function appendTerminalOutput(sessionId: string, type: 'stdout' | 'stderr', data
 }
 
 function handleProcessExit(sessionId: string, code: number | null): void {
-  const session = terminalSessions.find(s => s.id === sessionId);
-  if (!session) {
-    logDebug('工作空间退出信号丢失', `未找到会话: ${sessionId}`);
+  if (!terminal || terminal.id !== sessionId) {
+    logDebug('工作空间退出信号丢失', `未匹配终端: ${sessionId}`);
     return;
   }
+  const session = terminal;
 
   session.running = false;
   const exitMsg = code === 0 ? '✓ 进程正常退出' : `✗ 进程退出 (code: ${code})`;
@@ -406,21 +391,6 @@ function clearTerminal(): void {
   if (!session) return;
   session.lines = [];
   renderTerminal();
-}
-
-function closeTerminalTab(sessionId: string): void {
-  if (terminalSessions.length <= 1) return; // 至少保留一个
-
-  const session = terminalSessions.find(s => s.id === sessionId);
-  if (session?.running) {
-    window.metonaDesktop?.workspace.kill(sessionId);
-  }
-
-  terminalSessions = terminalSessions.filter(s => s.id !== sessionId);
-  if (activeTerminalId === sessionId) {
-    activeTerminalId = terminalSessions[0].id;
-  }
-  renderPanel();
 }
 
 // ── 文件浏览器 ──
@@ -489,7 +459,6 @@ export function renderPanel(): void {
 
   if (activeTab === 'terminal') {
     renderTerminal();
-    renderTerminalTabs();
   } else {
     renderFileList();
   }
@@ -530,41 +499,6 @@ function renderTerminal(): void {
     const atBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 50;
     session.autoScroll = atBottom;
   };
-}
-
-function renderTerminalTabs(): void {
-  const tabBar = document.querySelector('#wsTermTabBar') as HTMLElement;
-  if (!tabBar) return;
-
-  tabBar.innerHTML = terminalSessions.map(s => {
-    const active = s.id === activeTerminalId;
-    const running = s.running ? ' ●' : '';
-    const closeBtn = terminalSessions.length > 1
-      ? `<button class="ws-tab-close" data-close="${s.id}" title="关闭">✕</button>`
-      : '';
-    return `<div class="ws-tab ${active ? 'active' : ''}" data-session="${s.id}">
-      <span class="ws-tab-title">${escapeHtml(s.title)}${running}</span>
-      ${closeBtn}
-    </div>`;
-  }).join('');
-
-  // 绑定 tab 点击事件
-  tabBar.querySelectorAll('.ws-tab').forEach(tab => {
-    tab.addEventListener('click', (e) => {
-      const target = e.target as HTMLElement;
-      const closeBtn = target.closest('.ws-tab-close') as HTMLElement;
-      if (closeBtn) {
-        e.stopPropagation();
-        closeTerminalTab(closeBtn.dataset.close!);
-        return;
-      }
-      const sessionId = (tab as HTMLElement).dataset.session;
-      if (sessionId) {
-        activeTerminalId = sessionId;
-        renderPanel();
-      }
-    });
-  });
 }
 
 function renderFileList(): void {
