@@ -12,8 +12,9 @@
 
 ```bash
 # 1. 克隆并安装依赖
-git clone https://gitee.com/thzxx/metona-ollama.git
-cd metona-ollama
+git clone https://gitee.com/thzxx/metona-ollama-desktop.git
+cd metona-ollama-desktop
+git checkout metona-ollama-desktop-v3.2.3
 npm config set registry https://registry.npmmirror.com
 npm install
 
@@ -174,6 +175,13 @@ ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm run dist
 electron-builder 会自动处理所有依赖下载（Electron、NSIS、winCodeSign），虽然首次较慢（~5分钟），但无需手动管理缓存。
 
 ## 构建日志
+
+### v3.2.3（2026-04-08） — metona-ollama-desktop 仓库
+
+- ✅ 工作空间面板改为常驻显示，固定宽度 480px
+- ✅ 修复 tool-registry.ts 缺少 logInfo 导入导致 run_command 异常
+- ✅ Gitee Release v3.2.3-desktop（仓库 thzxx/metona-ollama-desktop）
+- ✅ 分支 `metona-ollama-desktop-v3.2.3` 已创建并推送
 
 ### v3.2.2（2026-04-08） — metona-ollama-desktop 仓库
 
