@@ -240,9 +240,13 @@ export interface MetonaDesktopAPI {
     onOutput: (callback: (data: { id: string; type: 'stdout' | 'stderr'; data: string }) => void) => void;
     onExit: (callback: (data: { id: string; code: number | null }) => void) => void;
     /** 无超时工具命令执行，用于 AI Tool Calling 集成 */
-    execTool: (command: string, cwd?: string) => Promise<{ success: boolean; stdout: string; stderr: string; exitCode: number | null; duration: number; userTerminated: boolean; truncated: boolean }>;
-    /** AI Tool Calling 命令输出 → 同步到工作空间终端 */
-    onToolOutput: (callback: (data: { command: string; stdout: string; stderr: string; exitCode: number | null }) => void) => void;
+    execTool: (command: string, cwd?: string) => Promise<{ success: boolean; stdout: string; stderr: string; exitCode: number | null; duration: number }>;
+    /** AI 命令实时输出推送到工作空间终端 */
+    onCmdOutput: (callback: (data: { command: string; type: 'stdout' | 'stderr'; data: string }) => void) => void;
+    /** AI 命令执行完毕 */
+    onCmdDone: (callback: (data: { command: string; exitCode: number | null }) => void) => void;
+    /** 终止当前 AI 命令 */
+    cmdKill: () => Promise<{ killed: boolean }>;
   };
 }
 

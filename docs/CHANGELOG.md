@@ -3,13 +3,30 @@
 ## 分支结构
 
 **桌面版主线**（`master`）：
-- `metona-ollama-desktop-v1` → `metona-ollama-desktop-v1.1` → `metona-ollama-desktop-v2` → `metona-ollama-desktop-v3` → `metona-ollama-desktop-v3.2.0` → `metona-ollama-desktop-v3.2.1` → `metona-ollama-desktop-v3.2.2` → `metona-ollama-desktop-v3.2.3`（当前）
+- `metona-ollama-desktop-v1` → `metona-ollama-desktop-v1.1` → `metona-ollama-desktop-v2` → `metona-ollama-desktop-v3` → `metona-ollama-desktop-v3.2.0` → `metona-ollama-desktop-v3.2.1` → `metona-ollama-desktop-v3.2.2` → `metona-ollama-desktop-v3.2.3` → `metona-ollama-desktop-v3.2.4`（当前）
 
 **Web 版历史**已独立为 [metona-ollama-web](https://gitee.com/thzxx/metona-ollama-web) 仓库（v1.1.0 ~ v4.0.3）。
 
 ---
 
 ## 桌面版（Desktop）
+
+### Desktop v3.2.4 — AI 命令执行走工作空间终端 & Bug 修复
+
+- 🔧 **AI 命令执行走工作空间终端**
+  - `run_command` 工具不再在主进程内部执行，改为通过工作空间终端实时执行并显示
+  - stdout/stderr 实时推送到工作空间终端面板，流式展示
+  - 用户可通过停止按钮终止卡住的命令，结果自动回传 AI
+  - 新增 `cmd:output` / `cmd:done` / `cmd:kill` IPC 通道
+- 🖥️ **工作空间面板优化**
+  - 去掉用户手动命令输入，所有命令由 AI 执行
+  - 终端底部状态提示（等待/执行中）
+  - 修复面板顶部对齐（90px → 92px）
+- 🔧 **设置面板修复**
+  - 修改 Ollama 服务地址后同步更新顶部导航连接状态和模型列表
+- 📦 **构建产物**
+  - `Metona Ollama Setup 3.2.4.exe`
+  - Gitee Release v3.2.4-desktop
 
 ### Desktop v3.2.3 — 工作空间面板常驻显示 & Bug 修复
 

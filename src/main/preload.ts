@@ -59,11 +59,17 @@ contextBridge.exposeInMainWorld('metonaDesktop', {
     onExit: (callback: (data: { id: string; code: number | null }) => void) => {
       ipcRenderer.on('workspace:exit', (_: unknown, data: { id: string; code: number | null }) => callback(data));
     },
-    /** 无超时命令执行，用于 AI Tool Calling */
-    execTool: (command: string, cwd?: string) => ipcRenderer.invoke('workspace:execTool', command, cwd),
-    /** AI Tool Calling 命令输出 → 同步到工作空间终端 */
-    onToolOutput: (callback: (data: { command: string; stdout: string; stderr: string; exitCode: number | null }) => void) => {
-      ipcRenderer.on('workspace:toolOutput', (_: unknown, data: { command: string; stdout: string; stderr: string; exitCode: number | null }) => callback(data));
-    }
+    /** 无超时工具命令执行，用于 AI Tool Calling */
+    execTool: (command: string, cwd?: string) => ipcRenderer.invoke('tool:execute', 'run_command', { command, cwd }),
+    /** AI 命令实时输出推送到工作空间终端 */
+    onCmdOutput: (callback: (data: { command: string; type: 'stdout' | 'stderr'; data: string }) => void) => {
+      ipcRenderer.on('cmd:output', (_: unknown, data: { command: string; type: 'stdout' | 'stderr'; data: string }) => callback(data));
+    },
+    /** AI 命令执行完毕 */
+    onCmdDone: (callback: (data: { command: string; exitCode: number | null }) => void) => {
+      ipcRenderer.on('cmd:done', (_: unknown, data: { command: string; exitCode: number | null }) => callback(data));
+    },
+    /** 终止当前 AI 命令 */
+    cmdKill: () => ipcRenderer.invoke('cmd:kill')
   }
 });

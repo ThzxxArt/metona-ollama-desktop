@@ -19,10 +19,11 @@ import {
   handleSearchFiles,
   handleCreateDir,
   handleDeleteFile,
-  handleRunCommand
+  handleRunCommand,
+  killToolProcess
 } from './tool-handlers.js';
 import { getAllowedDirs, getBlockedDirs, setAllowedDirs } from './tool-security.js';
-import { startProcess, killProcess, getWorkspaceDir, setWorkspaceDir, listWorkspaceDir, execWorkspaceCommand } from './workspace.js';
+import { startProcess, killProcess, getWorkspaceDir, setWorkspaceDir, listWorkspaceDir } from './workspace.js';
 
 export function setupIPC(): void {
   ipcMain.handle('dialog:openFile', async (_, options?: { filters?: Array<{ name: string; extensions: string[] }> }) => {
@@ -172,9 +173,10 @@ export function setupIPC(): void {
     killProcess(id);
   });
 
-  // 无超时工具命令执行（AI Tool Calling 集成）
-  ipcMain.handle('workspace:execTool', async (_, command: string, cwd?: string) => {
-    sendLog('info', `🔧 workspace:execTool`, `${command.slice(0, 200)} | cwd: ${cwd || '默认'}`);
-    return execWorkspaceCommand(command, cwd);
+  // 终止当前 AI 工具命令
+  ipcMain.handle('cmd:kill', async () => {
+    const killed = killToolProcess();
+    sendLog('info', `🔧 cmd:kill`, killed ? '已终止' : '无正在运行的工具命令');
+    return { killed };
   });
 }

@@ -4,7 +4,7 @@
 
 > 💻 桌面版仓库 | 🌐 [Web 版历史存档](https://gitee.com/thzxx/metona-ollama-web)
 
-![版本](https://img.shields.io/badge/version-3.2.3--desktop-brightgreen)
+![版本](https://img.shields.io/badge/version-3.2.4--desktop-brightgreen)
 ![平台](https://img.shields.io/badge/platform-Windows%20x64-blue)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178c6)
 ![Electron](https://img.shields.io/badge/Electron-33-47848f)
@@ -190,7 +190,7 @@ v3.2 四大子系统协调运作：
 
 | 文件 | 类型 |
 |------|------|
-| `Metona Ollama Setup 3.2.3.exe` | NSIS 安装包（可选目录、创建快捷方式） |
+| `Metona Ollama Setup 3.2.4.exe` | NSIS 安装包（可选目录、创建快捷方式） |
 
 > ⚠️ v3.2.0 起不再提供便携版，仅保留 NSIS 安装包。
 >
@@ -210,7 +210,7 @@ v3.2 四大子系统协调运作：
 ```bash
 git clone https://gitee.com/thzxx/metona-ollama-desktop.git
 cd metona-ollama-desktop
-git checkout metona-ollama-desktop-v3.2.3
+git checkout metona-ollama-desktop-v3.2.4
 
 # 安装依赖（国内使用 npmmirror 加速）
 npm config set registry https://registry.npmmirror.com
@@ -385,52 +385,7 @@ metona-ollama-desktop/
 
 ## 📋 更新日志
 
-完整更新日志和项目发展历程请查看 [docs/CHANGELOG.md](docs/CHANGELOG.md)。
-
-### 最新版本
-
-**v3.2.3** — 工作空间面板常驻显示 & Bug 修复
-- 🖥️ 工作空间面板改为常驻显示（类似执行日志面板），固定宽度 480px，移除关闭按钮和拖拽手柄
-- 🔧 修复 `tool-registry.ts` 缺少 `logInfo` 导入导致 `run_command` 工具调用异常
-
-**v3.2.2** — 工作空间深度集成 & AI Tool Calling 增强
-- 🔧 工作空间与 AI Tool Calling 深度集成，新增 `run_command` 工具在工作空间中可视化执行
-- 📦 构建流程优化：补充手动缓存下载方案，修复 npm install Electron 下载超时问题
-- 📝 更新 docs/BUILD.md：新增故障排查条目和手动缓存完整命令
-
-**v3.2.1** — 日志统一 & 构建优化
-- ♻️ 主进程 5 处 `console.log/error` 全部清除，通过 IPC 接入执行日志面板
-- 📦 移除便携版构建目标，后续仅提供 NSIS 安装包
-- 🗑️ 删除 `docs/V3-TOOL-CALLING.md`，更新 README 和 CHANGELOG
-
-**v3.2.0** — 工作空间面板
-- 🖥️ 右侧可折叠工作空间面板：命令行 Tab + 文件浏览器 Tab
-- 💻 终端界面：实时流式输出、ANSI 颜色支持、多终端 Tab、无超时限制
-- 📁 文件浏览器：目录树、文件预览（带行号）、上级导航
-- 🔌 IPC 双向通信：`on/send` 模式实现流式推送，独立于 Agent Loop 超时体系
-- ⚙️ 设置面板新增工作空间目录配置（默认 `userData/workspace`）
-- 🔒 工作空间安全：复用命令/路径黑名单，窗口关闭自动清理子进程
-- 📦 启动时自动创建工作空间目录
-
-**v3.1.1** — 代码质量 & 桌面原生化
-- ♻️ 渲染进程 58 处 console.log 全部迁移至结构化 log-service
-- 🖥️ 所有文件对话框（上传/保存/导入）改用 Electron 原生对话框
-- 🪙 Header 新增当前会话总 token 消耗统计
-- 🧹 移除浏览器专用代码（fileToBase64/fileToText/downloadFile），统一走 IPC 桥接
-- 🔧 修复 vector-store/importSessions 编译错误，修复 token 统计显示
-- 📦 新增 build-release.sh 一键构建 + restore-build-cache.sh 构建缓存恢复
-
-**v3.0.0-patch2** — 稳定性修复
-- 🔧 Tool Calling IPC 卡死修复（25 秒硬超时 + 多层保护）
-- 🔧 Electron contextIsolation 兼容（自定义 prompt/confirm 弹窗）
-- 🔧 日志面板默认常驻显示，启动日志不再丢失
-- 🔧 新建会话时强制中断生成并恢复发送按钮
-- 📝 对齐 Ollama 官方 Tool Calling 文档
-
-**v3.0.0** — Tool Calling & Agent 记忆系统
-- 🔧 7 个本地工具 + Agent Loop 引擎 + 安全模型
-- 🧠 自动记忆提取 + 跨会话持久化 + 可视化管理
-- ⚡ 记忆检索 → RAG 检索 → Tool Calling 三层协作
+完整更新日志请查看 [docs/CHANGELOG.md](docs/CHANGELOG.md)。
 
 ---
 

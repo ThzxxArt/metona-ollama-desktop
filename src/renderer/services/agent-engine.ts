@@ -32,9 +32,7 @@ const TOOL_USAGE_GUIDE = `【工具使用规则】
 2. 工具调用结果中的 path 字段是权威的文件路径，优先使用它。
 3. 如果对话中从未出现过相关路径，应先用 search_files 或 list_directory 定位，不要凭空猜测路径。
 4. 对同一文件的连续操作（读取→修改、读取→删除），路径必须一致。
-5. 当用户要求执行命令时，使用 run_command 工具执行。run_command 通过工作空间进程管理执行，无超时限制，支持长时间运行的命令。执行完成后，将 stdout/stderr 的结果告知用户。
-6. 如果 run_command 返回 userTerminated=true，说明用户手动终止了命令，请据此告知用户。
-7. 如果返回 truncated=true，说明命令输出超过 5MB 被截断，应告知用户完整输出可在工作空间面板查看。`;
+5. 当用户要求执行命令时，使用 run_command 工具执行。命令通过工作空间终端实时执行并显示，执行完成后将 stdout/stderr 结果告知用户。`;
 
 export interface AgentCallbacks {
   onThinking: (text: string) => void;

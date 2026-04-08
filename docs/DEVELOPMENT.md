@@ -170,11 +170,13 @@ import {
 
 ### 5.3 工作空间与 AI 集成
 
-- AI 通过 `run_command` 工具调用工作空间进程管理
-- 执行路径：`tool-registry.ts` → `bridge.workspace.execTool()` → IPC → `workspace.ts execWorkspaceCommand()`
-- 无超时限制，进程自然结束后返回完整输出
-- 输出上限：5MB（超出标记 `truncated=true`）
-- 用户可随时通过设置禁用 `run_command`
+- AI 通过 `run_command` 工具执行命令，命令在工作空间终端实时显示
+- 执行路径：`tool-registry.ts` → `bridge.workspace.execTool()` → IPC `tool:execute` → `handleRunCommand()` → `spawn` 子进程
+- 主进程 `handleRunCommand` 执行命令，stdout/stderr 通过 `cmd:output` 实时推送到渲染进程终端面板
+- 进程结束后通过 `cmd:done` 通知渲染进程，结果回传 AI
+- 用户可通过工作空间面板停止按钮终止命令（`cmd:kill`）
+- 命令执行前经过 `checkCommandAllowed()` 安全检查
+- 用户确认后才执行（Agent Loop 的 `needsConfirmation` 机制）
 
 ---
 
@@ -221,6 +223,24 @@ npm start              # 构建并运行
 npm run dist           # 构建 Windows 安装包
 ```
 
+### 版本号更新
+
+更新版本号时，需同步修改以下文件：
+
+| 文件 | 内容 |
+|------|------|
+| `package.json` | `"version": "X.Y.Z"` |
+| `src/renderer/index.html` | `<span class="app-version">vX.Y.Z</span>` |
+| `README.md` | 版本徽章、下载文件名、构建分支引用 |
+| `docs/BUILD.md` | 构建分支引用、新增构建日志条目 |
+| `docs/CHANGELOG.md` | 版本分支结构链、新增版本说明条目 |
+
+### 更新日志
+
+- **所有更新日志只写在 `docs/CHANGELOG.md`**
+- `README.md` 不写历史版本记录，只保留一行链接指向 `docs/CHANGELOG.md`
+- 版本分支结构链在 `docs/CHANGELOG.md` 顶部维护
+
 ### 7.2 发布流程
 
 1. 更新 `package.json` 版本号
@@ -239,8 +259,15 @@ npm run dist           # 构建 Windows 安装包
 
 - `master` — 稳定发布版本
 - `develop` — 开发主分支
+- `metona-ollama-desktop-vX.Y.Z` — 每个版本对应的发布分支
 - `feature/*` — 功能开发
 - `fix/*` — Bug 修复
+
+### 提交规则
+
+- **默认只推送到当前所在分支**
+- 需要同步到其他分支时，用户会明确指定
+- 不要自作主张往多个分支推送
 
 ### Commit 规范
 

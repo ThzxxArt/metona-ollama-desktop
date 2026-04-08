@@ -39,6 +39,17 @@ let fileTree: FileNode[] = [];
 let previewFile: { name: string; content: string; path: string } | null = null;
 let _counter = 0;
 
+/** 当前正在运行的 AI 命令（用于用户手动终止时通知 AI） */
+let currentAiCommand: string | null = null;
+
+/** 终止通知回调（由外部设置） */
+let onToolTerminated: ((command: string) => void) | null = null;
+
+/** 设置终止通知回调 */
+export function setOnToolTerminated(cb: (command: string) => void): void {
+  onToolTerminated = cb;
+}
+
 function genId(): string {
   return `ws_${Date.now()}_${++_counter}`;
 }
@@ -171,10 +182,15 @@ export async function initWorkspacePanel(): Promise<void> {
     handleProcessExit(data.id, data.code);
   });
 
-  // 监听 AI Tool Calling 命令输出，同步到终端面板
-  bridge.workspace.onToolOutput((data) => {
-    logDebug('工作空间收到工具输出', `command: ${data.command.slice(0, 50)} | exitCode: ${data.exitCode}`);
-    appendToolOutput(data.command, data.stdout, data.stderr, data.exitCode);
+  // 监听 AI 命令实时输出，流式推送到终端面板
+  bridge.workspace.onCmdOutput((data) => {
+    appendToolStreamOutput(data.command, data.type, data.data);
+  });
+
+  // 监听 AI 命令执行完毕
+  bridge.workspace.onCmdDone((data) => {
+    logDebug('工作空间 AI 命令完成', `command: ${data.command.slice(0, 50)} | exitCode: ${data.exitCode}`);
+    handleToolDone(data.command, data.exitCode);
   });
 
   // 绑定 UI 事件
@@ -190,28 +206,6 @@ function bindEvents(): void {
   // Tab 切换
   document.querySelector('#wsTabTerminal')?.addEventListener('click', () => switchTab('terminal'));
   document.querySelector('#wsTabFiles')?.addEventListener('click', () => switchTab('files'));
-
-  // 终端输入
-  const termInput = document.querySelector('#wsTermInput') as HTMLInputElement;
-  termInput?.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      const cmd = termInput.value.trim();
-      if (cmd) {
-        executeCommand(cmd);
-        termInput.value = '';
-      }
-    }
-  });
-
-  // 执行按钮
-  document.querySelector('#wsExecBtn')?.addEventListener('click', () => {
-    const cmd = termInput?.value.trim();
-    if (cmd) {
-      executeCommand(cmd);
-      termInput.value = '';
-    }
-  });
 
   // 停止按钮
   document.querySelector('#wsStopBtn')?.addEventListener('click', killCurrentProcess);
@@ -274,56 +268,29 @@ function getActiveSession(): TerminalSession | undefined {
   return terminalSessions.find(s => s.id === activeTerminalId);
 }
 
-function executeCommand(command: string): void {
-  const session = getActiveSession();
-  if (!session) {
-    logError('工作空间执行失败', '无活跃终端会话');
-    return;
-  }
-
-  const bridge = window.metonaDesktop;
-  if (!bridge?.isDesktop) {
-    logError('工作空间执行失败', '非桌面环境');
-    return;
-  }
-
-  // 显示命令
-  session.lines.push({ type: 'system', text: `$ ${command}` });
-  session.running = true;
-  session.autoScroll = true;
-
-  renderTerminal();
-
-  const cwd = currentFileDir || workspaceDir;
-  logInfo('工作空间执行命令', `ID: ${session.id} | ${command.slice(0, 100)} | cwd: ${cwd}`);
-  bridge.workspace.exec({ id: session.id, command, cwd });
-}
-
-/** AI Tool Calling 命令输出 → 追加到活跃终端 */
-function appendToolOutput(command: string, stdout: string, stderr: string, exitCode: number | null): void {
+/** AI Tool Calling 实时输出 → 流式追加到活跃终端 */
+function appendToolStreamOutput(command: string, type: 'stdout' | 'stderr', data: string): void {
   const session = getActiveSession();
   if (!session) return;
 
-  // 显示执行的命令
-  session.lines.push({ type: 'system', text: `$ ${command} (AI)` });
-
-  // 显示 stdout
-  if (stdout) {
-    for (const line of stdout.split('\n')) {
-      if (line) session.lines.push({ type: 'stdout', text: line });
-    }
+  // 首次输出时显示命令头
+  if (!currentAiCommand) {
+    currentAiCommand = command;
+    session.running = true;
+    session.lines.push({ type: 'system', text: `$ ${command} (AI)` });
+    updateHint();
+    updateStopBtnState();
   }
 
-  // 显示 stderr
-  if (stderr) {
-    for (const line of stderr.split('\n')) {
-      if (line) session.lines.push({ type: 'stderr', text: line });
+  // 流式追加输出（按行分割，保留最后一行用于后续追加）
+  const lines = data.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (i < lines.length - 1 || line) {
+      const cleanLine = line.replace(/\r/g, '');
+      if (cleanLine) session.lines.push({ type, text: cleanLine });
     }
   }
-
-  // 显示退出状态
-  const exitMsg = exitCode === 0 ? '✓ AI 命令执行成功' : `✗ AI 命令退出 (code: ${exitCode})`;
-  session.lines.push({ type: 'system', text: exitMsg });
 
   // 限制最大行数
   if (session.lines.length > 3000) {
@@ -331,6 +298,23 @@ function appendToolOutput(command: string, stdout: string, stderr: string, exitC
   }
 
   renderTerminal();
+}
+
+/** AI Tool Calling 命令执行完毕 */
+function handleToolDone(command: string, exitCode: number | null): void {
+  const session = getActiveSession();
+  if (!session) return;
+
+  // 显示退出状态
+  const exitMsg = exitCode === 0 ? '✓ AI 命令执行成功' : `✗ AI 命令退出 (code: ${exitCode})`;
+  session.lines.push({ type: 'system', text: exitMsg });
+
+  session.running = false;
+  currentAiCommand = null;
+
+  renderTerminal();
+  updateStopBtnState();
+  updateHint();
 }
 
 function appendTerminalOutput(sessionId: string, type: 'stdout' | 'stderr', data: string): void {
@@ -389,14 +373,32 @@ function handleProcessExit(sessionId: string, code: number | null): void {
 
 function killCurrentProcess(): void {
   const session = getActiveSession();
-  if (!session || !session.running) return;
+  if (!session) return;
 
   const bridge = window.metonaDesktop;
   if (!bridge?.isDesktop) return;
 
-  bridge.workspace.kill(session.id);
-  session.lines.push({ type: 'system', text: '■ 已发送终止信号' });
+  // 终止用户终端进程（如果有）
+  if (session.running) {
+    bridge.workspace.kill(session.id);
+  }
+
+  // 终止当前 AI 命令
+  bridge.workspace.cmdKill();
+
+  const cmd = currentAiCommand;
+  session.lines.push({ type: 'system', text: '■ 命令已手动终止' });
+  session.running = false;
+  currentAiCommand = null;
+
   renderTerminal();
+  updateStopBtnState();
+  updateHint();
+
+  // 通知 AI 命令被用户终止
+  if (cmd && onToolTerminated) {
+    onToolTerminated(cmd);
+  }
 }
 
 function clearTerminal(): void {
@@ -649,10 +651,21 @@ function renderPreview(): void {
 function updateStopBtnState(): void {
   const stopBtn = document.querySelector('#wsStopBtn') as HTMLButtonElement;
   if (!stopBtn) return;
-  const session = getActiveSession();
-  const running = session?.running || false;
+  const running = currentAiCommand !== null;
   stopBtn.disabled = !running;
   stopBtn.classList.toggle('active', running);
+}
+
+function updateHint(): void {
+  const hint = document.querySelector('#wsTermHint') as HTMLElement;
+  if (!hint) return;
+  if (currentAiCommand) {
+    hint.textContent = `⏳ AI 正在执行: ${currentAiCommand.slice(0, 40)}${currentAiCommand.length > 40 ? '...' : ''}`;
+    hint.classList.add('running');
+  } else {
+    hint.textContent = '等待 AI 执行命令...';
+    hint.classList.remove('running');
+  }
 }
 
 // ── 工具函数 ──
@@ -675,23 +688,6 @@ function formatSize(bytes: number): string {
 }
 
 // ── 外部调用接口 ──
-
-/** 从聊天区域调用：在工作空间执行命令 */
-export function execInWorkspace(command: string): void {
-  // 切换到终端 tab
-  activeTab = 'terminal';
-
-  // 使用当前活跃终端或创建新的
-  const session = getActiveSession();
-  if (session?.running) {
-    // 当前终端有进程在跑，新建一个
-    const num = terminalSessions.length + 1;
-    createTerminalSession(`终端 ${num}`);
-  }
-
-  renderPanel();
-  executeCommand(command);
-}
 
 /** 获取工作空间目录 */
 export function getWorkspaceDirPath(): string {
