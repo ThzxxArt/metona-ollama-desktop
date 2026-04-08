@@ -20,6 +20,9 @@ export const DEFAULT_WORKSPACE_DIR = path.join(app.getPath('userData'), 'workspa
 /** 活跃进程 Map */
 const activeProcesses = new Map<string, ChildProcess>();
 
+/** 当前 AI 工具命令进程 ID（用于用户手动终止） */
+let _currentToolProcessId: string | null = null;
+
 /** 确保工作空间目录存在 */
 export function ensureWorkspaceDir(): void {
   if (!fs.existsSync(DEFAULT_WORKSPACE_DIR)) {
@@ -253,6 +256,7 @@ export function execWorkspaceCommand(
       });
 
       activeProcesses.set(cmdId, proc);
+      _currentToolProcessId = cmdId;
 
       proc.stdout.on('data', (data: Buffer) => {
         if (stdoutBuf.length < MAX_OUTPUT) {
@@ -280,6 +284,7 @@ export function execWorkspaceCommand(
 
       proc.on('close', (code) => {
         activeProcesses.delete(cmdId);
+        if (_currentToolProcessId === cmdId) _currentToolProcessId = null;
         const duration = Date.now() - startTime;
         sendLog(
           code === 0 ? 'success' : 'warn',
@@ -299,6 +304,7 @@ export function execWorkspaceCommand(
 
       proc.on('error', (err) => {
         activeProcesses.delete(cmdId);
+        if (_currentToolProcessId === cmdId) _currentToolProcessId = null;
         const duration = Date.now() - startTime;
         sendLog('error', `🔧 execWorkspaceCommand 失败`, `${cmdId} | ${err.message}`);
         resolve({
@@ -333,4 +339,15 @@ export function execWorkspaceCommand(
  */
 export function terminateWorkspaceCommand(commandId: string): boolean {
   return killProcess(commandId);
+}
+
+/**
+ * 终止当前正在运行的 AI 工具命令
+ * @returns 是否成功终止
+ */
+export function terminateCurrentToolCommand(): boolean {
+  if (!_currentToolProcessId) return false;
+  const id = _currentToolProcessId;
+  _currentToolProcessId = null;
+  return killProcess(id);
 }

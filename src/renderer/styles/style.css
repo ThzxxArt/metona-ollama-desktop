@@ -2667,7 +2667,7 @@ html, body {
 
 .workspace-panel {
     position: fixed;
-    top: 90px; /* header(44px) + model-bar(46px) */
+    top: 92px; /* header(44px) + border(1px) + model-bar(46px) + border(1px) */
     right: 0;
     bottom: 0;
     width: 480px;
@@ -2838,31 +2838,39 @@ html, body {
 .ws-term-toolbar {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 4px;
     padding: 6px 8px;
     border-top: 1px solid var(--border-default, rgba(255,255,255,0.08));
     background: var(--bg-layer-alt, #2a2a2a);
 }
 
-.ws-term-input {
+.ws-term-hint {
     flex: 1;
-    background: var(--bg-layer, #383838);
-    border: 1px solid var(--border-default, rgba(255,255,255,0.08));
-    border-radius: 4px;
-    color: var(--text-primary, #fff);
-    padding: 6px 10px;
-    font-size: 12px;
-    font-family: 'Cascadia Code', 'Consolas', 'Courier New', monospace;
-    outline: none;
-    transition: border-color 0.15s;
-}
-
-.ws-term-input:focus {
-    border-color: var(--accent, #60CDFF);
-}
-
-.ws-term-input::placeholder {
+    font-size: 11px;
     color: var(--text-tertiary, #666);
+    font-family: 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding: 0 4px;
+}
+
+.ws-term-hint.running {
+    color: var(--accent, #60CDFF);
+    animation: hint-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes hint-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+
+.ws-term-toolbar-btns {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex-shrink: 0;
 }
 
 .ws-toolbar-btn {

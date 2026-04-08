@@ -61,6 +61,8 @@ contextBridge.exposeInMainWorld('metonaDesktop', {
     },
     /** 无超时命令执行，用于 AI Tool Calling */
     execTool: (command: string, cwd?: string) => ipcRenderer.invoke('workspace:execTool', command, cwd),
+    /** 终止当前 AI 工具命令 */
+    killTool: () => ipcRenderer.invoke('workspace:killTool'),
     /** AI Tool Calling 命令输出 → 同步到工作空间终端 */
     onToolOutput: (callback: (data: { command: string; stdout: string; stderr: string; exitCode: number | null }) => void) => {
       ipcRenderer.on('workspace:toolOutput', (_: unknown, data: { command: string; stdout: string; stderr: string; exitCode: number | null }) => callback(data));

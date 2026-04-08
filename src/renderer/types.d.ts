@@ -243,6 +243,8 @@ export interface MetonaDesktopAPI {
     execTool: (command: string, cwd?: string) => Promise<{ success: boolean; stdout: string; stderr: string; exitCode: number | null; duration: number; userTerminated: boolean; truncated: boolean }>;
     /** AI Tool Calling 命令输出 → 同步到工作空间终端 */
     onToolOutput: (callback: (data: { command: string; stdout: string; stderr: string; exitCode: number | null }) => void) => void;
+    /** 终止当前 AI 工具命令 */
+    killTool: () => Promise<{ killed: boolean }>;
   };
 }
 

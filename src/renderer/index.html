@@ -182,28 +182,25 @@
         <div class="ws-term-tab-bar" id="wsTermTabBar"></div>
         <div class="ws-term-output" id="wsTermOutput"></div>
         <div class="ws-term-toolbar">
-            <input class="ws-term-input" id="wsTermInput" type="text" placeholder="输入命令，Enter 执行..." spellcheck="false">
-            <button class="ws-toolbar-btn" id="wsExecBtn" title="执行">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <polygon points="5 3 19 12 5 21 5 3"/>
-                </svg>
-            </button>
-            <button class="ws-toolbar-btn ws-stop-btn" id="wsStopBtn" title="停止" disabled>
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                    <rect x="6" y="6" width="12" height="12" rx="1"/>
-                </svg>
-            </button>
-            <button class="ws-toolbar-btn" id="wsClearBtn" title="清空">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <polyline points="3 6 5 6 21 6"/>
-                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-                </svg>
-            </button>
-            <button class="ws-toolbar-btn" id="wsNewTabBtn" title="新建终端">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-                </svg>
-            </button>
+            <span class="ws-term-hint" id="wsTermHint">等待 AI 执行命令...</span>
+            <div class="ws-term-toolbar-btns">
+                <button class="ws-toolbar-btn ws-stop-btn" id="wsStopBtn" title="终止当前命令" disabled>
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                        <rect x="6" y="6" width="12" height="12" rx="1"/>
+                    </svg>
+                </button>
+                <button class="ws-toolbar-btn" id="wsClearBtn" title="清空">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="3 6 5 6 21 6"/>
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                    </svg>
+                </button>
+                <button class="ws-toolbar-btn" id="wsNewTabBtn" title="新建终端">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                    </svg>
+                </button>
+            </div>
         </div>
     </div>
 
