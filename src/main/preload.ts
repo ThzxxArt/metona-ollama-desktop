@@ -60,6 +60,10 @@ contextBridge.exposeInMainWorld('metonaDesktop', {
       ipcRenderer.on('workspace:exit', (_: unknown, data: { id: string; code: number | null }) => callback(data));
     },
     /** 无超时命令执行，用于 AI Tool Calling */
-    execTool: (command: string, cwd?: string) => ipcRenderer.invoke('workspace:execTool', command, cwd)
+    execTool: (command: string, cwd?: string) => ipcRenderer.invoke('workspace:execTool', command, cwd),
+    /** AI Tool Calling 命令输出 → 同步到工作空间终端 */
+    onToolOutput: (callback: (data: { command: string; stdout: string; stderr: string; exitCode: number | null }) => void) => {
+      ipcRenderer.on('workspace:toolOutput', (_: unknown, data: { command: string; stdout: string; stderr: string; exitCode: number | null }) => callback(data));
+    }
   }
 });

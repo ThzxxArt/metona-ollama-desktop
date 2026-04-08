@@ -5,11 +5,9 @@
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { exec } from 'child_process';
-import { promisify } from 'util';
 import { checkPathAllowed, checkCommandAllowed } from './tool-security.js';
-
-const execAsync = promisify(exec);
+import { mainWindow } from './main.js';
+import { execWorkspaceCommand } from './workspace.js';
 
 export interface ToolResult {
   success: boolean;
@@ -270,33 +268,33 @@ export async function handleRunCommand(params: { command: string; cwd?: string; 
     const cmdCheck = checkCommandAllowed(params.command);
     if (!cmdCheck.ok) return { success: false, error: cmdCheck.reason };
 
-    const timeout = Math.min(params.timeout || 30000, 120000);
-    const cwd = params.cwd ? path.resolve(params.cwd) : process.env.HOME || '/';
+    // 通过 workspace 子进程执行，复用安全检查和进程管理
+    const result = await execWorkspaceCommand(params.command, params.cwd);
 
-    const cwdAllowed = checkPathAllowed(cwd, 'read');
-    if (!cwdAllowed.ok) return { success: false, error: cwdAllowed.reason };
-
-    const start = Date.now();
-    const { stdout, stderr } = await execAsync(params.command, {
-      cwd,
-      timeout,
-      maxBuffer: 100 * 1024
-    });
+    // 将命令和输出同步推送到工作空间终端面板
+    if (mainWindow) {
+      mainWindow.webContents.send('workspace:toolOutput', {
+        command: params.command,
+        stdout: result.stdout,
+        stderr: result.stderr,
+        exitCode: result.exitCode
+      });
+    }
 
     return {
-      success: true,
-      stdout: stdout.slice(0, 100 * 1024),
-      stderr: stderr.slice(0, 100 * 1024),
-      exitCode: 0,
-      duration: Date.now() - start
+      success: result.success,
+      stdout: result.stdout,
+      stderr: result.stderr,
+      exitCode: result.exitCode,
+      duration: result.duration
     };
   } catch (err) {
-    const error = err as { stdout?: string; stderr?: string; code?: number; message: string };
+    const error = err as { message: string };
     return {
       success: false,
-      stdout: error.stdout?.slice(0, 100 * 1024) || '',
-      stderr: error.stderr?.slice(0, 100 * 1024) || error.message,
-      exitCode: error.code || 1,
+      stdout: '',
+      stderr: error.message,
+      exitCode: 1,
       error: error.message
     };
   }
