@@ -8,7 +8,7 @@ import { encryptData, decryptData } from '../services/crypto.js';
 import { setMemoryEnabled } from '../services/memory-manager.js';
 import { setToolEnabled } from '../services/tool-registry.js';
 import { logSetting, logInfo, logWarn, logError, logSuccess } from '../services/log-service.js';
-import { updateConnectionInfo, updateRunningModels } from './header.js';
+import { checkConnection, updateConnectionInfo, updateRunningModels } from './header.js';
 import { loadModels } from './model-bar.js';
 import { showToast } from './toast.js';
 import { showConfirm } from './prompt-modal.js';
@@ -35,6 +35,7 @@ export function initSettingsModal(): void {
     state.set(KEYS.API, api);
     if (db) await db.saveSetting('serverUrl', url);
     updateConnectionInfo();
+    checkConnection();
     loadModels();
   }, 500);
   document.querySelector('#inputServerUrl')!.addEventListener('input', saveServerUrl);
