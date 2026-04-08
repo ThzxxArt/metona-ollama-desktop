@@ -10,6 +10,11 @@ import { checkPathAllowed, checkCommandAllowed } from './tool-security.js';
 import { mainWindow } from './main.js';
 import { getWorkspaceDir } from './workspace.js';
 
+/** 发送日志到渲染进程日志面板 */
+function sendLog(level: 'info' | 'success' | 'warn' | 'error' | 'debug', message: string, detail?: string): void {
+  mainWindow?.webContents.send('main:log', { level, message, detail });
+}
+
 export interface ToolResult {
   success: boolean;
   [key: string]: unknown;
@@ -270,11 +275,19 @@ let _toolProc: ReturnType<typeof spawn> | null = null;
 export async function handleRunCommand(params: { command: string; cwd?: string; timeout?: number }): Promise<ToolResult> {
   try {
     const cmdCheck = checkCommandAllowed(params.command);
-    if (!cmdCheck.ok) return { success: false, error: cmdCheck.reason };
+    if (!cmdCheck.ok) {
+      sendLog('warn', `🔧 run_command 被拦截`, `${params.command.slice(0, 100)} | ${cmdCheck.reason}`);
+      return { success: false, error: cmdCheck.reason };
+    }
 
     const cwd = params.cwd ? path.resolve(params.cwd) : getWorkspaceDir();
     const dirCheck = checkPathAllowed(cwd, 'read');
-    if (!dirCheck.ok) return { success: false, error: dirCheck.reason };
+    if (!dirCheck.ok) {
+      sendLog('warn', `🔧 run_command 目录被拦截`, `${cwd} | ${dirCheck.reason}`);
+      return { success: false, error: dirCheck.reason };
+    }
+
+    sendLog('info', `🔧 run_command 执行`, `${params.command.slice(0, 200)} | cwd: ${cwd}`);
 
     return new Promise((resolve) => {
       const isWin = process.platform === 'win32';
@@ -307,6 +320,11 @@ export async function handleRunCommand(params: { command: string; cwd?: string; 
       _toolProc.on('close', (code) => {
         _toolProc = null;
         const duration = Date.now() - startTime;
+        sendLog(
+          code === 0 ? 'success' : 'warn',
+          `🔧 run_command 完成`,
+          `exitCode: ${code} | ${duration}ms | stdout: ${stdout.length}B | stderr: ${stderr.length}B`
+        );
         mainWindow?.webContents.send('cmd:done', { command: params.command, exitCode: code });
         resolve({
           success: code === 0,
@@ -320,6 +338,7 @@ export async function handleRunCommand(params: { command: string; cwd?: string; 
       _toolProc.on('error', (err) => {
         _toolProc = null;
         const duration = Date.now() - startTime;
+        sendLog('error', `🔧 run_command 失败`, `${err.message} | ${duration}ms`);
         mainWindow?.webContents.send('cmd:done', { command: params.command, exitCode: 1 });
         resolve({
           success: false,
@@ -332,14 +351,19 @@ export async function handleRunCommand(params: { command: string; cwd?: string; 
       });
     });
   } catch (err) {
+    sendLog('error', `🔧 run_command 异常`, (err as Error).message);
     return { success: false, stdout: '', stderr: (err as Error).message, exitCode: 1, error: (err as Error).message };
   }
 }
 
 /** 终止当前工具命令进程 */
 export function killToolProcess(): boolean {
-  if (!_toolProc) return false;
+  if (!_toolProc) {
+    sendLog('warn', `🔧 cmd:kill`, '无正在运行的工具命令');
+    return false;
+  }
   try { _toolProc.kill('SIGTERM'); } catch { /* ignore */ }
   _toolProc = null;
+  sendLog('info', `🔧 cmd:kill`, '工具命令已终止');
   return true;
 }
