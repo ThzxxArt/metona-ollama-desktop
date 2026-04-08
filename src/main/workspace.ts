@@ -211,7 +211,8 @@ export function getActiveProcessCount(): number {
  */
 export function execWorkspaceCommand(
   command: string,
-  cwd?: string
+  cwd?: string,
+  onOutput?: (type: 'stdout' | 'stderr', data: string) => void
 ): Promise<{ success: boolean; stdout: string; stderr: string; exitCode: number | null; duration: number; userTerminated: boolean; truncated: boolean }> {
   return new Promise((resolve) => {
     const workDir = cwd ? path.resolve(cwd) : _workspaceDir;
@@ -259,8 +260,9 @@ export function execWorkspaceCommand(
       _currentToolProcessId = cmdId;
 
       proc.stdout.on('data', (data: Buffer) => {
+        const str = data.toString();
         if (stdoutBuf.length < MAX_OUTPUT) {
-          stdoutBuf += data.toString();
+          stdoutBuf += str;
           if (stdoutBuf.length > MAX_OUTPUT) {
             stdoutBuf = stdoutBuf.slice(0, MAX_OUTPUT);
             truncated = true;
@@ -268,11 +270,14 @@ export function execWorkspaceCommand(
         } else {
           truncated = true;
         }
+        // 实时推送到渲染进程
+        onOutput?.('stdout', str);
       });
 
       proc.stderr.on('data', (data: Buffer) => {
+        const str = data.toString();
         if (stderrBuf.length < MAX_OUTPUT) {
-          stderrBuf += data.toString();
+          stderrBuf += str;
           if (stderrBuf.length > MAX_OUTPUT) {
             stderrBuf = stderrBuf.slice(0, MAX_OUTPUT);
             truncated = true;
@@ -280,6 +285,8 @@ export function execWorkspaceCommand(
         } else {
           truncated = true;
         }
+        // 实时推送到渲染进程
+        onOutput?.('stderr', str);
       });
 
       proc.on('close', (code) => {

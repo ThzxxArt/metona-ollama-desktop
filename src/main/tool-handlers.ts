@@ -6,7 +6,6 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { checkPathAllowed, checkCommandAllowed } from './tool-security.js';
-import { mainWindow } from './main.js';
 import { execWorkspaceCommand } from './workspace.js';
 
 export interface ToolResult {
@@ -270,16 +269,6 @@ export async function handleRunCommand(params: { command: string; cwd?: string; 
 
     // 通过 workspace 子进程执行，复用安全检查和进程管理
     const result = await execWorkspaceCommand(params.command, params.cwd);
-
-    // 将命令和输出同步推送到工作空间终端面板
-    if (mainWindow) {
-      mainWindow.webContents.send('workspace:toolOutput', {
-        command: params.command,
-        stdout: result.stdout,
-        stderr: result.stderr,
-        exitCode: result.exitCode
-      });
-    }
 
     return {
       success: result.success,

@@ -182,10 +182,15 @@ export async function initWorkspacePanel(): Promise<void> {
     handleProcessExit(data.id, data.code);
   });
 
-  // 监听 AI Tool Calling 命令输出，同步到终端面板
+  // 监听 AI Tool Calling 实时输出，流式推送到终端面板
   bridge.workspace.onToolOutput((data) => {
-    logDebug('工作空间收到工具输出', `command: ${data.command.slice(0, 50)} | exitCode: ${data.exitCode}`);
-    appendToolOutput(data.command, data.stdout, data.stderr, data.exitCode);
+    appendToolStreamOutput(data.command, data.type, data.data);
+  });
+
+  // 监听 AI Tool Calling 命令执行完毕
+  bridge.workspace.onToolDone((data) => {
+    logDebug('工作空间工具命令完成', `command: ${data.command.slice(0, 50)} | exitCode: ${data.exitCode}`);
+    handleToolDone(data.command, data.exitCode);
   });
 
   // 绑定 UI 事件
@@ -263,45 +268,49 @@ function getActiveSession(): TerminalSession | undefined {
   return terminalSessions.find(s => s.id === activeTerminalId);
 }
 
-/** AI Tool Calling 命令输出 → 追加到活跃终端 */
-function appendToolOutput(command: string, stdout: string, stderr: string, exitCode: number | null): void {
+/** AI Tool Calling 实时输出 → 流式追加到活跃终端 */
+function appendToolStreamOutput(command: string, type: 'stdout' | 'stderr', data: string): void {
   const session = getActiveSession();
   if (!session) return;
 
-  // 记录当前 AI 命令
-  currentAiCommand = command;
-  session.running = true;
-  updateHint();
-
-  // 显示执行的命令
-  session.lines.push({ type: 'system', text: `$ ${command} (AI)` });
-
-  // 显示 stdout
-  if (stdout) {
-    for (const line of stdout.split('\n')) {
-      if (line) session.lines.push({ type: 'stdout', text: line });
-    }
+  // 首次输出时显示命令头
+  if (!currentAiCommand) {
+    currentAiCommand = command;
+    session.running = true;
+    session.lines.push({ type: 'system', text: `$ ${command} (AI)` });
+    updateHint();
+    updateStopBtnState();
   }
 
-  // 显示 stderr
-  if (stderr) {
-    for (const line of stderr.split('\n')) {
-      if (line) session.lines.push({ type: 'stderr', text: line });
+  // 流式追加输出（按行分割，保留最后一行用于后续追加）
+  const lines = data.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (i < lines.length - 1 || line) {
+      const cleanLine = line.replace(/\r/g, '');
+      if (cleanLine) session.lines.push({ type, text: cleanLine });
     }
   }
-
-  // 显示退出状态
-  const exitMsg = exitCode === 0 ? '✓ AI 命令执行成功' : `✗ AI 命令退出 (code: ${exitCode})`;
-  session.lines.push({ type: 'system', text: exitMsg });
-
-  // 命令结束
-  session.running = false;
-  currentAiCommand = null;
 
   // 限制最大行数
   if (session.lines.length > 3000) {
     session.lines = session.lines.slice(-2000);
   }
+
+  renderTerminal();
+}
+
+/** AI Tool Calling 命令执行完毕 */
+function handleToolDone(command: string, exitCode: number | null): void {
+  const session = getActiveSession();
+  if (!session) return;
+
+  // 显示退出状态
+  const exitMsg = exitCode === 0 ? '✓ AI 命令执行成功' : `✗ AI 命令退出 (code: ${exitCode})`;
+  session.lines.push({ type: 'system', text: exitMsg });
+
+  session.running = false;
+  currentAiCommand = null;
 
   renderTerminal();
   updateStopBtnState();

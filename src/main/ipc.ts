@@ -173,9 +173,17 @@ export function setupIPC(): void {
   });
 
   // 无超时工具命令执行（AI Tool Calling 集成）
-  ipcMain.handle('workspace:execTool', async (_, command: string, cwd?: string) => {
+  ipcMain.handle('workspace:execTool', async (event, command: string, cwd?: string) => {
     sendLog('info', `🔧 workspace:execTool`, `${command.slice(0, 200)} | cwd: ${cwd || '默认'}`);
-    return execWorkspaceCommand(command, cwd);
+
+    const result = await execWorkspaceCommand(command, cwd, (type, data) => {
+      // 实时推送到工作空间终端
+      event.sender.send('workspace:toolOutput', { command, type, data });
+    });
+
+    // 通知命令执行完毕
+    event.sender.send('workspace:toolDone', { command, exitCode: result.exitCode });
+    return result;
   });
 
   // 终止当前 AI 工具命令
