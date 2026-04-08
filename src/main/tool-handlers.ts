@@ -298,12 +298,19 @@ export async function handleRunCommand(params: { command: string; cwd?: string; 
     return new Promise((resolve) => {
       const isWin = process.platform === 'win32';
       const shell = isWin ? 'cmd.exe' : 'bash';
-      const shellArgs = isWin ? ['/c', params.command] : ['-c', params.command];
+      const actualCmd = isWin ? `chcp 65001 >nul && ${params.command}` : params.command;
+      const shellArgs = isWin ? ['/c', actualCmd] : ['-c', actualCmd];
       const startTime = Date.now();
 
       _toolProc = spawn(shell, shellArgs, {
         cwd,
-        env: { ...process.env, ...(isWin ? {} : { TERM: 'xterm-256color' }) },
+        env: {
+          ...process.env,
+          ...(isWin ? {} : { TERM: 'xterm-256color' }),
+          LANG: 'en_US.UTF-8',
+          LC_ALL: 'en_US.UTF-8',
+          PYTHONIOENCODING: 'utf-8'
+        },
         stdio: ['pipe', 'pipe', 'pipe']
       });
 
@@ -312,13 +319,13 @@ export async function handleRunCommand(params: { command: string; cwd?: string; 
 
       // 实时推送到工作空间终端
       _toolProc.stdout?.on('data', (data: Buffer) => {
-        const str = data.toString();
+        const str = data.toString('utf-8');
         stdout += str;
         mainWindow?.webContents.send('cmd:output', { command: params.command, type: 'stdout', data: str });
       });
 
       _toolProc.stderr?.on('data', (data: Buffer) => {
-        const str = data.toString();
+        const str = data.toString('utf-8');
         stderr += str;
         mainWindow?.webContents.send('cmd:output', { command: params.command, type: 'stderr', data: str });
       });

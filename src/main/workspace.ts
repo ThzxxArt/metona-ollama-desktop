@@ -88,21 +88,30 @@ export function startProcess(
   try {
     const isWin = process.platform === 'win32';
     const shell = isWin ? 'cmd.exe' : 'bash';
-    const shellArgs = isWin ? ['/c', command] : ['-c', command];
+    // Windows cmd 默认代码页为 GBK/CP936，中文输出会乱码
+    // chcp 65001 切换到 UTF-8 代码页，>nul 抑制 chcp 自身的输出
+    const actualCmd = isWin ? `chcp 65001 >nul && ${command}` : command;
+    const shellArgs = isWin ? ['/c', actualCmd] : ['-c', actualCmd];
     const proc = spawn(shell, shellArgs, {
       cwd: workDir,
-      env: { ...process.env, ...(isWin ? {} : { TERM: 'xterm-256color' }) },
+      env: {
+        ...process.env,
+        ...(isWin ? {} : { TERM: 'xterm-256color' }),
+        LANG: 'en_US.UTF-8',
+        LC_ALL: 'en_US.UTF-8',
+        PYTHONIOENCODING: 'utf-8'
+      },
       stdio: ['pipe', 'pipe', 'pipe']
     });
 
     activeProcesses.set(id, proc);
 
     proc.stdout.on('data', (data: Buffer) => {
-      onOutput('stdout', data.toString());
+      onOutput('stdout', data.toString('utf-8'));
     });
 
     proc.stderr.on('data', (data: Buffer) => {
-      onOutput('stderr', data.toString());
+      onOutput('stderr', data.toString('utf-8'));
     });
 
     proc.on('close', (code) => {
@@ -246,17 +255,24 @@ export function execWorkspaceCommand(
     try {
       const isWin = process.platform === 'win32';
       const shell = isWin ? 'cmd.exe' : 'bash';
-      const shellArgs = isWin ? ['/c', command] : ['-c', command];
+      const actualCmd = isWin ? `chcp 65001 >nul && ${command}` : command;
+      const shellArgs = isWin ? ['/c', actualCmd] : ['-c', actualCmd];
       const proc = spawn(shell, shellArgs, {
         cwd: workDir,
-        env: { ...process.env, ...(isWin ? {} : { TERM: 'xterm-256color' }) },
+        env: {
+          ...process.env,
+          ...(isWin ? {} : { TERM: 'xterm-256color' }),
+          LANG: 'en_US.UTF-8',
+          LC_ALL: 'en_US.UTF-8',
+          PYTHONIOENCODING: 'utf-8'
+        },
         stdio: ['pipe', 'pipe', 'pipe']
       });
 
       activeProcesses.set(cmdId, proc);
 
       proc.stdout.on('data', (data: Buffer) => {
-        const str = data.toString();
+        const str = data.toString('utf-8');
         if (stdoutBuf.length < MAX_OUTPUT) {
           stdoutBuf += str;
           if (stdoutBuf.length > MAX_OUTPUT) {
@@ -271,7 +287,7 @@ export function execWorkspaceCommand(
       });
 
       proc.stderr.on('data', (data: Buffer) => {
-        const str = data.toString();
+        const str = data.toString('utf-8');
         if (stderrBuf.length < MAX_OUTPUT) {
           stderrBuf += str;
           if (stderrBuf.length > MAX_OUTPUT) {

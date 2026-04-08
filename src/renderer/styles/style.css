@@ -383,6 +383,13 @@ html, body {
     user-select: none;
 }
 
+.token-icon {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+    opacity: 0.8;
+}
+
 /* ═══ 模型选择栏 ═══ */
 .model-bar {
     display: flex;
@@ -2667,7 +2674,7 @@ html, body {
 
 .workspace-panel {
     position: fixed;
-    top: 92px; /* header(44px) + border(1px) + model-bar(46px) + border(1px) */
+    top: var(--nav-height, 92px); /* JS 动态计算 header + model-bar 实际高度 */
     right: 0;
     bottom: 0;
     width: 480px;

@@ -212,6 +212,8 @@ async function init(): Promise<void> {
     setupDesktopIntegration();
 
     bindGlobalEvents();
+    updateNavHeight();
+    window.addEventListener('resize', updateNavHeight);
 
     await checkConnection();
     await loadModels();
@@ -283,8 +285,23 @@ async function init(): Promise<void> {
     initSettingsModal();
     initHistoryModal();
     setupDesktopIntegration();
+    updateNavHeight();
+    window.addEventListener('resize', updateNavHeight);
     checkConnection().then(loadModels);
   }
+}
+
+/**
+ * 动态计算顶部导航高度（header + model-bar），
+ * 设为 CSS 变量 --nav-height，供 workspace-panel 引用
+ */
+function updateNavHeight(): void {
+  const header = document.querySelector<HTMLElement>('.app-header');
+  const modelBar = document.querySelector<HTMLElement>('.model-bar');
+  const headerH = header?.getBoundingClientRect().height ?? 0;
+  const modelBarH = modelBar?.getBoundingClientRect().height ?? 0;
+  const total = Math.ceil(headerH + modelBarH);
+  document.documentElement.style.setProperty('--nav-height', `${total}px`);
 }
 
 function bindGlobalEvents(): void {
@@ -297,6 +314,18 @@ function bindGlobalEvents(): void {
       closeLightbox();
       (document.querySelector('#helpModal') as HTMLElement).style.display = 'none';
       (document.querySelector('#kbModal') as HTMLElement).style.display = 'none';
+    }
+
+    // Ctrl+K — 知识库管理
+    if (e.ctrlKey && e.key === 'k') {
+      e.preventDefault();
+      document.querySelector('#btnKB')?.dispatchEvent(new Event('click'));
+    }
+
+    // Ctrl+M — 记忆面板
+    if (e.ctrlKey && e.key === 'm') {
+      e.preventDefault();
+      document.querySelector('#btnMemory')?.dispatchEvent(new Event('click'));
     }
   });
 
