@@ -29,7 +29,7 @@ interface FileNode {
   loaded?: boolean;
 }
 
-let panelVisible = false;
+let panelVisible = true; // 常驻显示，不可关闭
 let activeTab: 'terminal' | 'files' = 'terminal';
 let terminalSessions: TerminalSession[] = [];
 let activeTerminalId = '';
@@ -181,12 +181,6 @@ export async function initWorkspacePanel(): Promise<void> {
 }
 
 function bindEvents(): void {
-  // 切换面板显示
-  document.querySelector('#btnWorkspace')?.addEventListener('click', togglePanel);
-  document.querySelector('#btnWorkspaceClose')?.addEventListener('click', () => {
-    if (panelVisible) togglePanel();
-  });
-
   // Tab 切换
   document.querySelector('#wsTabTerminal')?.addEventListener('click', () => switchTab('terminal'));
   document.querySelector('#wsTabFiles')?.addEventListener('click', () => switchTab('files'));
@@ -243,58 +237,9 @@ function bindEvents(): void {
     previewFile = null;
     renderPanel();
   });
-
-  // 拖拽调整宽度
-  setupResizer();
 }
 
-function setupResizer(): void {
-  const resizer = document.querySelector('#wsResizer') as HTMLElement;
-  const panel = document.querySelector('#workspacePanel') as HTMLElement;
-  if (!resizer || !panel) return;
-
-  let startX = 0;
-  let startWidth = 0;
-
-  resizer.addEventListener('mousedown', (e) => {
-    e.preventDefault();
-    startX = e.clientX;
-    startWidth = panel.offsetWidth;
-
-    const onMouseMove = (e: MouseEvent) => {
-      const delta = startX - e.clientX; // 向左拖拽增大宽度
-      const newWidth = Math.min(700, Math.max(300, startWidth + delta));
-      panel.style.width = newWidth + 'px';
-    };
-
-    const onMouseUp = () => {
-      document.removeEventListener('mousemove', onMouseMove);
-      document.removeEventListener('mouseup', onMouseUp);
-    };
-
-    document.addEventListener('mousemove', onMouseMove);
-    document.addEventListener('mouseup', onMouseUp);
-  });
-}
-
-// ── 面板控制 ──
-export function togglePanel(): void {
-  panelVisible = !panelVisible;
-  const panel = document.querySelector('#workspacePanel') as HTMLElement;
-  const btn = document.querySelector('#btnWorkspace') as HTMLElement;
-  const mainWrap = document.querySelector('#mainWrap') as HTMLElement;
-
-  if (panel) panel.style.display = panelVisible ? '' : 'none';
-  if (btn) btn.classList.toggle('active', panelVisible);
-  if (mainWrap) mainWrap.classList.toggle('with-workspace', panelVisible);
-
-  if (panelVisible) {
-    if (activeTab === 'files') loadFiles(currentFileDir || workspaceDir);
-    const termInput = document.querySelector('#wsTermInput') as HTMLElement;
-    termInput?.focus();
-  }
-}
-
+// ── 面板控制 ──（常驻显示，无需切换）
 function switchTab(tab: 'terminal' | 'files'): void {
   activeTab = tab;
   renderPanel();
@@ -693,9 +638,6 @@ function formatSize(bytes: number): string {
 
 /** 从聊天区域调用：在工作空间执行命令 */
 export function execInWorkspace(command: string): void {
-  // 确保面板可见
-  if (!panelVisible) togglePanel();
-
   // 切换到终端 tab
   activeTab = 'terminal';
 
