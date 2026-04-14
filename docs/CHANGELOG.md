@@ -3,7 +3,7 @@
 ## 分支结构
 
 **桌面版主线**（`master`）：
-- `metona-ollama-desktop-v1.1` → `metona-ollama-desktop-v2` → `metona-ollama-desktop-v3.0.0` → `metona-ollama-desktop-v3.1.0` → `metona-ollama-desktop-v3.1.1` → `metona-ollama-desktop-v3.2.0` → `metona-ollama-desktop-v3.2.1` → `metona-ollama-desktop-v3.2.2` → `metona-ollama-desktop-v3.2.3` → `metona-ollama-desktop-v3.2.4` → `metona-ollama-desktop-v3.2.5`（当前）
+- `metona-ollama-desktop-v1.1` → `metona-ollama-desktop-v2` → `metona-ollama-desktop-v3.0.0` → `metona-ollama-desktop-v3.1.0` → `metona-ollama-desktop-v3.1.1` → `metona-ollama-desktop-v3.2.0` → `metona-ollama-desktop-v3.2.1` → `metona-ollama-desktop-v3.2.2` → `metona-ollama-desktop-v3.2.3` → `metona-ollama-desktop-v3.2.4` → `metona-ollama-desktop-v3.2.5`（当前，待创建）
 
 **Web 版历史**已独立为 [metona-ollama-web](https://gitee.com/thzxx/metona-ollama-web) 仓库（v1.1.0 ~ v4.0.3）。
 
@@ -11,13 +11,30 @@
 
 ## 桌面版（Desktop）
 
-### Desktop v3.2.5 — 工具路径修复 & 安全性增强
+### Desktop v3.2.5 — 工具路径修复 & 安全性增强 & 工作空间重构
 
 - 🔧 **修复工具相对路径解析错误**
   - 所有文件系统工具（`read_file` / `write_file` / `list_directory` / `search_files` / `create_directory` / `delete_file`）的相对路径此前用 `path.resolve()` 解析到进程当前工作目录，导致 AI 创建的文件实际写到了错误位置
   - 新增 `resolvePath()` 辅助函数：相对路径统一基于 `getWorkspaceDir()`（工作空间目录）解析，绝对路径保持不变
+- ♻️ **工作空间改为单一终端**
+  - 移除多 Tab 机制，工作空间面板简化为单个终端 + 文件浏览器
+  - 移除标签页栏、新建 Tab 按钮、Tab 切换逻辑
+  - 终端面板直接渲染 `#ws-terminal`，进程管理改用 `currentTermId` 单例模式
+  - 文件浏览器宽度固定 200px，终端区域自适应填充剩余空间
+- 🔧 **修复 token 统计图标显示问题**
+  - Header 中 token 消耗图标从 Unicode 字符（🪙）改为纯 path SVG 内联
+  - 避免 text 元素在部分系统（如旧版 Windows）不显示的问题
+- 🔧 **修复图片/文件读取 Latin1 错误**
+  - `atob()` 解码 Base64 时产生 Latin1 编码，导致中文文件名和中文内容乱码
+  - 图片上传改用 `readFileBase64` IPC 读取，渲染端用 `Uint8Array` + `TextDecoder` 替代 `atob()`
+  - 文件读取同样改用 base64 通道，避免 Latin1 编码丢失
+- 🔧 **修复工作空间面板定位**
+  - 面板顶部对齐修正（从 90px 调整为 92px，匹配 header 高度）
+  - 修复中文乱码：Windows cmd 代码页切换 `chcp 65001` + 环境变量 `LANG/LC_ALL` 设为 UTF-8
+  - 修复快捷键冲突和帮助文档内容更新
 - 📦 **构建产物**
-  - `Metona Ollama Setup 3.2.5.exe`
+  - `Metona Ollama Setup 3.2.5.exe`（78MB）
+  - Gitee Release v3.2.5-desktop（ID: 601311）
 
 ### Desktop v3.2.4 — AI 命令执行走工作空间终端 & Bug 修复
 

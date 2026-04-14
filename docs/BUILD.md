@@ -176,11 +176,15 @@ electron-builder 会自动处理所有依赖下载（Electron、NSIS、winCodeSi
 
 ## 构建日志
 
-### v3.2.5（2026-04-08） — metona-ollama-desktop 仓库
+### v3.2.5（2026-04-14） — metona-ollama-desktop 仓库
 
-- 🔧 修复工具相对路径解析：新增 `resolvePath()` 基于工作空间目录解析
-- 🔧 影响工具：read_file / write_file / list_directory / search_files / create_directory / delete_file
-- ✅ 分支 `metona-ollama-desktop-v3.2.5` 待创建并推送
+- ✅ `Metona Ollama Setup 3.2.5.exe`（78MB）
+- ✅ Gitee Release v3.2.5-desktop（ID: 601311）
+- 🔧 工具相对路径修复、工作空间单一终端重构、token SVG 图标、base64 编码修复
+- ⚠️ 构建问题及处理：
+  1. apt 源 `mirrors.cloud.aliyuncs.com` 不可达 → 切换 `archive.ubuntu.com`
+  2. `restore-build-cache.sh` npmmirror NoSuchKey → 跳过，electron-builder 自动下载
+  3. 无编译错误，构建一次通过
 
 ### v3.2.4（2026-04-08） — metona-ollama-desktop 仓库
 
