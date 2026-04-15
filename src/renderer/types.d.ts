@@ -278,8 +278,6 @@ export type StateKey =
   | 'isHistoryView'
   | 'pendingImages'
   | 'abortController'
-  | 'systemPrompt'
-  | 'systemPromptEnabled'
   | 'numCtx'
   | 'historyPage'
   | 'historySearchQuery'

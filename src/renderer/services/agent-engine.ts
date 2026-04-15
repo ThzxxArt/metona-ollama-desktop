@@ -68,11 +68,6 @@ export async function runAgentLoop(
 
   let systemPromptParts: string[] = [];
 
-  if (state.get<boolean>(KEYS.SYSTEM_PROMPT_ENABLED)) {
-    const systemPrompt = state.get<string>(KEYS.SYSTEM_PROMPT, '');
-    if (systemPrompt) systemPromptParts.push(systemPrompt);
-  }
-
   // 注入记忆上下文
   if (isMemoryEnabled() && userContent) {
     const relevantMemories = searchMemories(userContent, 6);

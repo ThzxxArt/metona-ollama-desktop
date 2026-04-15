@@ -361,8 +361,6 @@ export async function sendMessage(): Promise<void> {
   const abortController = new AbortController();
   state.set(KEYS.ABORT_CONTROLLER, abortController);
   const thinkMode = isThinkEnabled();
-  const systemPromptEnabled = state.get<boolean>(KEYS.SYSTEM_PROMPT_ENABLED);
-  const systemPrompt = state.get<string>(KEYS.SYSTEM_PROMPT);
   const numCtx = state.get<number>(KEYS.NUM_CTX, 24576);
 
   let assistantContent = '';
@@ -380,7 +378,6 @@ export async function sendMessage(): Promise<void> {
       stream: true,
       think: thinkMode,
     };
-    if (systemPromptEnabled && systemPrompt) chatParams.system = systemPrompt;
     if (numCtx) chatParams.options = { num_ctx: numCtx, temperature };
 
     // ── Agent 记忆注入 ──
@@ -390,9 +387,7 @@ export async function sendMessage(): Promise<void> {
         const relevantMemories = searchMemories(userMessage, 6);
         if (relevantMemories.length > 0) {
           const memoryContext = buildMemoryContext(relevantMemories);
-          chatParams.system = chatParams.system
-            ? (chatParams.system as string) + '\n\n' + memoryContext
-            : memoryContext;
+          chatParams.system = memoryContext;
           for (const m of relevantMemories) {
             await markMemoryUsed(m.id);
           }

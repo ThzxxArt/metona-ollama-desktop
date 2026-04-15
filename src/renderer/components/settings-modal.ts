@@ -40,23 +40,6 @@ export function initSettingsModal(): void {
   }, 500);
   document.querySelector('#inputServerUrl')!.addEventListener('input', saveServerUrl);
 
-  document.querySelector('#toggleSystemPrompt')!.addEventListener('change', async (e) => {
-    const db = state.get<ChatDB | null>(KEYS.DB);
-    const checked = (e.target as HTMLInputElement).checked;
-    state.set(KEYS.SYSTEM_PROMPT_ENABLED, checked);
-    (document.querySelector('#inputSystemPrompt') as HTMLTextAreaElement).disabled = !checked;
-    if (db) await db.saveSetting('systemPromptEnabled', checked);
-    logSetting('系统提示词', checked ? '开启' : '关闭');
-  });
-
-  const saveSystemPrompt = debounce(async () => {
-    const db = state.get<ChatDB | null>(KEYS.DB);
-    const val = (document.querySelector('#inputSystemPrompt') as HTMLTextAreaElement).value.trim();
-    state.set(KEYS.SYSTEM_PROMPT, val);
-    if (db) await db.saveSetting('systemPrompt', val);
-  }, 500);
-  document.querySelector('#inputSystemPrompt')!.addEventListener('input', saveSystemPrompt);
-
   const saveNumCtx = debounce(async () => {
     const db = state.get<ChatDB | null>(KEYS.DB);
     const val = (document.querySelector('#inputNumCtx') as HTMLInputElement).value.trim();

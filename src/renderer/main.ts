@@ -226,19 +226,12 @@ async function init(): Promise<void> {
       await db.saveSetting('selectedModel', savedModel);
     }
 
-    const systemPromptEnabled = await db.getSetting('systemPromptEnabled', false);
-    const systemPrompt = await db.getSetting('systemPrompt', '');
     const numCtx = await db.getSetting('numCtx', 24576);
     const temperature = await db.getSetting('temperature', 0.7);
 
-    state.set(KEYS.SYSTEM_PROMPT_ENABLED, systemPromptEnabled);
-    state.set(KEYS.SYSTEM_PROMPT, systemPrompt);
     state.set(KEYS.NUM_CTX, numCtx);
     state.set('temperature', temperature);
 
-    (document.querySelector('#toggleSystemPrompt') as HTMLInputElement).checked = systemPromptEnabled;
-    (document.querySelector('#inputSystemPrompt') as HTMLTextAreaElement).disabled = !systemPromptEnabled;
-    (document.querySelector('#inputSystemPrompt') as HTMLTextAreaElement).value = systemPrompt;
     (document.querySelector('#inputNumCtx') as HTMLInputElement).value = String(numCtx);
     (document.querySelector('#inputTemperature') as HTMLInputElement).value = String(temperature);
     document.querySelector('#tempValue')!.textContent = parseFloat(temperature).toFixed(1);

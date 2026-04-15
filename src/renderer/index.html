@@ -254,15 +254,7 @@
                 </div>
             </div>
             <div class="setting-group">
-                <label class="setting-label">
-                    系统提示词（System Prompt）
-                    <label class="toggle-label" style="margin-left:auto;display:inline-flex;">
-                        <input type="checkbox" id="toggleSystemPrompt">
-                        <span class="toggle-slider"></span>
-                    </label>
-                </label>
-                <textarea class="setting-input" id="inputSystemPrompt" rows="4" placeholder="例如：你是一个专业的编程助手，用中文回答。" style="resize:vertical;min-height:80px;" disabled></textarea>
-                <label class="setting-label" style="margin-top:12px;">上下文长度（num_ctx）</label>
+                <label class="setting-label">上下文长度（num_ctx）</label>
                 <div style="display:flex;gap:8px;align-items:center;">
                     <input class="setting-input" id="inputNumCtx" type="number" min="512" max="131072" step="512" value="24576" style="margin-bottom:0;">
                     <span class="text-muted" style="white-space:nowrap;">tokens</span>
@@ -382,7 +374,7 @@
         </div>
         <div class="modal-body">
             <div class="help-section"><h4>🚀 快速开始</h4><ol><li>确保 Ollama 已启动（默认 <code>http://127.0.0.1:11434</code>，可在设置中修改）</li><li>顶部模型栏选择一个模型，右侧会显示模型能力徽章（🧠 Think / 👁️ Vision / 🔧 Tools / 📚 RAG）</li><li>输入消息，按 <kbd>Enter</kbd> 发送，<kbd>Shift+Enter</kbd> 换行</li></ol></div>
-            <div class="help-section"><h4>💬 聊天功能</h4><ul><li><strong>流式回复</strong> — 实时打字效果，随时点 ■ 停止</li><li><strong>Think 推理</strong> — 设置中开启，让模型展示深度思考过程（需模型支持，如 Qwen3）</li><li><strong>多模态</strong> — 上传图片，模型需支持 Vision 能力</li><li><strong>文件分析</strong> — 支持 50+ 种文本/代码格式，单文件 ≤500KB，内容以代码块发送给模型</li><li><strong>上下文长度</strong> — 设置中调整 <code>num_ctx</code>，越大记忆越长，消耗显存越多</li><li><strong>系统提示词</strong> — 设置中开启，定义 AI 的角色和行为规范</li></ul></div>
+            <div class="help-section"><h4>💬 聊天功能</h4><ul><li><strong>流式回复</strong> — 实时打字效果，随时点 ■ 停止</li><li><strong>Think 推理</strong> — 设置中开启，让模型展示深度思考过程（需模型支持，如 Qwen3）</li><li><strong>多模态</strong> — 上传图片，模型需支持 Vision 能力</li><li><strong>文件分析</strong> — 支持 50+ 种文本/代码格式，单文件 ≤500KB，内容以代码块发送给模型</li><li><strong>上下文长度</strong> — 设置中调整 <code>num_ctx</code>，越大记忆越长，消耗显存越多</li></ul></div>
             <div class="help-section"><h4>🔧 Tool Calling（AI 自主操作）</h4><ul><li>设置中开启后，AI 可以在对话中<strong>自主调用本地工具</strong>，像一个本地 Agent</li><li><strong>7 个工具</strong>：<code>read_file</code> / <code>write_file</code> / <code>list_directory</code> / <code>search_files</code> / <code>create_directory</code> / <code>delete_file</code> / <code>run_command</code></li><li>写入/删除/命令执行等高风险操作会弹出<strong>确认对话框</strong>，你可以批准或拒绝</li><li>危险命令（<code>rm -rf</code>、<code>mkfs</code>、反弹 shell 等）和系统路径（<code>/etc</code>、<code>~/.ssh</code> 等）被自动拦截</li><li>工具调用以<strong>可视化卡片</strong>展示状态（pending → running → success/error）</li><li>最多自动循环 <strong>10 轮</strong>工具调用，也可随时中断</li><li>⚠️ 需要模型支持 Tool Calling（推荐 Qwen3、Llama 3.1+、Mistral）</li></ul></div>
             <div class="help-section"><h4>🧠 Agent 记忆系统</h4><ul><li>设置中开启后，AI 从对话中<strong>自动提取关键信息</strong>（事实/偏好/规则/事件），跨会话持续积累</li><li>对话满 <strong>6 条消息</strong>后自动触发记忆提取</li><li>新对话时自动检索相关记忆注入上下文，让 AI "记住"你</li><li>点击顶部 🧠 按钮打开记忆面板：搜索、筛选、编辑、删除</li><li>记忆存储在本地 IndexedDB，不会上传到任何服务器</li></ul></div>
             <div class="help-section"><h4>📚 知识库 (RAG)</h4><ul><li>点击顶部 📚 按钮打开知识库管理</li><li>创建集合 → 选择嵌入模型（推荐 <code>nomic-embed-text</code>）</li><li>上传文档，自动分块并生成向量索引</li><li>开启 RAG 检索后，聊天时自动检索相关文档增强回答</li></ul></div>

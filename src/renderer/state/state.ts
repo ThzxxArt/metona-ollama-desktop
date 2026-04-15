@@ -141,8 +141,6 @@ export const KEYS = {
   IS_HISTORY_VIEW: 'isHistoryView',
   PENDING_IMAGES: 'pendingImages',
   ABORT_CONTROLLER: 'abortController',
-  SYSTEM_PROMPT: 'systemPrompt',
-  SYSTEM_PROMPT_ENABLED: 'systemPromptEnabled',
   NUM_CTX: 'numCtx',
   HISTORY_PAGE: 'historyPage',
   HISTORY_SEARCH: 'historySearchQuery',
