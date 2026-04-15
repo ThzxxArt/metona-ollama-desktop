@@ -2673,17 +2673,14 @@ html, body {
 /* ═══════════════ 工作空间面板 ═══════════════ */
 
 .workspace-panel {
-    position: fixed;
-    top: var(--nav-height, 92px); /* JS 动态计算 header + model-bar 实际高度 */
-    right: 0;
-    bottom: 0;
     width: 480px;
-    background: var(--bg-solid, #202020);
-    border-left: 1px solid var(--border-default, rgba(255,255,255,0.08));
-    border-top: 1px solid var(--border-default, rgba(255,255,255,0.08));
+    min-width: 480px;
     display: flex;
     flex-direction: column;
+    background: var(--bg-solid, #202020);
+    border-left: 1px solid var(--border-default, rgba(255,255,255,0.08));
     z-index: 10;
+    flex-shrink: 0;
     font-family: 'Cascadia Code', 'Consolas', 'Courier New', monospace;
 }
 
@@ -3083,6 +3080,5 @@ html, body {
 
 /* ── 主内容区自适应 ── */
 
-.main-wrap.with-workspace {
-    margin-right: 480px;
-}
+/* main-wrap.with-workspace 不再需要 margin-right，
+   工作空间面板已改为 flex 子元素，自然占据宽度 */

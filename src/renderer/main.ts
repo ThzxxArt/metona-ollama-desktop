@@ -212,8 +212,6 @@ async function init(): Promise<void> {
     setupDesktopIntegration();
 
     bindGlobalEvents();
-    updateNavHeight();
-    window.addEventListener('resize', updateNavHeight);
 
     await checkConnection();
     await loadModels();
@@ -285,24 +283,11 @@ async function init(): Promise<void> {
     initSettingsModal();
     initHistoryModal();
     setupDesktopIntegration();
-    updateNavHeight();
-    window.addEventListener('resize', updateNavHeight);
     checkConnection().then(loadModels);
   }
 }
 
-/**
- * 动态计算顶部导航高度（header + model-bar），
- * 设为 CSS 变量 --nav-height，供 workspace-panel 引用
- */
-function updateNavHeight(): void {
-  const header = document.querySelector<HTMLElement>('.app-header');
-  const modelBar = document.querySelector<HTMLElement>('.model-bar');
-  const headerH = header?.getBoundingClientRect().height ?? 0;
-  const modelBarH = modelBar?.getBoundingClientRect().height ?? 0;
-  const total = Math.ceil(headerH + modelBarH);
-  document.documentElement.style.setProperty('--nav-height', `${total}px`);
-}
+
 
 function bindGlobalEvents(): void {
   document.querySelector('#btnNewChat')?.addEventListener('click', startNewSession);
