@@ -178,9 +178,14 @@ electron-builder 会自动处理所有依赖下载（Electron、NSIS、winCodeSi
 
 ### v3.2.6（2026-04-15） — metona-ollama-desktop 仓库
 
-- 工作空间面板从 position:fixed 改为 flex 子元素，修复与主内容区错位
-- Token 统计颜色优化（琥珀色图标+数值，消息内 token 高亮）
-- 版本号更新：package.json、index.html、README、CHANGELOG、BUILD、DEVELOPMENT
+- ✅ `Metona Ollama Setup 3.2.6.exe`（78MB）
+- ✅ Gitee Release v3.2.6-desktop（ID: 604992）
+- 🔧 工作空间面板从 position:fixed 改为 flex 子元素，修复与主内容区错位
+- 🎨 Token 统计颜色优化（琥珀色图标+数值，消息内 token 高亮）
+- ⚠️ 构建问题及处理：
+  1. `restore-build-cache.sh` npmmirror NoSuchKey → 跳过，electron-builder 自动下载
+  2. nsis-resources-3.4.1 GitHub 下载 EOF → 使用 ghfast.top 代理手动下载缓存
+  3. 无编译错误，手动缓存后构建一次通过
 
 ### v3.2.5（2026-04-14） — metona-ollama-desktop 仓库
 
