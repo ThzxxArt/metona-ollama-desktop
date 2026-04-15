@@ -3,7 +3,7 @@
 ## 分支结构
 
 **桌面版主线**（`master`）：
-- `metona-ollama-desktop-v1.1` → `metona-ollama-desktop-v2` → `metona-ollama-desktop-v3.0.0` → `metona-ollama-desktop-v3.1.0` → `metona-ollama-desktop-v3.1.1` → `metona-ollama-desktop-v3.2.0` → `metona-ollama-desktop-v3.2.1` → `metona-ollama-desktop-v3.2.2` → `metona-ollama-desktop-v3.2.3` → `metona-ollama-desktop-v3.2.4` → `metona-ollama-desktop-v3.2.5` → `metona-ollama-desktop-v3.2.6`（当前，待创建）
+- `metona-ollama-desktop-v1.1` → `metona-ollama-desktop-v2` → `metona-ollama-desktop-v3.0.0` → `metona-ollama-desktop-v3.1.0` → `metona-ollama-desktop-v3.1.1` → `metona-ollama-desktop-v3.2.0` → `metona-ollama-desktop-v3.2.1` → `metona-ollama-desktop-v3.2.2` → `metona-ollama-desktop-v3.2.3` → `metona-ollama-desktop-v3.2.4` → `metona-ollama-desktop-v3.2.5` → `metona-ollama-desktop-v3.2.6`（当前 develop 分支）
 
 **Web 版历史**已独立为 [metona-ollama-web](https://gitee.com/thzxx/metona-ollama-web) 仓库（v1.1.0 ~ v4.0.3）。
 
@@ -184,7 +184,7 @@
   - 关键词 + 标签 + 重要性加权检索，自动注入上下文
   - IndexedDB 持久化，跨会话积累
   - 可视化记忆管理面板（搜索/筛选/编辑/删除）
-  - 对话 ≥6 条消息后自动触发记忆提取
+  - 对话 ≥3 条消息后自动触发记忆提取
 - ⚡ **全功能协调运作** — 记忆检索 → RAG 检索 → Tool Calling 三层协作
 - 🔧 Agent 预设系统移除，由记忆系统替代
 - 📝 Tool Calling 技术开发文档（75KB）
