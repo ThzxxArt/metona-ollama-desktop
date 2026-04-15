@@ -3,13 +3,23 @@
 ## 分支结构
 
 **桌面版主线**（`master`）：
-- `metona-ollama-desktop-v1.1` → `metona-ollama-desktop-v2` → `metona-ollama-desktop-v3.0.0` → `metona-ollama-desktop-v3.1.0` → `metona-ollama-desktop-v3.1.1` → `metona-ollama-desktop-v3.2.0` → `metona-ollama-desktop-v3.2.1` → `metona-ollama-desktop-v3.2.2` → `metona-ollama-desktop-v3.2.3` → `metona-ollama-desktop-v3.2.4` → `metona-ollama-desktop-v3.2.5`（当前，待创建）
+- `metona-ollama-desktop-v1.1` → `metona-ollama-desktop-v2` → `metona-ollama-desktop-v3.0.0` → `metona-ollama-desktop-v3.1.0` → `metona-ollama-desktop-v3.1.1` → `metona-ollama-desktop-v3.2.0` → `metona-ollama-desktop-v3.2.1` → `metona-ollama-desktop-v3.2.2` → `metona-ollama-desktop-v3.2.3` → `metona-ollama-desktop-v3.2.4` → `metona-ollama-desktop-v3.2.5` → `metona-ollama-desktop-v3.2.6`（当前，待创建）
 
 **Web 版历史**已独立为 [metona-ollama-web](https://gitee.com/thzxx/metona-ollama-web) 仓库（v1.1.0 ~ v4.0.3）。
 
 ---
 
 ## 桌面版（Desktop）
+
+### Desktop v3.2.6 — 工作空间面板布局修复 & Token 统计样式优化
+
+- 🔧 **修复工作空间面板与主内容区错位**
+  - workspace-panel 从 `position: fixed` 改为 flex 子元素，与日志面板布局模式一致
+  - 移除 `margin-right: 480px` hack 和 `--nav-height` CSS 变量，消除 JS/CSS 失步风险
+  - 移除 `updateNavHeight()` 函数及 resize 监听，减少不必要的 DOM 计算
+- 🎨 **Token 统计颜色优化**
+  - Header token 统计区：琥珀色 (#FFD580) 图标 + 数值，含淡色背景和细边框
+  - 消息内 token 数：琥珀色高亮，耗时用主题蓝色，三种信息一目了然
 
 ### Desktop v3.2.5 — 工具路径修复 & 安全性增强 & 工作空间重构
 
