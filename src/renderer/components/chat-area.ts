@@ -158,11 +158,12 @@ export function appendMessageDOM(msg: ChatMessage, index: number): void {
   }
 
   const stats: string[] = [];
-  if (msg.timestamp) stats.push(formatTime(msg.timestamp));
-  if (msg.eval_count != null && msg.eval_count > 0) stats.push(`${msg.eval_count} tokens`);
-  if (msg.total_duration != null && msg.total_duration > 0) stats.push(`${(msg.total_duration / 1e9).toFixed(1)}s`);
+  const statClasses: string[] = [];
+  if (msg.timestamp) { stats.push(formatTime(msg.timestamp)); statClasses.push(''); }
+  if (msg.eval_count != null && msg.eval_count > 0) { stats.push(`${msg.eval_count} tokens`); statClasses.push('stat-tokens'); }
+  if (msg.total_duration != null && msg.total_duration > 0) { stats.push(`${(msg.total_duration / 1e9).toFixed(1)}s`); statClasses.push('stat-duration'); }
   if (stats.length > 0) {
-    contentHtml += `<div class="msg-stats">${stats.map(s => `<span>${s}</span>`).join(' · ')}</div>`;
+    contentHtml += `<div class="msg-stats">${stats.map((s, i) => `<span${statClasses[i] ? ` class="${statClasses[i]}"` : ''}>${s}</span>`).join(' · ')}</div>`;
   }
 
   if (msg.role === 'assistant' && msg.ragSources && msg.ragSources.length > 0) {
@@ -337,8 +338,8 @@ export function updateLastAssistantMessage(content: string, think: string | null
       lastMsg.querySelector('.msg-body')!.appendChild(statsDiv);
     }
     const parts: string[] = [];
-    if (stats.eval_count != null && stats.eval_count > 0) parts.push(`${stats.eval_count} tokens`);
-    if (stats.total_duration != null && stats.total_duration > 0) parts.push(`${(stats.total_duration / 1e9).toFixed(1)}s`);
+    if (stats.eval_count != null && stats.eval_count > 0) parts.push(`<span class="stat-tokens">${stats.eval_count} tokens</span>`);
+    if (stats.total_duration != null && stats.total_duration > 0) parts.push(`<span class="stat-duration">${(stats.total_duration / 1e9).toFixed(1)}s</span>`);
     if (parts.length) statsDiv.innerHTML = parts.join(' · ');
   }
 

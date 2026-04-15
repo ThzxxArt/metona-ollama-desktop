@@ -376,8 +376,9 @@ html, body {
     margin-left: 8px;
     padding: 2px 8px;
     font-size: 11px;
-    color: var(--text-secondary);
-    background: var(--bg-subtle, rgba(255,255,255,0.04));
+    color: #FFD580;
+    background: rgba(255, 213, 128, 0.06);
+    border: 1px solid rgba(255, 213, 128, 0.12);
     border-radius: 10px;
     white-space: nowrap;
     user-select: none;
@@ -387,7 +388,7 @@ html, body {
     width: 14px;
     height: 14px;
     flex-shrink: 0;
-    opacity: 0.8;
+    color: #FFD580;
 }
 
 /* ═══ 模型选择栏 ═══ */
@@ -1002,6 +1003,14 @@ html, body {
     margin-top: 6px;
     font-size: 11px;
     color: var(--text-tertiary);
+}
+
+.msg-stats .stat-tokens {
+    color: #FFD580;
+}
+
+.msg-stats .stat-duration {
+    color: var(--accent);
 }
 
 /* RAG 知识库来源 */
