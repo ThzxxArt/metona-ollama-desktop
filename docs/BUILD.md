@@ -14,7 +14,7 @@
 # 1. 克隆并安装依赖
 git clone https://gitee.com/thzxx/metona-ollama-desktop.git
 cd metona-ollama-desktop
-git checkout metona-ollama-desktop-v3.3.0
+git checkout metona-ollama-desktop-v3.3.1
 npm config set registry https://registry.npmmirror.com
 npm install
 

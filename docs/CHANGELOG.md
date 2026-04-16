@@ -3,13 +3,23 @@
 ## 分支结构
 
 **桌面版主线**（`master`）：
-- `metona-ollama-desktop-v1.1` → `metona-ollama-desktop-v2` → `metona-ollama-desktop-v3.0.0` → `metona-ollama-desktop-v3.1.0` → `metona-ollama-desktop-v3.1.1` → `metona-ollama-desktop-v3.2.0` → `metona-ollama-desktop-v3.2.1` → `metona-ollama-desktop-v3.2.2` → `metona-ollama-desktop-v3.2.3` → `metona-ollama-desktop-v3.2.4` → `metona-ollama-desktop-v3.2.5` → `metona-ollama-desktop-v3.2.6` → `metona-ollama-desktop-v3.3.0`（当前发布分支）
+- `metona-ollama-desktop-v1.1` → `metona-ollama-desktop-v2` → `metona-ollama-desktop-v3.0.0` → `metona-ollama-desktop-v3.1.0` → `metona-ollama-desktop-v3.1.1` → `metona-ollama-desktop-v3.2.0` → `metona-ollama-desktop-v3.2.1` → `metona-ollama-desktop-v3.2.2` → `metona-ollama-desktop-v3.2.3` → `metona-ollama-desktop-v3.2.4` → `metona-ollama-desktop-v3.2.5` → `metona-ollama-desktop-v3.2.6` → `metona-ollama-desktop-v3.3.0` → `metona-ollama-desktop-v3.3.1`（当前发布分支）
 
 **Web 版历史**已独立为 [metona-ollama-web](https://gitee.com/thzxx/metona-ollama-web) 仓库（v1.1.0 ~ v4.0.3）。
 
 ---
 
 ## 桌面版（Desktop）
+
+### Desktop v3.3.1 — Bug 修复 & 图标统一
+
+- 🔧 **修复开启工具调用后图片无法传给 AI**
+  - `agent-engine.ts`：当用户仅上传图片无文字时，自动生成分析提示作为 content，确保图片数组正确注入 Ollama API
+  - `input-area.ts`：图片与文字合并为同一条消息，不再拆分为两条，修复 Agent Loop 构建历史时图片关联丢失
+- 🔧 **修复记忆系统弹框自动记忆开关点击无响应**
+  - `memory-modal.ts`：CSS 类名 `memory-toggle` → `toggle-label`，启用完整滑块样式和 `:checked` 状态切换
+- 🎨 **统一应用图标为科技感羊驼**
+  - `assets/icons/llama.png` / `llama.ico`：替换为霓虹电路风格羊驼图标（深色背景 + 青色描边 + 电路纹理）
 
 ### Desktop v3.3.0 — 文档同步 & 帮助面板修正
 
