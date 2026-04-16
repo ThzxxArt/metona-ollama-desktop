@@ -182,6 +182,7 @@ electron-builder 会自动处理所有依赖下载（Electron、NSIS、winCodeSi
 - 🔧 除 run_command 外所有工具改为自动执行无需确认
 - 🔧 run_command 改为下拉框设置：自动/需确认/禁用三种模式
 - 📝 版本号更新至 3.3.2（package.json / index.html / README.md / CHANGELOG.md / BUILD.md）
+- 📝 同步更新 README.md 安全说明、DEVELOPMENT.md 开发规范、index.html 帮助面板
 
 ### v3.3.1（2026-04-16） — metona-ollama-desktop 仓库
 

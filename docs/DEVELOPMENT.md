@@ -137,7 +137,8 @@ import {
 
 - 所有命令通过 `tool-security.ts` 的 `checkCommandAllowed()` 验证
 - 命令黑名单：`rm -rf /`, `mkfs`, `dd`, `shutdown`, 反弹 shell 检测等
-- 写操作类工具（`write_file`, `delete_file`, `run_command`, `create_directory`）必须用户确认
+- `run_command` 支持三种模式（自动/需确认/禁用），用户可随时切换
+- 其余 20 个工具均为自动执行，无需用户确认
 
 #### 前端安全
 
@@ -178,7 +179,7 @@ import {
 - 进程结束后通过 `cmd:done` 通知渲染进程，结果回传 AI
 - 用户可通过工作空间面板停止按钮终止命令（`cmd:kill`）
 - 命令执行前经过 `checkCommandAllowed()` 安全检查
-- 用户确认后才执行（Agent Loop 的 `needsConfirmation` 机制）
+- `run_command` 需确认模式下由用户确认后才执行；自动模式下直接执行
 
 ---
 
@@ -302,5 +303,5 @@ docs: 新增开发规范文档
 2. **安全优先**：所有文件/命令操作必须经过安全检查层
 3. **日志完整**：关键操作必须记录到执行日志面板
 4. **无超时设计**：工作空间相关操作不设超时，由用户控制生命周期
-5. **用户确认**：写操作类工具必须弹出确认对话框
+5. **命令安全**：`run_command` 支持三模式切换（自动/需确认/禁用），其余工具自动执行
 6. **桌面优先**：API 调用必须检查 `bridge.isDesktop`，非桌面环境优雅降级
