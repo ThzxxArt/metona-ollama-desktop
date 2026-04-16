@@ -37,6 +37,7 @@ AI 可以在对话中主动调用本地工具来完成任务，所有操作在�
 | 📦 `move_file` | 移动/重命名文件或目录 | 需确认 |
 | 📋 `copy_file` | 复制文件或目录 | 需确认 |
 | 🌐 `web_fetch` | 抓取网页内容（HTTP/HTTPS，自动提取文本） | 自动 |
+| 🔍 `web_search` | 联网搜索（DuckDuckGo/Bing，返回标题+链接+摘要） | 自动 |
 | ➕ `append_file` | 追加内容到文件末尾 | 需确认 |
 | ✂️ `edit_file` | 查找替换文件中的文本（比重写整个文件高效） | 需确认 |
 | ℹ️ `get_file_info` | 获取文件/目录详细信息（大小、日期、权限） | 自动 |
@@ -185,7 +186,7 @@ v3.3 四大子系统协调运作：
 │  ┌─────────────────────────────┴──────────────────────────────┐ │
 │  │                    主进程 (Main)                             │ │
 │  │  main.ts  menu.ts  tray.ts  ipc.ts  preload.ts            │ │
-│  │  tool-handlers.ts (20 个工具)  tool-security.ts  workspace.ts│ │
+│  │  tool-handlers.ts (21 个工具)  tool-security.ts  workspace.ts│ │
 │  │  ┌──────────────────────────────────────────────────────┐  │ │
 │  │  │  workspace.ts: spawn 进程管理 · 流式输出 · 安全检查   │  │ │
 │  │  └──────────────────────────────────────────────────────┘  │ │
@@ -269,7 +270,7 @@ metona-ollama-desktop/
 │   │   ├── tray.ts                        # 系统托盘
 │   │   ├── ipc.ts                         # IPC（Tool Calling + Workspace 流式通信）
 │   │   ├── utils.ts                       # 工具函数
-│   │   ├── tool-handlers.ts               # 🔧 20 个工具实现
+│   │   ├── tool-handlers.ts               # 🔧 21 个工具实现
 │   │   ├── tool-security.ts               # 🔧 路径/命令安全检查
 │   │   └── workspace.ts                   # 🖥️ spawn 进程管理、流式输出
 │   └── renderer/                          # 渲染进程
@@ -300,7 +301,7 @@ metona-ollama-desktop/
 │       │   ├── memory-manager.ts          # 🧠 记忆管理核心
 │       │   ├── vector-memory.ts           # 🧠 记忆向量索引（IVF 索引）
 │       │   ├── agent-engine.ts            # 🔧 Agent Loop 引擎
-│       │   ├── tool-registry.ts           # 🔧 工具注册调度（20 个工具定义）
+│       │   ├── tool-registry.ts           # 🔧 工具注册调度（21 个工具定义）
 │       │   ├── vector-store.ts            # 向量存储 + IVF 索引
 │       │   ├── document-processor.ts      # 文档分块
 │       │   ├── log-service.ts             # 结构化执行日志

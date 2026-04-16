@@ -484,6 +484,156 @@ export async function handleWebFetch(params: { url: string; max_chars?: number; 
   }
 }
 
+/**
+ * Web Search — 联网搜索
+ * 使用 DuckDuckGo HTML 搜索并提取结果
+ */
+export async function handleWebSearch(params: { query: string; max_results?: number }): Promise<ToolResult> {
+  try {
+    const query = params.query;
+    if (!query || query.trim().length === 0) {
+      return { success: false, error: '搜索关键词不能为空' };
+    }
+
+    const maxResults = Math.min(params.max_results || 5, 10);
+
+    sendLog('info', `🔍 web_search`, `"${query}" (${maxResults} 条)`);
+
+    // 1. 尝试 DuckDuckGo HTML 搜索
+    let results: Array<{ title: string; url: string; snippet: string }> = [];
+
+    try {
+      const ddgUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+      const resp = await fetch(ddgUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'text/html',
+          'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'
+        },
+        signal: AbortSignal.timeout(15000)
+      });
+
+      if (resp.ok) {
+        const html = await resp.text();
+        results = parseDDGResults(html, maxResults);
+      }
+    } catch (e) {
+      sendLog('warn', `🔍 DuckDuckGo 搜索失败`, (e as Error).message);
+    }
+
+    // 2. 如果 DuckDuckGo 无结果，尝试备用方案
+    if (results.length === 0) {
+      try {
+        const bingUrl = `https://www.bing.com/search?q=${encodeURIComponent(query)}&count=${maxResults}`;
+        const resp = await fetch(bingUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html',
+            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'
+          },
+          signal: AbortSignal.timeout(15000)
+        });
+
+        if (resp.ok) {
+          const html = await resp.text();
+          results = parseBingResults(html, maxResults);
+        }
+      } catch (e) {
+        sendLog('warn', `🔍 Bing 搜索失败`, (e as Error).message);
+      }
+    }
+
+    if (results.length === 0) {
+      return { success: false, error: '未找到搜索结果，请尝试其他关键词' };
+    }
+
+    // 构建格式化的搜索结果
+    const formatted = results.map((r, i) =>
+      `[${i + 1}] ${r.title}\n    URL: ${r.url}\n    ${r.snippet}`
+    ).join('\n\n');
+
+    sendLog('success', `🔍 web_search 完成`, `"${query}" → ${results.length} 条结果`);
+
+    return {
+      success: true,
+      query,
+      results,
+      total: results.length,
+      formatted
+    };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+}
+
+/** 解析 DuckDuckGo HTML 搜索结果 */
+function parseDDGResults(html: string, maxResults: number): Array<{ title: string; url: string; snippet: string }> {
+  const results: Array<{ title: string; url: string; snippet: string }> = [];
+
+  // 匹配结果块：<a class="result__a" href="...">title</a> ... <a class="result__snippet">snippet</a>
+  const resultRegex = /<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<a[^>]*class="result__snippet"[^>]*>([\s\S]*?)<\/a>/gi;
+
+  let match;
+  while ((match = resultRegex.exec(html)) !== null && results.length < maxResults) {
+    let url = match[1].trim();
+    // DuckDuckGo 使用重定向链接，提取真实 URL
+    const uddgMatch = url.match(/[?&]uddg=([^&]+)/);
+    if (uddgMatch) {
+      url = decodeURIComponent(uddgMatch[1]);
+    }
+
+    const title = decodeHTML(match[2].replace(/<[^>]+>/g, '').trim());
+    const snippet = decodeHTML(match[3].replace(/<[^>]+>/g, '').trim());
+
+    if (title && url.startsWith('http')) {
+      results.push({ title, url, snippet });
+    }
+  }
+
+  return results;
+}
+
+/** 解析 Bing HTML 搜索结果 */
+function parseBingResults(html: string, maxResults: number): Array<{ title: string; url: string; snippet: string }> {
+  const results: Array<{ title: string; url: string; snippet: string }> = [];
+
+  // 匹配 <li class="b_algo"> 块
+  const blockRegex = /<li class="b_algo"[^>]*>([\s\S]*?)<\/li>/gi;
+  let blockMatch;
+
+  while ((blockMatch = blockRegex.exec(html)) !== null && results.length < maxResults) {
+    const block = blockMatch[1];
+
+    const titleMatch = block.match(/<a[^>]*href="(https?:\/\/[^"]*)"[^>]*>([\s\S]*?)<\/a>/);
+    const snippetMatch = block.match(/<p[^>]*>([\s\S]*?)<\/p>/) || block.match(/<div class="b_caption"[^>]*>([\s\S]*?)<\/div>/);
+
+    if (titleMatch) {
+      const url = titleMatch[1].trim();
+      const title = decodeHTML(titleMatch[2].replace(/<[^>]+>/g, '').trim());
+      const snippet = snippetMatch ? decodeHTML(snippetMatch[1].replace(/<[^>]+>/g, '').trim()) : '';
+
+      if (title && url.startsWith('http')) {
+        results.push({ title, url, snippet });
+      }
+    }
+  }
+
+  return results;
+}
+
+/** 简单 HTML 实体解码 */
+function decodeHTML(text: string): string {
+  return text
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(parseInt(dec, 10)));
+}
+
 export async function handleAppendFile(params: { path: string; content: string; newline?: boolean }): Promise<ToolResult> {
   try {
     const filePath = resolvePath(params.path);

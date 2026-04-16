@@ -335,6 +335,21 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         }
       }
     }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'web_search',
+      description: 'Search the web and return relevant results. Use this when you need to find current information, news, facts, or answer questions that require up-to-date knowledge beyond your training data.',
+      parameters: {
+        type: 'object',
+        required: ['query'],
+        properties: {
+          query: { type: 'string', description: 'The search query. Be specific and concise for best results.' },
+          max_results: { type: 'integer', description: 'Maximum number of results to return. Default: 5, max: 10.' }
+        }
+      }
+    }
   }
 ];
 
@@ -348,7 +363,7 @@ let enabledTools: Set<string> = new Set([
   'read_file', 'list_directory', 'search_files',
   'write_file', 'create_directory', 'delete_file',
   'run_command',
-  'move_file', 'copy_file', 'web_fetch', 'append_file', 'edit_file',
+  'move_file', 'copy_file', 'web_fetch', 'web_search', 'append_file', 'edit_file',
   'get_file_info', 'tree', 'download_file', 'diff_files', 'replace_in_files',
   'read_multiple_files', 'git', 'compress'
 ]);
@@ -436,7 +451,8 @@ export function getToolIcon(name: string): string {
     replace_in_files: '🔄',
     read_multiple_files: '📚',
     git: '🔖',
-    compress: '🗜️'
+    compress: '🗜️',
+    web_search: '🔍'
   };
   return icons[name] || '🔧';
 }
@@ -462,7 +478,8 @@ export function formatToolName(name: string): string {
     replace_in_files: '批量替换',
     read_multiple_files: '批量读取',
     git: 'Git 操作',
-    compress: '压缩/解压'
+    compress: '压缩/解压',
+    web_search: '联网搜索'
   };
   return names[name] || name;
 }
