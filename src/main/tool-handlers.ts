@@ -522,3 +522,402 @@ export async function handleEditFile(params: { path: string; old_text: string; n
     return { success: false, error: (err as Error).message };
   }
 }
+
+export async function handleGetFileInfo(params: { path: string }): Promise<ToolResult> {
+  try {
+    const filePath = resolvePath(params.path);
+    const allowed = checkPathAllowed(filePath, 'read');
+    if (!allowed.ok) return { success: false, error: allowed.reason };
+
+    const stat = await fs.stat(filePath);
+    return {
+      success: true,
+      path: filePath,
+      name: path.basename(filePath),
+      type: stat.isDirectory() ? 'directory' : stat.isFile() ? 'file' : 'other',
+      size: stat.size,
+      created: stat.birthtime.toISOString(),
+      modified: stat.mtime.toISOString(),
+      accessed: stat.atime.toISOString(),
+      permissions: (stat.mode & 0o777).toString(8)
+    };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+}
+
+export async function handleTree(params: { path: string; max_depth?: number; include_hidden?: boolean }): Promise<ToolResult> {
+  try {
+    const rootPath = resolvePath(params.path);
+    const allowed = checkPathAllowed(rootPath, 'read');
+    if (!allowed.ok) return { success: false, error: allowed.reason };
+
+    const maxDepth = params.max_depth || 3;
+    const includeHidden = params.include_hidden || false;
+    const lines: string[] = [];
+    let fileCount = 0;
+    let dirCount = 0;
+
+    async function walk(dir: string, prefix: string, depth: number): Promise<void> {
+      if (depth > maxDepth) return;
+      let items;
+      try { items = await fs.readdir(dir, { withFileTypes: true }); } catch { return; }
+
+      const filtered = items
+        .filter(i => includeHidden || !i.name.startsWith('.'))
+        .sort((a, b) => {
+          if (a.isDirectory() && !b.isDirectory()) return -1;
+          if (!a.isDirectory() && b.isDirectory()) return 1;
+          return a.name.localeCompare(b.name);
+        });
+
+      for (let i = 0; i < filtered.length; i++) {
+        const item = filtered[i];
+        const isLast = i === filtered.length - 1;
+        const connector = isLast ? '└── ' : '├── ';
+        const icon = item.isDirectory() ? '📁' : '📄';
+        lines.push(`${prefix}${connector}${icon} ${item.name}`);
+        if (item.isDirectory()) {
+          dirCount++;
+          const childPrefix = prefix + (isLast ? '    ' : '│   ');
+          await walk(path.join(dir, item.name), childPrefix, depth + 1);
+        } else {
+          fileCount++;
+        }
+      }
+    }
+
+    lines.push(`📁 ${path.basename(rootPath)}/`);
+    await walk(rootPath, '', 1);
+
+    return {
+      success: true,
+      path: rootPath,
+      tree: lines.join('\n'),
+      fileCount,
+      dirCount
+    };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+}
+
+export async function handleDownloadFile(params: { url: string; destination: string }): Promise<ToolResult> {
+  try {
+    const destPath = resolvePath(params.destination);
+    const allowed = checkPathAllowed(destPath, 'write');
+    if (!allowed.ok) return { success: false, error: allowed.reason };
+
+    if (!params.url.startsWith('http://') && !params.url.startsWith('https://')) {
+      return { success: false, error: '仅支持 http/https 协议' };
+    }
+
+    const resp = await fetch(params.url, {
+      signal: AbortSignal.timeout(60000)
+    });
+    if (!resp.ok) return { success: false, error: `HTTP ${resp.status}: ${resp.statusText}` };
+
+    const buf = Buffer.from(await resp.arrayBuffer());
+    if (buf.length > 50 * 1024 * 1024) {
+      return { success: false, error: '文件超过 50MB 限制' };
+    }
+
+    const destDir = path.dirname(destPath);
+    await fs.mkdir(destDir, { recursive: true });
+    await fs.writeFile(destPath, buf);
+
+    return {
+      success: true,
+      url: params.url,
+      destination: destPath,
+      size: buf.length,
+      content_type: resp.headers.get('content-type') || 'unknown'
+    };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+}
+
+export async function handleDiffFiles(params: { file1: string; file2: string; context_lines?: number }): Promise<ToolResult> {
+  try {
+    const path1 = resolvePath(params.file1);
+    const path2 = resolvePath(params.file2);
+    const check1 = checkPathAllowed(path1, 'read');
+    if (!check1.ok) return { success: false, error: check1.reason };
+    const check2 = checkPathAllowed(path2, 'read');
+    if (!check2.ok) return { success: false, error: check2.reason };
+
+    const content1 = await fs.readFile(path1, 'utf-8');
+    const content2 = await fs.readFile(path2, 'utf-8');
+    const lines1 = content1.split('\n');
+    const lines2 = content2.split('\n');
+
+    // 简单的统一 diff 实现
+    const diffLines: string[] = [];
+    const contextSize = params.context_lines || 3;
+    let i = 0, j = 0;
+
+    while (i < lines1.length || j < lines2.length) {
+      if (i < lines1.length && j < lines2.length && lines1[i] === lines2[j]) {
+        if (diffLines.length === 0 || diffLines[diffLines.length - 1].startsWith('-') || diffLines[diffLines.length - 1].startsWith('+')) {
+          // 添加上下文
+          const ctxStart = Math.max(0, i - contextSize);
+          for (let k = ctxStart; k < i; k++) {
+            diffLines.push(` ${lines1[k]}`);
+          }
+        }
+        diffLines.push(` ${lines1[i]}`);
+        i++; j++;
+      } else {
+        // 尝试找匹配
+        let found = false;
+        for (let look = 1; look <= 5 && i + look < lines1.length; look++) {
+          if (lines1[i + look] === lines2[j]) {
+            for (let k = 0; k < look; k++) diffLines.push(`-${lines1[i + k]}`);
+            i += look; found = true; break;
+          }
+        }
+        if (!found) {
+          for (let look = 1; look <= 5 && j + look < lines2.length; look++) {
+            if (lines1[i] === lines2[j + look]) {
+              for (let k = 0; k < look; k++) diffLines.push(`+${lines2[j + k]}`);
+              j += look; found = true; break;
+            }
+          }
+        }
+        if (!found) {
+          if (i < lines1.length) { diffLines.push(`-${lines1[i]}`); i++; }
+          if (j < lines2.length) { diffLines.push(`+${lines2[j]}`); j++; }
+        }
+      }
+    }
+
+    const hasChanges = diffLines.some(l => l.startsWith('-') || l.startsWith('+'));
+    return {
+      success: true,
+      file1: path1,
+      file2: path2,
+      diff: diffLines.join('\n'),
+      hasChanges,
+      lines1: lines1.length,
+      lines2: lines2.length
+    };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+}
+
+export async function handleReplaceInFiles(params: { path: string; glob: string; old_text: string; new_text: string }): Promise<ToolResult> {
+  try {
+    const rootPath = resolvePath(params.path);
+    const allowed = checkPathAllowed(rootPath, 'write');
+    if (!allowed.ok) return { success: false, error: allowed.reason };
+
+    // 简单 glob 匹配
+    const pattern = params.glob.replace(/\./g, '\\.').replace(/\*/g, '.*').replace(/\?/g, '.');
+    const regex = new RegExp(`^${pattern}$`);
+
+    const results: Array<{ file: string; replacements: number }> = [];
+    let totalReplacements = 0;
+    const maxFiles = 200;
+    let fileCount = 0;
+
+    async function scanDir(dir: string): Promise<void> {
+      if (fileCount >= maxFiles) return;
+      let items;
+      try { items = await fs.readdir(dir, { withFileTypes: true }); } catch { return; }
+
+      for (const item of items) {
+        if (fileCount >= maxFiles) return;
+        if (item.name.startsWith('.')) continue;
+        const fullPath = path.join(dir, item.name);
+
+        if (item.isDirectory()) {
+          await scanDir(fullPath);
+        } else if (regex.test(item.name)) {
+          fileCount++;
+          try {
+            const content = await fs.readFile(fullPath, 'utf-8');
+            if (content.includes(params.old_text)) {
+              const parts = content.split(params.old_text);
+              const count = parts.length - 1;
+              const newContent = parts.join(params.new_text);
+              await fs.writeFile(fullPath, newContent, 'utf-8');
+              results.push({ file: path.relative(rootPath, fullPath), replacements: count });
+              totalReplacements += count;
+            }
+          } catch { /* skip unreadable */ }
+        }
+      }
+    }
+
+    await scanDir(rootPath);
+
+    return {
+      success: true,
+      pattern: params.glob,
+      filesChanged: results.length,
+      totalReplacements,
+      results,
+      truncated: fileCount >= maxFiles
+    };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+}
+
+export async function handleReadMultipleFiles(params: { paths: string[]; max_chars_per_file?: number }): Promise<ToolResult> {
+  try {
+    const maxChars = params.max_chars_per_file || 2000;
+    const results: Array<{ path: string; success: boolean; content?: string; error?: string; lines?: number }> = [];
+
+    for (const p of params.paths.slice(0, 20)) {
+      const filePath = resolvePath(p);
+      const allowed = checkPathAllowed(filePath, 'read');
+      if (!allowed.ok) {
+        results.push({ path: p, success: false, error: allowed.reason });
+        continue;
+      }
+      try {
+        const stat = await fs.stat(filePath);
+        if (stat.size > 1024 * 1024) {
+          results.push({ path: p, success: false, error: '文件超过 1MB' });
+          continue;
+        }
+        let content = await fs.readFile(filePath, 'utf-8');
+        const lines = content.split('\n').length;
+        if (content.length > maxChars) content = content.slice(0, maxChars) + '\n... (已截断)';
+        results.push({ path: p, success: true, content, lines });
+      } catch (err) {
+        results.push({ path: p, success: false, error: (err as Error).message });
+      }
+    }
+
+    return { success: true, files: results, total: results.length };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+}
+
+export async function handleGitStatus(params: { path?: string }): Promise<ToolResult> {
+  try {
+    const cwd = params.path ? path.resolve(params.path) : getWorkspaceDir();
+
+    return new Promise((resolve) => {
+      const git = spawn('git', ['status', '--porcelain=v1', '-b'], { cwd, stdio: ['pipe', 'pipe', 'pipe'] });
+      let stdout = '';
+      let stderr = '';
+
+      git.stdout.on('data', (d: Buffer) => { stdout += d.toString(); });
+      git.stderr.on('data', (d: Buffer) => { stderr += d.toString(); });
+
+      git.on('close', (code) => {
+        if (code !== 0) {
+          resolve({ success: false, error: stderr || '不是 git 仓库' });
+          return;
+        }
+
+        const lines = stdout.split('\n').filter(l => l.trim());
+        const branchLine = lines.find(l => l.startsWith('##')) || '';
+        const branch = branchLine.replace('## ', '').split('...')[0] || 'unknown';
+
+        const modified: string[] = [];
+        const staged: string[] = [];
+        const untracked: string[] = [];
+
+        for (const line of lines) {
+          if (line.startsWith('##')) continue;
+          const status = line.slice(0, 2);
+          const file = line.slice(3);
+          if (status === '??') untracked.push(file);
+          else {
+            if (status[0] !== ' ' && status[0] !== '?') staged.push(file);
+            if (status[1] !== ' ' && status[1] !== '?') modified.push(file);
+          }
+        }
+
+        resolve({
+          success: true,
+          branch,
+          modified,
+          staged,
+          untracked,
+          isClean: modified.length === 0 && staged.length === 0 && untracked.length === 0
+        });
+      });
+
+      git.on('error', (err) => {
+        resolve({ success: false, error: err.message });
+      });
+    });
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+}
+
+export async function handleCompress(params: { action: string; path: string; destination?: string; format?: string }): Promise<ToolResult> {
+  try {
+    const format = params.format || 'tar.gz';
+
+    if (params.action === 'create') {
+      const srcPath = resolvePath(params.path);
+      const check = checkPathAllowed(srcPath, 'read');
+      if (!check.ok) return { success: false, error: check.reason };
+
+      const destPath = params.destination
+        ? resolvePath(params.destination)
+        : srcPath + (format === 'zip' ? '.zip' : '.tar.gz');
+      const destCheck = checkPathAllowed(destPath, 'write');
+      if (!destCheck.ok) return { success: false, error: destCheck.reason };
+
+      return new Promise((resolve) => {
+        const cmd = format === 'zip'
+          ? `zip -r "${destPath}" "${path.basename(srcPath)}"`
+          : `tar czf "${destPath}" "${path.basename(srcPath)}"`;
+        const proc = spawn('bash', ['-c', cmd], { cwd: path.dirname(srcPath), stdio: ['pipe', 'pipe', 'pipe'] });
+        let stderr = '';
+        proc.stderr.on('data', (d: Buffer) => { stderr += d.toString(); });
+        proc.on('close', (code) => {
+          if (code === 0) {
+            fs.stat(destPath).then(s => {
+              resolve({ success: true, action: 'create', archive: destPath, size: s.size });
+            }).catch(() => resolve({ success: true, action: 'create', archive: destPath }));
+          } else {
+            resolve({ success: false, error: stderr || `压缩失败 (exit ${code})` });
+          }
+        });
+        proc.on('error', (err) => resolve({ success: false, error: err.message }));
+      });
+    } else {
+      // extract
+      const archivePath = resolvePath(params.path);
+      const check = checkPathAllowed(archivePath, 'read');
+      if (!check.ok) return { success: false, error: check.reason };
+
+      const destDir = params.destination ? resolvePath(params.destination) : path.dirname(archivePath);
+      const destCheck = checkPathAllowed(destDir, 'write');
+      if (!destCheck.ok) return { success: false, error: destCheck.reason };
+
+      await fs.mkdir(destDir, { recursive: true });
+
+      return new Promise((resolve) => {
+        const isZip = archivePath.endsWith('.zip');
+        const cmd = isZip
+          ? `unzip -o "${archivePath}" -d "${destDir}"`
+          : `tar xzf "${archivePath}" -C "${destDir}"`;
+        const proc = spawn('bash', ['-c', cmd], { stdio: ['pipe', 'pipe', 'pipe'] });
+        let stderr = '';
+        proc.stderr.on('data', (d: Buffer) => { stderr += d.toString(); });
+        proc.on('close', (code) => {
+          resolve(code === 0
+            ? { success: true, action: 'extract', destination: destDir }
+            : { success: false, error: stderr || `解压失败 (exit ${code})` }
+          );
+        });
+        proc.on('error', (err) => resolve({ success: false, error: err.message }));
+      });
+    }
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+}

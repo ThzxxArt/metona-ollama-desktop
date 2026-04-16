@@ -198,10 +198,134 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         }
       }
     }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_file_info',
+      description: 'Get detailed file or directory information: size, dates, permissions, type.',
+      parameters: {
+        type: 'object',
+        required: ['path'],
+        properties: {
+          path: { type: 'string', description: 'File or directory path.' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'tree',
+      description: 'Display directory structure as a tree. Shows nested files and folders.',
+      parameters: {
+        type: 'object',
+        required: ['path'],
+        properties: {
+          path: { type: 'string', description: 'Root directory path.' },
+          max_depth: { type: 'integer', description: 'Max depth. Default: 3.' },
+          include_hidden: { type: 'boolean', description: 'Include hidden files. Default: false.' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'download_file',
+      description: 'Download a file from a URL to a local path. Requires user confirmation.',
+      parameters: {
+        type: 'object',
+        required: ['url', 'destination'],
+        properties: {
+          url: { type: 'string', description: 'URL to download (http/https).' },
+          destination: { type: 'string', description: 'Local path to save the file.' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'diff_files',
+      description: 'Compare two files and show differences. Returns a unified diff.',
+      parameters: {
+        type: 'object',
+        required: ['file1', 'file2'],
+        properties: {
+          file1: { type: 'string', description: 'First file path.' },
+          file2: { type: 'string', description: 'Second file path.' },
+          context_lines: { type: 'integer', description: 'Context lines around changes. Default: 3.' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'replace_in_files',
+      description: 'Find and replace text across multiple files matching a glob pattern. Requires user confirmation.',
+      parameters: {
+        type: 'object',
+        required: ['path', 'glob', 'old_text', 'new_text'],
+        properties: {
+          path: { type: 'string', description: 'Root directory.' },
+          glob: { type: 'string', description: 'File pattern, e.g. "*.ts", "**/*.js".' },
+          old_text: { type: 'string', description: 'Text to find.' },
+          new_text: { type: 'string', description: 'Replacement text.' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'read_multiple_files',
+      description: 'Read multiple files at once. Returns contents of all requested files.',
+      parameters: {
+        type: 'object',
+        required: ['paths'],
+        properties: {
+          paths: { type: 'array', items: { type: 'string' }, description: 'Array of file paths to read.' },
+          max_chars_per_file: { type: 'integer', description: 'Max chars per file. Default: 2000.' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'git_status',
+      description: 'Show git repository status: branch, modified/staged/untracked files.',
+      parameters: {
+        type: 'object',
+        required: [],
+        properties: {
+          path: { type: 'string', description: 'Repository path. Defaults to workspace.' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'compress',
+      description: 'Create or extract archives (zip/tar.gz). Requires user confirmation for create.',
+      parameters: {
+        type: 'object',
+        required: ['action', 'path'],
+        properties: {
+          action: { type: 'string', enum: ['create', 'extract'], description: 'Create or extract archive.' },
+          path: { type: 'string', description: 'Source path (create) or archive path (extract).' },
+          destination: { type: 'string', description: 'Output archive path (create) or extract dir (extract).' },
+          format: { type: 'string', enum: ['zip', 'tar.gz'], description: 'Archive format. Default: tar.gz.' }
+        }
+      }
+    }
   }
 ];
 
-const CONFIRM_TOOLS = ['write_file', 'delete_file', 'run_command', 'create_directory', 'move_file', 'copy_file', 'append_file', 'edit_file'];
+const CONFIRM_TOOLS = ['write_file', 'delete_file', 'run_command', 'create_directory', 'move_file', 'copy_file', 'append_file', 'edit_file', 'download_file', 'replace_in_files', 'compress'];
 
 export function needsConfirmation(toolName: string): boolean {
   return CONFIRM_TOOLS.includes(toolName);
@@ -211,7 +335,9 @@ let enabledTools: Set<string> = new Set([
   'read_file', 'list_directory', 'search_files',
   'write_file', 'create_directory', 'delete_file',
   'run_command',
-  'move_file', 'copy_file', 'web_fetch', 'append_file', 'edit_file'
+  'move_file', 'copy_file', 'web_fetch', 'append_file', 'edit_file',
+  'get_file_info', 'tree', 'download_file', 'diff_files', 'replace_in_files',
+  'read_multiple_files', 'git_status', 'compress'
 ]);
 
 export function setToolEnabled(toolName: string, enabled: boolean): void {
@@ -289,7 +415,15 @@ export function getToolIcon(name: string): string {
     copy_file: '📋',
     web_fetch: '🌐',
     append_file: '➕',
-    edit_file: '✂️'
+    edit_file: '✂️',
+    get_file_info: 'ℹ️',
+    tree: '🌳',
+    download_file: '⬇️',
+    diff_files: '🔀',
+    replace_in_files: '🔄',
+    read_multiple_files: '📚',
+    git_status: '🔖',
+    compress: '🗜️'
   };
   return icons[name] || '🔧';
 }
@@ -307,7 +441,15 @@ export function formatToolName(name: string): string {
     copy_file: '复制文件',
     web_fetch: '网页抓取',
     append_file: '追加文件',
-    edit_file: '编辑文件'
+    edit_file: '编辑文件',
+    get_file_info: '文件信息',
+    tree: '目录树',
+    download_file: '下载文件',
+    diff_files: '文件对比',
+    replace_in_files: '批量替换',
+    read_multiple_files: '批量读取',
+    git_status: 'Git 状态',
+    compress: '压缩/解压'
   };
   return names[name] || name;
 }

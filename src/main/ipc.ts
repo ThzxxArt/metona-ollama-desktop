@@ -25,7 +25,15 @@ import {
   handleCopyFile,
   handleWebFetch,
   handleAppendFile,
-  handleEditFile
+  handleEditFile,
+  handleGetFileInfo,
+  handleTree,
+  handleDownloadFile,
+  handleDiffFiles,
+  handleReplaceInFiles,
+  handleReadMultipleFiles,
+  handleGitStatus,
+  handleCompress
 } from './tool-handlers.js';
 import { getAllowedDirs, getBlockedDirs, setAllowedDirs } from './tool-security.js';
 import { startProcess, killProcess, getWorkspaceDir, setWorkspaceDir, listWorkspaceDir } from './workspace.js';
@@ -118,6 +126,14 @@ export function setupIPC(): void {
         case 'web_fetch':          return await handleWebFetch(args as { url: string; max_chars?: number; extract_mode?: string });
         case 'append_file':        return await handleAppendFile(args as { path: string; content: string; newline?: boolean });
         case 'edit_file':          return await handleEditFile(args as { path: string; old_text: string; new_text: string; all?: boolean });
+        case 'get_file_info':      return await handleGetFileInfo(args as { path: string });
+        case 'tree':               return await handleTree(args as { path: string; max_depth?: number; include_hidden?: boolean });
+        case 'download_file':      return await handleDownloadFile(args as { url: string; destination: string });
+        case 'diff_files':         return await handleDiffFiles(args as { file1: string; file2: string; context_lines?: number });
+        case 'replace_in_files':   return await handleReplaceInFiles(args as { path: string; glob: string; old_text: string; new_text: string });
+        case 'read_multiple_files':return await handleReadMultipleFiles(args as { paths: string[]; max_chars_per_file?: number });
+        case 'git_status':         return await handleGitStatus(args as { path?: string });
+        case 'compress':           return await handleCompress(args as { action: string; path: string; destination?: string; format?: string });
         default:                   return { success: false, error: `未知工具: ${toolName}` };
       }
     } catch (err) {
