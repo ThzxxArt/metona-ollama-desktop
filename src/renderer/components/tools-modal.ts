@@ -4,7 +4,7 @@
  */
 
 import { state, KEYS } from '../state/state.js';
-import { setToolEnabled } from '../services/tool-registry.js';
+import { setToolEnabled, setRunCommandMode } from '../services/tool-registry.js';
 import { showToast } from './toast.js';
 import { logInfo, logWarn } from '../services/log-service.js';
 import type { ChatDB } from '../types.js';
@@ -44,23 +44,35 @@ export function initToolsModal(): void {
     });
   }
 
-  // run_command 开关
-  const toggle2 = modalEl.querySelector('#toggleRunCommand2') as HTMLInputElement;
-  if (toggle2) {
-    toggle2.addEventListener('change', async () => {
+  // run_command 模式下拉框
+  const selectMode = modalEl.querySelector('#selectRunCommandMode') as HTMLSelectElement;
+  if (selectMode) {
+    selectMode.addEventListener('change', async () => {
       const db = state.get<ChatDB | null>(KEYS.DB);
-      state.set('runCommandEnabled', toggle2.checked);
-      if (db) await db.saveSetting('runCommandEnabled', toggle2.checked);
-      setToolEnabled('run_command', toggle2.checked);
-      if (toggle2.checked) {
-        showToast('命令执行已开启（每次执行需确认）', 'info');
-        logInfo('命令执行已开启');
-      } else {
-        showToast('命令执行已关闭', 'info');
-        logInfo('命令执行已关闭');
-      }
+      const mode = selectMode.value as 'auto' | 'confirm' | 'disabled';
+      state.set('runCommandMode', mode);
+      if (db) await db.saveSetting('runCommandMode', mode);
+      setRunCommandMode(mode);
+      updateRunCommandBadge(mode);
+
+      const modeNames: Record<string, string> = { auto: '自动执行', confirm: '需确认', disabled: '已禁用' };
+      showToast(`命令执行模式：${modeNames[mode]}`, 'info');
+      logInfo(`命令执行模式已切换: ${mode}`);
     });
   }
+}
+
+function updateRunCommandBadge(mode: string): void {
+  const badge = modalEl.querySelector('#runCommandBadge') as HTMLElement;
+  if (!badge) return;
+  const map: Record<string, { text: string; cls: string }> = {
+    auto: { text: '自动', cls: 'auto' },
+    confirm: { text: '需确认', cls: 'confirm' },
+    disabled: { text: '禁用', cls: 'disabled' }
+  };
+  const info = map[mode] || map.confirm;
+  badge.textContent = info.text;
+  badge.className = `tool-card-badge ${info.cls}`;
 }
 
 export function openToolsModal(): void {
@@ -69,9 +81,10 @@ export function openToolsModal(): void {
   const toggleTC = modalEl.querySelector('#toggleToolCalling') as HTMLInputElement;
   if (toggleTC) toggleTC.checked = toolCallingEnabled;
 
-  const runCmdEnabled = state.get<boolean>('runCommandEnabled', true);
-  const toggle2 = modalEl.querySelector('#toggleRunCommand2') as HTMLInputElement;
-  if (toggle2) toggle2.checked = runCmdEnabled;
+  const runCommandMode = state.get<string>('runCommandMode', 'confirm');
+  const selectMode = modalEl.querySelector('#selectRunCommandMode') as HTMLSelectElement;
+  if (selectMode) selectMode.value = runCommandMode;
+  updateRunCommandBadge(runCommandMode);
 
   modalEl.style.display = '';
 }

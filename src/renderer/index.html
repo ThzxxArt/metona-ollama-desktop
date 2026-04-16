@@ -426,14 +426,15 @@
                     <div class="tool-card-desc">文件内查找替换，支持全部替换</div>
                 </div>
                 <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">💻</span><span class="tool-card-name">run_command</span><span class="tool-card-badge confirm">需确认</span></div>
+                    <div class="tool-card-header"><span class="tool-card-icon">💻</span><span class="tool-card-name">run_command</span><span class="tool-card-badge confirm" id="runCommandBadge">需确认</span></div>
                     <div class="tool-card-desc">执行 shell 命令，无超时限制</div>
                     <div style="margin-top:6px;display:flex;align-items:center;gap:8px;">
-                        <label class="toggle-label" style="margin:0;font-size:11px;">
-                            <input type="checkbox" id="toggleRunCommand2">
-                            <span class="toggle-slider"></span>
-                            <span style="margin-left:4px;">启用命令执行</span>
-                        </label>
+                        <label style="margin:0;font-size:11px;color:var(--text-secondary);">执行模式：</label>
+                        <select id="selectRunCommandMode" style="font-size:11px;padding:2px 6px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:4px;">
+                            <option value="confirm">需确认</option>
+                            <option value="auto">自动执行</option>
+                            <option value="disabled">禁用</option>
+                        </select>
                     </div>
                 </div>
                 <div class="tool-card">

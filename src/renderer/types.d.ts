@@ -274,7 +274,7 @@ export type StateKey =
   | 'temperature'
   | 'thinkEnabled'
   | 'toolCallingEnabled'
-  | 'runCommandEnabled'
+  | 'runCommandMode'
   | 'memoryEnabled'
   | 'memoryEntries'
   | 'embeddingModel';

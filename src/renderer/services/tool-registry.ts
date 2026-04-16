@@ -356,7 +356,22 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
 const CONFIRM_TOOLS = ['run_command'];
 
 export function needsConfirmation(toolName: string): boolean {
+  if (toolName === 'run_command') {
+    // run_command 确认模式由 runCommandMode 状态控制
+    const runCommandMode = (window as any).__runCommandMode || 'confirm';
+    return runCommandMode === 'confirm';
+  }
   return CONFIRM_TOOLS.includes(toolName);
+}
+
+/** 设置 run_command 执行模式 */
+export function setRunCommandMode(mode: 'auto' | 'confirm' | 'disabled'): void {
+  (window as any).__runCommandMode = mode;
+  if (mode === 'disabled') {
+    setToolEnabled('run_command', false);
+  } else {
+    setToolEnabled('run_command', true);
+  }
 }
 
 let enabledTools: Set<string> = new Set([
