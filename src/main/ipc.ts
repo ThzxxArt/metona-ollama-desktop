@@ -167,7 +167,7 @@ export function setupIPC(): void {
       if (result.success) {
         sendLog('success', `🔧 ${toolName} ✓`, summarizeResult(toolName, result));
       } else {
-        sendLog('warn', `🔧 ${toolName} ✗`, (result.error || '未知错误').slice(0, 200));
+        sendLog('warn', `🔧 ${toolName} ✗`, String(result.error || '未知错误').slice(0, 200));
       }
       return result;
     } catch (err) {
