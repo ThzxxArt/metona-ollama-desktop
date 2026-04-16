@@ -273,6 +273,11 @@ async function init(): Promise<void> {
     initInputArea();
     initSettingsModal();
     initHistoryModal();
+    initHelpModal();
+    initToolConfirmModal();
+    initMemoryModal();
+    initToolsModal();
+    initWorkspacePanel();
     setupDesktopIntegration();
     checkConnection().then(loadModels);
   }

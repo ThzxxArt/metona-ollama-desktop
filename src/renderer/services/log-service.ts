@@ -181,6 +181,6 @@ export function logConnection(status: string, detail?: string): void { addLog(st
 export function logModel(name: string, action: string): void { addLog('info', `模型: ${action}`, name); }
 export function logSession(action: string, detail?: string): void { addLog('info', `会话: ${action}`, detail); }
 export function logMemory(action: string, detail?: string): void { addLog('debug', `记忆: ${action}`, detail); }
-export function logRAG(action: string, detail?: string): void { addLog('info', `RAG: ${action}`, detail); }
+export function logRAG(action: string, detail?: string): void { addLog('info', `向量: ${action}`, detail); }
 export function logSetting(key: string, value: string): void { addLog('debug', `设置: ${key}`, value); }
 export function logInit(msg: string): void { addLog('info', `初始化: ${msg}`); }
