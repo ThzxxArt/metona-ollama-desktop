@@ -91,6 +91,7 @@ export function initMemoryModal(): void {
                 <input type="text" id="memorySearchLg" class="memory-search-input-lg" placeholder="搜索记忆（支持关键词和语义搜索）...">
               </div>
               <span id="memoryVectorBadge" class="memory-vector-badge disabled">关键词模式</span>
+              <button class="btn btn-sm btn-outline" id="btnImportMemoryMd">📥 导入</button>
               <button class="btn btn-sm btn-outline" id="btnAddMemoryLg">＋ 添加</button>
               <button class="btn btn-sm btn-danger-outline" id="btnClearMemoryLg">清空</button>
             </div>
@@ -133,6 +134,9 @@ export function initMemoryModal(): void {
 
   // 添加记忆
   overlay.querySelector('#btnAddMemoryLg')!.addEventListener('click', openAddDialog);
+
+  // 导入 Markdown 记忆文档
+  overlay.querySelector('#btnImportMemoryMd')!.addEventListener('click', importMemoryFromMd);
 
   // 清空
   overlay.querySelector('#btnClearMemoryLg')!.addEventListener('click', async () => {
@@ -276,6 +280,113 @@ function renderList(): void {
       if (entry) openEditDialog(entry);
     });
   });
+}
+
+// ── 导入 Markdown 记忆文档 ──
+
+async function importMemoryFromMd(): Promise<void> {
+  const bridge = (window as any).metonaDesktop;
+  if (!bridge || !bridge.isDesktop) {
+    showToast('导入功能仅在桌面端可用', 'warning');
+    return;
+  }
+
+  const paths = await bridge.dialog.openFile({
+    filters: [{ name: 'Markdown 文档', extensions: ['md'] }]
+  });
+  if (!paths || paths.length === 0) return;
+
+  const filePath = paths[0];
+  const fileName = filePath.split(/[/\\]/).pop() || filePath;
+
+  try {
+    const result = await bridge.fs.readFile(filePath);
+    if (!result.success) {
+      showToast(`读取失败: ${result.error}`, 'error');
+      return;
+    }
+
+    const content = result.content as string;
+    const sections = parseMdToMemories(content);
+
+    if (sections.length === 0) {
+      showToast('未从文档中解析到有效记忆内容', 'warning');
+      return;
+    }
+
+    let imported = 0;
+    let skipped = 0;
+    for (const sec of sections) {
+      if (!sec.content || sec.content.length < 5) { skipped++; continue; }
+      await addMemory({
+        type: sec.type || 'fact',
+        content: sec.content,
+        importance: sec.importance || 5,
+        tags: sec.tags || [],
+        source: fileName
+      });
+      imported++;
+    }
+
+    renderList();
+    updateStats();
+    showToast(`已从 ${fileName} 导入 ${imported} 条记忆${skipped > 0 ? `（跳过 ${skipped} 条）` : ''}`, 'success', 3000);
+  } catch (err) {
+    showToast(`导入失败: ${(err as Error).message}`, 'error');
+  }
+}
+
+function parseMdToMemories(md: string): Array<{ type: MemoryType; content: string; importance: number; tags: string[] }> {
+  const results: Array<{ type: MemoryType; content: string; importance: number; tags: string[] }> = [];
+
+  // 按 ## 二级标题分块
+  const blocks = md.split(/^## /m).filter(b => b.trim());
+
+  for (const block of blocks) {
+    const lines = block.trim().split('\n');
+    const heading = lines[0]?.trim() || '';
+    const body = lines.slice(1).join('\n').trim();
+    if (!body && !heading) continue;
+
+    // 从标题推断类型
+    let type: MemoryType = 'fact';
+    const headingLower = heading.toLowerCase();
+    if (headingLower.includes('偏好') || headingLower.includes('preference') || headingLower.includes('风格') || headingLower.includes('习惯')) {
+      type = 'preference';
+    } else if (headingLower.includes('规则') || headingLower.includes('rule') || headingLower.includes('规范') || headingLower.includes('约束')) {
+      type = 'rule';
+    }
+
+    // 提取标签：标题中的关键词 + 正文前几个有意义的词
+    const tags: string[] = [];
+    if (heading) {
+      const headingTags = heading.replace(/[^\w\u4e00-\u9fff\s]/g, ' ').split(/\s+/).filter(w => w.length > 1);
+      tags.push(...headingTags.slice(0, 3));
+    }
+
+    // 内容：标题 + 正文（如果正文为空用标题作内容）
+    const content = body ? `${heading ? heading + '：' : ''}${body}` : heading;
+    if (content.length < 5) continue;
+
+    // 从标题提取重要性（如 "重要性:8" 或 "importance: 7"）
+    let importance = 5;
+    const impMatch = heading.match(/(?:重要性|importance)\s*[:：]\s*(\d+)/i);
+    if (impMatch) importance = Math.min(10, Math.max(1, parseInt(impMatch[1]) || 5));
+
+    results.push({ type, content: content.slice(0, 500), importance, tags });
+  }
+
+  // 如果按标题分块无结果，按段落分块
+  if (results.length === 0) {
+    const paragraphs = md.split(/\n{2,}/).filter(p => p.trim());
+    for (const para of paragraphs) {
+      const text = para.trim().replace(/^[-*]\s+/gm, '').replace(/^#+\s+/gm, '');
+      if (text.length < 10) continue;
+      results.push({ type: 'fact', content: text.slice(0, 500), importance: 5, tags: [] });
+    }
+  }
+
+  return results;
 }
 
 // ── 添加对话框 ──
