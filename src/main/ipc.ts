@@ -32,7 +32,7 @@ import {
   handleDiffFiles,
   handleReplaceInFiles,
   handleReadMultipleFiles,
-  handleGitStatus,
+  handleGit,
   handleCompress
 } from './tool-handlers.js';
 import { getAllowedDirs, getBlockedDirs, setAllowedDirs } from './tool-security.js';
@@ -132,7 +132,7 @@ export function setupIPC(): void {
         case 'diff_files':         return await handleDiffFiles(args as { file1: string; file2: string; context_lines?: number });
         case 'replace_in_files':   return await handleReplaceInFiles(args as { path: string; glob: string; old_text: string; new_text: string });
         case 'read_multiple_files':return await handleReadMultipleFiles(args as { paths: string[]; max_chars_per_file?: number });
-        case 'git_status':         return await handleGitStatus(args as { path?: string });
+        case 'git':                return await handleGit(args as any);
         case 'compress':           return await handleCompress(args as { action: string; path: string; destination?: string; format?: string });
         default:                   return { success: false, error: `未知工具: ${toolName}` };
       }

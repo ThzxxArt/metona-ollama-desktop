@@ -295,13 +295,26 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     type: 'function',
     function: {
-      name: 'git_status',
-      description: 'Show git repository status: branch, modified/staged/untracked files.',
+      name: 'git',
+      description: 'Git operations: status, log, diff, add, commit, push, pull, branch, checkout, merge, stash, remote, clone, init. All operations are automatic (no confirmation).',
       parameters: {
         type: 'object',
-        required: [],
+        required: ['action'],
         properties: {
-          path: { type: 'string', description: 'Repository path. Defaults to workspace.' }
+          action: { type: 'string', enum: ['status', 'log', 'diff', 'add', 'commit', 'push', 'pull', 'branch', 'checkout', 'merge', 'stash', 'remote', 'clone', 'init', 'reset', 'tag'], description: 'Git action to perform.' },
+          path: { type: 'string', description: 'Repository path. Defaults to workspace.' },
+          files: { type: 'array', items: { type: 'string' }, description: 'Files for add/diff/checkout.' },
+          message: { type: 'string', description: 'Commit message for commit action.' },
+          branch: { type: 'string', description: 'Branch name for branch/checkout/merge.' },
+          remote: { type: 'string', description: 'Remote name for push/pull/remote.' },
+          remote_url: { type: 'string', description: 'Remote URL for remote add.' },
+          count: { type: 'integer', description: 'Number of log entries. Default: 20.' },
+          all: { type: 'boolean', description: 'Show all (branches, stashes, etc). Default: false.' },
+          staged: { type: 'boolean', description: 'Show staged changes in diff. Default: false.' },
+          new_branch: { type: 'boolean', description: 'Create new branch in branch action. Default: false.' },
+          delete_branch: { type: 'boolean', description: 'Delete branch in branch action. Default: false.' },
+          force: { type: 'boolean', description: 'Force push/checkout. Default: false.' },
+          url: { type: 'string', description: 'Repository URL for clone.' }
         }
       }
     }
@@ -337,7 +350,7 @@ let enabledTools: Set<string> = new Set([
   'run_command',
   'move_file', 'copy_file', 'web_fetch', 'append_file', 'edit_file',
   'get_file_info', 'tree', 'download_file', 'diff_files', 'replace_in_files',
-  'read_multiple_files', 'git_status', 'compress'
+  'read_multiple_files', 'git', 'compress'
 ]);
 
 export function setToolEnabled(toolName: string, enabled: boolean): void {
@@ -422,7 +435,7 @@ export function getToolIcon(name: string): string {
     diff_files: '🔀',
     replace_in_files: '🔄',
     read_multiple_files: '📚',
-    git_status: '🔖',
+    git: '🔖',
     compress: '🗜️'
   };
   return icons[name] || '🔧';
@@ -448,7 +461,7 @@ export function formatToolName(name: string): string {
     diff_files: '文件对比',
     replace_in_files: '批量替换',
     read_multiple_files: '批量读取',
-    git_status: 'Git 状态',
+    git: 'Git 操作',
     compress: '压缩/解压'
   };
   return names[name] || name;
