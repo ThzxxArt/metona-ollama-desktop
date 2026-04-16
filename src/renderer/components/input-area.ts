@@ -10,14 +10,13 @@ import {
   updateLastAssistantMessage, clearMessages, safeMarkdown, enableAutoScroll, updateTotalTokens
 } from './chat-area.js';
 import { showToast } from './toast.js';
-import { isRagEnabled, performRagRetrieval } from './kb-modal.js';
 import { ChatDB } from '../db/chat-db.js';
 import { OllamaAPI } from '../api/ollama.js';
 import { runAgentLoop } from '../services/agent-engine.js';
 import { searchMemories, buildMemoryContext, markMemoryUsed, extractMemoriesFromConversation, isMemoryEnabled } from '../services/memory-manager.js';
 import { showToolConfirm } from './tool-confirm-modal.js';
 import { logInfo, logStream, logError, logSuccess, logWarn } from '../services/log-service.js';
-import type { ChatSession, ChatMessage, OllamaStreamChunk, RagSource, FileContent, ChatFile, ToolCallRecord } from '../types.js';
+import type { ChatSession, ChatMessage, OllamaStreamChunk, FileContent, ChatFile, ToolCallRecord } from '../types.js';
 
 let chatInputEl: HTMLTextAreaElement;
 let btnSendEl: HTMLButtonElement;
@@ -396,61 +395,7 @@ export async function sendMessage(): Promise<void> {
       }
     }
 
-    let ragSources: RagSource[] | null = null;
-
-    if (isRagEnabled()) {
-      appendSystemMessage('🧠 正在检索知识库...', 'rag-status');
-      try {
-        const textForRag = text;
-        const ragResult = await performRagRetrieval(textForRag);
-        if (ragResult && ragResult.results && ragResult.results.length > 0) {
-          const ctxLimit = numCtx || 24576;
-          const outputReserve = 2048;
-          const msgChars = apiMessages.reduce((sum, m) => sum + (m.content?.length || 0), 0);
-          const systemChars = ((chatParams.system as string)?.length || 0);
-          const usedTokens = Math.ceil((msgChars + systemChars) / 2);
-          const ragBudget = Math.max(0, ctxLimit - outputReserve - usedTokens);
-          const ragBudgetChars = ragBudget * 2;
-
-          let ragContext = ragResult.results.map((r: any, i: number) =>
-            `[来源 ${i + 1}: ${r.filename}]\n${r.text}`
-          ).join('\n\n---\n\n');
-
-          const ragTemplate = `你是一个知识库问答助手。以下是检索到的相关文档片段，请基于这些内容回答用户的问题。\n\n=== 检索到的相关内容 ===\n${ragContext}\n=== 内容结束 ===`;
-          if (ragContext.length + ragTemplate.length > ragBudgetChars) {
-            ragContext = ragContext.slice(0, Math.max(0, ragBudgetChars - ragTemplate.length - 50)) + '\n\n[知识库内容过长，已截取最相关的部分]';
-            appendSystemMessage(`⚠️ 知识库内容已截取（预算 ${ragBudgetChars} 字符）`, 'rag-status');
-          }
-
-          const ragPrompt = `你是一个知识库问答助手。以下是检索到的相关文档片段，请基于这些内容回答用户的问题。如果检索到的内容无法回答问题，请如实说明。\n\n=== 检索到的相关内容 ===\n${ragContext}\n=== 内容结束 ===\n\n请基于以上内容回答用户的问题。引用时请注明来源编号（如"来源 1"）。`;
-
-          chatParams.system = chatParams.system
-            ? (chatParams.system as string) + '\n\n' + ragPrompt
-            : ragPrompt;
-
-          ragSources = ragResult.results.map((r: any) => ({
-            filename: r.filename,
-            score: r.score,
-            text: truncate(r.text, 100)
-          }));
-          const sourceNames = [...new Set(ragSources.map(s => s.filename))];
-          appendSystemMessage(`🧠 已检索 ${ragSources.length} 个相关片段（来源：${sourceNames.join('、')}）`, 'rag-status');
-        } else {
-          appendSystemMessage('🧠 知识库未检索到相关内容，使用通用知识回答', 'rag-status');
-        }
-      } catch (ragErr) {
-        logError('RAG 检索失败', (ragErr as Error).message);
-        appendSystemMessage(`🧠 知识库检索失败: ${(ragErr as Error).message}`, 'rag-status');
-      }
-    }
-
-    let ragStatusCleared = false;
-
     await api.chatStream(chatParams as any, (chunk: OllamaStreamChunk) => {
-      if (!ragStatusCleared && chunk.message?.content) {
-        ragStatusCleared = true;
-        document.querySelectorAll('.rag-status').forEach(el => el.remove());
-      }
       if (chunk.message) {
         if (chunk.message.content) assistantContent += chunk.message.content;
         const think = chunk.message.thinking || chunk.message.reasoning_content;
@@ -487,8 +432,7 @@ export async function sendMessage(): Promise<void> {
       timestamp: Date.now(),
       ...(modelName && { model: modelName }),
       ...(thinkContent && { think: thinkContent }),
-      ...(finalStats && { eval_count: finalStats.eval_count, total_duration: finalStats.total_duration }),
-      ...(ragSources && { ragSources })
+      ...(finalStats && { eval_count: finalStats.eval_count, total_duration: finalStats.total_duration })
     };
     state.update(KEYS.CURRENT_SESSION, (session: any) => ({
       ...session,
@@ -498,20 +442,6 @@ export async function sendMessage(): Promise<void> {
 
     if (finalStats) {
       updateLastAssistantMessage(assistantContent, thinkContent || null, finalStats, modelName || undefined);
-    }
-
-    if (ragSources && ragSources.length > 0) {
-      const lastAssistant = document.querySelector('#messagesContainer .message.assistant:last-of-type');
-      if (lastAssistant) {
-        const sourcesHtml = ragSources.map((s, i) => {
-          const scorePercent = s.score ? `${(s.score * 100).toFixed(0)}%` : '';
-          return `<div class="rag-source-item"><span class="rag-source-name">📄 来源 ${i + 1}: ${escapeHtml(s.filename)}</span>${scorePercent ? `<span class="rag-source-score">${scorePercent}</span>` : ''}</div>`;
-        }).join('');
-        const ragDiv = document.createElement('div');
-        ragDiv.className = 'rag-sources';
-        ragDiv.innerHTML = `<div class="rag-sources-header">🧠 基于知识库回答</div>${sourcesHtml}`;
-        lastAssistant.querySelector('.msg-body')!.appendChild(ragDiv);
-      }
     }
 
     await saveCurrentSession();
@@ -532,8 +462,6 @@ export async function sendMessage(): Promise<void> {
       }
     }
   } catch (err) {
-    document.querySelectorAll('.rag-status').forEach(el => el.remove());
-
     if ((err as Error).name === 'AbortError') {
       const placeholder = document.querySelector('#messagesContainer .message.assistant.loading') as HTMLElement;
       const loadingDots = placeholder?.querySelector('.loading-dots');
@@ -596,7 +524,7 @@ export async function sendMessage(): Promise<void> {
       errMsg = '❌ 连接失败。请检查：\n1. Ollama 是否正在运行\n2. 地址是否正确\n3. 是否设置了 OLLAMA_ORIGINS="*"';
       logError('连接失败', 'Ollama 服务不可达');
     } else if ((err as Error).message.includes('400')) {
-      errMsg = '❌ 请求参数错误，可能是知识库内容超出模型上下文限制';
+      errMsg = '❌ 请求参数错误，可能是上下文过长';
       logError('请求参数错误 (400)', (err as Error).message);
     } else if ((err as Error).message.includes('500')) {
       errMsg = '❌ Ollama 服务器错误，请检查 Ollama 日志';

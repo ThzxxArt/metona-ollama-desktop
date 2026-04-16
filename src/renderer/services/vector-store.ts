@@ -54,7 +54,7 @@ export class VectorStore {
 
   async createCollection(name: string, embeddingModel = ''): Promise<VectorCollection> {
     const col: VectorCollection = {
-      id: `kb_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      id: `mem_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       name, embeddingModel,
       docCount: 0, chunkCount: 0,
       createdAt: Date.now(), updatedAt: Date.now()

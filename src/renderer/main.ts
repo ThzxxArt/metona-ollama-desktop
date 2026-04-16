@@ -19,12 +19,10 @@ import { initChatArea, renderMessages, clearMessages, enableAutoScroll, updateTo
 import { initInputArea } from './components/input-area.js';
 import { initSettingsModal, closeSettingsModal } from './components/settings-modal.js';
 import { initHistoryModal, closeHistoryModal } from './components/history-modal.js';
-import { initKBModal } from './components/kb-modal.js';
-import { initVectorStore } from './services/rag.js';
+import { initMemoryModal } from './components/memory-modal.js';
 import { initMemoryManager } from './services/memory-manager.js';
 import { setToolEnabled } from './services/tool-registry.js';
 import { initToolConfirmModal } from './components/tool-confirm-modal.js';
-import { initMemoryPanel } from './components/memory-panel.js';
 import { initWorkspacePanel } from './components/workspace-panel.js';
 import { initLogPanel, addLog } from './services/log-service.js';
 import { logInfo, logSuccess, logError, logDebug, logInit, logWarn } from './services/log-service.js';
@@ -204,10 +202,9 @@ async function init(): Promise<void> {
     initInputArea();
     initSettingsModal();
     initHistoryModal();
-    initKBModal();
     initHelpModal();
     initToolConfirmModal();
-    initMemoryPanel();
+    initMemoryModal();
     initWorkspacePanel();
     setupDesktopIntegration();
 
@@ -215,7 +212,6 @@ async function init(): Promise<void> {
 
     await checkConnection();
     await loadModels();
-    await initVectorStore();
     await initMemoryManager();
     logInit('所有组件已就绪');
 
@@ -291,16 +287,10 @@ function bindGlobalEvents(): void {
       closeHistoryModal();
       closeLightbox();
       (document.querySelector('#helpModal') as HTMLElement).style.display = 'none';
-      (document.querySelector('#kbModal') as HTMLElement).style.display = 'none';
+      (document.querySelector('#memoryModal') as HTMLElement).style.display = 'none';
     }
 
-    // Ctrl+K — 知识库管理
-    if (e.ctrlKey && e.key === 'k') {
-      e.preventDefault();
-      document.querySelector('#btnKB')?.dispatchEvent(new Event('click'));
-    }
-
-    // Ctrl+M — 记忆面板
+    // Ctrl+M — 记忆管理
     if (e.ctrlKey && e.key === 'm') {
       e.preventDefault();
       document.querySelector('#btnMemory')?.dispatchEvent(new Event('click'));

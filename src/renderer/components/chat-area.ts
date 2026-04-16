@@ -166,17 +166,6 @@ export function appendMessageDOM(msg: ChatMessage, index: number): void {
     contentHtml += `<div class="msg-stats">${stats.map((s, i) => `<span${statClasses[i] ? ` class="${statClasses[i]}"` : ''}>${s}</span>`).join(' · ')}</div>`;
   }
 
-  if (msg.role === 'assistant' && msg.ragSources && msg.ragSources.length > 0) {
-    const sourcesHtml = msg.ragSources.map((s, i) => {
-      const scorePercent = s.score ? `${(s.score * 100).toFixed(0)}%` : '';
-      return `<div class="rag-source-item">
-        <span class="rag-source-name">📄 来源 ${i + 1}: ${escapeHtml(s.filename)}</span>
-        ${scorePercent ? `<span class="rag-source-score">${scorePercent}</span>` : ''}
-      </div>`;
-    }).join('');
-    contentHtml += `<div class="rag-sources"><div class="rag-sources-header">🧠 基于知识库回答</div>${sourcesHtml}</div>`;
-  }
-
   if (msg.role === 'assistant' && msg.toolCalls && msg.toolCalls.length > 0) {
     contentHtml += '<div class="tool-calls-container">';
     for (const tc of msg.toolCalls) {

@@ -46,14 +46,6 @@
                     <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
                 </svg>
             </button>
-            <button class="icon-btn" id="btnKB" title="知识库">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
-                    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
-                    <line x1="8" y1="7" x2="16" y2="7"/>
-                    <line x1="8" y1="11" x2="14" y2="11"/>
-                </svg>
-            </button>
             <button class="icon-btn" id="btnMemory" title="Agent 记忆">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M12 2a7 7 0 0 1 7 7c0 2.38-1.19 4.47-3 5.74V17a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1v-2.26C6.19 13.47 5 11.38 5 9a7 7 0 0 1 7-7z"/>
@@ -93,7 +85,6 @@
             <span class="model-badge think-badge" id="badgeThink" style="display:none;">🧠 Think</span>
             <span class="model-badge vision-badge" id="badgeVision" style="display:none;">👁️ Vision</span>
             <span class="model-badge tools-badge" id="badgeTools" style="display:none;">🔧 Tools</span>
-            <span class="model-badge rag-badge" id="badgeRAG" style="display:none;">📚 RAG</span>
         </div>
     </div>
 
@@ -319,8 +310,15 @@
                     <div class="tool-item"><span>📌 事实</span><span class="text-muted">项目信息、身份背景</span></div>
                     <div class="tool-item"><span>⚙️ 偏好</span><span class="text-muted">语言风格、技术栈偏好</span></div>
                     <div class="tool-item"><span>📏 规则</span><span class="text-muted">编码规范、输出格式要求</span></div>
-                    <div class="tool-item"><span>📝 事件</span><span class="text-muted">完成的任务、结论</span></div>
                 </div>
+            </div>
+            <div class="setting-group">
+                <label class="setting-label">🧠 向量记忆引擎</label>
+                <p class="text-muted" style="font-size:11px;margin-bottom:8px;">选择嵌入模型以启用向量语义记忆。未选择时仅使用关键词匹配。</p>
+                <select class="setting-input" id="selectMemoryEmbedModel">
+                    <option value="">未选择（仅关键词模式）</option>
+                </select>
+                <div id="memoryVectorStatus" class="text-muted" style="font-size:11px;margin-top:4px;"></div>
             </div>
             <div class="setting-group">
                 <label class="setting-label">显存管理</label>
@@ -373,68 +371,16 @@
             </button>
         </div>
         <div class="modal-body">
-            <div class="help-section"><h4>🚀 快速开始</h4><ol><li>确保 Ollama 已启动（默认 <code>http://127.0.0.1:11434</code>，可在设置中修改）</li><li>顶部模型栏选择一个模型，右侧会显示模型能力徽章（🧠 Think / 👁️ Vision / 🔧 Tools / 📚 RAG）</li><li>输入消息，按 <kbd>Enter</kbd> 发送，<kbd>Shift+Enter</kbd> 换行</li></ol></div>
+            <div class="help-section"><h4>🚀 快速开始</h4><ol><li>确保 Ollama 已启动（默认 <code>http://127.0.0.1:11434</code>，可在设置中修改）</li><li>顶部模型栏选择一个模型，右侧会显示模型能力徽章（🧠 Think / 👁️ Vision / 🔧 Tools）</li><li>输入消息，按 <kbd>Enter</kbd> 发送，<kbd>Shift+Enter</kbd> 换行</li></ol></div>
             <div class="help-section"><h4>💬 聊天功能</h4><ul><li><strong>流式回复</strong> — 实时打字效果，随时点 ■ 停止</li><li><strong>Think 推理</strong> — 设置中开启，让模型展示深度思考过程（需模型支持，如 Qwen3）</li><li><strong>多模态</strong> — 上传图片，模型需支持 Vision 能力</li><li><strong>文件分析</strong> — 支持 50+ 种文本/代码格式，单文件 ≤500KB，内容以代码块发送给模型</li><li><strong>上下文长度</strong> — 设置中调整 <code>num_ctx</code>，越大记忆越长，消耗显存越多</li></ul></div>
             <div class="help-section"><h4>🔧 Tool Calling（AI 自主操作）</h4><ul><li>设置中开启后，AI 可以在对话中<strong>自主调用本地工具</strong>，像一个本地 Agent</li><li><strong>7 个工具</strong>：<code>read_file</code> / <code>write_file</code> / <code>list_directory</code> / <code>search_files</code> / <code>create_directory</code> / <code>delete_file</code> / <code>run_command</code></li><li>写入/删除/命令执行等高风险操作会弹出<strong>确认对话框</strong>，你可以批准或拒绝</li><li>危险命令（<code>rm -rf</code>、<code>mkfs</code>、反弹 shell 等）和系统路径（<code>/etc</code>、<code>~/.ssh</code> 等）被自动拦截</li><li>工具调用以<strong>可视化卡片</strong>展示状态（pending → running → success/error）</li><li>最多自动循环 <strong>10 轮</strong>工具调用，也可随时中断</li><li>⚠️ 需要模型支持 Tool Calling（推荐 Qwen3、Llama 3.1+、Mistral）</li></ul></div>
-            <div class="help-section"><h4>🧠 Agent 记忆系统</h4><ul><li>设置中开启后，AI 从对话中<strong>自动提取关键信息</strong>（事实/偏好/规则/事件），跨会话持续积累</li><li>对话满 <strong>6 条消息</strong>后自动触发记忆提取</li><li>新对话时自动检索相关记忆注入上下文，让 AI "记住"你</li><li>点击顶部 🧠 按钮打开记忆面板：搜索、筛选、编辑、删除</li><li>记忆存储在本地 IndexedDB，不会上传到任何服务器</li></ul></div>
-            <div class="help-section"><h4>📚 知识库 (RAG)</h4><ul><li>点击顶部 📚 按钮打开知识库管理</li><li>创建集合 → 选择嵌入模型（推荐 <code>nomic-embed-text</code>）</li><li>上传文档，自动分块并生成向量索引</li><li>开启 RAG 检索后，聊天时自动检索相关文档增强回答</li></ul></div>
+            <div class="help-section"><h4>🧠 Agent 记忆系统</h4><ul><li>设置中开启后，AI 从对话中<strong>自动提取关键信息</strong>（事实/偏好/规则），跨会话持续积累</li><li>对话满 <strong>6 条消息</strong>后自动触发记忆提取</li><li>新对话时自动检索相关记忆注入上下文，让 AI "记住"你</li><li>点击顶部 🧠 按钮打开记忆面板：搜索、筛选、编辑、删除</li><li><strong>向量语义搜索</strong>：在设置中选择嵌入模型后，支持语义级别记忆检索（更精准）</li><li>未选择嵌入模型时，使用关键词匹配检索记忆</li><li>记忆存储在本地 IndexedDB，不会上传到任何服务器</li></ul></div>
             <div class="help-section"><h4>🖥️ 布局说明</h4><ul><li><strong>左侧面板</strong> — 执行日志，实时显示应用运行日志（连接、模型加载、工具调用等）</li><li><strong>中间区域</strong> — 聊天消息，顶部 Header + 模型栏，底部输入框</li><li><strong>右侧面板</strong> — 工作空间（常驻显示），包含：<ul><li><strong>💻 命令行 Tab</strong> — 终端界面，实时流式输出，支持长时间运行（无超时），多终端 Tab</li><li><strong>📁 文件 Tab</strong> — 浏览工作空间目录，点击文件预览内容</li></ul></li><li>工作空间面板宽度可通过拖拽左边缘调整（300–700px）</li><li>工作空间目录可在设置中修改</li></ul></div>
             <div class="help-section"><h4>🕐 历史记录</h4><ul><li>所有会话自动保存到本地 IndexedDB</li><li>点击顶部 🕐 按钮查看、搜索、恢复历史会话</li><li>支持导出 Markdown / HTML / TXT / <code>.metona</code> 加密备份</li></ul></div>
-            <div class="help-section"><h4>⚡ 快捷键</h4><table class="help-shortcuts"><tr><td><kbd>Enter</kbd></td><td>发送消息</td></tr><tr><td><kbd>Shift + Enter</kbd></td><td>换行</td></tr><tr><td><kbd>Ctrl + N</kbd></td><td>新建会话</td></tr><tr><td><kbd>Ctrl + K</kbd></td><td>知识库管理</td></tr><tr><td><kbd>Ctrl + M</kbd></td><td>记忆面板</td></tr><tr><td><kbd>Esc</kbd></td><td>关闭弹窗</td></tr></table></div>
+            <div class="help-section"><h4>⚡ 快捷键</h4><table class="help-shortcuts"><tr><td><kbd>Enter</kbd></td><td>发送消息</td></tr><tr><td><kbd>Shift + Enter</kbd></td><td>换行</td></tr><tr><td><kbd>Ctrl + N</kbd></td><td>新建会话</td></tr><tr><td><kbd>Ctrl + M</kbd></td><td>记忆管理</td></tr><tr><td><kbd>Esc</kbd></td><td>关闭弹窗</td></tr></table></div>
         </div>
     </div>
 </div>
-
-<!-- ═══════════════ 知识库管理模态框 ═══════════════ -->
-<div class="modal-overlay" id="kbModal" style="display:none;">
-    <div class="modal modal-lg">
-        <div class="modal-header">
-            <h3>📚 知识库 (RAG)</h3>
-            <button class="icon-btn" id="btnCloseKB">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-                </svg>
-            </button>
-        </div>
-        <div class="modal-body">
-            <div class="kb-layout">
-                <div class="kb-sidebar">
-                    <div class="kb-new-collection">
-                        <input class="setting-input" id="inputKBName" type="text" placeholder="新建知识库名称...">
-                        <button class="btn btn-sm btn-primary" id="btnNewCollection">创建</button>
-                    </div>
-                    <div class="kb-collection-list" id="kbCollectionList">
-                        <p class="text-muted" style="padding:16px;text-align:center;">暂无知识库</p>
-                    </div>
-                </div>
-                <div class="kb-main">
-                    <div class="kb-toolbar">
-                        <button class="btn btn-sm btn-outline" id="btnUploadDoc">📄 上传文档</button>
-                        <span id="kbProgress" style="display:none;" class="kb-progress">
-                            <span class="spinner"></span>
-                            <span id="kbProgressText">处理中...</span>
-                        </span>
-                        <select class="kb-embed-select" id="selectEmbedModel">
-                            <option value="">嵌入模型...</option>
-                        </select>
-                        <div class="kb-rag-toggle">
-                            <label class="setting-label" style="margin:0;font-size:12px;white-space:nowrap;">RAG</label>
-                            <label class="toggle-label" style="margin:0;">
-                                <input type="checkbox" id="toggleRAG">
-                                <span class="toggle-slider"></span>
-                            </label>
-                        </div>
-                    </div>
-                    <div class="kb-doc-list" id="kbDocList">
-                        <p class="text-muted" style="padding:16px;text-align:center;">← 选择一个知识库集合</p>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-
 
 <!-- ═══════════════ 图片预览 Lightbox ═══════════════ -->
 <div class="lightbox-overlay" id="lightbox" style="display:none;">

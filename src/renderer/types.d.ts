@@ -92,12 +92,6 @@ export interface FileContent {
   content: string;
 }
 
-export interface RagSource {
-  filename: string;
-  score: number;
-  text: string;
-}
-
 export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
@@ -109,7 +103,6 @@ export interface ChatMessage {
   images?: string[];
   files?: ChatFile[];
   _fileContents?: FileContent[];
-  ragSources?: RagSource[];
   stopped?: boolean;
   toolCalls?: ToolCallRecord[];
 }
@@ -125,7 +118,7 @@ export interface ChatSession {
 
 // ── Agent 记忆系统类型 ──
 
-export type MemoryType = 'fact' | 'preference' | 'rule' | 'episode';
+export type MemoryType = 'fact' | 'preference' | 'rule';
 
 export interface MemoryEntry {
   id: string;
@@ -135,6 +128,7 @@ export interface MemoryEntry {
   tags: string[];          // 用于快速匹配
   source?: string;         // 来源描述（如会话标题）
   sessionId?: string;      // 关联的会话 ID
+  embedding?: number[];    // 向量嵌入
   createdAt: number;
   updatedAt: number;
   lastUsedAt: number;      // 最后一次被回忆的时间
@@ -154,7 +148,7 @@ export interface MemoryExtractionResult {
   }>;
 }
 
-// ── 知识库类型 ──
+// ── 向量存储类型（用于记忆向量索引）──
 
 export interface VectorCollection {
   id: string;
@@ -181,11 +175,7 @@ export interface SearchResult extends VectorItem {
   score: number;
 }
 
-export interface DocInfo {
-  docId: string;
-  filename: string;
-  chunkCount: number;
-}
+
 
 // ── 桌面 Bridge 类型 ──
 
@@ -286,7 +276,8 @@ export type StateKey =
   | 'toolCallingEnabled'
   | 'runCommandEnabled'
   | 'memoryEnabled'
-  | 'memoryEntries';
+  | 'memoryEntries'
+  | 'embeddingModel';
 
 // ═══════════════════════════════════════════════════════════
 // Tool Calling 类型

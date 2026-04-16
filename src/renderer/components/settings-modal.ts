@@ -5,7 +5,7 @@
 import { state, KEYS } from '../state/state.js';
 import { debounce } from '../utils/utils.js';
 import { encryptData, decryptData } from '../services/crypto.js';
-import { setMemoryEnabled } from '../services/memory-manager.js';
+import { setMemoryEnabled, setEmbeddingModel, getEmbeddingModel, isVectorMemoryEnabled, getMemoryCache } from '../services/memory-manager.js';
 import { setToolEnabled } from '../services/tool-registry.js';
 import { logSetting, logInfo, logWarn, logError, logSuccess } from '../services/log-service.js';
 import { checkConnection, updateConnectionInfo, updateRunningModels } from './header.js';
@@ -153,6 +153,23 @@ export function initSettingsModal(): void {
     });
   }
 
+  // ── 向量记忆引擎设置 ──
+  const selectEmbedModel = document.querySelector('#selectMemoryEmbedModel') as HTMLSelectElement;
+  if (selectEmbedModel) {
+    selectEmbedModel.addEventListener('change', async () => {
+      const model = selectEmbedModel.value;
+      await setEmbeddingModel(model);
+      if (model) {
+        showToast(`向量记忆已启用（${model}）`, 'success');
+        logSetting('向量记忆引擎', `启用: ${model}`);
+      } else {
+        showToast('向量记忆已关闭，仅使用关键词匹配', 'info');
+        logSetting('向量记忆引擎', '关闭');
+      }
+      updateMemoryVectorStatus();
+    });
+  }
+
   // ── 工作空间目录设置 ──
   const inputWorkspaceDir = document.querySelector('#inputWorkspaceDir') as HTMLInputElement;
   const btnBrowseWorkspace = document.querySelector('#btnBrowseWorkspace') as HTMLButtonElement;
@@ -206,6 +223,8 @@ export function openSettingsModal(): void {
   (document.querySelector('#inputServerUrl') as HTMLInputElement).value = state.get<OllamaAPI>(KEYS.API)?.baseUrl || '';
   updateConnectionInfo();
   updateRunningModels();
+  populateMemoryEmbedModels();
+  updateMemoryVectorStatus();
 }
 
 export function closeSettingsModal(): void {
@@ -266,6 +285,64 @@ async function exportAllSessions(): Promise<void> {
   } catch (err) {
     showToast(`导出失败: ${(err as Error).message}`, 'error');
     logError('导出失败', (err as Error).message);
+  }
+}
+
+async function populateMemoryEmbedModels(): Promise<void> {
+  const select = document.querySelector('#selectMemoryEmbedModel') as HTMLSelectElement;
+  if (!select) return;
+  const api = state.get<OllamaAPI>(KEYS.API);
+  if (!api) return;
+
+  try {
+    const data = await api.listModels();
+    select.innerHTML = '<option value="">未选择（仅关键词模式）</option>';
+    if (!data.models || data.models.length === 0) return;
+
+    // 获取每个模型的能力信息，筛选嵌入模型
+    const checks = await Promise.allSettled(
+      data.models.map(async (m) => {
+        const info = await api.showModel(m.name);
+        const caps = info.capabilities || [];
+        return { name: m.name, size: m.size, isEmbed: caps.includes('embedding') };
+      })
+    );
+
+    const embedModels = checks
+      .filter(r => r.status === 'fulfilled' && r.value.isEmbed)
+      .map(r => (r as PromiseFulfilledResult<{ name: string; size?: number; isEmbed: boolean }>).value);
+
+    embedModels.forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m.name;
+      opt.textContent = m.name;
+      select.appendChild(opt);
+    });
+
+    if (embedModels.length === 0) {
+      select.innerHTML = '<option value="">未检测到嵌入模型，请先 ollama pull</option>';
+      return;
+    }
+
+    // 恢复已保存的选择
+    const saved = getEmbeddingModel();
+    if (saved) select.value = saved;
+  } catch (err) {
+    logWarn('加载嵌入模型列表失败', (err as Error).message);
+  }
+}
+
+function updateMemoryVectorStatus(): void {
+  const statusEl = document.querySelector('#memoryVectorStatus');
+  if (!statusEl) return;
+  const model = getEmbeddingModel();
+  if (model) {
+    const memCount = getMemoryCache().length;
+    statusEl.textContent = `✅ 向量搜索已启用（${model}）· ${memCount} 条记忆`;
+    (statusEl as HTMLElement).style.color = 'var(--success)';
+  } else {
+    statusEl.textContent = 'ℹ️ 未选择嵌入模型，仅使用关键词匹配';
+    (statusEl as HTMLElement).style.color = '';
   }
 }
 
