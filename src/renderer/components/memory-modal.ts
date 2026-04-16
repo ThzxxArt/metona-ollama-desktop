@@ -91,7 +91,7 @@ export function initMemoryModal(): void {
                 <input type="text" id="memorySearchLg" class="memory-search-input-lg" placeholder="搜索记忆（支持关键词和语义搜索）...">
               </div>
               <span id="memoryVectorBadge" class="memory-vector-badge disabled">关键词模式</span>
-              <button class="btn btn-sm btn-outline" id="btnImportMemoryMd">📥 导入</button>
+              <button class="btn btn-sm btn-outline" id="btnImportMemoryMd" disabled title="需先在设置中配置嵌入模型">📥 导入文档</button>
               <button class="btn btn-sm btn-outline" id="btnAddMemoryLg">＋ 添加</button>
               <button class="btn btn-sm btn-danger-outline" id="btnClearMemoryLg">清空</button>
             </div>
@@ -177,12 +177,17 @@ export function closeMemoryModal(): void {
 
 function updateVectorBadge(): void {
   const badge = modalEl.querySelector('#memoryVectorBadge')!;
+  const importBtn = modalEl.querySelector('#btnImportMemoryMd') as HTMLButtonElement;
   if (isVectorMemoryEnabled()) {
     badge.textContent = `✅ 向量搜索 (${getEmbeddingModel()})`;
     badge.className = 'memory-vector-badge enabled';
+    importBtn.disabled = false;
+    importBtn.title = '导入 Markdown 文档（自动向量化）';
   } else {
     badge.textContent = '关键词模式';
     badge.className = 'memory-vector-badge disabled';
+    importBtn.disabled = true;
+    importBtn.title = '需先在设置中配置嵌入模型';
   }
 }
 
@@ -285,6 +290,11 @@ function renderList(): void {
 // ── 导入 Markdown 记忆文档 ──
 
 async function importMemoryFromMd(): Promise<void> {
+  if (!isVectorMemoryEnabled()) {
+    showToast('请先在设置中配置嵌入模型以启用向量记忆', 'warning');
+    return;
+  }
+
   const bridge = (window as any).metonaDesktop;
   if (!bridge || !bridge.isDesktop) {
     showToast('导入功能仅在桌面端可用', 'warning');
@@ -330,7 +340,7 @@ async function importMemoryFromMd(): Promise<void> {
 
     renderList();
     updateStats();
-    showToast(`已从 ${fileName} 导入 ${imported} 条记忆${skipped > 0 ? `（跳过 ${skipped} 条）` : ''}`, 'success', 3000);
+    showToast(`已导入 ${imported} 条记忆（已向量化）${skipped > 0 ? `，跳过 ${skipped} 条` : ''}`, 'success', 3000);
   } catch (err) {
     showToast(`导入失败: ${(err as Error).message}`, 'error');
   }
