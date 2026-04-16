@@ -1,12 +1,12 @@
 /**
  * ToolsModal - 工具面板模态框
- * 展示所有可用工具的详细信息
+ * 展示所有可用工具的详细信息，管理 Tool Calling 开关
  */
 
 import { state, KEYS } from '../state/state.js';
 import { setToolEnabled } from '../services/tool-registry.js';
 import { showToast } from './toast.js';
-import { logInfo } from '../services/log-service.js';
+import { logInfo, logWarn } from '../services/log-service.js';
 import type { ChatDB } from '../types.js';
 
 let modalEl: HTMLElement;
@@ -21,25 +21,37 @@ export function initToolsModal(): void {
     if (e.target === modalEl) closeToolsModal();
   });
 
-  // 设置中"查看全部工具"按钮
-  document.querySelector('#btnOpenToolsFromSettings')?.addEventListener('click', () => {
-    (document.querySelector('#settingsModal') as HTMLElement).style.display = 'none';
-    openToolsModal();
-  });
+  // Tool Calling 主开关
+  const toggleToolCalling = modalEl.querySelector('#toggleToolCalling') as HTMLInputElement;
+  if (toggleToolCalling) {
+    toggleToolCalling.addEventListener('change', async () => {
+      const db = state.get<ChatDB | null>(KEYS.DB);
+      state.set('toolCallingEnabled', toggleToolCalling.checked);
+      if (db) await db.saveSetting('toolCallingEnabled', toggleToolCalling.checked);
+      if (toggleToolCalling.checked) {
+        const modelSupportsTools = state.get<boolean>('modelSupportsTools', false);
+        if (!modelSupportsTools) {
+          showToast('⚠️ 当前模型可能不支持 Tool Calling，建议使用 Qwen3、Llama 3.1+ 等模型', 'warning', 5000);
+          logWarn('Tool Calling 已开启（模型不支持）');
+        } else {
+          showToast('工具调用已开启', 'info');
+          logInfo('Tool Calling 已开启');
+        }
+      } else {
+        showToast('工具调用已关闭', 'info');
+        logInfo('Tool Calling 已关闭');
+      }
+    });
+  }
 
-  // run_command 开关（模态框中）
-  const toggle2 = document.querySelector('#toggleRunCommand2') as HTMLInputElement;
+  // run_command 开关
+  const toggle2 = modalEl.querySelector('#toggleRunCommand2') as HTMLInputElement;
   if (toggle2) {
     toggle2.addEventListener('change', async () => {
       const db = state.get<ChatDB | null>(KEYS.DB);
       state.set('runCommandEnabled', toggle2.checked);
       if (db) await db.saveSetting('runCommandEnabled', toggle2.checked);
       setToolEnabled('run_command', toggle2.checked);
-
-      // 同步设置面板的开关
-      const toggle1 = document.querySelector('#toggleRunCommand') as HTMLInputElement;
-      if (toggle1) toggle1.checked = toggle2.checked;
-
       if (toggle2.checked) {
         showToast('命令执行已开启（每次执行需确认）', 'info');
         logInfo('命令执行已开启');
@@ -52,9 +64,13 @@ export function initToolsModal(): void {
 }
 
 export function openToolsModal(): void {
-  // 同步 run_command 开关状态
+  // 同步开关状态
+  const toolCallingEnabled = state.get<boolean>('toolCallingEnabled', false);
+  const toggleTC = modalEl.querySelector('#toggleToolCalling') as HTMLInputElement;
+  if (toggleTC) toggleTC.checked = toolCallingEnabled;
+
   const runCmdEnabled = state.get<boolean>('runCommandEnabled', true);
-  const toggle2 = document.querySelector('#toggleRunCommand2') as HTMLInputElement;
+  const toggle2 = modalEl.querySelector('#toggleRunCommand2') as HTMLInputElement;
   if (toggle2) toggle2.checked = runCmdEnabled;
 
   modalEl.style.display = '';

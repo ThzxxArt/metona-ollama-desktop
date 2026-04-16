@@ -6,7 +6,6 @@ import { state, KEYS } from '../state/state.js';
 import { debounce } from '../utils/utils.js';
 import { encryptData, decryptData } from '../services/crypto.js';
 import { setMemoryEnabled, setEmbeddingModel, getEmbeddingModel, isVectorMemoryEnabled, getMemoryCache } from '../services/memory-manager.js';
-import { setToolEnabled } from '../services/tool-registry.js';
 import { logSetting, logInfo, logWarn, logError, logSuccess } from '../services/log-service.js';
 import { checkConnection, updateConnectionInfo, updateRunningModels } from './header.js';
 import { loadModels } from './model-bar.js';
@@ -103,45 +102,6 @@ export function initSettingsModal(): void {
     await importSessions(paths[0]);
   });
 
-  // ── Tool Calling 设置 ──
-  const toggleToolCalling = document.querySelector('#toggleToolCalling') as HTMLInputElement;
-  if (toggleToolCalling) {
-    toggleToolCalling.addEventListener('change', async () => {
-      const db = state.get<ChatDB | null>(KEYS.DB);
-      state.set('toolCallingEnabled', toggleToolCalling.checked);
-      if (db) await db.saveSetting('toolCallingEnabled', toggleToolCalling.checked);
-      if (toggleToolCalling.checked) {
-        const modelSupportsTools = state.get<boolean>('modelSupportsTools', false);
-        if (!modelSupportsTools) {
-          showToast('⚠️ 当前模型可能不支持 Tool Calling，建议使用 Qwen3、Llama 3.1+ 等模型', 'warning', 5000);
-          logWarn('Tool Calling 已开启（模型不支持）');
-        } else {
-          showToast('工具调用已开启', 'info');
-          logInfo('Tool Calling 已开启');
-        }
-      } else {
-        showToast('工具调用已关闭', 'info');
-        logInfo('Tool Calling 已关闭');
-      }
-    });
-  }
-
-  const toggleRunCommand = document.querySelector('#toggleRunCommand') as HTMLInputElement;
-  if (toggleRunCommand) {
-    toggleRunCommand.addEventListener('change', async () => {
-      const db = state.get<ChatDB | null>(KEYS.DB);
-      state.set('runCommandEnabled', toggleRunCommand.checked);
-      if (db) await db.saveSetting('runCommandEnabled', toggleRunCommand.checked);
-      setToolEnabled('run_command', toggleRunCommand.checked);
-      if (toggleRunCommand.checked) {
-        showToast('命令执行已开启（每次执行需确认）', 'info');
-        logInfo('命令执行已开启');
-      } else {
-        showToast('命令执行已关闭', 'info');
-        logInfo('命令执行已关闭');
-      }
-    });
-  }
 
   // ── Agent 记忆设置 ──
   const toggleMemory = document.querySelector('#toggleMemoryEnabled') as HTMLInputElement;
