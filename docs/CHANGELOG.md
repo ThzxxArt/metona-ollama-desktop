@@ -3,13 +3,25 @@
 ## 分支结构
 
 **桌面版主线**（`master`）：
-- `metona-ollama-desktop-v1.1` → `metona-ollama-desktop-v2` → `metona-ollama-desktop-v3.0.0` → `metona-ollama-desktop-v3.1.0` → `metona-ollama-desktop-v3.1.1` → `metona-ollama-desktop-v3.2.0` → `metona-ollama-desktop-v3.2.1` → `metona-ollama-desktop-v3.2.2` → `metona-ollama-desktop-v3.2.3` → `metona-ollama-desktop-v3.2.4` → `metona-ollama-desktop-v3.2.5` → `metona-ollama-desktop-v3.2.6` → `metona-ollama-desktop-v3.3.0` → `metona-ollama-desktop-v3.3.1`（当前发布分支）
+- `metona-ollama-desktop-v1.1` → `metona-ollama-desktop-v2` → `metona-ollama-desktop-v3.0.0` → `metona-ollama-desktop-v3.1.0` → `metona-ollama-desktop-v3.1.1` → `metona-ollama-desktop-v3.2.0` → `metona-ollama-desktop-v3.2.1` → `metona-ollama-desktop-v3.2.2` → `metona-ollama-desktop-v3.2.3` → `metona-ollama-desktop-v3.2.4` → `metona-ollama-desktop-v3.2.5` → `metona-ollama-desktop-v3.2.6` → `metona-ollama-desktop-v3.3.0` → `metona-ollama-desktop-v3.3.1` → `metona-ollama-desktop-v3.3.2`（当前发布分支）
 
 **Web 版历史**已独立为 [metona-ollama-web](https://gitee.com/thzxx/metona-ollama-web) 仓库（v1.1.0 ~ v4.0.3）。
 
 ---
 
 ## 桌面版（Desktop）
+
+### Desktop v3.3.2 — 联网搜索 & 工具权限优化
+
+- ✨ **新增 web_search 联网搜索工具**（第 21 个工具）
+  - DuckDuckGo HTML 搜索优先，Bing 作为备用引擎
+  - 返回结构化结果：标题、URL、摘要
+  - 15 秒超时保护，最多 10 条结果
+  - 自动启用，无需用户确认（只读操作）
+- 🔧 **工具执行权限优化**
+  - 除 run_command 外，所有 20 个工具改为自动执行无需确认
+  - run_command 新增三模式下拉框：自动/需确认/禁用
+  - 工具面板卡片 badge 实时联动模式状态
 
 ### Desktop v3.3.1 — Bug 修复 & 图标统一
 
