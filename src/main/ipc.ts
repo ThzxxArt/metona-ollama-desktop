@@ -20,7 +20,12 @@ import {
   handleCreateDir,
   handleDeleteFile,
   handleRunCommand,
-  killToolProcess
+  killToolProcess,
+  handleMoveFile,
+  handleCopyFile,
+  handleWebFetch,
+  handleAppendFile,
+  handleEditFile
 } from './tool-handlers.js';
 import { getAllowedDirs, getBlockedDirs, setAllowedDirs } from './tool-security.js';
 import { startProcess, killProcess, getWorkspaceDir, setWorkspaceDir, listWorkspaceDir } from './workspace.js';
@@ -108,6 +113,11 @@ export function setupIPC(): void {
         case 'create_directory':   return await handleCreateDir(args as { path: string });
         case 'delete_file':        return await handleDeleteFile(args as { path: string; recursive?: boolean });
         case 'run_command':        return await handleRunCommand(args as { command: string; cwd?: string; timeout?: number });
+        case 'move_file':          return await handleMoveFile(args as { source: string; destination: string });
+        case 'copy_file':          return await handleCopyFile(args as { source: string; destination: string; recursive?: boolean });
+        case 'web_fetch':          return await handleWebFetch(args as { url: string; max_chars?: number; extract_mode?: string });
+        case 'append_file':        return await handleAppendFile(args as { path: string; content: string; newline?: boolean });
+        case 'edit_file':          return await handleEditFile(args as { path: string; old_text: string; new_text: string; all?: boolean });
         default:                   return { success: false, error: `未知工具: ${toolName}` };
       }
     } catch (err) {

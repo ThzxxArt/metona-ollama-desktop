@@ -380,3 +380,145 @@ export function killToolProcess(): boolean {
   sendLog('info', `🔧 cmd:kill`, '工具命令已终止');
   return true;
 }
+
+export async function handleMoveFile(params: { source: string; destination: string }): Promise<ToolResult> {
+  try {
+    const src = resolvePath(params.source);
+    const dest = resolvePath(params.destination);
+    const srcCheck = checkPathAllowed(src, 'read');
+    if (!srcCheck.ok) return { success: false, error: srcCheck.reason };
+    const destCheck = checkPathAllowed(dest, 'write');
+    if (!destCheck.ok) return { success: false, error: destCheck.reason };
+
+    await fs.rename(src, dest);
+    return { success: true, source: src, destination: dest };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+}
+
+export async function handleCopyFile(params: { source: string; destination: string; recursive?: boolean }): Promise<ToolResult> {
+  try {
+    const src = resolvePath(params.source);
+    const dest = resolvePath(params.destination);
+    const srcCheck = checkPathAllowed(src, 'read');
+    if (!srcCheck.ok) return { success: false, error: srcCheck.reason };
+    const destCheck = checkPathAllowed(dest, 'write');
+    if (!destCheck.ok) return { success: false, error: destCheck.reason };
+
+    const stat = await fs.stat(src);
+    if (stat.isDirectory()) {
+      await fs.cp(src, dest, { recursive: params.recursive !== false });
+    } else {
+      const destDir = path.dirname(dest);
+      await fs.mkdir(destDir, { recursive: true });
+      await fs.copyFile(src, dest);
+    }
+    return { success: true, source: src, destination: dest, isDirectory: stat.isDirectory() };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+}
+
+export async function handleWebFetch(params: { url: string; max_chars?: number; extract_mode?: string }): Promise<ToolResult> {
+  try {
+    const url = params.url;
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      return { success: false, error: '仅支持 http/https 协议' };
+    }
+
+    const maxChars = params.max_chars || 10000;
+
+    const resp = await fetch(url, {
+      headers: { 'User-Agent': 'MetonaOllama/1.0' },
+      signal: AbortSignal.timeout(15000)
+    });
+
+    if (!resp.ok) {
+      return { success: false, error: `HTTP ${resp.status}: ${resp.statusText}` };
+    }
+
+    const contentType = resp.headers.get('content-type') || '';
+    if (!contentType.includes('text') && !contentType.includes('html') && !contentType.includes('json') && !contentType.includes('xml')) {
+      return { success: false, error: `不支持的内容类型: ${contentType}` };
+    }
+
+    let text = await resp.text();
+
+    // 简单 HTML → 文本提取
+    if (contentType.includes('html')) {
+      text = text
+        .replace(/<script[\s\S]*?<\/script>/gi, '')
+        .replace(/<style[\s\S]*?<\/style>/gi, '')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/&nbsp;/g, ' ')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&amp;/g, '&')
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+
+    const truncated = text.length > maxChars;
+    if (truncated) text = text.slice(0, maxChars);
+
+    return {
+      success: true,
+      url,
+      content: text,
+      content_type: contentType,
+      status: resp.status,
+      truncated,
+      length: text.length
+    };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+}
+
+export async function handleAppendFile(params: { path: string; content: string; newline?: boolean }): Promise<ToolResult> {
+  try {
+    const filePath = resolvePath(params.path);
+    const allowed = checkPathAllowed(filePath, 'write');
+    if (!allowed.ok) return { success: false, error: allowed.reason };
+
+    const prefix = params.newline !== false ? '\n' : '';
+    await fs.appendFile(filePath, prefix + params.content, 'utf-8');
+
+    const stat = await fs.stat(filePath);
+    return { success: true, path: filePath, newSize: stat.size };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+}
+
+export async function handleEditFile(params: { path: string; old_text: string; new_text: string; all?: boolean }): Promise<ToolResult> {
+  try {
+    const filePath = resolvePath(params.path);
+    const allowed = checkPathAllowed(filePath, 'write');
+    if (!allowed.ok) return { success: false, error: allowed.reason };
+
+    const content = await fs.readFile(filePath, 'utf-8');
+
+    if (!content.includes(params.old_text)) {
+      return { success: false, error: '未找到要替换的文本' };
+    }
+
+    let newContent: string;
+    let replaceCount: number;
+
+    if (params.all) {
+      const parts = content.split(params.old_text);
+      replaceCount = parts.length - 1;
+      newContent = parts.join(params.new_text);
+    } else {
+      replaceCount = 1;
+      newContent = content.replace(params.old_text, params.new_text);
+    }
+
+    await fs.writeFile(filePath, newContent, 'utf-8');
+    return { success: true, path: filePath, replaceCount, newSize: newContent.length };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+}

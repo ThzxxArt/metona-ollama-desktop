@@ -118,10 +118,90 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         }
       }
     }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'move_file',
+      description: 'Move or rename a file/directory. Requires user confirmation.',
+      parameters: {
+        type: 'object',
+        required: ['source', 'destination'],
+        properties: {
+          source: { type: 'string', description: 'Source path.' },
+          destination: { type: 'string', description: 'Destination path.' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'copy_file',
+      description: 'Copy a file or directory to a new location. Requires user confirmation.',
+      parameters: {
+        type: 'object',
+        required: ['source', 'destination'],
+        properties: {
+          source: { type: 'string', description: 'Source path.' },
+          destination: { type: 'string', description: 'Destination path.' },
+          recursive: { type: 'boolean', description: 'Copy directories recursively. Default: true.' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'web_fetch',
+      description: 'Fetch content from a URL. Returns the page text content (HTML stripped). Supports HTTP/HTTPS.',
+      parameters: {
+        type: 'object',
+        required: ['url'],
+        properties: {
+          url: { type: 'string', description: 'URL to fetch (http/https).' },
+          max_chars: { type: 'integer', description: 'Max characters to return. Default: 10000.' },
+          extract_mode: { type: 'string', enum: ['text', 'markdown'], description: 'Extraction mode. Default: text.' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'append_file',
+      description: 'Append content to the end of a file. Creates the file if it doesn\'t exist. Requires user confirmation.',
+      parameters: {
+        type: 'object',
+        required: ['path', 'content'],
+        properties: {
+          path: { type: 'string', description: 'File path to append to.' },
+          content: { type: 'string', description: 'Content to append.' },
+          newline: { type: 'boolean', description: 'Add a newline before appending. Default: true.' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'edit_file',
+      description: 'Find and replace text in a file. More efficient than rewriting the whole file for small changes. Requires user confirmation.',
+      parameters: {
+        type: 'object',
+        required: ['path', 'old_text', 'new_text'],
+        properties: {
+          path: { type: 'string', description: 'File path to edit.' },
+          old_text: { type: 'string', description: 'Exact text to find.' },
+          new_text: { type: 'string', description: 'Replacement text.' },
+          all: { type: 'boolean', description: 'Replace all occurrences. Default: false (replace first only).' }
+        }
+      }
+    }
   }
 ];
 
-const CONFIRM_TOOLS = ['write_file', 'delete_file', 'run_command', 'create_directory'];
+const CONFIRM_TOOLS = ['write_file', 'delete_file', 'run_command', 'create_directory', 'move_file', 'copy_file', 'append_file', 'edit_file'];
 
 export function needsConfirmation(toolName: string): boolean {
   return CONFIRM_TOOLS.includes(toolName);
@@ -130,7 +210,8 @@ export function needsConfirmation(toolName: string): boolean {
 let enabledTools: Set<string> = new Set([
   'read_file', 'list_directory', 'search_files',
   'write_file', 'create_directory', 'delete_file',
-  'run_command'  // 默认启用，需要用户确认
+  'run_command',
+  'move_file', 'copy_file', 'web_fetch', 'append_file', 'edit_file'
 ]);
 
 export function setToolEnabled(toolName: string, enabled: boolean): void {
@@ -203,7 +284,12 @@ export function getToolIcon(name: string): string {
     search_files: '🔍',
     create_directory: '📂',
     delete_file: '🗑️',
-    run_command: '💻'
+    run_command: '💻',
+    move_file: '📦',
+    copy_file: '📋',
+    web_fetch: '🌐',
+    append_file: '➕',
+    edit_file: '✂️'
   };
   return icons[name] || '🔧';
 }
@@ -216,7 +302,12 @@ export function formatToolName(name: string): string {
     search_files: '搜索文件',
     create_directory: '创建目录',
     delete_file: '删除文件',
-    run_command: '执行命令'
+    run_command: '执行命令',
+    move_file: '移动文件',
+    copy_file: '复制文件',
+    web_fetch: '网页抓取',
+    append_file: '追加文件',
+    edit_file: '编辑文件'
   };
   return names[name] || name;
 }
