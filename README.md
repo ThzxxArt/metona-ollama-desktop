@@ -28,26 +28,26 @@ AI 可以在对话中主动调用本地工具来完成任务，所有操作在�
 | 工具 | 说明 | 安全级别 |
 |------|------|----------|
 | 📄 `read_file` | 读取文件内容（≤1MB，支持行范围） | 自动 |
-| ✏️ `write_file` | 写入文件（自动创建父目录） | 需确认 |
+| ✏️ `write_file` | 写入文件（自动创建父目录） | 自动 |
 | 📁 `list_directory` | 列出目录（支持递归、隐藏文件） | 自动 |
 | 🔍 `search_files` | 按文件名/内容搜索（支持扩展名过滤） | 自动 |
-| 📂 `create_directory` | 创建目录（递归创建） | 需确认 |
-| 🗑️ `delete_file` | 删除文件/目录 | 需确认 |
+| 📂 `create_directory` | 创建目录（递归创建） | 自动 |
+| 🗑️ `delete_file` | 删除文件/目录 | 自动 |
 | 💻 `run_command` | 执行 Shell 命令（无超时，通过工作空间终端执行） | 需确认 |
-| 📦 `move_file` | 移动/重命名文件或目录 | 需确认 |
-| 📋 `copy_file` | 复制文件或目录 | 需确认 |
+| 📦 `move_file` | 移动/重命名文件或目录 | 自动 |
+| 📋 `copy_file` | 复制文件或目录 | 自动 |
 | 🌐 `web_fetch` | 抓取网页内容（HTTP/HTTPS，自动提取文本） | 自动 |
 | 🔍 `web_search` | 联网搜索（DuckDuckGo/Bing，返回标题+链接+摘要） | 自动 |
-| ➕ `append_file` | 追加内容到文件末尾 | 需确认 |
-| ✂️ `edit_file` | 查找替换文件中的文本（比重写整个文件高效） | 需确认 |
+| ➕ `append_file` | 追加内容到文件末尾 | 自动 |
+| ✂️ `edit_file` | 查找替换文件中的文本（比重写整个文件高效） | 自动 |
 | ℹ️ `get_file_info` | 获取文件/目录详细信息（大小、日期、权限） | 自动 |
 | 🌳 `tree` | 以树形结构展示目录 | 自动 |
-| ⬇️ `download_file` | 从 URL 下载文件到本地 | 需确认 |
+| ⬇️ `download_file` | 从 URL 下载文件到本地 | 自动 |
 | 🔀 `diff_files` | 对比两个文件差异（unified diff） | 自动 |
-| 🔄 `replace_in_files` | 按 glob 模式批量查找替换多个文件 | 需确认 |
+| 🔄 `replace_in_files` | 按 glob 模式批量查找替换多个文件 | 自动 |
 | 📚 `read_multiple_files` | 批量读取多个文件内容 | 自动 |
 | 🔖 `git` | Git 操作（status/log/diff/add/commit/push/pull/branch/checkout/merge/stash 等 16 个子操作） | 自动 |
-| 🗜️ `compress` | 创建/解压归档（zip/tar.gz） | 需确认 |
+| 🗜️ `compress` | 创建/解压归档（zip/tar.gz） | 自动 |
 
 **Agent Loop**：用户请求 → 模型返回 tool_calls → 客户端执行 → 回传结果 → 循环直到无工具调用，支持流式 + 并行调用 + 最大 10 轮保护。
 
@@ -347,7 +347,7 @@ metona-ollama-desktop/
 | 温度 | 0.7 | 0=精确，2=创意 |
 | Think 模式 | 关闭 | 深度推理（需模型支持） |
 | 工具调用 | 关闭 | AI 主动调用本地工具 |
-| 命令执行 | 开启（需确认） | Shell 命令执行（高风险） |
+| 命令执行 | 开启（自动） | Shell 命令执行（高风险） |
 | Agent 记忆 | 开启 | 自动学习+跨会话记忆 |
 | 工作空间目录 | `userData/workspace` | 命令行默认执行目录 |
 

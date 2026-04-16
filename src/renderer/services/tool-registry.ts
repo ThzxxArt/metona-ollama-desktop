@@ -353,7 +353,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   }
 ];
 
-const CONFIRM_TOOLS = ['write_file', 'delete_file', 'run_command', 'create_directory', 'move_file', 'copy_file', 'append_file', 'edit_file', 'download_file', 'replace_in_files', 'compress'];
+const CONFIRM_TOOLS = ['run_command'];
 
 export function needsConfirmation(toolName: string): boolean {
   return CONFIRM_TOOLS.includes(toolName);
