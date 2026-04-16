@@ -20,6 +20,7 @@ import { initInputArea } from './components/input-area.js';
 import { initSettingsModal, closeSettingsModal } from './components/settings-modal.js';
 import { initHistoryModal, closeHistoryModal } from './components/history-modal.js';
 import { initMemoryModal } from './components/memory-modal.js';
+import { initToolsModal, closeToolsModal } from './components/tools-modal.js';
 import { initMemoryManager } from './services/memory-manager.js';
 import { setToolEnabled } from './services/tool-registry.js';
 import { initToolConfirmModal } from './components/tool-confirm-modal.js';
@@ -205,6 +206,7 @@ async function init(): Promise<void> {
     initHelpModal();
     initToolConfirmModal();
     initMemoryModal();
+    initToolsModal();
     initWorkspacePanel();
     setupDesktopIntegration();
 
@@ -286,6 +288,7 @@ function bindGlobalEvents(): void {
       closeSettingsModal();
       closeHistoryModal();
       closeLightbox();
+      closeToolsModal();
       (document.querySelector('#helpModal') as HTMLElement).style.display = 'none';
       (document.querySelector('#memoryModal') as HTMLElement).style.display = 'none';
     }

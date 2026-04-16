@@ -2869,3 +2869,76 @@ html, body {
 }
 
    工作空间面板已改为 flex 子元素，自然占据宽度 */
+
+/* ═══════════════ 工具面板模态框 ═══════════════ */
+
+#toolsModal .modal {
+    max-width: 720px;
+    width: 95vw;
+    max-height: 85vh;
+}
+
+.tools-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 8px;
+}
+
+.tool-card {
+    padding: 10px 14px;
+    background: var(--bg-layer);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-control);
+    transition: var(--transition);
+}
+
+.tool-card:hover {
+    border-color: var(--border-strong);
+    background: var(--bg-layer-alt);
+}
+
+.tool-card-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+}
+
+.tool-card-icon {
+    font-size: 15px;
+    flex-shrink: 0;
+}
+
+.tool-card-name {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent);
+}
+
+.tool-card-badge {
+    margin-left: auto;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 10px;
+    white-space: nowrap;
+}
+
+.tool-card-badge.auto {
+    color: var(--success);
+    background: var(--success-bg);
+    border: 1px solid rgba(108, 203, 95, 0.15);
+}
+
+.tool-card-badge.confirm {
+    color: var(--caution);
+    background: var(--caution-bg);
+    border: 1px solid rgba(252, 225, 0, 0.15);
+}
+
+.tool-card-desc {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.4;
+}

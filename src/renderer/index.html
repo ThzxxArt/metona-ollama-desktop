@@ -52,6 +52,11 @@
                     <line x1="9" y1="21" x2="15" y2="21"/>
                 </svg>
             </button>
+            <button class="icon-btn" id="btnTools" title="工具面板">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+                </svg>
+            </button>
             <button class="icon-btn" id="btnHistory" title="历史记录">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
@@ -270,29 +275,17 @@
                     </label>
                 </label>
                 <p class="text-muted" style="font-size:11px;margin-bottom:8px;">启用后，AI 可以在对话中主动调用本地工具（读写文件、搜索、创建目录等）。需要模型支持 Tool Calling。</p>
-                <div class="tool-settings" id="toolSettings">
-                    <div class="tool-list">
-                        <div class="tool-item"><span>📄 读取文件</span><span class="text-muted">自动</span></div>
-                        <div class="tool-item"><span>✏️ 写入文件</span><span class="text-muted">需确认</span></div>
-                        <div class="tool-item"><span>📁 列出目录</span><span class="text-muted">自动</span></div>
-                        <div class="tool-item"><span>🔍 搜索文件</span><span class="text-muted">自动</span></div>
-                        <div class="tool-item"><span>📂 创建目录</span><span class="text-muted">需确认</span></div>
-                        <div class="tool-item"><span>🗑️ 删除文件</span><span class="text-muted">需确认</span></div>
-                        <div class="tool-item"><span>📦 移动文件</span><span class="text-muted">需确认</span></div>
-                        <div class="tool-item"><span>📋 复制文件</span><span class="text-muted">需确认</span></div>
-                        <div class="tool-item"><span>🌐 网页抓取</span><span class="text-muted">自动</span></div>
-                        <div class="tool-item"><span>➕ 追加文件</span><span class="text-muted">需确认</span></div>
-                        <div class="tool-item"><span>✂️ 编辑文件</span><span class="text-muted">需确认</span></div>
-                        <div class="tool-item">
-                            <span>💻 执行命令</span>
-                            <label class="toggle-label" style="margin:0;">
-                                <input type="checkbox" id="toggleRunCommand">
-                                <span class="toggle-slider"></span>
-                            </label>
-                        </div>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <button class="btn btn-sm btn-outline" id="btnOpenToolsFromSettings">🔧 查看全部工具（12 个）</button>
+                    <div class="tool-item" style="flex:1;margin:0;">
+                        <span>💻 执行命令</span>
+                        <label class="toggle-label" style="margin:0;">
+                            <input type="checkbox" id="toggleRunCommand">
+                            <span class="toggle-slider"></span>
+                        </label>
                     </div>
-                    <p class="text-muted" style="font-size:11px;margin-top:8px;">⚠️ 高风险操作（写入/删除/命令执行）会弹出确认对话框。系统关键路径（/etc, /sys, ~/.ssh 等）已自动屏蔽。</p>
                 </div>
+                <p class="text-muted" style="font-size:11px;margin-top:8px;">⚠️ 高风险操作会弹出确认对话框。系统关键路径（/etc, /sys, ~/.ssh 等）已自动屏蔽。</p>
             </div>
             <div class="setting-group">
                 <label class="setting-label">🖥️ 工作空间目录</label>
@@ -383,6 +376,80 @@
             <div class="help-section"><h4>🖥️ 布局说明</h4><ul><li><strong>左侧面板</strong> — 执行日志，实时显示应用运行日志（连接、模型加载、工具调用等）</li><li><strong>中间区域</strong> — 聊天消息，顶部 Header + 模型栏，底部输入框</li><li><strong>右侧面板</strong> — 工作空间（常驻显示），包含：<ul><li><strong>💻 命令行 Tab</strong> — 终端界面，实时流式输出，支持长时间运行（无超时），多终端 Tab</li><li><strong>📁 文件 Tab</strong> — 浏览工作空间目录，点击文件预览内容</li></ul></li><li>工作空间面板宽度可通过拖拽左边缘调整（300–700px）</li><li>工作空间目录可在设置中修改</li></ul></div>
             <div class="help-section"><h4>🕐 历史记录</h4><ul><li>所有会话自动保存到本地 IndexedDB</li><li>点击顶部 🕐 按钮查看、搜索、恢复历史会话</li><li>支持导出 Markdown / HTML / TXT / <code>.metona</code> 加密备份</li></ul></div>
             <div class="help-section"><h4>⚡ 快捷键</h4><table class="help-shortcuts"><tr><td><kbd>Enter</kbd></td><td>发送消息</td></tr><tr><td><kbd>Shift + Enter</kbd></td><td>换行</td></tr><tr><td><kbd>Ctrl + N</kbd></td><td>新建会话</td></tr><tr><td><kbd>Ctrl + M</kbd></td><td>记忆管理</td></tr><tr><td><kbd>Esc</kbd></td><td>关闭弹窗</td></tr></table></div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════ 工具面板模态框 ═══════════════ -->
+<div class="modal-overlay" id="toolsModal" style="display:none;">
+    <div class="modal">
+        <div class="modal-header">
+            <h3>🔧 工具面板（12 个）</h3>
+            <button class="icon-btn" id="btnCloseTools">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+            </button>
+        </div>
+        <div class="modal-body">
+            <p class="text-muted" style="font-size:12px;margin-bottom:12px;">启用工具调用后，AI 可在对话中自主调用以下工具。高风险操作需用户确认。</p>
+            <div class="tools-grid">
+                <div class="tool-card">
+                    <div class="tool-card-header"><span class="tool-card-icon">📄</span><span class="tool-card-name">read_file</span><span class="tool-card-badge auto">自动</span></div>
+                    <div class="tool-card-desc">读取文件内容，支持指定行范围</div>
+                </div>
+                <div class="tool-card">
+                    <div class="tool-card-header"><span class="tool-card-icon">✏️</span><span class="tool-card-name">write_file</span><span class="tool-card-badge confirm">需确认</span></div>
+                    <div class="tool-card-desc">写入文件，自动创建父目录</div>
+                </div>
+                <div class="tool-card">
+                    <div class="tool-card-header"><span class="tool-card-icon">📁</span><span class="tool-card-name">list_directory</span><span class="tool-card-badge auto">自动</span></div>
+                    <div class="tool-card-desc">列出目录内容，支持递归和隐藏文件</div>
+                </div>
+                <div class="tool-card">
+                    <div class="tool-card-header"><span class="tool-card-icon">🔍</span><span class="tool-card-name">search_files</span><span class="tool-card-badge auto">自动</span></div>
+                    <div class="tool-card-desc">按文件名或内容搜索文件</div>
+                </div>
+                <div class="tool-card">
+                    <div class="tool-card-header"><span class="tool-card-icon">📂</span><span class="tool-card-name">create_directory</span><span class="tool-card-badge confirm">需确认</span></div>
+                    <div class="tool-card-desc">创建目录，自动创建父级</div>
+                </div>
+                <div class="tool-card">
+                    <div class="tool-card-header"><span class="tool-card-icon">🗑️</span><span class="tool-card-name">delete_file</span><span class="tool-card-badge confirm">需确认</span></div>
+                    <div class="tool-card-desc">删除文件或目录</div>
+                </div>
+                <div class="tool-card">
+                    <div class="tool-card-header"><span class="tool-card-icon">📦</span><span class="tool-card-name">move_file</span><span class="tool-card-badge confirm">需确认</span></div>
+                    <div class="tool-card-desc">移动或重命名文件/目录</div>
+                </div>
+                <div class="tool-card">
+                    <div class="tool-card-header"><span class="tool-card-icon">📋</span><span class="tool-card-name">copy_file</span><span class="tool-card-badge confirm">需确认</span></div>
+                    <div class="tool-card-desc">复制文件或目录到新位置</div>
+                </div>
+                <div class="tool-card">
+                    <div class="tool-card-header"><span class="tool-card-icon">🌐</span><span class="tool-card-name">web_fetch</span><span class="tool-card-badge auto">自动</span></div>
+                    <div class="tool-card-desc">抓取网页内容，自动提取文本</div>
+                </div>
+                <div class="tool-card">
+                    <div class="tool-card-header"><span class="tool-card-icon">➕</span><span class="tool-card-name">append_file</span><span class="tool-card-badge confirm">需确认</span></div>
+                    <div class="tool-card-desc">追加内容到文件末尾</div>
+                </div>
+                <div class="tool-card">
+                    <div class="tool-card-header"><span class="tool-card-icon">✂️</span><span class="tool-card-name">edit_file</span><span class="tool-card-badge confirm">需确认</span></div>
+                    <div class="tool-card-desc">文件内查找替换，支持全部替换</div>
+                </div>
+                <div class="tool-card">
+                    <div class="tool-card-header"><span class="tool-card-icon">💻</span><span class="tool-card-name">run_command</span><span class="tool-card-badge confirm">需确认</span></div>
+                    <div class="tool-card-desc">执行 shell 命令，无超时限制</div>
+                    <div style="margin-top:6px;display:flex;align-items:center;gap:8px;">
+                        <label class="toggle-label" style="margin:0;font-size:11px;">
+                            <input type="checkbox" id="toggleRunCommand2">
+                            <span class="toggle-slider"></span>
+                            <span style="margin-left:4px;">启用命令执行</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 </div>
