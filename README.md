@@ -1,6 +1,6 @@
 # 🦙 Metona Ollama Desktop
 
-基于 TypeScript + Electron 的 [Ollama](https://ollama.com) 桌面 AI 聊天客户端，专为 Windows 打造。
+基于 TypeScript + Electron 的 [Ollama](https://ollama.com) 桌面 AI Agent客户端，专为 Windows 打造。
 
 > 💻 桌面版仓库 | 🌐 [Web 版历史存档](https://gitee.com/thzxx/metona-ollama-web)
 
