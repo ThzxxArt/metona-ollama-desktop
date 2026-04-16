@@ -390,9 +390,12 @@ export async function handleMoveFile(params: { source: string; destination: stri
     const destCheck = checkPathAllowed(dest, 'write');
     if (!destCheck.ok) return { success: false, error: destCheck.reason };
 
+    sendLog('info', `📦 move_file`, `${src} → ${dest}`);
     await fs.rename(src, dest);
+    sendLog('success', `📦 move_file 完成`, dest);
     return { success: true, source: src, destination: dest };
   } catch (err) {
+    sendLog('error', `📦 move_file 失败`, (err as Error).message);
     return { success: false, error: (err as Error).message };
   }
 }
@@ -407,6 +410,7 @@ export async function handleCopyFile(params: { source: string; destination: stri
     if (!destCheck.ok) return { success: false, error: destCheck.reason };
 
     const stat = await fs.stat(src);
+    sendLog('info', `📋 copy_file`, `${src} → ${dest}${stat.isDirectory() ? ' (目录)' : ''}`);
     if (stat.isDirectory()) {
       await fs.cp(src, dest, { recursive: params.recursive !== false });
     } else {
@@ -414,8 +418,10 @@ export async function handleCopyFile(params: { source: string; destination: stri
       await fs.mkdir(destDir, { recursive: true });
       await fs.copyFile(src, dest);
     }
+    sendLog('success', `📋 copy_file 完成`, dest);
     return { success: true, source: src, destination: dest, isDirectory: stat.isDirectory() };
   } catch (err) {
+    sendLog('error', `📋 copy_file 失败`, (err as Error).message);
     return { success: false, error: (err as Error).message };
   }
 }
@@ -429,6 +435,7 @@ export async function handleWebFetch(params: { url: string; max_chars?: number; 
 
     const maxChars = params.max_chars || 10000;
 
+    sendLog('info', `🌐 web_fetch`, `${url} (${maxChars} chars)`);
     const resp = await fetch(url, {
       headers: { 'User-Agent': 'MetonaOllama/1.0' },
       signal: AbortSignal.timeout(15000)
@@ -462,6 +469,7 @@ export async function handleWebFetch(params: { url: string; max_chars?: number; 
     const truncated = text.length > maxChars;
     if (truncated) text = text.slice(0, maxChars);
 
+    sendLog('success', `🌐 web_fetch 完成`, `${resp.status} | ${text.length} chars${truncated ? ' (已截断)' : ''}`);
     return {
       success: true,
       url,
