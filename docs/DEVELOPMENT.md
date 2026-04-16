@@ -152,8 +152,8 @@ import {
 
 ```
 ① Agent 系统    → agent-engine.ts + tool-registry.ts
-② 记忆系统      → memory-manager.ts
-③ RAG 知识库    → rag.ts + vector-store.ts + document-processor.ts
+② 记忆系统      → memory-manager.ts + vector-memory.ts
+③ 向量存储      → vector-store.ts
 ④ 工作空间      → workspace.ts (主进程) + workspace-panel.ts (渲染进程)
 ```
 
@@ -205,7 +205,7 @@ import {
 
 ### 6.3 响应式规则
 
-- 工作空间面板宽度：固定 480px（v3.2.5 起不可拖拽调整，v3.2.6 起改为 flex 子元素，v3.3.0 起支持拖拽调整）
+- 工作空间面板宽度：固定 480px（v3.2.5 起不可拖拽调整，v3.2.6 起改为 flex 子元素）
 - 主内容区始终带 `with-workspace` class，面板常驻显示
 - 模态框宽度：基础 480px，大号 860px
 

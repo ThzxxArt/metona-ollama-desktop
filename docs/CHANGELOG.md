@@ -11,9 +11,21 @@
 
 ## 桌面版（Desktop）
 
-### Desktop v3.3.0 — 版本迭代
+### Desktop v3.3.0 — 文档同步 & 帮助面板修正
 
-- 🔄 版本号更新至 3.3.0
+- 📝 **文档全面更新**
+  - README.md：Tool Calling 工具表从 7 个扩展至 20 个，新增 13 个工具说明
+  - README.md：移除已废弃的 RAG 知识库 section，更新为向量记忆说明
+  - README.md：项目结构同步实际文件（移除已删除的 rag.ts / kb-modal.ts / memory-panel.ts，新增 memory-modal.ts / tools-modal.ts / prompt-modal.ts / vector-memory.ts）
+  - README.md：架构图更新，移除 RAG 引用
+  - README.md：记忆提取触发条件从 ≥3 条修正为 ≥6 条
+  - README.md：记忆类型表移除「事件」类型（v3.0 后已归并为 fact）
+  - README.md：技术栈从「NSIS + Portable」修正为「NSIS 安装包」
+  - docs/DEVELOPMENT.md：子系统引用从 rag.ts 更新为 vector-memory.ts
+  - docs/DEVELOPMENT.md：移除工作空间面板拖拽调整宽度的描述
+- 🔧 **帮助面板修正**
+  - 工作空间终端描述从「多终端 Tab」改为「单一终端进程」
+  - 移除工作空间面板拖拽调整宽度的描述（当前固定 480px）
 
 ### Desktop v3.2.6 — 工作空间面板布局修复 & Token 统计样式优化
 

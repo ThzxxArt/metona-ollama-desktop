@@ -33,7 +33,20 @@ AI 可以在对话中主动调用本地工具来完成任务，所有操作在�
 | 🔍 `search_files` | 按文件名/内容搜索（支持扩展名过滤） | 自动 |
 | 📂 `create_directory` | 创建目录（递归创建） | 需确认 |
 | 🗑️ `delete_file` | 删除文件/目录 | 需确认 |
-| 💻 `run_command` | 执行 Shell 命令（默认开启，需确认） | 需确认 |
+| 💻 `run_command` | 执行 Shell 命令（无超时，通过工作空间终端执行） | 需确认 |
+| 📦 `move_file` | 移动/重命名文件或目录 | 需确认 |
+| 📋 `copy_file` | 复制文件或目录 | 需确认 |
+| 🌐 `web_fetch` | 抓取网页内容（HTTP/HTTPS，自动提取文本） | 自动 |
+| ➕ `append_file` | 追加内容到文件末尾 | 需确认 |
+| ✂️ `edit_file` | 查找替换文件中的文本（比重写整个文件高效） | 需确认 |
+| ℹ️ `get_file_info` | 获取文件/目录详细信息（大小、日期、权限） | 自动 |
+| 🌳 `tree` | 以树形结构展示目录 | 自动 |
+| ⬇️ `download_file` | 从 URL 下载文件到本地 | 需确认 |
+| 🔀 `diff_files` | 对比两个文件差异（unified diff） | 自动 |
+| 🔄 `replace_in_files` | 按 glob 模式批量查找替换多个文件 | 需确认 |
+| 📚 `read_multiple_files` | 批量读取多个文件内容 | 自动 |
+| 🔖 `git` | Git 操作（status/log/diff/add/commit/push/pull/branch/checkout/merge/stash 等 16 个子操作） | 自动 |
+| 🗜️ `compress` | 创建/解压归档（zip/tar.gz） | 需确认 |
 
 **Agent Loop**：用户请求 → 模型返回 tool_calls → 客户端执行 → 回传结果 → 循环直到无工具调用，支持流式 + 并行调用 + 最大 10 轮保护。
 
@@ -77,7 +90,6 @@ AI 会自动从对话中学习并记住关键信息，跨会话持续积累，�
 | 📌 事实 | 关于用户的事实 | "用户正在开发一个 Electron 应用" |
 | ⚙️ 偏好 | 用户的偏好习惯 | "喜欢用中文回答，代码风格简洁" |
 | 📏 规则 | 应遵守的规则 | "项目中使用 TypeScript 严格模式" |
-| 📝 事件 | 重要事件和结论 | "已成功构建 Windows 安装包" |
 
 **工作流程**：
 ```
@@ -89,17 +101,17 @@ AI 会自动从对话中学习并记住关键信息，跨会话持续积累，�
 ```
 
 **特性**：
-- **自动提取** — 对话 ≥3 条消息后自动触发，LLM 智能识别值得记住的信息
+- **自动提取** — 对话 ≥6 条消息后自动触发，LLM 智能识别值得记住的信息
 - **智能检索** — 关键词 + 标签 + 重要性加权 + 使用频率 + 时间衰减
 - **持久化** — IndexedDB 独立存储，跨会话、跨浏览器重启保留
 - **可视化管理** — 记忆面板支持搜索、筛选、编辑、删除
 - **完全可控** — 设置中一键开关，不影响其他功能
 
-### 📚 RAG 知识库
-- 文档上传 → 自动分块 → 向量化 → IndexedDB 持久化
-- 语义检索增强问答，支持多集合管理
-- IVF 索引优化（K-Means 聚类 + 倒排索引）
-- 需嵌入模型（如 `nomic-embed-text`）
+### 📚 向量记忆（记忆系统的语义检索层）
+- 选择嵌入模型（如 `nomic-embed-text`）后，记忆系统启用向量语义搜索
+- 记忆条目自动向量化 → IndexedDB 持久化
+- IVF 索引优化（K-Means 聚类 + 倒排索引），支持大规模记忆高效检索
+- 未选择嵌入模型时退化为关键词匹配检索
 
 ### 📦 数据
 - 历史记录 IndexedDB 持久化，支持搜索、分页
@@ -112,7 +124,7 @@ AI 会自动从对话中学习并记住关键信息，跨会话持续积累，�
 |------|------|
 | Fluent Design 主题 | Windows 11 暗色风格，Mica 毛玻璃材质 |
 | 执行日志面板 | 左侧面板实时显示应用运行日志（初始化、连接、模型加载、工具调用等），纯运行时不持久化，常驻显示不可关闭 |
-| 工作空间面板 | 右侧面板：终端命令行（实时流式输出）+ 文件浏览器，宽度可拖拽调整 |
+| 工作空间面板 | 右侧面板（常驻显示）：终端命令行（实时流式输出，单一终端进程）+ 文件浏览器，固定宽度 480px |
 | Token 消耗统计 | Header 实时显示当前会话总 token 消耗 |
 | 系统托盘 | 最小化到托盘，双击恢复，右键菜单 |
 | 原生菜单 | 文件 / 编辑 / 视图 / 窗口 / 帮助完整菜单 |
@@ -131,9 +143,8 @@ v3.2 四大子系统协调运作：
 ```
 用户输入消息
     │
-    ├─→ ① Agent 记忆检索 → 注入 system prompt
-    ├─→ ② RAG 知识库检索 → 追加到 system prompt
-    ├─→ ③ Tool Calling 检查 → Agent Loop 或普通流式
+    ├─→ ① Agent 记忆检索（关键词 + 向量语义） → 注入 system prompt
+    ├─→ ② Tool Calling 检查 → Agent Loop 或普通流式
     │
     ▼
   Ollama API（携带组合后的 system prompt + tools）
@@ -142,10 +153,10 @@ v3.2 四大子系统协调运作：
   流式响应 → 渲染到聊天区域（含工具调用卡片）
     │
     ▼
-  保存会话 → 自动提取记忆（≥3 条消息时触发）
+  保存会话 → 自动提取记忆（≥6 条消息时触发）
 
-④ 工作空间（独立通道）
-  用户手动/AI 建议命令 → spawn 子进程 → IPC 流式推送 → 终端面板实时展示
+③ 工作空间（独立通道）
+  AI 建议命令 → 用户确认 → spawn 子进程 → IPC 流式推送 → 终端面板实时展示
 ```
 
 ```
@@ -156,14 +167,14 @@ v3.2 四大子系统协调运作：
 │  │                                                             │ │
 │  │  ┌─────────────┐  ┌──────────────┐  ┌────────────────────┐ │ │
 │  │  │  chat-area  │  │ input-area   │  │  workspace-panel   │ │ │
-│  │  │  消息渲染    │  │ 消息发送      │  │  💻 命令行 Tab     │ │ │
-│  │  │  工具卡片    │  │ 记忆检索      │  │  📁 文件 Tab       │ │ │
+│  │  │  消息渲染    │  │ 消息发送      │  │  💻 终端            │ │ │
+│  │  │  工具卡片    │  │ 记忆检索      │  │  📁 文件浏览器      │ │ │
 │  │  └──────┬──────┘  └──────┬───────┘  └─────────┬──────────┘ │ │
 │  │         │               │                     │            │ │
 │  │  ┌──────┴───────────────┴─────────────────────┴──────────┐ │ │
 │  │  │                    核心服务层                          │ │ │
-│  │  │  agent-engine  memory-manager  rag  workspace-panel   │ │ │
-│  │  │  tool-registry  vector-store  doc-proc               │ │ │
+│  │  │  agent-engine  memory-manager  vector-memory         │ │ │
+│  │  │  tool-registry  vector-store  workspace-panel         │ │ │
 │  │  └──────────────────────────┬────────────────────────────┘ │ │
 │  │                             │                              │ │
 │  │  ┌──────────────────────────┴────────────────────────────┐ │ │
@@ -174,7 +185,7 @@ v3.2 四大子系统协调运作：
 │  ┌─────────────────────────────┴──────────────────────────────┐ │
 │  │                    主进程 (Main)                             │ │
 │  │  main.ts  menu.ts  tray.ts  ipc.ts  preload.ts            │ │
-│  │  tool-handlers.ts  tool-security.ts  workspace.ts          │ │
+│  │  tool-handlers.ts (20 个工具)  tool-security.ts  workspace.ts│ │
 │  │  ┌──────────────────────────────────────────────────────┐  │ │
 │  │  │  workspace.ts: spawn 进程管理 · 流式输出 · 安全检查   │  │ │
 │  │  └──────────────────────────────────────────────────────┘  │ │
@@ -258,7 +269,7 @@ metona-ollama-desktop/
 │   │   ├── tray.ts                        # 系统托盘
 │   │   ├── ipc.ts                         # IPC（Tool Calling + Workspace 流式通信）
 │   │   ├── utils.ts                       # 工具函数
-│   │   ├── tool-handlers.ts               # 🔧 7 个工具实现
+│   │   ├── tool-handlers.ts               # 🔧 20 个工具实现
 │   │   ├── tool-security.ts               # 🔧 路径/命令安全检查
 │   │   └── workspace.ts                   # 🖥️ spawn 进程管理、流式输出
 │   └── renderer/                          # 渲染进程
@@ -274,21 +285,22 @@ metona-ollama-desktop/
 │       ├── components/
 │       │   ├── chat-area.ts               # 消息渲染、工具调用卡片
 │       │   ├── input-area.ts              # 消息发送、记忆检索、自动提取
-│       │   ├── memory-panel.ts            # 🧠 记忆管理面板
+│       │   ├── memory-modal.ts            # 🧠 记忆管理面板
 │       │   ├── workspace-panel.ts         # 🖥️ 工作空间面板（终端+文件）
 │       │   ├── tool-confirm-modal.ts      # 🔧 工具确认对话框
-│       │   ├── kb-modal.ts                # RAG 知识库管理
+│       │   ├── tools-modal.ts             # 🔧 工具列表面板
 │       │   ├── settings-modal.ts          # 设置面板（含工作空间目录）
 │       │   ├── history-modal.ts           # 历史记录
+│       │   ├── prompt-modal.ts            # 自定义弹窗（替代原生 prompt/confirm）
 │       │   ├── header.ts                  # 顶部导航
 │       │   ├── model-bar.ts               # 模型选择栏
 │       │   ├── toast.ts                   # 通知
 │       │   └── lightbox.ts                # 图片预览
 │       ├── services/
 │       │   ├── memory-manager.ts          # 🧠 记忆管理核心
+│       │   ├── vector-memory.ts           # 🧠 记忆向量索引（IVF 索引）
 │       │   ├── agent-engine.ts            # 🔧 Agent Loop 引擎
-│       │   ├── tool-registry.ts           # 🔧 工具注册调度
-│       │   ├── rag.ts                     # RAG 检索管线
+│       │   ├── tool-registry.ts           # 🔧 工具注册调度（20 个工具定义）
 │       │   ├── vector-store.ts            # 向量存储 + IVF 索引
 │       │   ├── document-processor.ts      # 文档分块
 │       │   ├── log-service.ts             # 结构化执行日志
@@ -302,7 +314,8 @@ metona-ollama-desktop/
 ├── assets/icons/                          # 图标资源
 ├── docs/
 │   ├── BUILD.md                           # 构建指南
-│   └── CHANGELOG.md                       # 更新日志
+│   ├── CHANGELOG.md                       # 更新日志
+│   └── DEVELOPMENT.md                     # 开发规范
 ├── vite.config.ts                         # Vite 配置
 ├── tsconfig.json / tsconfig.main.json     # TypeScript 配置
 ├── package.json                           # 项目配置 + electron-builder
@@ -347,7 +360,7 @@ metona-ollama-desktop/
 - **IndexedDB** — 异步持久化（会话 + 向量 + 记忆）
 - **Fetch + ReadableStream** — 流式 NDJSON 解析
 - **CSS Variables** — 暗色主题，毛玻璃效果
-- **electron-builder** — NSIS + Portable 打包
+- **electron-builder** — NSIS 安装包
 - **零外部依赖** — Markdown 解析器、SHA-256、HTML 净化器全部内联实现
 
 ---
