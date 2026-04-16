@@ -28,7 +28,7 @@ export function initMemoryModal(): void {
       <div class="modal-header">
         <h3>🧠 Agent 记忆</h3>
         <div style="display:flex;align-items:center;gap:8px;">
-          <label class="memory-toggle" title="自动记忆">
+          <label class="toggle-label" title="自动记忆">
             <input type="checkbox" id="memoryModalToggle" checked>
             <span class="toggle-slider"></span>
           </label>

@@ -547,15 +547,19 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
   const images = pendingImages.map(img => img.base64);
 
   if (pendingImages.length > 0) {
-    msgsToAdd.push({
+    const imgDesc = pendingImages.length === 1 ? `[上传了图片: ${pendingImages[0].name}]` : `[上传了 ${pendingImages.length} 张图片]`;
+    const msg: ChatMessage = {
       role: 'user',
-      content: pendingImages.length === 1 ? `[上传了图片: ${pendingImages[0].name}]` : `[上传了 ${pendingImages.length} 张图片]`,
+      content: text ? `${text}\n\n${imgDesc}` : imgDesc,
       images,
       timestamp: now
-    });
-  }
-
-  if (text || pendingFiles.length > 0) {
+    };
+    if (userFiles.length > 0) {
+      msg.files = userFiles;
+      msg._fileContents = pendingFiles.map(f => ({ language: f.language, content: f.content }));
+    }
+    msgsToAdd.push(msg);
+  } else if (text || pendingFiles.length > 0) {
     const msg: ChatMessage = {
       role: 'user',
       content: text || '',

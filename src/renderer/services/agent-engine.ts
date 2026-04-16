@@ -102,8 +102,11 @@ export async function runAgentLoop(
     });
   }
 
-  const userMsg: OllamaMessage = { role: 'user', content: userContent };
-  if (images?.length) userMsg.images = images;
+  const userMsg: OllamaMessage = {
+    role: 'user',
+    content: userContent || (images?.length ? (images.length > 1 ? `请分析这 ${images.length} 张图片` : '请分析这张图片') : ''),
+    ...(images?.length && { images })
+  };
   messages.push(userMsg);
 
   const tools = getEnabledToolDefinitions();
