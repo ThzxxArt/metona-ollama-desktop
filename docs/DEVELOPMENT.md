@@ -1,6 +1,6 @@
 # Metona Ollama Desktop — 开发规范
 
-> 版本: 1.1 | 更新: 2026-04-14 | 维护: 项目团队
+> 版本: 3.3.1 | 更新: 2026-04-16 | 维护: 项目团队
 
 ---
 
@@ -93,7 +93,9 @@ import {
   logAgentLoop,    // Agent Loop 进度
   logModelResponse,// 模型响应日志
   logSession,      // 会话操作日志
-  logThink         // 思考过程日志
+  logThink,        // 思考过程日志
+  logMemory,       // 记忆系统日志
+  logRAG           // 向量存储日志
 } from './services/log-service.js';
 ```
 

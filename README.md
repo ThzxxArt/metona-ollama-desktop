@@ -138,7 +138,7 @@ AI 会自动从对话中学习并记住关键信息，跨会话持续积累，�
 
 ## 🏗️ 架构
 
-v3.2 四大子系统协调运作：
+v3.3 四大子系统协调运作：
 
 ```
 用户输入消息
@@ -333,7 +333,7 @@ metona-ollama-desktop/
 | `GET /api/version` | Ollama 版本 | 连接检测 |
 | `POST /api/show` | 模型详情（能力检测） | Think/Vision 检测 |
 | `POST /api/chat` | 流式聊天（支持 tools） | 对话 / Agent Loop |
-| `POST /api/embed` | 生成嵌入向量 | RAG 知识库 |
+| `POST /api/embed` | 生成嵌入向量 | 向量记忆 |
 
 ---
 

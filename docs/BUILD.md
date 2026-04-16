@@ -176,6 +176,13 @@ electron-builder 会自动处理所有依赖下载（Electron、NSIS、winCodeSi
 
 ## 构建日志
 
+### v3.3.1（2026-04-16） — metona-ollama-desktop 仓库
+
+- 🔧 修复开启工具调用后图片无法传给 AI（agent-engine.ts + input-area.ts）
+- 🔧 修复记忆系统弹框自动记忆开关点击无响应（memory-modal.ts CSS 类名修正）
+- 🎨 统一应用图标为科技感羊驼（llama.png / llama.ico）
+- 📝 版本号更新至 3.3.1（package.json / index.html / README.md / CHANGELOG.md / BUILD.md）
+
 ### v3.2.6（2026-04-15） — metona-ollama-desktop 仓库
 
 - ✅ `Metona Ollama Setup 3.2.6.exe`（78MB）
