@@ -346,7 +346,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         required: ['query'],
         properties: {
           query: { type: 'string', description: 'The search query. Be specific and concise for best results.' },
-          max_results: { type: 'integer', description: 'Maximum number of results to return. Default: 8, max: 10.' }
+          max_results: { type: 'integer', description: 'Maximum number of results to return. Default: 15, max: 15.' }
         }
       }
     }

@@ -495,7 +495,7 @@ export async function handleWebSearch(params: { query: string; max_results?: num
       return { success: false, error: '搜索关键词不能为空' };
     }
 
-    const maxResults = Math.min(params.max_results || 8, 10);
+    const maxResults = Math.min(params.max_results || 15, 15);
 
     sendLog('info', `🔍 web_search`, `"${query}" (${maxResults} 条)`);
 
