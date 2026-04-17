@@ -1,0 +1,124 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <!-- 渐变背景 -->
+    <radialGradient id="bgGrad" cx="50%" cy="45%" r="55%">
+      <stop offset="0%" stop-color="#FFF8F0"/>
+      <stop offset="100%" stop-color="#FAF7F2"/>
+    </radialGradient>
+    <!-- 珊瑚橙渐变 -->
+    <linearGradient id="coralGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F0845E"/>
+      <stop offset="100%" stop-color="#E8734A"/>
+    </linearGradient>
+    <!-- 深珊瑚渐变 -->
+    <linearGradient id="darkCoral" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#E8734A"/>
+      <stop offset="100%" stop-color="#D4623A"/>
+    </linearGradient>
+    <!-- 腮红渐变 -->
+    <radialGradient id="blushL" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#E8734A" stop-opacity="0.25"/>
+      <stop offset="100%" stop-color="#E8734A" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="blushR" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#E8734A" stop-opacity="0.25"/>
+      <stop offset="100%" stop-color="#E8734A" stop-opacity="0"/>
+    </radialGradient>
+    <!-- 阴影 -->
+    <filter id="shadow" x="-10%" y="-10%" width="130%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#2D2016" flood-opacity="0.12"/>
+    </filter>
+    <filter id="innerGlow">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="3" result="blur"/>
+      <feOffset dx="0" dy="2" result="offsetBlur"/>
+      <feFlood flood-color="#FFFFFF" flood-opacity="0.5" result="color"/>
+      <feComposite in="color" in2="offsetBlur" operator="in" result="shadow"/>
+      <feMerge>
+        <feMergeNode in="shadow"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- 背景圆角方形 -->
+  <rect x="16" y="16" width="480" height="480" rx="112" ry="112" fill="url(#bgGrad)" filter="url(#shadow)"/>
+  <!-- 微妙边框 -->
+  <rect x="16" y="16" width="480" height="480" rx="112" ry="112" fill="none" stroke="#E8734A" stroke-opacity="0.08" stroke-width="2"/>
+
+  <!-- === 羊驼头部 === -->
+  <g transform="translate(256, 240)" filter="url(#innerGlow)">
+
+    <!-- 左耳 -->
+    <ellipse cx="-72" cy="-108" rx="28" ry="48" fill="url(#coralGrad)" transform="rotate(-15, -72, -108)"/>
+    <!-- 左耳内 -->
+    <ellipse cx="-72" cy="-102" rx="16" ry="30" fill="#FAF7F2" transform="rotate(-15, -72, -102)"/>
+
+    <!-- 右耳 -->
+    <ellipse cx="72" cy="-108" rx="28" ry="48" fill="url(#coralGrad)" transform="rotate(15, 72, -108)"/>
+    <!-- 右耳内 -->
+    <ellipse cx="72" cy="-102" rx="16" ry="30" fill="#FAF7F2" transform="rotate(15, 72, -102)"/>
+
+    <!-- 头部主体 -->
+    <ellipse cx="0" cy="-20" rx="108" ry="110" fill="url(#coralGrad)"/>
+
+    <!-- 头部高光 -->
+    <ellipse cx="-10" cy="-60" rx="72" ry="52" fill="#FFFFFF" opacity="0.15"/>
+
+    <!-- 面部区域（浅色） -->
+    <ellipse cx="0" cy="10" rx="78" ry="72" fill="#FFF0E8" opacity="0.6"/>
+
+    <!-- 左眼 -->
+    <g transform="translate(-42, -20)">
+      <!-- 眼白 -->
+      <ellipse cx="0" cy="0" rx="22" ry="24" fill="#FFFFFF"/>
+      <!-- 瞳孔 -->
+      <ellipse cx="2" cy="2" rx="13" ry="14" fill="#2D2016"/>
+      <!-- 高光 -->
+      <ellipse cx="-4" cy="-5" rx="6" ry="6" fill="#FFFFFF"/>
+      <ellipse cx="5" cy="5" rx="3" ry="3" fill="#FFFFFF" opacity="0.6"/>
+    </g>
+
+    <!-- 右眼 -->
+    <g transform="translate(42, -20)">
+      <ellipse cx="0" cy="0" rx="22" ry="24" fill="#FFFFFF"/>
+      <ellipse cx="2" cy="2" rx="13" ry="14" fill="#2D2016"/>
+      <ellipse cx="-4" cy="-5" rx="6" ry="6" fill="#FFFFFF"/>
+      <ellipse cx="5" cy="5" rx="3" ry="3" fill="#FFFFFF" opacity="0.6"/>
+    </g>
+
+    <!-- 腮红 -->
+    <ellipse cx="-72" cy="20" rx="28" ry="16" fill="url(#blushL)"/>
+    <ellipse cx="72" cy="20" rx="28" ry="16" fill="url(#blushR)"/>
+
+    <!-- 鼻子 -->
+    <ellipse cx="0" cy="18" rx="12" ry="8" fill="#D4623A"/>
+    <!-- 鼻孔 -->
+    <ellipse cx="-5" cy="18" rx="4" ry="3.5" fill="#2D2016" opacity="0.5"/>
+    <ellipse cx="5" cy="18" rx="4" ry="3.5" fill="#2D2016" opacity="0.5"/>
+
+    <!-- 嘴巴 -->
+    <path d="M-16,30 Q0,42 16,30" fill="none" stroke="#D4623A" stroke-width="3" stroke-linecap="round"/>
+
+    <!-- 小微笑弧线 -->
+    <path d="M-8,34 Q0,38 8,34" fill="none" stroke="#2D2016" stroke-opacity="0.2" stroke-width="2" stroke-linecap="round"/>
+
+    <!-- 头顶毛发/刘海 -->
+    <path d="M-24,-120 Q-10,-140 0,-128 Q10,-140 24,-120" fill="url(#coralGrad)" opacity="0.7"/>
+    <path d="M-12,-118 Q0,-132 12,-118" fill="url(#darkCoral)" opacity="0.5"/>
+  </g>
+
+  <!-- === 底部装饰：代码/AI 符号 === -->
+  <g transform="translate(256, 420)">
+    <!-- 小于号 -->
+    <text x="-50" y="8" font-family="'SF Mono','JetBrains Mono','Consolas',monospace" font-size="36" font-weight="700" fill="#E8734A" opacity="0.5" text-anchor="middle">&lt;</text>
+    <!-- 斜杠 -->
+    <text x="0" y="8" font-family="'SF Mono','JetBrains Mono','Consolas',monospace" font-size="36" font-weight="700" fill="#E8734A" opacity="0.5" text-anchor="middle">/</text>
+    <!-- 大于号 -->
+    <text x="50" y="8" font-family="'SF Mono','JetBrains Mono','Consolas',monospace" font-size="36" font-weight="700" fill="#E8734A" opacity="0.5" text-anchor="middle">&gt;</text>
+  </g>
+
+  <!-- 角落装饰小圆点 -->
+  <circle cx="80" cy="80" r="6" fill="#E8734A" opacity="0.15"/>
+  <circle cx="432" cy="80" r="4" fill="#E8734A" opacity="0.1"/>
+  <circle cx="80" cy="432" r="4" fill="#E8734A" opacity="0.1"/>
+</svg>
