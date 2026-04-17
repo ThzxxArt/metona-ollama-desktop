@@ -14,7 +14,7 @@
 # 1. 克隆并安装依赖
 git clone https://gitee.com/thzxx/metona-ollama-desktop.git
 cd metona-ollama-desktop
-git checkout metona-ollama-desktop-v3.3.2
+git checkout metona-ollama-desktop-v3.3.3
 npm config set registry https://registry.npmmirror.com
 npm install
 
@@ -175,6 +175,16 @@ ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm run dist
 electron-builder 会自动处理所有依赖下载（Electron、NSIS、winCodeSign），虽然首次较慢（~5分钟），但无需手动管理缓存。
 
 ## 构建日志
+
+### v3.3.3（2026-04-17） — metona-ollama-desktop 仓库
+
+- 🔧 修复工具面板中除 run_command 外所有工具错误显示为"需确认"
+- 🔧 修复 run_command 执行模式下拉框未选中项白字白底不可见
+- 🎨 加宽工具面板、历史记录、设置面板、帮助面板
+- ✨ 增强联网搜索与网页抓取联动（TOOL_USAGE_GUIDE 新增规则）
+- ✨ 增强 AI 主动调用工具的 prompt 指导（新增第 7 条规则）
+- ✨ web_search 默认结果数 5 → 15
+- 📝 版本号更新至 3.3.3
 
 ### v3.3.2（2026-04-16） — metona-ollama-desktop 仓库
 

@@ -3,13 +3,32 @@
 ## 分支结构
 
 **桌面版主线**（`master`）：
-- `metona-ollama-desktop-v1.1` → `metona-ollama-desktop-v2` → `metona-ollama-desktop-v3.0.0` → `metona-ollama-desktop-v3.1.0` → `metona-ollama-desktop-v3.1.1` → `metona-ollama-desktop-v3.2.0` → `metona-ollama-desktop-v3.2.1` → `metona-ollama-desktop-v3.2.2` → `metona-ollama-desktop-v3.2.3` → `metona-ollama-desktop-v3.2.4` → `metona-ollama-desktop-v3.2.5` → `metona-ollama-desktop-v3.2.6` → `metona-ollama-desktop-v3.3.0` → `metona-ollama-desktop-v3.3.1` → `metona-ollama-desktop-v3.3.2`（当前发布分支）
+- `metona-ollama-desktop-v1.1` → `metona-ollama-desktop-v2` → `metona-ollama-desktop-v3.0.0` → `metona-ollama-desktop-v3.1.0` → `metona-ollama-desktop-v3.1.1` → `metona-ollama-desktop-v3.2.0` → `metona-ollama-desktop-v3.2.1` → `metona-ollama-desktop-v3.2.2` → `metona-ollama-desktop-v3.2.3` → `metona-ollama-desktop-v3.2.4` → `metona-ollama-desktop-v3.2.5` → `metona-ollama-desktop-v3.2.6` → `metona-ollama-desktop-v3.3.0` → `metona-ollama-desktop-v3.3.1` → `metona-ollama-desktop-v3.3.2` → `metona-ollama-desktop-v3.3.3`（当前发布分支）
 
 **Web 版历史**已独立为 [metona-ollama-web](https://gitee.com/thzxx/metona-ollama-web) 仓库（v1.1.0 ~ v4.0.3）。
 
 ---
 
 ## 桌面版（Desktop）
+
+### Desktop v3.3.3 — 工具面板修复 & 搜索增强
+
+- 🔧 **修复工具面板 badge 显示错误**
+  - 除 run_command 外所有工具的 badge 从"需确认"改为"自动"（与代码实际行为一致）
+  - 根因：CONFIRM_TOOLS 数组仅包含 run_command，但 HTML 硬编码了 10 个工具为 confirm
+- 🔧 **修复 run_command 下拉框样式**
+  - 未选中项白字白底不可见，根因：内联样式引用了未定义的 CSS 变量 --bg-tertiary
+  - 改用 --bg-card 并为 option 元素添加显式暗色背景
+- 🎨 **面板宽度优化**
+  - 工具面板：720px → 900px
+  - 历史记录：680px → 800px
+  - 设置面板：480px → 640px
+  - 帮助面板：600px → 760px
+- ✨ **增强联网搜索与网页抓取联动**
+  - TOOL_USAGE_GUIDE 新增第 6 条：要求 AI 在 web_search 后必须用 web_fetch 抓取详情
+  - 新增第 7 条：明确 AI 在不确定、信息过时、需实时数据时应主动调用工具
+  - 典型场景→工具映射：查版本→web_search+web_fetch、查文件→read_file、查项目→git status
+- ✨ **web_search 默认结果数提升**：5 → 15，给 AI 更多线索定位目标页面
 
 ### Desktop v3.3.2 — 联网搜索 & 工具权限优化
 
