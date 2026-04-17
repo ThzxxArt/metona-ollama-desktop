@@ -7,6 +7,16 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { mainWindow } from './main.js';
 import { showNotification } from './utils.js';
+import {
+  initDatabase, saveSession, getSession, getAllSessions, deleteSession, clearAllSessions,
+  saveMessage, getMessagesBySession,
+  saveMemory, getMemory, getAllMemories, getMemoriesByType, deleteMemory, clearAllMemories, searchMemoriesFTS,
+  saveSetting, getSetting,
+  saveToolCall, getToolCallsBySession,
+  saveTrace, getTracesBySession,
+  exportAllSessions, importSessions
+} from './db/sqlite.js';
+import type { ExportData } from './db/sqlite.js';
 
 /** 发送日志到渲染进程日志面板 */
 function sendLog(level: 'info' | 'success' | 'warn' | 'error' | 'debug', message: string, detail?: string): void {
@@ -250,5 +260,115 @@ export function setupIPC(): void {
     const killed = killToolProcess();
     sendLog('info', `🔧 cmd:kill`, killed ? '已终止' : '无正在运行的工具命令');
     return { killed };
+  });
+
+  // ══════════════════════════════════════════════
+  // SQLite 数据库 IPC Handlers (v4.0)
+  // ══════════════════════════════════════════════
+
+  // 初始化数据库
+  initDatabase();
+  sendLog('success', '📦 SQLite 数据库已初始化');
+
+  // Sessions
+  ipcMain.handle('db:saveSession', (_, session) => {
+    try { return { success: true, id: saveSession(session) }; }
+    catch (err) { return { success: false, error: (err as Error).message }; }
+  });
+  ipcMain.handle('db:getSession', (_, id) => {
+    try { return getSession(id); }
+    catch { return null; }
+  });
+  ipcMain.handle('db:getAllSessions', () => {
+    try { return getAllSessions(); }
+    catch { return []; }
+  });
+  ipcMain.handle('db:deleteSession', (_, id) => {
+    try { deleteSession(id); return { success: true }; }
+    catch (err) { return { success: false, error: (err as Error).message }; }
+  });
+  ipcMain.handle('db:clearAllSessions', () => {
+    try { clearAllSessions(); return { success: true }; }
+    catch (err) { return { success: false, error: (err as Error).message }; }
+  });
+
+  // Messages
+  ipcMain.handle('db:saveMessage', (_, msg) => {
+    try { return { success: true, id: saveMessage(msg) }; }
+    catch (err) { return { success: false, error: (err as Error).message }; }
+  });
+  ipcMain.handle('db:getMessages', (_, sessionId) => {
+    try { return getMessagesBySession(sessionId); }
+    catch { return []; }
+  });
+
+  // Memories
+  ipcMain.handle('db:saveMemory', (_, entry) => {
+    try { return { success: true, id: saveMemory(entry) }; }
+    catch (err) { return { success: false, error: (err as Error).message }; }
+  });
+  ipcMain.handle('db:getMemory', (_, id) => {
+    try { return getMemory(id); }
+    catch { return null; }
+  });
+  ipcMain.handle('db:getAllMemories', () => {
+    try { return getAllMemories(); }
+    catch { return []; }
+  });
+  ipcMain.handle('db:getMemoriesByType', (_, type) => {
+    try { return getMemoriesByType(type); }
+    catch { return []; }
+  });
+  ipcMain.handle('db:deleteMemory', (_, id) => {
+    try { deleteMemory(id); return { success: true }; }
+    catch (err) { return { success: false, error: (err as Error).message }; }
+  });
+  ipcMain.handle('db:clearAllMemories', () => {
+    try { clearAllMemories(); return { success: true }; }
+    catch (err) { return { success: false, error: (err as Error).message }; }
+  });
+  ipcMain.handle('db:searchMemories', (_, query: string, limit?: number) => {
+    try { return searchMemoriesFTS(query, limit ?? 10); }
+    catch { return []; }
+  });
+
+  // Settings
+  ipcMain.handle('db:saveSetting', (_, key: string, value: unknown) => {
+    try { saveSetting(key, value); return { success: true }; }
+    catch (err) { return { success: false, error: (err as Error).message }; }
+  });
+  ipcMain.handle('db:getSetting', (_, key: string, defaultValue?: unknown) => {
+    try { return getSetting(key, defaultValue ?? null); }
+    catch { return defaultValue ?? null; }
+  });
+
+  // Tool Calls
+  ipcMain.handle('db:saveToolCall', (_, tc) => {
+    try { return { success: true, id: saveToolCall(tc) }; }
+    catch (err) { return { success: false, error: (err as Error).message }; }
+  });
+  ipcMain.handle('db:getToolCalls', (_, sessionId) => {
+    try { return getToolCallsBySession(sessionId); }
+    catch { return []; }
+  });
+
+  // Traces
+  ipcMain.handle('db:saveTrace', (_, trace) => {
+    try { return { success: true, id: saveTrace(trace) }; }
+    catch (err) { return { success: false, error: (err as Error).message }; }
+  });
+  ipcMain.handle('db:getTraces', (_, sessionId) => {
+    try { return getTracesBySession(sessionId); }
+    catch { return []; }
+  });
+
+  // Export/Import
+  ipcMain.handle('db:exportSessions', () => {
+    try { return exportAllSessions(); }
+    catch (err) { sendLog('error', '导出失败', (err as Error).message); return null; }
+  });
+  ipcMain.handle('db:importSessions', (_, data: ExportData) => {
+    try { return importSessions(data); }
+    catch (err) { sendLog('error', '导入失败', (err as Error).message); return { imported: 0, skipped: 0 }; }
   });
 }

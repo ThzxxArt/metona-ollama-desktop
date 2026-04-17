@@ -2952,3 +2952,127 @@ html, body {
     color: var(--text-secondary);
     line-height: 1.4;
 }
+
+/* ══════════════════════════════════════════════
+   v4.0 ReAct 执行面板样式
+   ══════════════════════════════════════════════ */
+
+/* ReAct 思考过程卡片 */
+.react-thought-card {
+    background: rgba(138, 109, 255, 0.06);
+    border: 1px solid rgba(138, 109, 255, 0.15);
+    border-radius: 8px;
+    margin: 8px 0;
+    overflow: hidden;
+    transition: border-color 0.2s;
+}
+.react-thought-card:hover {
+    border-color: rgba(138, 109, 255, 0.3);
+}
+
+.react-thought-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    cursor: pointer;
+    font-size: 12px;
+    color: #a78bfa;
+    user-select: none;
+}
+.react-thought-header:hover {
+    background: rgba(138, 109, 255, 0.08);
+}
+
+.react-thought-content {
+    padding: 0 12px 12px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+.react-thought-content pre {
+    margin: 0;
+    font-family: inherit;
+    white-space: pre-wrap;
+}
+
+/* ReAct 步骤时间线 */
+.react-timeline {
+    position: relative;
+    padding-left: 20px;
+    margin: 12px 0;
+}
+.react-timeline::before {
+    content: '';
+    position: absolute;
+    left: 6px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: rgba(138, 109, 255, 0.2);
+    border-radius: 1px;
+}
+
+.react-step {
+    position: relative;
+    margin-bottom: 12px;
+}
+.react-step::before {
+    content: '';
+    position: absolute;
+    left: -18px;
+    top: 8px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #a78bfa;
+    border: 2px solid var(--bg-primary);
+}
+
+.react-step-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+}
+.react-step-label.thought { color: #a78bfa; }
+.react-step-label.action { color: #60cdff; }
+.react-step-label.observation { color: #4ade80; }
+
+.react-step-content {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    padding: 6px 10px;
+    background: rgba(0, 0, 0, 0.15);
+    border-radius: 6px;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+/* 工具调用卡片增强（v4.0 耗时显示） */
+.tool-call-duration {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-left: auto;
+}
+
+/* ReAct 执行摘要 */
+.react-summary {
+    background: rgba(74, 222, 128, 0.06);
+    border: 1px solid rgba(74, 222, 128, 0.15);
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin: 10px 0;
+    font-size: 13px;
+    line-height: 1.5;
+}
+.react-summary-title {
+    font-weight: 600;
+    color: #4ade80;
+    margin-bottom: 6px;
+    font-size: 12px;
+}

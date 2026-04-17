@@ -221,6 +221,7 @@ export interface MetonaDesktopAPI {
   onAppQuit: (callback: () => void) => void;
   removeAllListeners: (channel: string) => void;
   onMainLog: (callback: (data: { level: string; message: string; detail?: string }) => void) => void;
+  db: DBAPI;
   workspace: {
     getDir: () => Promise<{ dir: string; defaultDir: string }>;
     setDir: (dir: string) => Promise<{ success: boolean; dir?: string; error?: string }>;
@@ -331,6 +332,91 @@ export interface ToolCallRecord {
 }
 
 export type AgentState = 'idle' | 'sending' | 'accumulating' | 'executing' | 'confirming' | 'done';
+
+// ═══════════════════════════════════════════════════════════
+// ReAct Trace 类型 (v4.0)
+// ═══════════════════════════════════════════════════════════
+
+export interface TraceEntry {
+  id: string;
+  sessionId: string;
+  stepIndex: number;
+  thought: string;
+  action: string;
+  actionInput: string;
+  observation: string;
+  loopCount: number;
+  createdAt: number;
+}
+
+// ═══════════════════════════════════════════════════════════
+// SQLite DB IPC 接口 (v4.0)
+// ═══════════════════════════════════════════════════════════
+
+export interface SessionRow {
+  id: string;
+  title: string;
+  model: string;
+  system_prompt: string | null;
+  parent_id: string | null;
+  status: string;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface MessageRow {
+  id: string;
+  session_id: string;
+  role: string;
+  content: string | null;
+  thinking: string | null;
+  images: string | null;
+  tool_calls: string | null;
+  tool_name: string | null;
+  eval_count: number | null;
+  total_duration: number | null;
+  created_at: number;
+}
+
+export interface MemoryRow {
+  id: string;
+  type: string;
+  content: string;
+  importance: number;
+  tags: string | null;
+  source: string | null;
+  session_id: string | null;
+  use_count: number;
+  embedding: string | null;
+  created_at: number;
+  updated_at: number;
+  last_used_at: number;
+}
+
+export interface DBAPI {
+  saveSession: (session: SessionRow) => Promise<{ success: boolean; id?: string; error?: string }>;
+  getSession: (id: string) => Promise<SessionRow | null>;
+  getAllSessions: () => Promise<SessionRow[]>;
+  deleteSession: (id: string) => Promise<{ success: boolean; error?: string }>;
+  clearAllSessions: () => Promise<{ success: boolean; error?: string }>;
+  saveMessage: (msg: MessageRow) => Promise<{ success: boolean; id?: string; error?: string }>;
+  getMessages: (sessionId: string) => Promise<MessageRow[]>;
+  saveMemory: (entry: MemoryRow) => Promise<{ success: boolean; id?: string; error?: string }>;
+  getMemory: (id: string) => Promise<MemoryRow | null>;
+  getAllMemories: () => Promise<MemoryRow[]>;
+  getMemoriesByType: (type: string) => Promise<MemoryRow[]>;
+  deleteMemory: (id: string) => Promise<{ success: boolean; error?: string }>;
+  clearAllMemories: () => Promise<{ success: boolean; error?: string }>;
+  searchMemories: (query: string, limit?: number) => Promise<MemoryRow[]>;
+  saveSetting: (key: string, value: unknown) => Promise<{ success: boolean; error?: string }>;
+  getSetting: <T = unknown>(key: string, defaultValue?: T) => Promise<T>;
+  saveToolCall: (tc: unknown) => Promise<{ success: boolean; id?: string; error?: string }>;
+  getToolCalls: (sessionId: string) => Promise<unknown[]>;
+  saveTrace: (trace: unknown) => Promise<{ success: boolean; id?: string; error?: string }>;
+  getTraces: (sessionId: string) => Promise<TraceEntry[]>;
+  exportSessions: () => Promise<unknown>;
+  importSessions: (data: unknown) => Promise<{ imported: number; skipped: number }>;
+}
 
 // ── Window global 声明 ──
 

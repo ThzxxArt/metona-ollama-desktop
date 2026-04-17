@@ -188,11 +188,15 @@ export function appendMessageDOM(msg: ChatMessage, index: number): void {
 function renderToolCallCard(tc: ToolCallRecord): string {
   const icons: Record<string, string> = {
     read_file: '📄', write_file: '✏️', list_directory: '📁',
-    search_files: '🔍', create_directory: '📂', delete_file: '🗑️', run_command: '💻'
+    search_files: '🔍', create_directory: '📂', delete_file: '🗑️', run_command: '💻',
+    web_search: '🔍', web_fetch: '🌐', git: '🔖',
+    memory_search: '🧠', memory_add: '💾', session_list: '📋', session_read: '📖'
   };
   const names: Record<string, string> = {
     read_file: '读取文件', write_file: '写入文件', list_directory: '列出目录',
-    search_files: '搜索文件', create_directory: '创建目录', delete_file: '删除文件', run_command: '执行命令'
+    search_files: '搜索文件', create_directory: '创建目录', delete_file: '删除文件', run_command: '执行命令',
+    web_search: '联网搜索', web_fetch: '网页抓取', git: 'Git 操作',
+    memory_search: '搜索记忆', memory_add: '添加记忆', session_list: '会话列表', session_read: '读取会话'
   };
   const statusLabels: Record<string, string> = {
     pending: '⏳ 等待确认', running: '🔄 执行中', success: '✅ 完成', error: '❌ 失败', cancelled: '🚫 已取消'

@@ -350,6 +350,71 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         }
       }
     }
+  },
+  // ══════════════════════════════════════════════
+  // v4.0 新增工具：记忆和会话管理
+  // ══════════════════════════════════════════════
+  {
+    type: 'function',
+    function: {
+      name: 'memory_search',
+      description: 'Search agent memories by semantic similarity or keywords. Returns relevant memories about the user, preferences, rules, and past conversations.',
+      parameters: {
+        type: 'object',
+        required: ['query'],
+        properties: {
+          query: { type: 'string', description: 'Search query for memories.' },
+          limit: { type: 'integer', description: 'Max results to return. Default: 8.' },
+          type: { type: 'string', enum: ['fact', 'preference', 'rule'], description: 'Filter by memory type.' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'memory_add',
+      description: 'Add a new memory entry for future reference. Use when you learn something important about the user, their preferences, or rules they want you to follow.',
+      parameters: {
+        type: 'object',
+        required: ['type', 'content'],
+        properties: {
+          type: { type: 'string', enum: ['fact', 'preference', 'rule'], description: 'Memory type: fact (about user), preference (user preference), rule (must follow).' },
+          content: { type: 'string', description: 'The memory content. Be concise and specific.' },
+          importance: { type: 'integer', description: 'Importance 1-10. Higher = more important. Default: 5.' },
+          tags: { type: 'array', items: { type: 'string' }, description: 'Tags for search matching. 2-5 keywords.' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'session_list',
+      description: 'List previous chat sessions with their titles and timestamps. Useful for referencing past conversations.',
+      parameters: {
+        type: 'object',
+        properties: {
+          limit: { type: 'integer', description: 'Max sessions to return. Default: 20.' },
+          search: { type: 'string', description: 'Filter sessions by title keyword.' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'session_read',
+      description: 'Read the messages from a previous chat session. Use when the user references something from a past conversation.',
+      parameters: {
+        type: 'object',
+        required: ['session_id'],
+        properties: {
+          session_id: { type: 'string', description: 'The session ID to read.' },
+          max_messages: { type: 'integer', description: 'Max messages to return. Default: 50.' }
+        }
+      }
+    }
   }
 ];
 
@@ -380,7 +445,8 @@ let enabledTools: Set<string> = new Set([
   'run_command',
   'move_file', 'copy_file', 'web_fetch', 'web_search', 'append_file', 'edit_file',
   'get_file_info', 'tree', 'download_file', 'diff_files', 'replace_in_files',
-  'read_multiple_files', 'git', 'compress'
+  'read_multiple_files', 'git', 'compress',
+  'memory_search', 'memory_add', 'session_list', 'session_read'
 ]);
 
 export function setToolEnabled(toolName: string, enabled: boolean): void {
@@ -409,6 +475,70 @@ export async function executeTool(toolName: string, args: Record<string, unknown
   }
 
   try {
+    // 内存工具（不走 IPC，直接处理）
+    if (toolName === 'memory_search') {
+      const { searchMemories } = await import('./memory-manager.js');
+      const query = args.query as string;
+      const limit = (args.limit as number) || 8;
+      const type = args.type as string | undefined;
+      let results = searchMemories(query, limit);
+      if (type) results = results.filter(r => r.type === type);
+      logToolResult('memory_search', true, `${results.length} 条结果`);
+      return { success: true, results, total: results.length };
+    }
+    if (toolName === 'memory_add') {
+      const { addMemory } = await import('./memory-manager.js');
+      const type = args.type as 'fact' | 'preference' | 'rule';
+      const content = args.content as string;
+      const importance = (args.importance as number) || 5;
+      const tags = (args.tags as string[]) || [];
+      if (!content || content.length < 2) {
+        return { success: false, error: 'content 不能为空且至少 2 个字符' };
+      }
+      const entry = await addMemory({ type, content, importance, tags });
+      logToolResult('memory_add', true, `${type}: ${content.slice(0, 50)}`);
+      return { success: true, id: entry.id, type: entry.type, content: entry.content };
+    }
+    if (toolName === 'session_list') {
+      const bridge = window.metonaDesktop;
+      if (!bridge?.db) return { success: false, error: '桌面 API 不可用' };
+      const limit = (args.limit as number) || 20;
+      const search = (args.search as string) || '';
+      const sessions = await bridge.db.getAllSessions();
+      let filtered = sessions.map((s: any) => ({
+        id: s.id,
+        title: s.title,
+        model: s.model,
+        messageCount: 0, // 从 SQLite 获取的原始行不含 messages
+        createdAt: s.created_at,
+        updatedAt: s.updated_at
+      }));
+      if (search) {
+        filtered = filtered.filter((s: any) => s.title.toLowerCase().includes(search.toLowerCase()));
+      }
+      filtered.sort((a: any, b: any) => b.updatedAt - a.updatedAt);
+      filtered = filtered.slice(0, limit);
+      logToolResult('session_list', true, `${filtered.length} 个会话`);
+      return { success: true, sessions: filtered, total: filtered.length };
+    }
+    if (toolName === 'session_read') {
+      const bridge = window.metonaDesktop;
+      if (!bridge?.db) return { success: false, error: '桌面 API 不可用' };
+      const sessionId = args.session_id as string;
+      const maxMessages = (args.max_messages as number) || 50;
+      if (!sessionId) return { success: false, error: '缺少 session_id 参数' };
+      const session = await bridge.db.getSession(sessionId);
+      if (!session) return { success: false, error: `会话 ${sessionId} 不存在` };
+      const messages = await bridge.db.getMessages(sessionId);
+      const msgs = messages.slice(0, maxMessages).map((m: any) => ({
+        role: m.role,
+        content: m.content || '',
+        timestamp: m.created_at
+      }));
+      logToolResult('session_read', true, `${msgs.length} 条消息`);
+      return { success: true, session: { id: session.id, title: session.title, model: session.model }, messages: msgs, total: messages.length };
+    }
+
     // run_command 走 workspace IPC
     if (toolName === 'run_command') {
       const command = args.command as string;
@@ -445,54 +575,27 @@ export async function executeTool(toolName: string, args: Record<string, unknown
 
 export function getToolIcon(name: string): string {
   const icons: Record<string, string> = {
-    read_file: '📄',
-    write_file: '✏️',
-    list_directory: '📁',
-    search_files: '🔍',
-    create_directory: '📂',
-    delete_file: '🗑️',
-    run_command: '💻',
-    move_file: '📦',
-    copy_file: '📋',
-    web_fetch: '🌐',
-    append_file: '➕',
-    edit_file: '✂️',
-    get_file_info: 'ℹ️',
-    tree: '🌳',
-    download_file: '⬇️',
-    diff_files: '🔀',
-    replace_in_files: '🔄',
-    read_multiple_files: '📚',
-    git: '🔖',
-    compress: '🗜️',
-    web_search: '🔍'
+    read_file: '📄', write_file: '✏️', list_directory: '📁',
+    search_files: '🔍', create_directory: '📂', delete_file: '🗑️', run_command: '💻',
+    move_file: '📦', copy_file: '📋', web_fetch: '🌐', append_file: '➕',
+    edit_file: '✂️', get_file_info: 'ℹ️', tree: '🌳', download_file: '⬇️',
+    diff_files: '🔀', replace_in_files: '🔄', read_multiple_files: '📚',
+    git: '🔖', compress: '🗜️', web_search: '🔍',
+    memory_search: '🧠', memory_add: '💾', session_list: '📋', session_read: '📖'
   };
   return icons[name] || '🔧';
 }
 
 export function formatToolName(name: string): string {
   const names: Record<string, string> = {
-    read_file: '读取文件',
-    write_file: '写入文件',
-    list_directory: '列出目录',
-    search_files: '搜索文件',
-    create_directory: '创建目录',
-    delete_file: '删除文件',
-    run_command: '执行命令',
-    move_file: '移动文件',
-    copy_file: '复制文件',
-    web_fetch: '网页抓取',
-    append_file: '追加文件',
-    edit_file: '编辑文件',
-    get_file_info: '文件信息',
-    tree: '目录树',
-    download_file: '下载文件',
-    diff_files: '文件对比',
-    replace_in_files: '批量替换',
-    read_multiple_files: '批量读取',
-    git: 'Git 操作',
-    compress: '压缩/解压',
-    web_search: '联网搜索'
+    read_file: '读取文件', write_file: '写入文件', list_directory: '列出目录',
+    search_files: '搜索文件', create_directory: '创建目录', delete_file: '删除文件',
+    run_command: '执行命令', move_file: '移动文件', copy_file: '复制文件',
+    web_fetch: '网页抓取', append_file: '追加文件', edit_file: '编辑文件',
+    get_file_info: '文件信息', tree: '目录树', download_file: '下载文件',
+    diff_files: '文件对比', replace_in_files: '批量替换', read_multiple_files: '批量读取',
+    git: 'Git 操作', compress: '压缩/解压', web_search: '联网搜索',
+    memory_search: '搜索记忆', memory_add: '添加记忆', session_list: '会话列表', session_read: '读取会话'
   };
   return names[name] || name;
 }

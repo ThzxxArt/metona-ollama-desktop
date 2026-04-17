@@ -29,6 +29,120 @@ import { initLogPanel, addLog } from './services/log-service.js';
 import { logInfo, logSuccess, logError, logDebug, logInit, logWarn } from './services/log-service.js';
 import type { ChatSession } from './types.js';
 
+// ─── v4.0 数据迁移：IndexedDB → SQLite ───
+
+async function migrateIndexedDBToSQLite(db: ChatDB): Promise<void> {
+  const bridge = (window as any).metonaDesktop;
+  if (!bridge?.isDesktop || !bridge?.db) {
+    logInit('非桌面环境，跳过迁移');
+    return;
+  }
+
+  // 检查是否已迁移
+  const migrated = await bridge.db.getSetting('_indexeddb_migrated', false);
+  if (migrated) {
+    logInit('SQLite 数据库已连接（已迁移）');
+    return;
+  }
+
+  // 检查 IndexedDB 中是否有数据
+  const idb = db.getRawIDB();
+  if (!idb) {
+    logInit('SQLite 数据库已连接（无旧数据）');
+    return;
+  }
+
+  // 读取 IndexedDB 数据
+  try {
+    const sessions: ChatSession[] = await new Promise((resolve, reject) => {
+      const tx = idb.transaction('sessions', 'readonly');
+      const store = tx.objectStore('sessions');
+      const req = store.getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => reject(req.error);
+    });
+
+    const memories: any[] = await new Promise((resolve, reject) => {
+      const tx = idb.transaction('memories', 'readonly');
+      const store = tx.objectStore('memories');
+      const req = store.getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => reject(req.error);
+    });
+
+    const settings: any[] = await new Promise((resolve, reject) => {
+      const tx = idb.transaction('settings', 'readonly');
+      const store = tx.objectStore('settings');
+      const req = store.getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => reject(req.error);
+    });
+
+    if (sessions.length === 0 && memories.length === 0 && settings.length === 0) {
+      logInit('SQLite 数据库已连接（无旧数据）');
+      await bridge.db.saveSetting('_indexeddb_migrated', true);
+      return;
+    }
+
+    logInit(`发现旧数据: ${sessions.length} 会话, ${memories.length} 记忆, ${settings.length} 设置`);
+
+    // 构造导入数据
+    const importData = {
+      sessions: sessions.map(s => ({
+        id: s.id,
+        title: s.title,
+        model: s.model,
+        system_prompt: null as string | null,
+        parent_id: null as string | null,
+        status: 'active',
+        created_at: s.createdAt,
+        updated_at: s.updatedAt
+      })),
+      messages: sessions.flatMap(s =>
+        s.messages.map((m: any, idx: number) => ({
+          id: `${s.id}_msg_${idx}_${m.timestamp}`,
+          session_id: s.id,
+          role: m.role,
+          content: m.content || null,
+          thinking: m.think || null,
+          images: m.images?.length ? JSON.stringify(m.images) : null,
+          tool_calls: m.toolCalls?.length ? JSON.stringify(m.toolCalls) : null,
+          tool_name: null,
+          eval_count: m.eval_count || null,
+          total_duration: m.total_duration || null,
+          created_at: m.timestamp || Date.now()
+        }))
+      ),
+      memories: memories.map((m: any) => ({
+        id: m.id,
+        type: m.type,
+        content: m.content,
+        importance: m.importance || 5,
+        tags: m.tags?.length ? JSON.stringify(m.tags) : null,
+        source: m.source || null,
+        session_id: m.sessionId || null,
+        use_count: m.useCount || 0,
+        embedding: m.embedding ? JSON.stringify(m.embedding) : null,
+        created_at: m.createdAt,
+        updated_at: m.updatedAt,
+        last_used_at: m.lastUsedAt
+      })),
+      settings: settings.map((s: any) => ({ key: s.key, value: s.value })),
+      exportedAt: Date.now()
+    };
+
+    const result = await bridge.db.importSessions(importData);
+    logInit(`迁移完成: 导入 ${result.imported} 个会话, 跳过 ${result.skipped} 个`);
+
+    // 标记迁移完成
+    await bridge.db.saveSetting('_indexeddb_migrated', true);
+    logSuccess('数据迁移完成');
+  } catch (err) {
+    logError('数据迁移失败', (err as Error).message);
+    // 迁移失败不阻塞启动
+  }
+}
+
 function initHelpModal(): void {
   const helpModal = document.querySelector('#helpModal') as HTMLElement;
   document.querySelector('#btnHelp')!.addEventListener('click', () => {
@@ -176,7 +290,9 @@ async function init(): Promise<void> {
     db = new ChatDB();
     await db.init();
     state.set(KEYS.DB, db);
-    logInit('IndexedDB 已连接');
+
+    // v4.0 数据迁移：检测 IndexedDB 是否有旧数据需要迁移到 SQLite
+    await migrateIndexedDBToSQLite(db);
 
     const serverUrl = await db.getSetting('serverUrl', 'http://127.0.0.1:11434');
     api = new OllamaAPI(serverUrl);
