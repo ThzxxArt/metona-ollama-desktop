@@ -1514,8 +1514,12 @@ html, body {
 
 /* ── 历史记录模态框加宽 ── */
 #historyModal .modal {
-    max-width: 680px;
+    max-width: 800px;
     max-height: 88vh;
+}
+
+#settingsModal .modal {
+    max-width: 640px;
 }
 
 /* ── 历史记录 ── */
@@ -2873,7 +2877,7 @@ html, body {
 /* ═══════════════ 工具面板模态框 ═══════════════ */
 
 #toolsModal .modal {
-    max-width: 720px;
+    max-width: 900px;
     width: 95vw;
     max-height: 85vh;
 }
