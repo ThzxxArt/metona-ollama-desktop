@@ -31,7 +31,7 @@ function queryOne(db: SQL.Database, sql: string, params?: unknown[]): Row | null
     const cols = stmt.getColumnNames();
     const vals = stmt.get();
     const row: Row = {};
-    cols.forEach((c, i) => { row[c] = vals[i]; });
+    cols.forEach((c: string, i: number) => { row[c] = vals[i]; });
     stmt.free();
     return row;
   }
@@ -47,7 +47,7 @@ function queryAll(db: SQL.Database, sql: string, params?: unknown[]): Row[] {
   while (stmt.step()) {
     const vals = stmt.get();
     const row: Row = {};
-    cols.forEach((c, i) => { row[c] = vals[i]; });
+    cols.forEach((c: string, i: number) => { row[c] = vals[i]; });
     rows.push(row);
   }
   stmt.free();
@@ -303,11 +303,11 @@ export function saveSession(session: SessionRow): string {
 }
 
 export function getSession(id: string): SessionRow | null {
-  return queryOne(getDb(), 'SELECT * FROM sessions WHERE id = ?', [id]) as SessionRow | null;
+  return queryOne(getDb(), 'SELECT * FROM sessions WHERE id = ?', [id]) as unknown as SessionRow | null;
 }
 
 export function getAllSessions(): SessionRow[] {
-  return queryAll(getDb(), 'SELECT * FROM sessions ORDER BY updated_at DESC') as SessionRow[];
+  return queryAll(getDb(), 'SELECT * FROM sessions ORDER BY updated_at DESC') as unknown as SessionRow[];
 }
 
 export function deleteSession(id: string): void {
@@ -334,7 +334,7 @@ export function saveMessage(msg: MessageRow): string {
 }
 
 export function getMessagesBySession(sessionId: string): MessageRow[] {
-  return queryAll(getDb(), 'SELECT * FROM messages WHERE session_id = ? ORDER BY created_at ASC', [sessionId]) as MessageRow[];
+  return queryAll(getDb(), 'SELECT * FROM messages WHERE session_id = ? ORDER BY created_at ASC', [sessionId]) as unknown as MessageRow[];
 }
 
 export function deleteMessagesBySession(sessionId: string): void {
@@ -362,15 +362,15 @@ export function saveMemory(entry: MemoryRow): string {
 }
 
 export function getMemory(id: string): MemoryRow | null {
-  return queryOne(getDb(), 'SELECT * FROM memories WHERE id = ?', [id]) as MemoryRow | null;
+  return queryOne(getDb(), 'SELECT * FROM memories WHERE id = ?', [id]) as unknown as MemoryRow | null;
 }
 
 export function getAllMemories(): MemoryRow[] {
-  return queryAll(getDb(), 'SELECT * FROM memories ORDER BY importance DESC, updated_at DESC') as MemoryRow[];
+  return queryAll(getDb(), 'SELECT * FROM memories ORDER BY importance DESC, updated_at DESC') as unknown as MemoryRow[];
 }
 
 export function getMemoriesByType(type: string): MemoryRow[] {
-  return queryAll(getDb(), 'SELECT * FROM memories WHERE type = ? ORDER BY importance DESC', [type]) as MemoryRow[];
+  return queryAll(getDb(), 'SELECT * FROM memories WHERE type = ? ORDER BY importance DESC', [type]) as unknown as MemoryRow[];
 }
 
 export function deleteMemory(id: string): void {
@@ -401,7 +401,7 @@ export function searchMemoriesFTS(query: string, limit = 10): MemoryRow[] {
       WHERE memories_fts MATCH ?
       ORDER BY rank
       LIMIT ?
-    `, [ftsQuery, limit]) as MemoryRow[];
+    `, [ftsQuery, limit]) as unknown as MemoryRow[];
   } catch {
     // FTS 失败回退到 LIKE 搜索
     return queryAll(d, `
@@ -409,7 +409,7 @@ export function searchMemoriesFTS(query: string, limit = 10): MemoryRow[] {
       WHERE content LIKE ? OR tags LIKE ?
       ORDER BY importance DESC
       LIMIT ?
-    `, [`%${query}%`, `%${query}%`, limit]) as MemoryRow[];
+    `, [`%${query}%`, `%${query}%`, limit]) as unknown as MemoryRow[];
   }
 }
 
@@ -444,7 +444,7 @@ export function saveToolCall(tc: ToolCallRow): string {
 }
 
 export function getToolCallsBySession(sessionId: string): ToolCallRow[] {
-  return queryAll(getDb(), 'SELECT * FROM tool_calls WHERE session_id = ? ORDER BY created_at ASC', [sessionId]) as ToolCallRow[];
+  return queryAll(getDb(), 'SELECT * FROM tool_calls WHERE session_id = ? ORDER BY created_at ASC', [sessionId]) as unknown as ToolCallRow[];
 }
 
 // ─── Traces CRUD ───
@@ -459,7 +459,7 @@ export function saveTrace(trace: TraceRow): string {
 }
 
 export function getTracesBySession(sessionId: string): TraceRow[] {
-  return queryAll(getDb(), 'SELECT * FROM traces WHERE session_id = ? ORDER BY step_index ASC', [sessionId]) as TraceRow[];
+  return queryAll(getDb(), 'SELECT * FROM traces WHERE session_id = ? ORDER BY step_index ASC', [sessionId]) as unknown as TraceRow[];
 }
 
 // ─── Export/Import ───
@@ -474,10 +474,10 @@ export interface ExportData {
 
 export function exportAllSessions(): ExportData {
   const d = getDb();
-  const sessions = queryAll(d, 'SELECT * FROM sessions') as SessionRow[];
-  const messages = queryAll(d, 'SELECT * FROM messages') as MessageRow[];
-  const memories = queryAll(d, 'SELECT * FROM memories') as MemoryRow[];
-  const settingsRows = queryAll(d, 'SELECT * FROM settings') as SettingRow[];
+  const sessions = queryAll(d, 'SELECT * FROM sessions') as unknown as SessionRow[];
+  const messages = queryAll(d, 'SELECT * FROM messages') as unknown as MessageRow[];
+  const memories = queryAll(d, 'SELECT * FROM memories') as unknown as MemoryRow[];
+  const settingsRows = queryAll(d, 'SELECT * FROM settings') as unknown as SettingRow[];
   const settings = settingsRows.map(r => ({ key: r.key, value: (() => { try { return JSON.parse(r.value); } catch { return r.value; } })() }));
   return { sessions, messages, memories, settings, exportedAt: Date.now() };
 }
