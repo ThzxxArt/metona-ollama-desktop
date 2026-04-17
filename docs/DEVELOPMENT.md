@@ -172,12 +172,14 @@ import {
 - run_command 支持三模式：自动执行 / 需确认 / 禁用（通过工具面板下拉框切换）
 - run_command：无超时（通过 workspace IPC 执行）
 - 其他工具：30 秒超时
+- **去重机制**：工具调用缓存（`toolResultCache`）+ 同轮内重复检测 + 跨轮次重复检测（连续两轮相同则终止）
 
 ### 5.3 联网搜索与网页抓取联动
 
 - web_search 返回搜索结果（标题、URL、摘要），默认 15 条
 - TOOL_USAGE_GUIDE 要求模型在 web_search 后必须选择相关 URL 调用 web_fetch 抓取详情
 - 模型被引导主动使用工具：不确定答案、信息过时、需实时数据时应调用工具而非猜测
+- web_fetch 默认返回完整内容（`max_chars=0`），不截断；仅用户显式指定 `max_chars` 时才截断
 
 ### 5.4 工作空间与 AI 集成
 
