@@ -163,15 +163,23 @@ import {
 ### 5.2 Tool Calling 流程
 
 ```
-用户消息 → Agent Loop → 模型 tool_calls → 工具确认 → 执行 → 结果回传 → 循环
+用户消息 → Agent Loop → 模型 tool_calls → 工具执行（run_command 需确认） → 结果回传 → 循环
 ```
 
 - 最大循环次数：10
 - 全局超时：5 分钟
+- 除 run_command 外所有 20 个工具自动执行无需确认
+- run_command 支持三模式：自动执行 / 需确认 / 禁用（通过工具面板下拉框切换）
 - run_command：无超时（通过 workspace IPC 执行）
 - 其他工具：30 秒超时
 
-### 5.3 工作空间与 AI 集成
+### 5.3 联网搜索与网页抓取联动
+
+- web_search 返回搜索结果（标题、URL、摘要），默认 15 条
+- TOOL_USAGE_GUIDE 要求模型在 web_search 后必须选择相关 URL 调用 web_fetch 抓取详情
+- 模型被引导主动使用工具：不确定答案、信息过时、需实时数据时应调用工具而非猜测
+
+### 5.4 工作空间与 AI 集成
 
 - AI 通过 `run_command` 工具执行命令，命令在工作空间终端实时显示
 - 执行路径：`tool-registry.ts` → `bridge.workspace.execTool()` → IPC `tool:execute` → `handleRunCommand()` → `spawn` 子进程
