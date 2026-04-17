@@ -180,7 +180,18 @@ function searchMemoriesByKeyword(query: string, limit: number): MemorySearchResu
   const queryLower = query.toLowerCase();
   const queryWords = queryLower.split(/[\s,，。！？、；：""''（）\[\]{}<>`~@#$%^&*+=|\\/.]+/).filter(w => w.length > 1);
 
-  const scored = memoryCache.map(entry => {
+  // rule 和 preference 类型的记忆全局生效，始终注入
+  const alwaysInclude: MemorySearchResult[] = [];
+  const scored: MemorySearchResult[] = [];
+
+  for (const entry of memoryCache) {
+    if (entry.type === 'rule' || entry.type === 'preference') {
+      // 规则和偏好：始终包含，按重要性排序
+      alwaysInclude.push({ ...entry, score: 100 + entry.importance });
+      continue;
+    }
+
+    // fact 类型：按关键词匹配
     let score = 0;
     const contentLower = entry.content.toLowerCase();
     const tagsLower = entry.tags.map(t => t.toLowerCase());
@@ -211,13 +222,22 @@ function searchMemoriesByKeyword(query: string, limit: number): MemorySearchResu
     // 使用频率加权
     score *= (1 + Math.min(entry.useCount, 10) / 50);
 
-    return { ...entry, score };
-  });
+    if (score > 0) {
+      scored.push({ ...entry, score });
+    }
+  }
 
-  return scored
-    .filter(s => s.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit);
+  // 合并：全局规则/偏好 + 关键词匹配的事实，去重后按分数排序
+  const seen = new Set<string>();
+  const merged: MemorySearchResult[] = [];
+  for (const item of [...alwaysInclude, ...scored.sort((a, b) => b.score - a.score)]) {
+    if (!seen.has(item.id)) {
+      seen.add(item.id);
+      merged.push(item);
+    }
+  }
+
+  return merged.slice(0, limit);
 }
 
 // ── 记忆添加 ──
@@ -380,19 +400,38 @@ export function buildMemoryContext(memories: MemorySearchResult[]): string {
     grouped[m.type].push(m);
   }
 
-  let context = '【关于用户的重要信息】\n';
-  context += '以下是你之前记住的关于用户的信息，在回答时请参考：\n\n';
+  let context = '';
 
-  for (const [type, items] of Object.entries(grouped)) {
-    const typeName = TYPE_NAMES[type] || type;
-    context += `— ${typeName} —\n`;
-    for (const item of items) {
-      context += `  • ${item.content}\n`;
+  // 规则类：强制约束，放在最前面
+  if (grouped['rule']) {
+    context += '【必须严格遵守的规则】\n以下规则是用户明确要求的，必须无条件执行：\n';
+    for (const item of grouped['rule']) {
+      context += `  - ${item.content}\n`;
+    }
+    context += '\n';
+    delete grouped['rule'];
+  }
+
+  // 偏好类：用户偏好
+  if (grouped['preference']) {
+    context += '【用户偏好】\n在回答时请遵循以下偏好：\n';
+    for (const item of grouped['preference']) {
+      context += `  - ${item.content}\n`;
+    }
+    context += '\n';
+    delete grouped['preference'];
+  }
+
+  // 事实类：参考信息
+  if (grouped['fact']) {
+    context += '【关于用户的参考信息】\n以下信息供参考，与当前对话无关时可忽略：\n';
+    for (const item of grouped['fact']) {
+      context += `  - ${item.content}\n`;
     }
     context += '\n';
   }
 
-  context += '请自然地利用这些信息，不要生硬地列举。如果信息与当前对话无关，忽略即可。';
+  context += '请自然地利用以上信息，不要生硬地列举。';
 
   return context;
 }
