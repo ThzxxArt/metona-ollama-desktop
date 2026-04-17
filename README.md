@@ -4,7 +4,7 @@
 
 > 💻 桌面版仓库 | 🌐 [Web 版历史存档](https://gitee.com/thzxx/metona-ollama-web)
 
-![版本](https://img.shields.io/badge/version-3.3.4--desktop-brightgreen)
+![版本](https://img.shields.io/badge/version-4.0.0--desktop-brightgreen)
 ![平台](https://img.shields.io/badge/platform-Windows%20x64-blue)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178c6)
 ![Electron](https://img.shields.io/badge/Electron-33-47848f)
@@ -202,7 +202,7 @@ v3.3 四大子系统协调运作：
 
 | 文件 | 类型 |
 |------|------|
-| `Metona Ollama Setup 3.3.4.exe` | NSIS 安装包（可选目录、创建快捷方式） |
+| `Metona Ollama Setup 4.0.0.exe` | NSIS 安装包（可选目录、创建快捷方式） |
 
 > ⚠️ v3.2.0 起不再提供便携版，仅保留 NSIS 安装包。
 >
@@ -222,7 +222,7 @@ v3.3 四大子系统协调运作：
 ```bash
 git clone https://gitee.com/thzxx/metona-ollama-desktop.git
 cd metona-ollama-desktop
-git checkout metona-ollama-desktop-v3.3.4
+git checkout metona-ollama-desktop-v4.0.0
 
 # 安装依赖（国内使用 npmmirror 加速）
 npm config set registry https://registry.npmmirror.com

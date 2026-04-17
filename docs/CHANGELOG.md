@@ -3,13 +3,34 @@
 ## 分支结构
 
 **桌面版主线**（`master`）：
-- `metona-ollama-desktop-v1.1` → `metona-ollama-desktop-v2` → `metona-ollama-desktop-v3.0.0` → `metona-ollama-desktop-v3.1.0` → `metona-ollama-desktop-v3.1.1` → `metona-ollama-desktop-v3.2.0` → `metona-ollama-desktop-v3.2.1` → `metona-ollama-desktop-v3.2.2` → `metona-ollama-desktop-v3.2.3` → `metona-ollama-desktop-v3.2.4` → `metona-ollama-desktop-v3.2.5` → `metona-ollama-desktop-v3.2.6` → `metona-ollama-desktop-v3.3.0` → `metona-ollama-desktop-v3.3.1` → `metona-ollama-desktop-v3.3.2` → `metona-ollama-desktop-v3.3.3` → `metona-ollama-desktop-v3.3.4`（当前发布分支）
+- `metona-ollama-desktop-v1.1` → `metona-ollama-desktop-v2` → `metona-ollama-desktop-v3.0.0` → `metona-ollama-desktop-v3.1.0` → `metona-ollama-desktop-v3.1.1` → `metona-ollama-desktop-v3.2.0` → `metona-ollama-desktop-v3.2.1` → `metona-ollama-desktop-v3.2.2` → `metona-ollama-desktop-v3.2.3` → `metona-ollama-desktop-v3.2.4` → `metona-ollama-desktop-v3.2.5` → `metona-ollama-desktop-v3.2.6` → `metona-ollama-desktop-v3.3.0` → `metona-ollama-desktop-v3.3.1` → `metona-ollama-desktop-v3.3.2` → `metona-ollama-desktop-v3.3.3` → `metona-ollama-desktop-v3.3.4` → `metona-ollama-desktop-v4.0.0`（当前发布分支）
 
 **Web 版历史**已独立为 [metona-ollama-web](https://gitee.com/thzxx/metona-ollama-web) 仓库（v1.1.0 ~ v4.0.3）。
 
 ---
 
 ## 桌面版（Desktop）
+
+### Desktop v4.0.0 — SQLite 数据库 & ReAct Agent 升级
+
+- 📦 **数据库迁移：IndexedDB → SQLite (better-sqlite3)**
+  - 新增 `src/main/db/sqlite.ts`，使用 better-sqlite3 替代 IndexedDB
+  - 6 张表：sessions、messages、tool_calls、memories（FTS5 全文搜索）、settings、traces
+  - WAL 模式 + NORMAL 同步，性能显著提升
+  - 支持全量导出/导入（JSON 格式）
+- 🔧 **Agent Loop 升级为 ReAct 模式**
+  - Thought → Action → Observation → Reflection 循环
+  - 任务复杂度评估（简单/中等/复杂）
+  - 执行轨迹记录（traces 表），Agent 可观测性
+  - 最大 15 轮循环，10 分钟总超时保护
+- 🧠 **记忆/会话管理工具**
+  - 新增 `memory_search`、`memory_add` 工具（AI 可主动管理记忆）
+  - 新增 `session_list`、`session_read` 工具（AI 可查阅历史会话）
+  - 记忆支持 FTS5 全文搜索 + 向量语义搜索
+- 🖥️ **工作空间改进**
+  - IPC 通信优化，workspace 命令通过独立进程管理
+  - AI 工具命令实时输出推送到工作空间终端
+- 📝 **版本号更新至 4.0.0**
 
 ### Desktop v3.3.4 — Agent Loop 去重 & 记忆系统修复
 
