@@ -89,7 +89,7 @@ AI 自动从对话中学习并记住关键信息，跨会话持续积累：
 - 设置中一键开关
 
 ### 📦 数据
-- SQLite (better-sqlite3) 持久化，WAL 模式高性能
+- SQLite (sql.js WASM) 持久化，WAL 模式高性能
 - 6 张表：sessions、messages、tool_calls、memories、settings、traces
 - 导出格式：Markdown / HTML / TXT / JSON（全量备份/恢复）
 - 所有导入/导出均使用 Electron 原生文件对话框
@@ -163,7 +163,7 @@ v4.0 四大子系统协调运作：
 │  │  main.ts  menu.ts  tray.ts  ipc.ts  preload.ts            │ │
 │  │  tool-handlers.ts (25 工具)  tool-security.ts  workspace.ts│ │ │
 │  │  ┌──────────────────────────────────────────────────────┐  │ │
-│  │  │  db/sqlite.ts: better-sqlite3 · WAL · FTS5           │  │ │
+│  │  │  db/sqlite.ts: sql.js (WASM) · WAL · FTS5           │  │ │
 │  │  │  workspace.ts: spawn 进程管理 · 流式输出 · 安全检查   │  │ │
 │  │  └──────────────────────────────────────────────────────┘  │ │
 │  └────────────────────────────────────────────────────────────┘ │
@@ -250,7 +250,7 @@ metona-ollama-desktop/
 │   │   ├── tool-security.ts               # 🔧 路径/命令安全检查
 │   │   ├── workspace.ts                   # 🖥️ spawn 进程管理、流式输出
 │   │   └── db/
-│   │       └── sqlite.ts                  # 📦 SQLite 数据库（better-sqlite3, WAL, FTS5）
+│   │       └── sqlite.ts                  # 📦 SQLite 数据库（sql.js WASM, WAL, FTS5）
 │   └── renderer/                          # 渲染进程
 │       ├── index.html                     # 入口 HTML
 │       ├── main.ts                        # 入口（全系统初始化）
@@ -335,7 +335,7 @@ metona-ollama-desktop/
 - **TypeScript 5.7** — 严格类型，完整接口定义
 - **Electron 33** — 桌面封装（Windows x64）
 - **Vite 5** — 渲染进程构建、HMR 热更新
-- **better-sqlite3 12.9** — SQLite 数据库（主进程，WAL 模式）
+- **sql.js 1.11** — SQLite WASM 实现（零原生依赖，无需编译）
 - **Fetch + ReadableStream** — 流式 NDJSON 解析
 - **CSS Variables** — 暖色调亮色主题
 - **electron-builder** — NSIS 安装包

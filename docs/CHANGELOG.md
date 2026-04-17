@@ -13,8 +13,9 @@
 
 ### Desktop v4.0.0 — SQLite & ReAct Agent & 全新主题
 
-- 📦 **数据库迁移：IndexedDB → SQLite (better-sqlite3)**
-  - 新增 `src/main/db/sqlite.ts`，使用 better-sqlite3 替代 IndexedDB
+- 📦 **数据库迁移：IndexedDB → SQLite (sql.js WASM)**
+  - 新增 `src/main/db/sqlite.ts`，使用 sql.js (WASM) 替代 IndexedDB
+  - 零原生依赖，无需 electron-rebuild，消除 ABI 版本不匹配问题
   - 6 张表：sessions、messages、tool_calls、memories（FTS5 全文搜索）、settings、traces
   - WAL 模式 + NORMAL 同步，性能显著提升
   - 支持全量导出/导入（JSON 格式）

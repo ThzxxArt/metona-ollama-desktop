@@ -178,7 +178,7 @@ electron-builder 会自动处理所有依赖下载（Electron、NSIS、winCodeSi
 
 ### v4.0.0（2026-04-17） — metona-ollama-desktop 仓库
 
-- 📦 SQLite (better-sqlite3) 替代 IndexedDB，6 张表 + FTS5 全文搜索
+- 📦 SQLite (sql.js WASM) 替代 IndexedDB，6 张表 + FTS5 全文搜索（零原生依赖）
 - 🔧 Agent Loop 升级为 ReAct 模式（15 轮，10 分钟超时，执行轨迹记录）
 - 🧠 新增 4 个记忆/会话管理工具（memory_search, memory_add, session_list, session_read）
 - 🎨 UI 主题改版：暗色 Fluent → 暖色调亮色（奶白 + 珊瑚橙）
