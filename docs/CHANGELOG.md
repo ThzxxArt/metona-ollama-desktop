@@ -11,7 +11,7 @@
 
 ## 桌面版（Desktop）
 
-### Desktop v4.0.0 — SQLite 数据库 & ReAct Agent 升级
+### Desktop v4.0.0 — SQLite & ReAct Agent & 全新主题
 
 - 📦 **数据库迁移：IndexedDB → SQLite (better-sqlite3)**
   - 新增 `src/main/db/sqlite.ts`，使用 better-sqlite3 替代 IndexedDB
@@ -27,6 +27,14 @@
   - 新增 `memory_search`、`memory_add` 工具（AI 可主动管理记忆）
   - 新增 `session_list`、`session_read` 工具（AI 可查阅历史会话）
   - 记忆支持 FTS5 全文搜索 + 向量语义搜索
+  - 上下文管理服务（`context-manager.ts`）
+- 🎨 **UI 主题改版：暗色 → 暖色调亮色**
+  - 奶白背景 `#FAF7F2` + 珊瑚橙主色 `#E8734A`
+  - 圆润柔和设计：圆角 8-20px，柔和阴影
+  - 紫色辅助色（Think/推理），金色标签（Token 统计）
+  - 终端区域保留暖棕深色 `#2D2016` 保证代码可读性
+  - 字体升级：Inter + JetBrains Mono
+  - 窗口背景色、导出 HTML、theme-color 同步更新
 - 🖥️ **工作空间改进**
   - IPC 通信优化，workspace 命令通过独立进程管理
   - AI 工具命令实时输出推送到工作空间终端
