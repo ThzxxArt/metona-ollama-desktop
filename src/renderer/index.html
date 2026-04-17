@@ -386,7 +386,7 @@
                     <div class="tool-card-desc">读取文件内容，支持指定行范围</div>
                 </div>
                 <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">✏️</span><span class="tool-card-name">write_file</span><span class="tool-card-badge confirm">需确认</span></div>
+                    <div class="tool-card-header"><span class="tool-card-icon">✏️</span><span class="tool-card-name">write_file</span><span class="tool-card-badge auto">自动</span></div>
                     <div class="tool-card-desc">写入文件，自动创建父目录</div>
                 </div>
                 <div class="tool-card">
@@ -398,19 +398,19 @@
                     <div class="tool-card-desc">按文件名或内容搜索文件</div>
                 </div>
                 <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">📂</span><span class="tool-card-name">create_directory</span><span class="tool-card-badge confirm">需确认</span></div>
+                    <div class="tool-card-header"><span class="tool-card-icon">📂</span><span class="tool-card-name">create_directory</span><span class="tool-card-badge auto">自动</span></div>
                     <div class="tool-card-desc">创建目录，自动创建父级</div>
                 </div>
                 <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">🗑️</span><span class="tool-card-name">delete_file</span><span class="tool-card-badge confirm">需确认</span></div>
+                    <div class="tool-card-header"><span class="tool-card-icon">🗑️</span><span class="tool-card-name">delete_file</span><span class="tool-card-badge auto">自动</span></div>
                     <div class="tool-card-desc">删除文件或目录</div>
                 </div>
                 <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">📦</span><span class="tool-card-name">move_file</span><span class="tool-card-badge confirm">需确认</span></div>
+                    <div class="tool-card-header"><span class="tool-card-icon">📦</span><span class="tool-card-name">move_file</span><span class="tool-card-badge auto">自动</span></div>
                     <div class="tool-card-desc">移动或重命名文件/目录</div>
                 </div>
                 <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">📋</span><span class="tool-card-name">copy_file</span><span class="tool-card-badge confirm">需确认</span></div>
+                    <div class="tool-card-header"><span class="tool-card-icon">📋</span><span class="tool-card-name">copy_file</span><span class="tool-card-badge auto">自动</span></div>
                     <div class="tool-card-desc">复制文件或目录到新位置</div>
                 </div>
                 <div class="tool-card">
@@ -418,11 +418,11 @@
                     <div class="tool-card-desc">抓取网页内容，自动提取文本</div>
                 </div>
                 <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">➕</span><span class="tool-card-name">append_file</span><span class="tool-card-badge confirm">需确认</span></div>
+                    <div class="tool-card-header"><span class="tool-card-icon">➕</span><span class="tool-card-name">append_file</span><span class="tool-card-badge auto">自动</span></div>
                     <div class="tool-card-desc">追加内容到文件末尾</div>
                 </div>
                 <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">✂️</span><span class="tool-card-name">edit_file</span><span class="tool-card-badge confirm">需确认</span></div>
+                    <div class="tool-card-header"><span class="tool-card-icon">✂️</span><span class="tool-card-name">edit_file</span><span class="tool-card-badge auto">自动</span></div>
                     <div class="tool-card-desc">文件内查找替换，支持全部替换</div>
                 </div>
                 <div class="tool-card">
@@ -430,10 +430,10 @@
                     <div class="tool-card-desc">执行 shell 命令，无超时限制</div>
                     <div style="margin-top:6px;display:flex;align-items:center;gap:8px;">
                         <label style="margin:0;font-size:11px;color:var(--text-secondary);">执行模式：</label>
-                        <select id="selectRunCommandMode" style="font-size:11px;padding:2px 6px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:4px;">
-                            <option value="confirm">需确认</option>
-                            <option value="auto">自动执行</option>
-                            <option value="disabled">禁用</option>
+                        <select id="selectRunCommandMode" style="font-size:11px;padding:2px 6px;background:var(--bg-card);color:var(--text-primary);border:1px solid var(--border-default);border-radius:4px;">
+                            <option value="confirm" style="background:#2d2d2d;color:#fff;">需确认</option>
+                            <option value="auto" style="background:#2d2d2d;color:#fff;">自动执行</option>
+                            <option value="disabled" style="background:#2d2d2d;color:#fff;">禁用</option>
                         </select>
                     </div>
                 </div>
@@ -446,7 +446,7 @@
                     <div class="tool-card-desc">以树形结构展示目录内容</div>
                 </div>
                 <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">⬇️</span><span class="tool-card-name">download_file</span><span class="tool-card-badge confirm">需确认</span></div>
+                    <div class="tool-card-header"><span class="tool-card-icon">⬇️</span><span class="tool-card-name">download_file</span><span class="tool-card-badge auto">自动</span></div>
                     <div class="tool-card-desc">从 URL 下载文件到本地</div>
                 </div>
                 <div class="tool-card">
@@ -454,7 +454,7 @@
                     <div class="tool-card-desc">对比两个文件，显示差异</div>
                 </div>
                 <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">🔄</span><span class="tool-card-name">replace_in_files</span><span class="tool-card-badge confirm">需确认</span></div>
+                    <div class="tool-card-header"><span class="tool-card-icon">🔄</span><span class="tool-card-name">replace_in_files</span><span class="tool-card-badge auto">自动</span></div>
                     <div class="tool-card-desc">按 glob 模式批量查找替换多个文件</div>
                 </div>
                 <div class="tool-card">
@@ -466,7 +466,7 @@
                     <div class="tool-card-desc">Git 全操作：status/log/diff/add/commit/push/pull/branch/checkout/merge/stash/remote/clone/init/reset/tag</div>
                 </div>
                 <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">🗜️</span><span class="tool-card-name">compress</span><span class="tool-card-badge confirm">需确认</span></div>
+                    <div class="tool-card-header"><span class="tool-card-icon">🗜️</span><span class="tool-card-name">compress</span><span class="tool-card-badge auto">自动</span></div>
                     <div class="tool-card-desc">创建或解压 zip/tar.gz 归档</div>
                 </div>
             </div>
