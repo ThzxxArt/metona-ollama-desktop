@@ -47,7 +47,7 @@ function createMainWindow(): BrowserWindow {
     minHeight: 600,
     icon: process.platform === 'win32' ? ICO_PATH : ICON_PATH,
     title: APP_NAME,
-    backgroundColor: '#202020',
+    backgroundColor: '#FAF7F2',
     show: false,
     autoHideMenuBar: true,
     webPreferences: {

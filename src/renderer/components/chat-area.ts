@@ -431,11 +431,11 @@ export async function exportAsMarkdown(session: ChatSession): Promise<void> {
 
 export async function exportAsHtml(session: ChatSession): Promise<void> {
   let html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${escapeHtml(session.title)}</title>
-<style>body{max-width:800px;margin:0 auto;padding:20px;font-family:system-ui;line-height:1.6;background:#202020;color:#fff;}
-.user{background:rgba(25,25,60,0.5);padding:12px;border-radius:8px;margin:8px 0;}
-.assistant{background:rgba(96,205,255,0.03);padding:12px;border-radius:8px;margin:8px 0;border:1px solid rgba(96,205,255,0.08);}
-pre{background:rgba(0,0,0,0.3);padding:12px;border-radius:8px;overflow-x:auto;}
-code{background:rgba(0,0,0,0.2);padding:2px 6px;border-radius:4px;}</style></head><body>
+<style>body{max-width:800px;margin:0 auto;padding:20px;font-family:system-ui;line-height:1.6;background:#FAF7F2;color:#2D2016;}
+.user{background:#F5F0E8;padding:12px;border-radius:12px;margin:8px 0;border:1px solid rgba(0,0,0,0.06);}
+.assistant{background:#fff;padding:12px;border-radius:12px;margin:8px 0;border:1px solid rgba(0,0,0,0.06);box-shadow:0 1px 4px rgba(45,32,22,0.04);}
+pre{background:#2D2016;color:#F5F0E8;padding:14px;border-radius:12px;overflow-x:auto;}
+code{background:#F5F0E8;color:#E8734A;padding:2px 6px;border-radius:4px;}</style></head><body>
 <h1>${escapeHtml(session.title)}</h1><p>${formatTime(session.createdAt)} · ${session.model}</p><hr>`;
   session.messages.forEach(m => {
     html += `<div class="${m.role}"><strong>${m.role === 'user' ? '👤 用户' : '🤖 AI'}</strong><br>${(m.content || '').replace(/\n/g, '<br>')}</div>`;
