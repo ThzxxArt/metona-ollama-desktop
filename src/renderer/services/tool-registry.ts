@@ -160,7 +160,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         required: ['url'],
         properties: {
           url: { type: 'string', description: 'URL to fetch (http/https).' },
-          max_chars: { type: 'integer', description: 'Max characters to return. Default: 10000.' },
+          max_chars: { type: 'integer', description: 'Max characters to return. Default: 0 (no limit, return full content).' },
           extract_mode: { type: 'string', enum: ['text', 'markdown'], description: 'Extraction mode. Default: text.' }
         }
       }
@@ -409,8 +409,6 @@ export async function executeTool(toolName: string, args: Record<string, unknown
   }
 
   try {
-    logToolStart(toolName, JSON.stringify(args));
-
     // run_command 走 workspace IPC
     if (toolName === 'run_command') {
       const command = args.command as string;

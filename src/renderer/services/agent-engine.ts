@@ -39,7 +39,30 @@ const TOOL_USAGE_GUIDE = `【工具使用规则】
    - 用户让你查看/修改/分析文件 → read_file / list_directory / search_files
    - 用户问项目状态、代码内容 → git status / read_file
    - 用户让你执行操作 → run_command / write_file 等
-   宁可多调一次工具，也不要给出过时或编造的信息。`;
+   宁可多调一次工具，也不要给出过时或编造的信息。
+8. 严禁重复调用：如果本次对话中已经成功调用过某个工具并获得了结果，不要再次调用相同工具和相同参数。直接使用已有结果继续工作。例如：已经 web_fetch 抓取了页面内容，下一步应直接处理该内容（如 write_file 保存），而不是重新抓取。`;
+
+/** 工具调用缓存：key = toolName + JSON(args)，用于避免重复调用 */
+const toolResultCache = new Map<string, ToolResult>();
+
+/** 生成工具调用缓存 key */
+function getToolCacheKey(name: string, args: Record<string, unknown>): string {
+  try {
+    // 对 arguments 排序 key 以保证一致性
+    return name + '::' + JSON.stringify(args, Object.keys(args).sort());
+  } catch {
+    return name + '::' + String(args);
+  }
+}
+
+/** 检测当前轮次是否存在重复工具调用 */
+function isDuplicateCall(call: ToolCall, loopCalls: ToolCall[]): boolean {
+  const callKey = getToolCacheKey(call.function.name, call.function.arguments);
+  return loopCalls.some((prev, idx) => {
+    if (idx === loopCalls.length - 1) return false; // 跳过自身
+    return getToolCacheKey(prev.function.name, prev.function.arguments) === callKey;
+  });
+}
 
 export interface AgentCallbacks {
   onThinking: (text: string) => void;
@@ -64,6 +87,9 @@ export async function runAgentLoop(
     showToast('请先选择模型', 'error');
     return;
   }
+
+  // 新一轮对话，清空工具缓存
+  toolResultCache.clear();
 
   // 检查模型是否支持 Tool Calling
   const modelSupportsTools = state.get<boolean>('modelSupportsTools', false);
@@ -126,6 +152,8 @@ export async function runAgentLoop(
   const loopStartTime = Date.now();
   let content = '';
   let totalEvalCount = 0;
+  /** 记录前一轮的工具调用 key，用于跨轮去重 */
+  let prevLoopToolKeys: string[] = [];
 
   const makeStats = () => {
     const totalDuration = (Date.now() - loopStartTime) * 1e6; // 转为纳秒
@@ -263,11 +291,52 @@ export async function runAgentLoop(
       return;
     }
 
+    // 跨轮次完整重复检测：如果本轮所有工具调用与上一轮完全相同，终止循环
+    const currentLoopKeys = toolCalls.map(c => getToolCacheKey(c.function.name, c.function.arguments)).sort();
+    const currentKeysStr = JSON.stringify(currentLoopKeys);
+    const prevKeysStr = JSON.stringify([...prevLoopToolKeys].sort());
+    if (currentKeysStr === prevKeysStr && currentLoopKeys.length > 0) {
+      logWarn('检测到连续两轮工具调用完全相同，终止 Agent Loop', currentKeysStr.slice(0, 200));
+      callbacks.onDone(content || '（检测到重复工具调用，已自动停止）', allToolRecords, makeStats());
+      return;
+    }
+    prevLoopToolKeys = currentLoopKeys;
+
     for (const call of toolCalls) {
       // 检查是否已中止
       if (abortController.signal.aborted) {
         callbacks.onDone(content, allToolRecords.length > 0 ? allToolRecords : undefined, makeStats());
         return;
+      }
+
+      // 同一轮内重复调用检测
+      if (isDuplicateCall(call, toolCalls)) {
+        logWarn(`跳过重复工具调用: ${call.function.name}`, JSON.stringify(call.function.arguments).slice(0, 200));
+        const cachedKey = getToolCacheKey(call.function.name, call.function.arguments);
+        const cached = toolResultCache.get(cachedKey);
+        if (cached) {
+          messages.push({
+            role: 'tool',
+            tool_name: call.function.name,
+            content: JSON.stringify(cached)
+          });
+          callbacks.onToolCallResult(call.function.name, cached, call);
+        }
+        continue;
+      }
+
+      // 跨轮次缓存命中检测
+      const cacheKey = getToolCacheKey(call.function.name, call.function.arguments);
+      const cachedResult = toolResultCache.get(cacheKey);
+      if (cachedResult) {
+        logInfo(`工具缓存命中: ${call.function.name}`, JSON.stringify(call.function.arguments).slice(0, 200));
+        messages.push({
+          role: 'tool',
+          tool_name: call.function.name,
+          content: JSON.stringify(cachedResult)
+        });
+        callbacks.onToolCallResult(call.function.name, cachedResult, call);
+        continue;
       }
 
       callbacks.onToolCallStart(call);
@@ -333,6 +402,10 @@ export async function runAgentLoop(
           tool_name: call.function.name,
           content: JSON.stringify(result)
         });
+        // 缓存成功结果（非 run_command，因为命令执行可能有副作用）
+        if (result.success && call.function.name !== 'run_command') {
+          toolResultCache.set(cacheKey, result);
+        }
         callbacks.onToolCallResult(call.function.name, result, call);
         logToolResult(call.function.name, result.success, result.success ? undefined : result.error);
       } catch (err) {

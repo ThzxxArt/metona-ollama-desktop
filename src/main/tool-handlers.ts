@@ -433,9 +433,9 @@ export async function handleWebFetch(params: { url: string; max_chars?: number; 
       return { success: false, error: '仅支持 http/https 协议' };
     }
 
-    const maxChars = params.max_chars || 10000;
+    const maxChars = params.max_chars || 0; // 0 = 不截断，返回全部内容
 
-    sendLog('info', `🌐 web_fetch`, `${url} (${maxChars} chars)`);
+    sendLog('info', `🌐 web_fetch`, `${url} (${maxChars > 0 ? maxChars + ' chars' : '完整内容'})`);
     const resp = await fetch(url, {
       headers: { 'User-Agent': 'MetonaOllama/1.0' },
       signal: AbortSignal.timeout(15000)
@@ -466,7 +466,7 @@ export async function handleWebFetch(params: { url: string; max_chars?: number; 
         .trim();
     }
 
-    const truncated = text.length > maxChars;
+    const truncated = maxChars > 0 && text.length > maxChars;
     if (truncated) text = text.slice(0, maxChars);
 
     sendLog('success', `🌐 web_fetch 完成`, `${resp.status} | ${text.length} chars${truncated ? ' (已截断)' : ''}`);
