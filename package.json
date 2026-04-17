@@ -14,7 +14,8 @@
     "start": "npm run build && electron . --no-sandbox",
     "pack": "npm run build && electron-builder --dir",
     "dist": "npm run build && electron-builder --win",
-    "dist:nsis": "npm run build && electron-builder --win nsis"
+    "dist:nsis": "npm run build && electron-builder --win nsis",
+    "postinstall": "electron-rebuild --version 33.4.11 || true"
   },
   "build": {
     "appId": "com.metona.ollama-desktop",
@@ -22,6 +23,8 @@
     "directories": {
       "output": "release"
     },
+    "npmRebuild": true,
+    "buildDependenciesFromSource": true,
     "files": [
       "dist/**/*",
       "assets/**/*",
@@ -51,6 +54,7 @@
     }
   },
   "devDependencies": {
+    "@electron/rebuild": "^3.7.1",
     "@types/node": "^20.17.0",
     "electron": "^33.4.11",
     "electron-builder": "^25.1.8",
