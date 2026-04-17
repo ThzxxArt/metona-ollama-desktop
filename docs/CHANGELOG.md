@@ -3,13 +3,29 @@
 ## 分支结构
 
 **桌面版主线**（`master`）：
-- `metona-ollama-desktop-v1.1` → `metona-ollama-desktop-v2` → `metona-ollama-desktop-v3.0.0` → `metona-ollama-desktop-v3.1.0` → `metona-ollama-desktop-v3.1.1` → `metona-ollama-desktop-v3.2.0` → `metona-ollama-desktop-v3.2.1` → `metona-ollama-desktop-v3.2.2` → `metona-ollama-desktop-v3.2.3` → `metona-ollama-desktop-v3.2.4` → `metona-ollama-desktop-v3.2.5` → `metona-ollama-desktop-v3.2.6` → `metona-ollama-desktop-v3.3.0` → `metona-ollama-desktop-v3.3.1` → `metona-ollama-desktop-v3.3.2` → `metona-ollama-desktop-v3.3.3`（当前发布分支）
+- `metona-ollama-desktop-v1.1` → `metona-ollama-desktop-v2` → `metona-ollama-desktop-v3.0.0` → `metona-ollama-desktop-v3.1.0` → `metona-ollama-desktop-v3.1.1` → `metona-ollama-desktop-v3.2.0` → `metona-ollama-desktop-v3.2.1` → `metona-ollama-desktop-v3.2.2` → `metona-ollama-desktop-v3.2.3` → `metona-ollama-desktop-v3.2.4` → `metona-ollama-desktop-v3.2.5` → `metona-ollama-desktop-v3.2.6` → `metona-ollama-desktop-v3.3.0` → `metona-ollama-desktop-v3.3.1` → `metona-ollama-desktop-v3.3.2` → `metona-ollama-desktop-v3.3.3` → `metona-ollama-desktop-v3.3.4`（当前发布分支）
 
 **Web 版历史**已独立为 [metona-ollama-web](https://gitee.com/thzxx/metona-ollama-web) 仓库（v1.1.0 ~ v4.0.3）。
 
 ---
 
 ## 桌面版（Desktop）
+
+### Desktop v3.3.4 — Agent Loop 去重 & 记忆系统修复
+
+- 🔧 **修复 Agent Loop 工具调用重复问题**
+  - 新增工具调用缓存机制（`toolResultCache`），相同工具+参数不再重复执行
+  - 新增同轮内重复检测：同一轮 tool_calls 中的重复调用自动跳过
+  - 新增跨轮次重复检测：连续两轮工具调用完全相同则自动终止循环
+  - TOOLS_USAGE_GUIDE 新增第 8 条"严禁重复调用"规则
+- 🔧 **修复 web_fetch 内容截断**
+  - 默认 `max_chars` 从 10000 改为 0（不截断，返回完整内容）
+  - 仅当用户显式指定 `max_chars` 时才截断
+- 🔧 **修复记忆系统 rule/preference 不生效**
+  - `searchMemoriesByKeyword`：rule 和 preference 类型记忆始终注入，不再依赖关键词匹配
+  - 仅 fact 类型保留关键词检索逻辑
+  - `buildMemoryContext` 区分三类记忆的 system prompt 措辞：规则→"必须无条件执行"、偏好→"请遵循"、事实→"供参考"
+- 🔧 **移除重复日志** — tool-registry.ts executeTool 中重复的 logToolStart 调用已移除
 
 ### Desktop v3.3.3 — 工具面板修复 & 搜索增强
 

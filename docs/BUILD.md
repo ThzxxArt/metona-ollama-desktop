@@ -14,7 +14,7 @@
 # 1. 克隆并安装依赖
 git clone https://gitee.com/thzxx/metona-ollama-desktop.git
 cd metona-ollama-desktop
-git checkout metona-ollama-desktop-v3.3.3
+git checkout metona-ollama-desktop-v3.3.4
 npm config set registry https://registry.npmmirror.com
 npm install
 
@@ -175,6 +175,15 @@ ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm run dist
 electron-builder 会自动处理所有依赖下载（Electron、NSIS、winCodeSign），虽然首次较慢（~5分钟），但无需手动管理缓存。
 
 ## 构建日志
+
+### v3.3.4（2026-04-17） — metona-ollama-desktop 仓库
+
+- 🔧 修复 Agent Loop 工具调用重复问题（缓存 + 同轮/跨轮去重 + 自动终止）
+- 🔧 修复 web_fetch 默认截断 10000 字符（改为默认不截断）
+- 🔧 修复记忆系统 rule/preference 类型不生效（改为始终注入，不依赖关键词匹配）
+- 🔧 修复 buildMemoryContext 三类记忆措辞无区分（规则→强制、偏好→建议、事实→参考）
+- 🔧 移除 tool-registry.ts executeTool 中重复的 logToolStart 调用
+- 📝 版本号更新至 3.3.4
 
 ### v3.3.3（2026-04-17） — metona-ollama-desktop 仓库
 
