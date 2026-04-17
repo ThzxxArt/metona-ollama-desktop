@@ -1,34 +1,123 @@
 /**
  * Metona Ollama Desktop - SQLite 数据库层
- * v4.0: 替代 IndexedDB，使用 better-sqlite3
+ * v4.1: 替代 better-sqlite3，使用 sql.js (WASM) 无需原生编译
  */
 
-import Database from 'better-sqlite3';
+import * as SQL from 'sql.js';
+import * as fs from 'fs';
 import * as path from 'path';
 import { app } from 'electron';
 
-let db: Database.Database | null = null;
+// ─── sql.js 兼容层 ───
+// 封装 sql.js 的 API，提供与 better-sqlite3 相近的接口
+
+interface Row { [key: string]: unknown }
+
+function runExec(db: SQL.Database, sql: string, params?: unknown[]): void {
+  if (params && params.length) {
+    const stmt = db.prepare(sql);
+    stmt.bind(params as SQL.BindParams);
+    stmt.step();
+    stmt.free();
+  } else {
+    db.run(sql);
+  }
+}
+
+function queryOne(db: SQL.Database, sql: string, params?: unknown[]): Row | null {
+  const stmt = db.prepare(sql);
+  if (params && params.length) stmt.bind(params as SQL.BindParams);
+  if (stmt.step()) {
+    const cols = stmt.getColumnNames();
+    const vals = stmt.get();
+    const row: Row = {};
+    cols.forEach((c, i) => { row[c] = vals[i]; });
+    stmt.free();
+    return row;
+  }
+  stmt.free();
+  return null;
+}
+
+function queryAll(db: SQL.Database, sql: string, params?: unknown[]): Row[] {
+  const stmt = db.prepare(sql);
+  if (params && params.length) stmt.bind(params as SQL.BindParams);
+  const cols = stmt.getColumnNames();
+  const rows: Row[] = [];
+  while (stmt.step()) {
+    const vals = stmt.get();
+    const row: Row = {};
+    cols.forEach((c, i) => { row[c] = vals[i]; });
+    rows.push(row);
+  }
+  stmt.free();
+  return rows;
+}
+
+function runPragma(db: SQL.Database, expr: string): void {
+  db.run(`PRAGMA ${expr}`);
+}
+
+function runTransaction(db: SQL.Database, fn: () => void): void {
+  db.run('BEGIN TRANSACTION');
+  try {
+    fn();
+    db.run('COMMIT');
+  } catch (err) {
+    db.run('ROLLBACK');
+    throw err;
+  }
+}
+
+// ─── 数据库实例 ───
+
+let db: SQL.Database | null = null;
+let dbPath: string | null = null;
 
 /** 获取数据库实例 */
-export function getDb(): Database.Database {
+export function getDb(): SQL.Database {
   if (!db) throw new Error('数据库未初始化，请先调用 initDatabase()');
   return db;
 }
 
-/** 初始化数据库 */
-export function initDatabase(): Database.Database {
+/** 持久化数据库到磁盘 */
+function persist(): void {
+  if (!db || !dbPath) return;
+  try {
+    const data = db.export();
+    const buf = Buffer.from(data);
+    fs.writeFileSync(dbPath, buf);
+  } catch { /* 静默失败，不阻断主流程 */ }
+}
+
+/** 初始化数据库（异步，需加载 WASM） */
+export async function initDatabase(): Promise<SQL.Database> {
   if (db) return db;
 
-  const dbPath = path.join(app.getPath('userData'), 'metona.db');
-  db = new Database(dbPath);
+  // 定位 sql-wasm.wasm 文件（开发时在 node_modules，打包后在 resources）
+  const wasmPath = app.isPackaged
+    ? path.join(process.resourcesPath, 'sql-wasm.wasm')
+    : path.join(app.getAppPath(), 'node_modules/sql.js/dist/sql-wasm.wasm');
+
+  const SQLJS = await SQL.default({
+    locateFile: () => wasmPath,
+  });
+  dbPath = path.join(app.getPath('userData'), 'metona.db');
+
+  // 从磁盘加载已有数据库，或创建新的
+  let data: Uint8Array | undefined;
+  if (fs.existsSync(dbPath)) {
+    data = fs.readFileSync(dbPath);
+  }
+  db = new SQLJS.Database(data);
 
   // 性能优化
-  db.pragma('journal_mode = WAL');
-  db.pragma('synchronous = NORMAL');
-  db.pragma('foreign_keys = ON');
+  runPragma(db, 'journal_mode = WAL');
+  runPragma(db, 'synchronous = NORMAL');
+  runPragma(db, 'foreign_keys = ON');
 
   // 创建表
-  db.exec(`
+  db.run(`
     -- 会话表
     CREATE TABLE IF NOT EXISTS sessions (
       id TEXT PRIMARY KEY,
@@ -122,10 +211,13 @@ export function initDatabase(): Database.Database {
     CREATE INDEX IF NOT EXISTS idx_traces_session ON traces(session_id, created_at);
   `);
 
+  // 写入一次确保文件存在
+  persist();
+
   return db;
 }
 
-// ─── Sessions CRUD ───
+// ─── 类型定义 ───
 
 export interface SessionRow {
   id: string;
@@ -197,103 +289,104 @@ export interface TraceRow {
   created_at: number;
 }
 
+// ─── Sessions CRUD ───
+
 export function saveSession(session: SessionRow): string {
   const d = getDb();
-  d.prepare(`INSERT OR REPLACE INTO sessions (id, title, model, system_prompt, parent_id, status, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(
-    session.id, session.title, session.model, session.system_prompt, session.parent_id,
-    session.status || 'active', session.created_at, session.updated_at
+  runExec(d, `INSERT OR REPLACE INTO sessions (id, title, model, system_prompt, parent_id, status, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [session.id, session.title, session.model, session.system_prompt, session.parent_id,
+     session.status || 'active', session.created_at, session.updated_at]
   );
+  persist();
   return session.id;
 }
 
 export function getSession(id: string): SessionRow | null {
-  const d = getDb();
-  return d.prepare('SELECT * FROM sessions WHERE id = ?').get(id) as SessionRow | null;
+  return queryOne(getDb(), 'SELECT * FROM sessions WHERE id = ?', [id]) as SessionRow | null;
 }
 
 export function getAllSessions(): SessionRow[] {
-  const d = getDb();
-  return d.prepare('SELECT * FROM sessions ORDER BY updated_at DESC').all() as SessionRow[];
+  return queryAll(getDb(), 'SELECT * FROM sessions ORDER BY updated_at DESC') as SessionRow[];
 }
 
 export function deleteSession(id: string): void {
-  const d = getDb();
-  d.prepare('DELETE FROM sessions WHERE id = ?').run(id);
+  runExec(getDb(), 'DELETE FROM sessions WHERE id = ?', [id]);
+  persist();
 }
 
 export function clearAllSessions(): void {
-  const d = getDb();
-  d.exec('DELETE FROM sessions');
+  getDb().run('DELETE FROM sessions');
+  persist();
 }
 
 // ─── Messages CRUD ───
 
 export function saveMessage(msg: MessageRow): string {
   const d = getDb();
-  d.prepare(`INSERT OR REPLACE INTO messages (id, session_id, role, content, thinking, images, tool_calls, tool_name, eval_count, total_duration, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
-    msg.id, msg.session_id, msg.role, msg.content, msg.thinking, msg.images,
-    msg.tool_calls, msg.tool_name, msg.eval_count, msg.total_duration, msg.created_at
+  runExec(d, `INSERT OR REPLACE INTO messages (id, session_id, role, content, thinking, images, tool_calls, tool_name, eval_count, total_duration, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [msg.id, msg.session_id, msg.role, msg.content, msg.thinking, msg.images,
+     msg.tool_calls, msg.tool_name, msg.eval_count, msg.total_duration, msg.created_at]
   );
+  persist();
   return msg.id;
 }
 
 export function getMessagesBySession(sessionId: string): MessageRow[] {
-  const d = getDb();
-  return d.prepare('SELECT * FROM messages WHERE session_id = ? ORDER BY created_at ASC').all(sessionId) as MessageRow[];
+  return queryAll(getDb(), 'SELECT * FROM messages WHERE session_id = ? ORDER BY created_at ASC', [sessionId]) as MessageRow[];
 }
 
 export function deleteMessagesBySession(sessionId: string): void {
-  const d = getDb();
-  d.prepare('DELETE FROM messages WHERE session_id = ?').run(sessionId);
+  runExec(getDb(), 'DELETE FROM messages WHERE session_id = ?', [sessionId]);
+  persist();
 }
 
 // ─── Memories CRUD ───
 
 export function saveMemory(entry: MemoryRow): string {
   const d = getDb();
-  d.prepare(`INSERT OR REPLACE INTO memories (id, type, content, importance, tags, source, session_id, use_count, embedding, created_at, updated_at, last_used_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
-    entry.id, entry.type, entry.content, entry.importance, entry.tags,
-    entry.source, entry.session_id, entry.use_count, entry.embedding,
-    entry.created_at, entry.updated_at, entry.last_used_at
+  runExec(d, `INSERT OR REPLACE INTO memories (id, type, content, importance, tags, source, session_id, use_count, embedding, created_at, updated_at, last_used_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [entry.id, entry.type, entry.content, entry.importance, entry.tags,
+     entry.source, entry.session_id, entry.use_count, entry.embedding,
+     entry.created_at, entry.updated_at, entry.last_used_at]
   );
   // FTS 同步
   try {
-    d.prepare("DELETE FROM memories_fts WHERE rowid IN (SELECT rowid FROM memories WHERE id = ?)").run(entry.id);
-    d.prepare("INSERT INTO memories_fts(rowid, content, tags, type) SELECT rowid, content, tags, type FROM memories WHERE id = ?").run(entry.id);
+    runExec(d, "DELETE FROM memories_fts WHERE rowid IN (SELECT rowid FROM memories WHERE id = ?)", [entry.id]);
+    runExec(d, "INSERT INTO memories_fts(rowid, content, tags, type) SELECT rowid, content, tags, type FROM memories WHERE id = ?", [entry.id]);
   } catch { /* FTS 同步失败不影响主流程 */ }
+  persist();
   return entry.id;
 }
 
 export function getMemory(id: string): MemoryRow | null {
-  const d = getDb();
-  return d.prepare('SELECT * FROM memories WHERE id = ?').get(id) as MemoryRow | null;
+  return queryOne(getDb(), 'SELECT * FROM memories WHERE id = ?', [id]) as MemoryRow | null;
 }
 
 export function getAllMemories(): MemoryRow[] {
-  const d = getDb();
-  return d.prepare('SELECT * FROM memories ORDER BY importance DESC, updated_at DESC').all() as MemoryRow[];
+  return queryAll(getDb(), 'SELECT * FROM memories ORDER BY importance DESC, updated_at DESC') as MemoryRow[];
 }
 
 export function getMemoriesByType(type: string): MemoryRow[] {
-  const d = getDb();
-  return d.prepare('SELECT * FROM memories WHERE type = ? ORDER BY importance DESC').all(type) as MemoryRow[];
+  return queryAll(getDb(), 'SELECT * FROM memories WHERE type = ? ORDER BY importance DESC', [type]) as MemoryRow[];
 }
 
 export function deleteMemory(id: string): void {
   const d = getDb();
   try {
-    d.prepare("DELETE FROM memories_fts WHERE rowid IN (SELECT rowid FROM memories WHERE id = ?)").run(id);
+    runExec(d, "DELETE FROM memories_fts WHERE rowid IN (SELECT rowid FROM memories WHERE id = ?)", [id]);
   } catch { /* ignore */ }
-  d.prepare('DELETE FROM memories WHERE id = ?').run(id);
+  runExec(d, 'DELETE FROM memories WHERE id = ?', [id]);
+  persist();
 }
 
 export function clearAllMemories(): void {
   const d = getDb();
-  d.exec('DELETE FROM memories');
-  try { d.exec('DELETE FROM memories_fts'); } catch { /* ignore */ }
+  d.run('DELETE FROM memories');
+  try { d.run('DELETE FROM memories_fts'); } catch { /* ignore */ }
+  persist();
 }
 
 export function searchMemoriesFTS(query: string, limit = 10): MemoryRow[] {
@@ -302,36 +395,35 @@ export function searchMemoriesFTS(query: string, limit = 10): MemoryRow[] {
     // FTS5 搜索
     const ftsQuery = query.replace(/[^\w\u4e00-\u9fff\s]/g, ' ').split(/\s+/).filter(w => w.length > 0).map(w => `"${w}"*`).join(' OR ');
     if (!ftsQuery) return [];
-    return d.prepare(`
+    return queryAll(d, `
       SELECT m.* FROM memories m
       JOIN memories_fts f ON m.rowid = f.rowid
       WHERE memories_fts MATCH ?
       ORDER BY rank
       LIMIT ?
-    `).all(ftsQuery, limit) as MemoryRow[];
+    `, [ftsQuery, limit]) as MemoryRow[];
   } catch {
     // FTS 失败回退到 LIKE 搜索
-    return d.prepare(`
+    return queryAll(d, `
       SELECT * FROM memories
       WHERE content LIKE ? OR tags LIKE ?
       ORDER BY importance DESC
       LIMIT ?
-    `).all(`%${query}%`, `%${query}%`, limit) as MemoryRow[];
+    `, [`%${query}%`, `%${query}%`, limit]) as MemoryRow[];
   }
 }
 
 // ─── Settings CRUD ───
 
 export function saveSetting(key: string, value: unknown): void {
-  const d = getDb();
-  d.prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)').run(
-    key, JSON.stringify(value), Date.now()
+  runExec(getDb(), 'INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)',
+    [key, JSON.stringify(value), Date.now()]
   );
+  persist();
 }
 
 export function getSetting<T = unknown>(key: string, defaultValue: T | null = null): T {
-  const d = getDb();
-  const row = d.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined;
+  const row = queryOne(getDb(), 'SELECT value FROM settings WHERE key = ?', [key]) as { value: string } | null;
   if (!row) return defaultValue as T;
   try {
     return JSON.parse(row.value) as T;
@@ -343,33 +435,31 @@ export function getSetting<T = unknown>(key: string, defaultValue: T | null = nu
 // ─── Tool Calls CRUD ───
 
 export function saveToolCall(tc: ToolCallRow): string {
-  const d = getDb();
-  d.prepare(`INSERT OR REPLACE INTO tool_calls (id, message_id, session_id, tool_name, arguments, result, status, duration_ms, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
-    tc.id, tc.message_id, tc.session_id, tc.tool_name, tc.arguments, tc.result, tc.status, tc.duration_ms, tc.created_at
+  runExec(getDb(), `INSERT OR REPLACE INTO tool_calls (id, message_id, session_id, tool_name, arguments, result, status, duration_ms, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [tc.id, tc.message_id, tc.session_id, tc.tool_name, tc.arguments, tc.result, tc.status, tc.duration_ms, tc.created_at]
   );
+  persist();
   return tc.id;
 }
 
 export function getToolCallsBySession(sessionId: string): ToolCallRow[] {
-  const d = getDb();
-  return d.prepare('SELECT * FROM tool_calls WHERE session_id = ? ORDER BY created_at ASC').all(sessionId) as ToolCallRow[];
+  return queryAll(getDb(), 'SELECT * FROM tool_calls WHERE session_id = ? ORDER BY created_at ASC', [sessionId]) as ToolCallRow[];
 }
 
 // ─── Traces CRUD ───
 
 export function saveTrace(trace: TraceRow): string {
-  const d = getDb();
-  d.prepare(`INSERT OR REPLACE INTO traces (id, session_id, step_index, thought, action, action_input, observation, loop_count, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
-    trace.id, trace.session_id, trace.step_index, trace.thought, trace.action, trace.action_input, trace.observation, trace.loop_count, trace.created_at
+  runExec(getDb(), `INSERT OR REPLACE INTO traces (id, session_id, step_index, thought, action, action_input, observation, loop_count, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [trace.id, trace.session_id, trace.step_index, trace.thought, trace.action, trace.action_input, trace.observation, trace.loop_count, trace.created_at]
   );
+  persist();
   return trace.id;
 }
 
 export function getTracesBySession(sessionId: string): TraceRow[] {
-  const d = getDb();
-  return d.prepare('SELECT * FROM traces WHERE session_id = ? ORDER BY step_index ASC').all(sessionId) as TraceRow[];
+  return queryAll(getDb(), 'SELECT * FROM traces WHERE session_id = ? ORDER BY step_index ASC', [sessionId]) as TraceRow[];
 }
 
 // ─── Export/Import ───
@@ -384,10 +474,10 @@ export interface ExportData {
 
 export function exportAllSessions(): ExportData {
   const d = getDb();
-  const sessions = d.prepare('SELECT * FROM sessions').all() as SessionRow[];
-  const messages = d.prepare('SELECT * FROM messages').all() as MessageRow[];
-  const memories = d.prepare('SELECT * FROM memories').all() as MemoryRow[];
-  const settingsRows = d.prepare('SELECT * FROM settings').all() as SettingRow[];
+  const sessions = queryAll(d, 'SELECT * FROM sessions') as SessionRow[];
+  const messages = queryAll(d, 'SELECT * FROM messages') as MessageRow[];
+  const memories = queryAll(d, 'SELECT * FROM memories') as MemoryRow[];
+  const settingsRows = queryAll(d, 'SELECT * FROM settings') as SettingRow[];
   const settings = settingsRows.map(r => ({ key: r.key, value: (() => { try { return JSON.parse(r.value); } catch { return r.value; } })() }));
   return { sessions, messages, memories, settings, exportedAt: Date.now() };
 }
@@ -397,27 +487,27 @@ export function importSessions(data: ExportData): { imported: number; skipped: n
   let imported = 0;
   let skipped = 0;
 
-  const txn = d.transaction(() => {
+  runTransaction(d, () => {
     for (const session of data.sessions) {
-      const existing = d.prepare('SELECT id FROM sessions WHERE id = ?').get(session.id);
+      const existing = queryOne(d, 'SELECT id FROM sessions WHERE id = ?', [session.id]);
       if (existing) { skipped++; continue; }
       saveSession(session);
       imported++;
     }
     for (const msg of data.messages) {
-      const sessionExists = d.prepare('SELECT id FROM sessions WHERE id = ?').get(msg.session_id);
+      const sessionExists = queryOne(d, 'SELECT id FROM sessions WHERE id = ?', [msg.session_id]);
       if (sessionExists) saveMessage(msg);
     }
     for (const mem of data.memories) {
-      const existing = d.prepare('SELECT id FROM memories WHERE id = ?').get(mem.id);
+      const existing = queryOne(d, 'SELECT id FROM memories WHERE id = ?', [mem.id]);
       if (!existing) saveMemory(mem);
     }
     for (const s of data.settings) {
       saveSetting(s.key, s.value);
     }
   });
-  txn();
 
+  persist();
   return { imported, skipped };
 }
 
@@ -425,6 +515,7 @@ export function importSessions(data: ExportData): { imported: number; skipped: n
 
 export function closeDatabase(): void {
   if (db) {
+    persist();
     db.close();
     db = null;
   }

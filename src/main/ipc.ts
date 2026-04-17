@@ -76,7 +76,7 @@ function summarizeResult(toolName: string, result: Record<string, unknown>): str
   }
 }
 
-export function setupIPC(): void {
+export async function setupIPC(): Promise<void> {
   ipcMain.handle('dialog:openFile', async (_, options?: { filters?: Array<{ name: string; extensions: string[] }> }) => {
     const result = await dialog.showOpenDialog(mainWindow!, {
       properties: ['openFile', 'multiSelections'],
@@ -267,7 +267,7 @@ export function setupIPC(): void {
   // ══════════════════════════════════════════════
 
   // 初始化数据库
-  initDatabase();
+  await initDatabase();
   sendLog('success', '📦 SQLite 数据库已初始化');
 
   // Sessions

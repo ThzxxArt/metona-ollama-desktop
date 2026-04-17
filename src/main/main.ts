@@ -143,9 +143,9 @@ if (!gotTheLock) {
   });
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   ensureWorkspaceDir();
-  setupIPC();
+  await setupIPC();
   createMainWindow();
   createTray();
   createMenu();

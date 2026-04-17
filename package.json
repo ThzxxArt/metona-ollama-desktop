@@ -14,8 +14,7 @@
     "start": "npm run build && electron . --no-sandbox",
     "pack": "npm run build && electron-builder --dir",
     "dist": "npm run build && electron-builder --win",
-    "dist:nsis": "npm run build && electron-builder --win nsis",
-    "postinstall": "electron-rebuild --version 33.4.11 || true"
+    "dist:nsis": "npm run build && electron-builder --win nsis"
   },
   "build": {
     "appId": "com.metona.ollama-desktop",
@@ -23,12 +22,17 @@
     "directories": {
       "output": "release"
     },
-    "npmRebuild": true,
-    "buildDependenciesFromSource": true,
+    "npmRebuild": false,
     "files": [
       "dist/**/*",
       "assets/**/*",
       "!node_modules/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "node_modules/sql.js/dist/sql-wasm.wasm",
+        "to": "sql-wasm.wasm"
+      }
     ],
     "win": {
       "target": [
@@ -54,7 +58,6 @@
     }
   },
   "devDependencies": {
-    "@electron/rebuild": "^3.7.1",
     "@types/node": "^20.17.0",
     "electron": "^33.4.11",
     "electron-builder": "^25.1.8",
@@ -62,7 +65,6 @@
     "vite": "^5.4.0"
   },
   "dependencies": {
-    "@types/better-sqlite3": "^7.6.13",
-    "better-sqlite3": "^12.9.0"
+    "sql.js": "^1.11.0"
   }
 }
