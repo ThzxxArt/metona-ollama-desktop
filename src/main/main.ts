@@ -2,7 +2,7 @@
  * Metona Ollama Desktop - 主进程入口
  */
 
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, dialog } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import { setupIPC } from './ipc.js';
@@ -10,6 +10,23 @@ import { createTray } from './tray.js';
 import { createMenu } from './menu.js';
 import { showNotification } from './utils.js';
 import { ensureWorkspaceDir, killAllProcesses } from './workspace.js';
+
+// ── 全局错误处理：写入文件 + 弹窗提示 ──
+const ERROR_LOG = path.join(app.getPath('userData'), 'startup-error.log');
+
+function logStartupError(phase: string, err: unknown): void {
+  const msg = `[${new Date().toISOString()}] ${phase}: ${err instanceof Error ? err.stack || err.message : String(err)}\n`;
+  try { fs.appendFileSync(ERROR_LOG, msg); } catch { /* ignore */ }
+  console.error(msg);
+}
+
+process.on('uncaughtException', (err) => {
+  logStartupError('uncaughtException', err);
+});
+
+process.on('unhandledRejection', (err) => {
+  logStartupError('unhandledRejection', err);
+});
 
 const APP_NAME = 'Metona Ollama';
 const ICON_PATH = path.join(__dirname, '..', '..', 'assets', 'icons', 'llama.png');
@@ -157,6 +174,16 @@ app.whenReady().then(async () => {
       mainWindow.show();
     }
   });
+}).catch((err) => {
+  logStartupError('app.whenReady', err);
+  // 弹出错误对话框，让用户知道发生了什么
+  try {
+    dialog.showErrorBox('Metona Ollama 启动失败',
+      `应用初始化出错，请检查以下信息：\n\n${err instanceof Error ? err.message : String(err)}\n\n错误日志：${ERROR_LOG}`);
+  } catch {
+    // dialog 也可能失败（app 未完全初始化）
+  }
+  app.quit();
 });
 
 app.on('window-all-closed', () => {

@@ -73,6 +73,7 @@ function runTransaction(db: SQL.Database, fn: () => void): void {
 
 let db: SQL.Database | null = null;
 let dbPath: string | null = null;
+let _hasFTS5 = false;
 
 /** 获取数据库实例 */
 export function getDb(): SQL.Database {
@@ -181,13 +182,6 @@ export async function initDatabase(): Promise<SQL.Database> {
     CREATE INDEX IF NOT EXISTS idx_memories_type ON memories(type);
     CREATE INDEX IF NOT EXISTS idx_memories_importance ON memories(importance DESC);
 
-    -- 记忆 FTS5 全文搜索
-    CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
-      content, tags, type,
-      content='memories',
-      content_rowid='rowid'
-    );
-
     -- 设置表
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,
@@ -210,6 +204,21 @@ export async function initDatabase(): Promise<SQL.Database> {
     );
     CREATE INDEX IF NOT EXISTS idx_traces_session ON traces(session_id, created_at);
   `);
+
+  // 尝试创建 FTS5 全文搜索（可选，sql.js 默认 WASM 可能不包含 FTS5）
+  try {
+    db.run(`
+      CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
+        content, tags, type,
+        content='memories',
+        content_rowid='rowid'
+      );
+    `);
+    _hasFTS5 = true;
+  } catch {
+    _hasFTS5 = false;
+    console.warn('[sqlite] FTS5 不可用，记忆搜索降级为 LIKE 模式');
+  }
 
   // 写入一次确保文件存在
   persist();
@@ -352,11 +361,13 @@ export function saveMemory(entry: MemoryRow): string {
      entry.source, entry.session_id, entry.use_count, entry.embedding,
      entry.created_at, entry.updated_at, entry.last_used_at]
   );
-  // FTS 同步
-  try {
-    runExec(d, "DELETE FROM memories_fts WHERE rowid IN (SELECT rowid FROM memories WHERE id = ?)", [entry.id]);
-    runExec(d, "INSERT INTO memories_fts(rowid, content, tags, type) SELECT rowid, content, tags, type FROM memories WHERE id = ?", [entry.id]);
-  } catch { /* FTS 同步失败不影响主流程 */ }
+  // FTS 同步（仅在 FTS5 可用时）
+  if (_hasFTS5) {
+    try {
+      runExec(d, "DELETE FROM memories_fts WHERE rowid IN (SELECT rowid FROM memories WHERE id = ?)", [entry.id]);
+      runExec(d, "INSERT INTO memories_fts(rowid, content, tags, type) SELECT rowid, content, tags, type FROM memories WHERE id = ?", [entry.id]);
+    } catch { /* FTS 同步失败不影响主流程 */ }
+  }
   persist();
   return entry.id;
 }
@@ -375,9 +386,9 @@ export function getMemoriesByType(type: string): MemoryRow[] {
 
 export function deleteMemory(id: string): void {
   const d = getDb();
-  try {
-    runExec(d, "DELETE FROM memories_fts WHERE rowid IN (SELECT rowid FROM memories WHERE id = ?)", [id]);
-  } catch { /* ignore */ }
+  if (_hasFTS5) {
+    try { runExec(d, "DELETE FROM memories_fts WHERE rowid IN (SELECT rowid FROM memories WHERE id = ?)", [id]); } catch { /* ignore */ }
+  }
   runExec(d, 'DELETE FROM memories WHERE id = ?', [id]);
   persist();
 }
@@ -385,12 +396,26 @@ export function deleteMemory(id: string): void {
 export function clearAllMemories(): void {
   const d = getDb();
   d.run('DELETE FROM memories');
-  try { d.run('DELETE FROM memories_fts'); } catch { /* ignore */ }
+  if (_hasFTS5) {
+    try { d.run('DELETE FROM memories_fts'); } catch { /* ignore */ }
+  }
   persist();
 }
 
 export function searchMemoriesFTS(query: string, limit = 10): MemoryRow[] {
   const d = getDb();
+
+  // FTS5 不可用时直接走 LIKE
+  if (!_hasFTS5) {
+    const likeQ = `%${query.replace(/[^\w\u4e00-\u9fff]/g, '%')}%`;
+    return queryAll(d, `
+      SELECT * FROM memories
+      WHERE content LIKE ? OR tags LIKE ?
+      ORDER BY importance DESC
+      LIMIT ?
+    `, [likeQ, likeQ, limit]) as unknown as MemoryRow[];
+  }
+
   try {
     // FTS5 搜索
     const ftsQuery = query.replace(/[^\w\u4e00-\u9fff\s]/g, ' ').split(/\s+/).filter(w => w.length > 0).map(w => `"${w}"*`).join(' OR ');
