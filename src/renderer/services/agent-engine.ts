@@ -32,7 +32,8 @@ const TOOL_USAGE_GUIDE = `【工具使用规则】
 2. 工具调用结果中的 path 字段是权威的文件路径，优先使用它。
 3. 如果对话中从未出现过相关路径，应先用 search_files 或 list_directory 定位，不要凭空猜测路径。
 4. 对同一文件的连续操作（读取→修改、读取→删除），路径必须一致。
-5. 当用户要求执行命令时，使用 run_command 工具执行。命令通过工作空间终端实时执行并显示，执行完成后将 stdout/stderr 结果告知用户。`;
+5. 当用户要求执行命令时，使用 run_command 工具执行。命令通过工作空间终端实时执行并显示，执行完成后将 stdout/stderr 结果告知用户。
+6. 联网搜索联动：当用户询问需要最新信息的问题时（如版本号、新闻、价格等），先用 web_search 搜索，然后必须从搜索结果中选择最相关的 1-3 个 URL，用 web_fetch 抓取页面详细内容获取准确数据。不要仅凭搜索摘要回答——摘要往往不完整，必须抓取原文才能给出准确答案。`;
 
 export interface AgentCallbacks {
   onThinking: (text: string) => void;
