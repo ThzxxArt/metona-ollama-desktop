@@ -26,6 +26,7 @@
     "files": [
       "dist/**/*",
       "assets/**/*",
+      "node_modules/sql.js/**/*",
       "!node_modules/**/*"
     ],
     "extraResources": [
