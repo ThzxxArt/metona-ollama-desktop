@@ -151,6 +151,42 @@ export function initSettingsModal(): void {
     logSetting('检查间隔', `${ms / 60000} 分钟`);
   });
 
+  // ── v5.0 训练数据导出 ──
+  document.querySelector('#btnExportTraining')!.addEventListener('click', async () => {
+    const { saveTrainingData } = await import('../services/training-export.js');
+    showToast('正在导出训练数据...', 'info');
+    const ok = await saveTrainingData();
+    if (ok) showToast('训练数据导出成功', 'success');
+    else showToast('导出取消或无数据', 'warning');
+  });
+
+  // ── v5.0 Cron 定时任务 ──
+  document.querySelector('#btnAddCronTask')!.addEventListener('click', async () => {
+    const name = (document.querySelector('#inputCronName') as HTMLInputElement).value.trim();
+    const type = (document.querySelector('#selectCronType') as HTMLSelectElement).value as 'oneshot' | 'recurring';
+    const schedule = (document.querySelector('#inputCronSchedule') as HTMLInputElement).value.trim();
+    const message = (document.querySelector('#inputCronMessage') as HTMLInputElement).value.trim();
+
+    if (!name || !schedule || !message) {
+      showToast('请填写任务名称、时间和描述', 'warning');
+      return;
+    }
+
+    const { addCronTask } = await import('../services/cron-manager.js');
+    await addCronTask({ name, type, schedule, message, enabled: true });
+
+    // 清空输入框
+    (document.querySelector('#inputCronName') as HTMLInputElement).value = '';
+    (document.querySelector('#inputCronSchedule') as HTMLInputElement).value = '';
+    (document.querySelector('#inputCronMessage') as HTMLInputElement).value = '';
+
+    showToast(`定时任务已添加: ${name}`, 'success');
+    renderCronTaskList();
+  });
+
+  // 初始化 cron 列表
+  renderCronTaskList();
+
   document.querySelector('#btnReleaseVRAM')!.addEventListener('click', async () => {
     const api = state.get<OllamaAPI>(KEYS.API);
     const model = (document.querySelector('#modelSelect') as HTMLSelectElement).value;
@@ -582,3 +618,39 @@ export function restoreHeartbeat(): void {
     if (select) select.value = String(interval);
   }
 }
+
+/** 渲染定时任务列表 */
+async function renderCronTaskList(): Promise<void> {
+  const container = document.querySelector('#cronTaskList');
+  if (!container) return;
+
+  const { getCronTasks, removeCronTask, toggleCronTask } = await import('../services/cron-manager.js');
+  const tasks = await getCronTasks();
+
+  if (tasks.length === 0) {
+    container.innerHTML = '<p class="text-muted">无定时任务</p>';
+    return;
+  }
+
+  container.innerHTML = tasks.map(t => `
+    <div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid var(--border-subtle);">
+      <span>${t.enabled ? '✅' : '⏸️'}</span>
+      <span style="flex:1;font-weight:500;">${t.name}</span>
+      <span class="text-muted" style="font-size:11px;">${t.type === 'oneshot' ? '一次性' : '周期'}</span>
+      <button class="btn btn-sm" onclick="window.__toggleCron('${t.id}')" style="padding:2px 6px;font-size:11px;">${t.enabled ? '禁用' : '启用'}</button>
+      <button class="btn btn-sm btn-danger" onclick="window.__deleteCron('${t.id}')" style="padding:2px 6px;font-size:11px;">删除</button>
+    </div>
+  `).join('');
+}
+
+// 全局方法供内联 onclick 调用
+(window as any).__toggleCron = async (id: string) => {
+  const { toggleCronTask } = await import('../services/cron-manager.js');
+  await toggleCronTask(id);
+  renderCronTaskList();
+};
+(window as any).__deleteCron = async (id: string) => {
+  const { removeCronTask } = await import('../services/cron-manager.js');
+  await removeCronTask(id);
+  renderCronTaskList();
+};

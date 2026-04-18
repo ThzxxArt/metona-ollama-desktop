@@ -10,6 +10,7 @@ import { createTray } from './tray.js';
 import { createMenu } from './menu.js';
 import { showNotification } from './utils.js';
 import { ensureWorkspaceDir, killAllProcesses } from './workspace.js';
+import { browserClose } from './browser.js';
 
 // ── 全局错误处理：写入文件 + 弹窗提示 ──
 const ERROR_LOG = path.join(app.getPath('userData'), 'startup-error.log');
@@ -194,6 +195,8 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   isQuitting = true;
+  // 清理浏览器
+  browserClose();
   // 清理所有工作空间进程
   killAllProcesses();
   // 通知渲染进程释放显存

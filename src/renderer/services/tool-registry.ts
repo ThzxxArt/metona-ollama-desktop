@@ -433,6 +433,103 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         }
       }
     }
+  },
+  // ══════════════════════════════════════════════
+  // v5.0 新增工具：浏览器控制
+  // ══════════════════════════════════════════════
+  {
+    type: 'function',
+    function: {
+      name: 'browser_open',
+      description: 'Open a URL in the agent browser. Loads the page and waits for rendering. Returns the page title and final URL.',
+      parameters: {
+        type: 'object',
+        required: ['url'],
+        properties: {
+          url: { type: 'string', description: 'The URL to open (http/https).' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_screenshot',
+      description: 'Take a screenshot of the current browser page. Returns the image as base64 PNG. Use this to see what the page looks like.',
+      parameters: { type: 'object', properties: {} }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_evaluate',
+      description: 'Execute JavaScript code in the browser page context. Use to interact with the page, read DOM elements, fill forms, click buttons, etc. Returns the result of the last expression.',
+      parameters: {
+        type: 'object',
+        required: ['js'],
+        properties: {
+          js: { type: 'string', description: 'JavaScript code to execute in the page context.' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_extract',
+      description: 'Extract all text content and links from the current browser page. Returns title, full text, and up to 50 links.',
+      parameters: { type: 'object', properties: {} }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_click',
+      description: 'Click an element on the page using a CSS selector.',
+      parameters: {
+        type: 'object',
+        required: ['selector'],
+        properties: {
+          selector: { type: 'string', description: 'CSS selector for the element to click.' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_type',
+      description: 'Type text into an input field on the page using a CSS selector.',
+      parameters: {
+        type: 'object',
+        required: ['selector', 'text'],
+        properties: {
+          selector: { type: 'string', description: 'CSS selector for the input element.' },
+          text: { type: 'string', description: 'Text to type into the input.' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_scroll',
+      description: 'Scroll the browser page.',
+      parameters: {
+        type: 'object',
+        properties: {
+          direction: { type: 'string', enum: ['down', 'up', 'top', 'bottom'], description: 'Scroll direction. Default: down.' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_close',
+      description: 'Close the agent browser and release resources.',
+      parameters: { type: 'object', properties: {} }
+    }
   }
 ];
 
@@ -464,7 +561,9 @@ let enabledTools: Set<string> = new Set([
   'move_file', 'copy_file', 'web_fetch', 'web_search', 'append_file', 'edit_file',
   'get_file_info', 'tree', 'download_file', 'diff_files', 'replace_in_files',
   'read_multiple_files', 'git', 'compress',
-  'memory_search', 'memory_add', 'session_list', 'session_read', 'spawn_task'
+  'memory_search', 'memory_add', 'session_list', 'session_read', 'spawn_task',
+  'browser_open', 'browser_screenshot', 'browser_evaluate', 'browser_extract',
+  'browser_click', 'browser_type', 'browser_scroll', 'browser_close'
 ]);
 
 export function setToolEnabled(toolName: string, enabled: boolean): void {
@@ -611,7 +710,9 @@ export function getToolIcon(name: string): string {
     edit_file: '✂️', get_file_info: 'ℹ️', tree: '🌳', download_file: '⬇️',
     diff_files: '🔀', replace_in_files: '🔄', read_multiple_files: '📚',
     git: '🔖', compress: '🗜️', web_search: '🔍',
-    memory_search: '🧠', memory_add: '💾', session_list: '📋', session_read: '📖', spawn_task: '🤖'
+    memory_search: '🧠', memory_add: '💾', session_list: '📋', session_read: '📖', spawn_task: '🤖',
+    browser_open: '🌐', browser_screenshot: '📸', browser_evaluate: '⚡', browser_extract: '📰',
+    browser_click: '👆', browser_type: '⌨️', browser_scroll: '↕️', browser_close: '❌'
   };
   return icons[name] || '🔧';
 }
@@ -625,7 +726,9 @@ export function formatToolName(name: string): string {
     get_file_info: '文件信息', tree: '目录树', download_file: '下载文件',
     diff_files: '文件对比', replace_in_files: '批量替换', read_multiple_files: '批量读取',
     git: 'Git 操作', compress: '压缩/解压', web_search: '联网搜索',
-    memory_search: '搜索记忆', memory_add: '添加记忆', session_list: '会话列表', session_read: '读取会话', spawn_task: '子代理委派'
+    memory_search: '搜索记忆', memory_add: '添加记忆', session_list: '会话列表', session_read: '读取会话', spawn_task: '子代理委派',
+    browser_open: '打开网页', browser_screenshot: '浏览器截图', browser_evaluate: '执行JS', browser_extract: '提取内容',
+    browser_click: '点击元素', browser_type: '输入文本', browser_scroll: '滚动页面', browser_close: '关闭浏览器'
   };
   return names[name] || name;
 }

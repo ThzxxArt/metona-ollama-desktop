@@ -47,6 +47,7 @@ import {
   handleGit,
   handleCompress
 } from './tool-handlers.js';
+import { browserOpen, browserScreenshot, browserEvaluate, browserExtract, browserClick, browserType, browserScroll, browserClose } from './browser.js';
 import { getAllowedDirs, getBlockedDirs, setAllowedDirs } from './tool-security.js';
 import { startProcess, killProcess, getWorkspaceDir, setWorkspaceDir, listWorkspaceDir } from './workspace.js';
 
@@ -175,6 +176,15 @@ export async function setupIPC(): Promise<void> {
         case 'read_multiple_files':result = await handleReadMultipleFiles(args as { paths: string[]; max_chars_per_file?: number }); break;
         case 'git':                result = await handleGit(args as any); break;
         case 'compress':           result = await handleCompress(args as { action: string; path: string; destination?: string; format?: string }); break;
+        // v5.0 Browser 控制
+        case 'browser_open':       result = await browserOpen(args.url as string); break;
+        case 'browser_screenshot': result = await browserScreenshot(); break;
+        case 'browser_evaluate':   result = await browserEvaluate(args.js as string); break;
+        case 'browser_extract':    result = await browserExtract(); break;
+        case 'browser_click':      result = await browserClick(args.selector as string); break;
+        case 'browser_type':       result = await browserType(args.selector as string, args.text as string); break;
+        case 'browser_scroll':     result = await browserScroll((args.direction as string) || 'down'); break;
+        case 'browser_close':      browserClose(); result = { success: true }; break;
         default:                   return { success: false, error: `未知工具: ${toolName}` };
       }
       // 结果日志

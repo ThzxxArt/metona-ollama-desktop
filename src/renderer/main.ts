@@ -23,6 +23,7 @@ import { initMemoryModal } from './components/memory-modal.js';
 import { initToolsModal, closeToolsModal } from './components/tools-modal.js';
 import { initMemoryManager } from './services/memory-manager.js';
 import { restoreHeartbeat } from './components/settings-modal.js';
+import { restoreCronTasks } from './services/cron-manager.js';
 import { setToolEnabled, setRunCommandMode } from './services/tool-registry.js';
 import { initToolConfirmModal } from './components/tool-confirm-modal.js';
 import { initWorkspacePanel } from './components/workspace-panel.js';
@@ -392,6 +393,8 @@ async function init(): Promise<void> {
 
     // Heartbeat 在 UI 就绪后启动
     restoreHeartbeat();
+    // Cron 定时任务恢复
+    restoreCronTasks();
   } catch (err) {
     logError('初始化失败', (err as Error).message);
     if (!api!) {
@@ -454,6 +457,21 @@ function bindGlobalEvents(): void {
     const msg = e.reason?.message || String(e.reason);
     showToast(`操作失败: ${msg}`, 'error', 5000);
   });
+
+  // v5.0 Cron 定时任务事件
+  window.addEventListener('metona:cron-task', ((e: CustomEvent) => {
+    const task = e.detail;
+    if (task?.message) {
+      showToast(`⏰ 定时任务: ${task.name}`, 'info', 5000);
+      logInfo(`定时任务触发: ${task.name}`, task.message.slice(0, 60));
+      // 将任务描述填入输入框
+      const chatInput = document.querySelector('#chatInput') as HTMLTextAreaElement;
+      if (chatInput) {
+        chatInput.value = task.message;
+        chatInput.focus();
+      }
+    }
+  }) as EventListener);
 }
 
 init();
