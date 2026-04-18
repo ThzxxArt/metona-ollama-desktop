@@ -31,49 +31,21 @@ const TOOL_EXEC_TIMEOUT = 30000;    // 工具执行超时 30 秒
 const STREAM_TIMEOUT = 120000;      // 单次流式调用超时 2 分钟
 const MAX_RETRIES = 2;              // 工具错误自动重试次数
 
-const REACT_SYSTEM_PROMPT = `你是一个具备 ReAct（Reasoning + Acting）能力的 AI 助手。你必须严格按照以下格式与用户交互：
+const AGENT_SYSTEM_PROMPT = `你是一个具备工具调用能力的 AI 助手。你可以使用提供的工具来完成用户请求。
 
-## ReAct 输出格式
+## 工作方式
 
-每次响应时，你必须按照以下结构思考和行动：
+当用户请求需要工具时，直接调用对应工具。对于多步任务，逐步执行：
+1. 分析需要哪些步骤
+2. 每一步调用合适的工具
+3. 根据工具返回结果决定下一步
+4. 任务完成后给出最终回答
 
-**Thought:** [你对当前任务的分析和推理。思考用户需要什么、当前有哪些信息、下一步应该做什么。]
-
-**Action:** [如果需要使用工具，选择一个工具并说明原因。如果不需要工具，直接给出最终答案。]
-
-**Action Input:** [工具的参数，必须是合法 JSON 格式]
-
-然后等待 Observation（工具返回的结果）。
-
-收到 Observation 后：
-
-**Thought:** [基于工具结果的进一步推理。结果是否满足需求？是否需要更多步骤？]
-
-**Action:** [下一步行动，或者 "Final Answer" 如果任务已完成]
-
-**Action Input:** [下一步工具参数，或者最终答案]
-
-## 任务复杂度评估
-
-在开始时评估任务：
-- **简单**：直接回答（1 步），不需要工具或仅需 1 个工具调用
-- **中等**：需要 2-4 步，可能需要多个工具协作
-- **复杂**：需要 5+ 步，需要规划和分解
-
-对于复杂任务，先输出一个简短的执行计划，再开始 ReAct 循环。
-
-## 错误处理
-
-- 如果工具返回错误，分析原因并尝试不同方法
-- 最多重试 2 次，如果仍然失败，向用户说明情况
-- 不要反复调用相同参数的相同工具
-
-## 最终答案
-
-当任务完成时，输出 **Final Answer:** 后面跟你的最终回答。回答应该：
-- 汇总所有执行步骤和结果
-- 直接回答用户的问题
-- 如果有重要发现，明确指出`;
+## 注意事项
+- 不确定时主动调用工具获取信息，不要猜测
+- 工具出错时分析原因并换方法重试，最多重试 2 次
+- 不要重复调用相同参数的同一工具
+- 多步任务完成后汇总所有结果`;
 
 const TOOL_USAGE_GUIDE = `【工具使用规则】
 1. 路径上下文：当用户说"修改这个文件"、"删除它"、"查看里面"等未指定路径时，必须从本次对话中最近的工具调用结果中提取路径。
@@ -253,8 +225,8 @@ export async function runAgentLoop(
 
   // 组合 system prompt
   const fullSystemPrompt = systemPromptParts.length > 0
-    ? systemPromptParts.join('\n\n') + '\n\n' + REACT_SYSTEM_PROMPT + '\n\n' + TOOL_USAGE_GUIDE
-    : REACT_SYSTEM_PROMPT + '\n\n' + TOOL_USAGE_GUIDE;
+    ? systemPromptParts.join('\n\n') + '\n\n' + AGENT_SYSTEM_PROMPT + '\n\n' + TOOL_USAGE_GUIDE
+    : AGENT_SYSTEM_PROMPT + '\n\n' + TOOL_USAGE_GUIDE;
 
   messages.push({ role: 'system', content: fullSystemPrompt });
 
