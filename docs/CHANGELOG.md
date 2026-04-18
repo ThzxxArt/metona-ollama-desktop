@@ -11,35 +11,72 @@
 
 ## 桌面版（Desktop）
 
-### Desktop v5.0.0 — 浏览器控制 & Cron 定时任务 & 技能系统
+### Desktop v5.0.0 — 浏览器控制 & MCP & 技能系统 & 全面重构
 
+- ✨ **MCP (Model Context Protocol) 完整实现**
+  - 主进程 `mcp-manager.ts`：JSON-RPC 2.0 over stdio 通信
+  - 支持 `initialize` 握手、`tools/list` 工具发现、`tools/call` 工具执行
+  - 7 个 IPC 通道：startServer / stopServer / stopAll / callTool / getTools / getStatuses / refreshTools
+  - 渲染端 `mcp-client.ts`：配置管理 + 服务器生命周期 + 工具定义获取 + 工具执行
+  - `tool-registry.ts` MCP 工具路由：`mcp_{server}_{tool}` 前缀识别
+  - 设置面板 MCP 服务器管理 UI（添加/启用/禁用/删除/状态显示）
+  - 启动时自动启动已启用的 MCP 服务器，退出时优雅清理
 - ✨ **浏览器控制工具**（8 个新工具）
   - `browser_open` / `browser_screenshot` / `browser_evaluate` / `browser_extract`
   - `browser_click` / `browser_type` / `browser_scroll` / `browser_close`
   - AI 可交互式操作网页，支持截图、JS 执行、元素操作
+  - 主进程 `browser.ts`，隐藏 BrowserWindow 实现
+  - 全部 8 个函数新增 sendLog 执行日志
 - ✨ **Cron 定时任务系统**
   - `cron-manager.ts` 定时任务管理器
-  - 支持周期性任务调度，任务触发时自动填入聊天输入框
-- ✨ **技能自动生成系统**（v4.2）
+  - 支持一次性/周期性任务调度
+- ✨ **技能自动生成系统**
   - 自动从成功工具调用链提取可复用技能
   - `skills` 表持久化，支持关键词搜索和使用统计
   - 下次同类任务自动匹配并注入技能上下文
-- ✨ **用户画像自动推断**（v4.2）
-  - 从对话中自动检测用户技术栈（Python/TypeScript/Go/React 等）
+- ✨ **用户画像自动推断**
+  - 从对话中自动检测用户技术栈（Python/TypeScript/Go/React 等 14 种）
   - 用户画像注入 system prompt，Agent 行为更贴合用户习惯
-- ✨ **人格模式**（v4.2）
+- ✨ **人格模式**
   - 多种预设人格模板，独立 system prompt + 温度设置
-- ✨ **Heartbeat 主动检查**（v4.3）
+- ✨ **Heartbeat 主动检查**
   - 后台定时检查 Ollama 连接状态、磁盘空间等
-- ✨ **子代理委派**（v4.3）
+- ✨ **子代理委派**
   - `spawn_task` 工具，主 Agent 可 spawn 独立子代理执行任务
-- 🔧 **工具并行执行优化**（v4.1）
+  - 独立上下文，超时保护，结果回传主 Agent
+- 🔧 **工具并行执行优化**
   - 同一批次内独立工具并行执行，跨批次串行
   - 依赖检测：web_fetch 自动等待 web_search 结果
+- 🔧 **长对话上下文管理**
+  - `context-manager.ts` 接入 Agent Loop
+  - 滑动窗口（20 条）+ 摘要压缩 + 按 num_ctx 裁剪
+  - Token 估算（中文 1.5 字/token，英文 4 字符/token）
 - 🔧 **记忆系统增强**
   - rule/preference 类型始终注入，不依赖关键词匹配
   - buildMemoryContext 区分三类记忆措辞
-- 📝 **版本号更新至 5.0.0**
+- 🔧 **全面编译修复**
+  - 修复 `useTools` 变量在声明前使用（TDZ 运行时 ReferenceError）
+  - 修复 `browser.ts` loadURL 不支持的 timeout 参数
+  - 修复 `ipc.ts` browserScroll direction 类型断言
+- 🔧 **CSS 变量补全**
+  - 补充 `--primary` / `--primary-bg` / `--bg-hover` 三个缺失变量
+- 🧹 **全面代码清理**（删除 400+ 行死代码）
+  - 删除 `training-export.ts`（训练数据导出，零引用）
+  - 删除 `document-processor.ts`（RAG 遗留）
+  - 清理 workspace.ts：`execWorkspaceCommand`（重复实现）、`isProcessAlive`、`getActiveProcessCount`、`terminateWorkspaceCommand`
+  - 清理 sqlite.ts：`deleteMessagesBySession`、`getSkill`、`closeDatabase`
+  - 清理 skill-manager.ts：`getAllSkillsForUI`、`deleteSkillById`、`clearAllSkills`
+  - 清理 memory-manager.ts：`getVectorSearchResults`
+  - 清理 tool-registry.ts：`isToolEnabled`
+  - 清理 cron-manager.ts：`clearAllTimers`
+  - 清理 workspace-panel.ts：`setOnToolTerminated`、`setWorkspaceDirPath`
+  - 清理 mcp-manager.ts：`isServerRunning`
+  - 移除 index.html 训练数据导出按钮及 settings-modal.ts 事件绑定
+- 📊 **全链路执行日志**
+  - browser.ts：全部 8 个函数新增 sendLog（打开/截图/JS/提取/点击/输入/滚动/关闭）
+  - mcp-manager.ts：callTool 新增工具调用/完成/失败日志
+  - 主进程日志覆盖：browser(20) + mcp(14) + tool-handlers(21) + workspace(11) + ipc(11)
+- 📝 **版本号更新至 5.0.0**（7 个文件同步更新）
 
 ### Desktop v4.0.0 — SQLite & ReAct Agent & 全新主题
 
