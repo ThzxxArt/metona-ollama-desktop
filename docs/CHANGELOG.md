@@ -3,13 +3,43 @@
 ## 分支结构
 
 **桌面版主线**（`master`）：
-- `metona-ollama-desktop-v1.1` → `metona-ollama-desktop-v2` → `metona-ollama-desktop-v3.0.0` → `metona-ollama-desktop-v3.1.0` → `metona-ollama-desktop-v3.1.1` → `metona-ollama-desktop-v3.2.0` → `metona-ollama-desktop-v3.2.1` → `metona-ollama-desktop-v3.2.2` → `metona-ollama-desktop-v3.2.3` → `metona-ollama-desktop-v3.2.4` → `metona-ollama-desktop-v3.2.5` → `metona-ollama-desktop-v3.2.6` → `metona-ollama-desktop-v3.3.0` → `metona-ollama-desktop-v3.3.1` → `metona-ollama-desktop-v3.3.2` → `metona-ollama-desktop-v3.3.3` → `metona-ollama-desktop-v3.3.4` → `metona-ollama-desktop-v4.0.0`（当前发布分支）
+- `metona-ollama-desktop-v1.1` → `metona-ollama-desktop-v2` → `metona-ollama-desktop-v3.0.0` → `metona-ollama-desktop-v3.1.0` → `metona-ollama-desktop-v3.1.1` → `metona-ollama-desktop-v3.2.0` → `metona-ollama-desktop-v3.2.1` → `metona-ollama-desktop-v3.2.2` → `metona-ollama-desktop-v3.2.3` → `metona-ollama-desktop-v3.2.4` → `metona-ollama-desktop-v3.2.5` → `metona-ollama-desktop-v3.2.6` → `metona-ollama-desktop-v3.3.0` → `metona-ollama-desktop-v3.3.1` → `metona-ollama-desktop-v3.3.2` → `metona-ollama-desktop-v3.3.3` → `metona-ollama-desktop-v3.3.4` → `metona-ollama-desktop-v4.0.0` → `metona-ollama-desktop-v5.0.0`（当前发布分支）
 
 **Web 版历史**已独立为 [metona-ollama-web](https://gitee.com/thzxx/metona-ollama-web) 仓库（v1.1.0 ~ v4.0.3）。
 
 ---
 
 ## 桌面版（Desktop）
+
+### Desktop v5.0.0 — 浏览器控制 & Cron 定时任务 & 技能系统
+
+- ✨ **浏览器控制工具**（8 个新工具）
+  - `browser_open` / `browser_screenshot` / `browser_evaluate` / `browser_extract`
+  - `browser_click` / `browser_type` / `browser_scroll` / `browser_close`
+  - AI 可交互式操作网页，支持截图、JS 执行、元素操作
+- ✨ **Cron 定时任务系统**
+  - `cron-manager.ts` 定时任务管理器
+  - 支持周期性任务调度，任务触发时自动填入聊天输入框
+- ✨ **技能自动生成系统**（v4.2）
+  - 自动从成功工具调用链提取可复用技能
+  - `skills` 表持久化，支持关键词搜索和使用统计
+  - 下次同类任务自动匹配并注入技能上下文
+- ✨ **用户画像自动推断**（v4.2）
+  - 从对话中自动检测用户技术栈（Python/TypeScript/Go/React 等）
+  - 用户画像注入 system prompt，Agent 行为更贴合用户习惯
+- ✨ **人格模式**（v4.2）
+  - 多种预设人格模板，独立 system prompt + 温度设置
+- ✨ **Heartbeat 主动检查**（v4.3）
+  - 后台定时检查 Ollama 连接状态、磁盘空间等
+- ✨ **子代理委派**（v4.3）
+  - `spawn_task` 工具，主 Agent 可 spawn 独立子代理执行任务
+- 🔧 **工具并行执行优化**（v4.1）
+  - 同一批次内独立工具并行执行，跨批次串行
+  - 依赖检测：web_fetch 自动等待 web_search 结果
+- 🔧 **记忆系统增强**
+  - rule/preference 类型始终注入，不依赖关键词匹配
+  - buildMemoryContext 区分三类记忆措辞
+- 📝 **版本号更新至 5.0.0**
 
 ### Desktop v4.0.0 — SQLite & ReAct Agent & 全新主题
 
