@@ -170,10 +170,6 @@ function triggerVectorSearch(query: string, limit: number): void {
   }, 100);
 }
 
-// 导出：获取向量搜索结果（供 UI 使用）
-export function getVectorSearchResults(query: string): MemorySearchResult[] {
-  return vectorSearchCache.get(query) || [];
-}
 
 // 关键词搜索
 function searchMemoriesByKeyword(query: string, limit: number): MemorySearchResult[] {

@@ -4,7 +4,11 @@
  */
 
 import { BrowserWindow } from 'electron';
-import * as path from 'path';
+import { mainWindow } from './main.js';
+
+function sendLog(level: 'info' | 'success' | 'warn' | 'error', message: string, detail?: string): void {
+  mainWindow?.webContents.send('main:log', { level, message, detail });
+}
 
 let agentBrowser: BrowserWindow | null = null;
 
@@ -15,12 +19,12 @@ function getAgentBrowser(): BrowserWindow {
   agentBrowser = new BrowserWindow({
     width: 1280,
     height: 800,
-    show: false, // 隐藏窗口
+    show: false,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
-      webSecurity: false, // 允许跨域（Agent 需要）
+      webSecurity: false,
     }
   });
 
@@ -32,14 +36,14 @@ function getAgentBrowser(): BrowserWindow {
 export async function browserOpen(url: string): Promise<{ success: boolean; title?: string; url?: string; error?: string }> {
   try {
     const win = getAgentBrowser();
+    sendLog('info', `🌐 browser 打开`, url.slice(0, 100));
     await win.loadURL(url);
-    await new Promise(r => setTimeout(r, 1000)); // 等待页面渲染
-    return {
-      success: true,
-      title: win.webContents.getTitle(),
-      url: win.webContents.getURL()
-    };
+    await new Promise(r => setTimeout(r, 1000));
+    const title = win.webContents.getTitle();
+    sendLog('success', `🌐 browser 已加载`, title);
+    return { success: true, title, url: win.webContents.getURL() };
   } catch (err) {
+    sendLog('error', `🌐 browser 打开失败`, (err as Error).message);
     return { success: false, error: (err as Error).message };
   }
 }
@@ -53,8 +57,10 @@ export async function browserScreenshot(): Promise<{ success: boolean; png?: str
     }
     const image = await win.webContents.capturePage();
     const buffer = image.toPNG();
+    sendLog('info', `🌐 browser 截图`, `${buffer.length} bytes`);
     return { success: true, png: buffer.toString('base64') };
   } catch (err) {
+    sendLog('error', `🌐 browser 截图失败`, (err as Error).message);
     return { success: false, error: (err as Error).message };
   }
 }
@@ -66,12 +72,13 @@ export async function browserEvaluate(js: string): Promise<{ success: boolean; r
     if (win.webContents.getURL() === 'about:blank') {
       return { success: false, error: '浏览器未加载任何页面' };
     }
+    sendLog('info', `🌐 browser 执行 JS`, js.slice(0, 100));
     const result = await win.webContents.executeJavaScript(js, true);
-    return {
-      success: true,
-      result: typeof result === 'string' ? result : JSON.stringify(result, null, 2)
-    };
+    const resultStr = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
+    sendLog('success', `🌐 browser JS 完成`, resultStr?.slice(0, 100));
+    return { success: true, result: resultStr };
   } catch (err) {
+    sendLog('error', `🌐 browser JS 失败`, (err as Error).message);
     return { success: false, error: (err as Error).message };
   }
 }
@@ -87,7 +94,6 @@ export async function browserExtract(): Promise<{ success: boolean; title?: stri
     const result = await win.webContents.executeJavaScript(`
       (() => {
         const title = document.title;
-        // 提取正文文本
         const getText = (el) => {
           if (!el) return '';
           const clone = el.cloneNode(true);
@@ -96,8 +102,6 @@ export async function browserExtract(): Promise<{ success: boolean; title?: stri
         };
         const body = getText(document.body);
         const text = body.length > 15000 ? body.slice(0, 15000) + '\\n... (已截断)' : body;
-
-        // 提取链接
         const links = [];
         document.querySelectorAll('a[href]').forEach(a => {
           const href = a.href;
@@ -106,13 +110,14 @@ export async function browserExtract(): Promise<{ success: boolean; title?: stri
             links.push({ text: text.slice(0, 100), href });
           }
         });
-
         return { title, text, links: links.slice(0, 50) };
       })()
     `, true);
 
+    sendLog('success', `🌐 browser 提取完成`, `标题: ${result.title}, 文本: ${result.text?.length || 0}字, 链接: ${result.links?.length || 0}个`);
     return { success: true, ...result };
   } catch (err) {
+    sendLog('error', `🌐 browser 提取失败`, (err as Error).message);
     return { success: false, error: (err as Error).message };
   }
 }
@@ -121,10 +126,13 @@ export async function browserExtract(): Promise<{ success: boolean; title?: stri
 export async function browserClick(selector: string): Promise<{ success: boolean; error?: string }> {
   try {
     const win = getAgentBrowser();
+    sendLog('info', `🌐 browser 点击`, selector);
     await win.webContents.executeJavaScript(`document.querySelector('${selector.replace(/'/g, "\\'")}').click()`, true);
     await new Promise(r => setTimeout(r, 500));
+    sendLog('success', `🌐 browser 点击完成`, selector);
     return { success: true };
   } catch (err) {
+    sendLog('error', `🌐 browser 点击失败`, `${selector}: ${(err as Error).message}`);
     return { success: false, error: (err as Error).message };
   }
 }
@@ -135,6 +143,7 @@ export async function browserType(selector: string, text: string): Promise<{ suc
     const win = getAgentBrowser();
     const escapedSelector = selector.replace(/'/g, "\\'");
     const escapedText = text.replace(/'/g, "\\'").replace(/\n/g, "\\n");
+    sendLog('info', `🌐 browser 输入`, `${selector}: ${text.slice(0, 50)}`);
     await win.webContents.executeJavaScript(`
       (() => {
         const el = document.querySelector('${escapedSelector}');
@@ -145,8 +154,10 @@ export async function browserType(selector: string, text: string): Promise<{ suc
         el.dispatchEvent(new Event('change', { bubbles: true }));
       })()
     `, true);
+    sendLog('success', `🌐 browser 输入完成`, selector);
     return { success: true };
   } catch (err) {
+    sendLog('error', `🌐 browser 输入失败`, `${selector}: ${(err as Error).message}`);
     return { success: false, error: (err as Error).message };
   }
 }
@@ -161,8 +172,10 @@ export async function browserScroll(direction: 'down' | 'up' | 'top' | 'bottom')
       : 'window.scrollTo(0, document.body.scrollHeight)';
     await win.webContents.executeJavaScript(js, true);
     await new Promise(r => setTimeout(r, 300));
+    sendLog('info', `🌐 browser 滚动`, direction);
     return { success: true };
   } catch (err) {
+    sendLog('error', `🌐 browser 滚动失败`, (err as Error).message);
     return { success: false, error: (err as Error).message };
   }
 }
@@ -171,6 +184,7 @@ export async function browserScroll(direction: 'down' | 'up' | 'top' | 'bottom')
 export function browserClose(): void {
   if (agentBrowser && !agentBrowser.isDestroyed()) {
     agentBrowser.close();
+    sendLog('info', '🌐 browser 已关闭');
   }
   agentBrowser = null;
 }

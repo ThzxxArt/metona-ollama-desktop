@@ -240,10 +240,14 @@ export async function callTool(serverName: string, toolName: string, args: Recor
     return { success: false, error: `MCP 服务器 ${serverName} 未运行` };
   }
 
+  sendLog('info', `🔌 MCP 调用工具`, `${serverName}/${toolName} ${JSON.stringify(args || {}).slice(0, 100)}`);
+
   try {
     const result = await sendRequest(server, 'tools/call', { name: toolName, arguments: args });
+    sendLog('success', `🔌 MCP 工具完成`, `${serverName}/${toolName}`);
     return { success: true, result };
   } catch (err) {
+    sendLog('error', `🔌 MCP 工具失败`, `${serverName}/${toolName}: ${(err as Error).message}`);
     return { success: false, error: (err as Error).message };
   }
 }
@@ -289,8 +293,3 @@ export function getServerStatuses(): Array<{ name: string; running: boolean; too
   return statuses;
 }
 
-/** 检查服务器是否在运行 */
-export function isServerRunning(name: string): boolean {
-  const server = servers.get(name);
-  return !!server && server.initialized;
-}

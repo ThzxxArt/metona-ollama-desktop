@@ -182,45 +182,6 @@ export function buildSkillContext(skills: Skill[]): string {
 }
 
 /**
- * 获取所有技能（用于 UI 展示）
- */
-export async function getAllSkillsForUI(): Promise<Skill[]> {
-  const bridge = (window as any).metonaDesktop;
-  if (!bridge?.db?.getAllSkills) return [];
-  try {
-    return await bridge.db.getAllSkills();
-  } catch {
-    return [];
-  }
-}
-
-/**
- * 删除技能
- */
-export async function deleteSkillById(id: string): Promise<boolean> {
-  const bridge = (window as any).metonaDesktop;
-  if (!bridge?.db?.deleteSkill) return false;
-  try {
-    await bridge.db.deleteSkill(id);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * 清空所有技能
- */
-export async function clearAllSkills(): Promise<boolean> {
-  const bridge = (window as any).metonaDesktop;
-  if (!bridge?.db?.clearAllSkills) return false;
-  try {
-    await bridge.db.clearAllSkills();
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 // ── 辅助函数 ──
 
