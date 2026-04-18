@@ -31,6 +31,9 @@ const TOOL_EXEC_TIMEOUT = 30000;    // 工具执行超时 30 秒
 const STREAM_TIMEOUT = 120000;      // 单次流式调用超时 2 分钟
 const MAX_RETRIES = 2;              // 工具错误自动重试次数
 
+/** v4.1: 工具并行执行 — 依赖检测用 */
+const TOOLS_WITH_DATA_DEPS = new Set(['web_fetch', 'edit_file', 'append_file', 'move_file', 'delete_file']);
+
 const AGENT_SYSTEM_PROMPT = `你是一个具备工具调用能力的 AI 助手。你有 25 个工具可以调用，包括文件操作、联网搜索、网页抓取、命令执行、记忆管理等。
 
 ## 核心规则
@@ -562,61 +565,80 @@ export async function runAgentLoop(
       createdAt: Date.now()
     };
 
-    for (const call of toolCalls) {
-      // 检查是否已中止
-      if (abortController.signal.aborted) {
-        callbacks.onDone(content, allToolRecords.length > 0 ? allToolRecords : undefined, makeStats());
-        return;
-      }
+    // ── v4.1 工具并行执行：将独立工具分批并行调用 ──
+    // 将工具调用分成批次：同一批次内的工具互相独立，可并行执行
+    // 跨批次的工具有依赖关系（如 web_fetch 依赖前面的 web_search）
+    const batches: ToolCall[][] = [];
+    let currentBatch: ToolCall[] = [];
+    const batchDeps = new Map<ToolCall, string>(); // 记录每个工具依赖的前序工具名
 
-      // 同一轮内重复调用检测
+    for (const call of toolCalls) {
+      if (currentBatch.length === 0) {
+        currentBatch.push(call);
+      } else {
+        // 检查当前工具是否依赖当前批次中任何工具的结果
+        const needsPrevResult = currentBatch.some(prev =>
+          TOOLS_WITH_DATA_DEPS.has(call.function.name) && prev.function.name !== call.function.name
+        );
+        if (needsPrevResult) {
+          // 有依赖，当前批次结束，开启新批次
+          batches.push(currentBatch);
+          batchDeps.set(call, currentBatch[currentBatch.length - 1].function.name);
+          currentBatch = [call];
+        } else {
+          currentBatch.push(call);
+        }
+      }
+    }
+    if (currentBatch.length > 0) batches.push(currentBatch);
+
+    if (batches.length > 1) {
+      logInfo(`工具并行执行: ${toolCalls.length} 个工具 → ${batches.length} 批次（首批 ${batches[0].length} 个并行）`);
+    }
+
+    /** 执行单个工具（含重试），返回 [ToolCallRecord, 缓存key|null] */
+    const executeSingleTool = async (call: ToolCall): Promise<[ToolCallRecord, string | null]> => {
+      const cacheKey = getToolCacheKey(call.function.name, call.function.arguments);
+
+      // 重复调用检测
       if (isDuplicateCall(call, toolCalls)) {
         logWarn(`跳过重复工具调用: ${call.function.name}`);
-        const cachedKey = getToolCacheKey(call.function.name, call.function.arguments);
-        const cached = toolResultCache.get(cachedKey);
+        const cached = toolResultCache.get(cacheKey);
         if (cached) {
-          messages.push({ role: 'tool', tool_name: call.function.name, content: formatToolResultForModel(call.function.name, cached) });
-          callbacks.onToolCallResult(call.function.name, cached, call);
+          return [{
+            name: call.function.name, arguments: call.function.arguments,
+            result: cached, status: 'success' as const, timestamp: Date.now()
+          }, null];
         }
-        continue;
       }
 
       // 跨轮次缓存命中
-      const cacheKey = getToolCacheKey(call.function.name, call.function.arguments);
       const cachedResult = toolResultCache.get(cacheKey);
       if (cachedResult) {
         logInfo(`工具缓存命中: ${call.function.name}`);
-        messages.push({ role: 'tool', tool_name: call.function.name, content: formatToolResultForModel(call.function.name, cachedResult) });
-        callbacks.onToolCallResult(call.function.name, cachedResult, call);
-        continue;
+        return [{
+          name: call.function.name, arguments: call.function.arguments,
+          result: cachedResult, status: 'success' as const, timestamp: Date.now()
+        }, null];
       }
 
       callbacks.onToolCallStart(call);
       logToolStart(call.function.name, JSON.stringify(call.function.arguments));
 
+      // 需要确认的工具（目前只有 run_command 在 confirm 模式下）
       if (needsConfirmation(call.function.name)) {
         const confirmed = await callbacks.onConfirmTool(call);
-        if (abortController.signal.aborted) {
-          callbacks.onDone(content, allToolRecords.length > 0 ? allToolRecords : undefined, makeStats());
-          return;
-        }
         if (!confirmed) {
           logWarn(`工具取消: ${call.function.name}`);
-          const record: ToolCallRecord = {
-            name: call.function.name,
-            arguments: call.function.arguments,
-            result: { success: false, error: '用户取消了操作' },
-            status: 'cancelled',
-            timestamp: Date.now()
-          };
-          allToolRecords.push(record);
-          messages.push({ role: 'tool', tool_name: call.function.name, content: JSON.stringify({ success: false, error: '用户取消了操作' }) });
-          callbacks.onToolCallError(call.function.name, '用户取消', call);
-          continue;
+          const cancelResult = { success: false, error: '用户取消了操作' };
+          return [{
+            name: call.function.name, arguments: call.function.arguments,
+            result: cancelResult, status: 'cancelled' as const, timestamp: Date.now()
+          }, null];
         }
       }
 
-      // 工具执行 + 自动重试
+      // 执行 + 自动重试
       let lastError = '';
       for (let retry = 0; retry <= MAX_RETRIES; retry++) {
         try {
@@ -633,42 +655,55 @@ export async function runAgentLoop(
               )
             ]);
           }
-
-          // 成功
-          const record: ToolCallRecord = {
-            name: call.function.name,
-            arguments: call.function.arguments,
-            result,
-            status: result.success ? 'success' : 'error',
-            timestamp: Date.now()
-          };
-          allToolRecords.push(record);
-          messages.push({ role: 'tool', tool_name: call.function.name, content: formatToolResultForModel(call.function.name, result) });
-          if (result.success && call.function.name !== 'run_command') {
-            toolResultCache.set(cacheKey, result);
-          }
-          callbacks.onToolCallResult(call.function.name, result, call);
           logToolResult(call.function.name, result.success, result.success ? undefined : result.error);
-          break; // 成功，退出重试循环
+          return [{
+            name: call.function.name, arguments: call.function.arguments,
+            result, status: result.success ? 'success' as const : 'error' as const, timestamp: Date.now()
+          }, result.success && call.function.name !== 'run_command' ? cacheKey : null];
         } catch (err) {
           lastError = (err as Error).message;
           if (retry < MAX_RETRIES) {
             logWarn(`工具重试 ${retry + 1}/${MAX_RETRIES}: ${call.function.name}`, lastError);
-            await new Promise(r => setTimeout(r, 500)); // 短暂延迟后重试
+            await new Promise(r => setTimeout(r, 500));
             continue;
           }
-          // 最终失败
           logError(`工具执行失败: ${call.function.name}`, lastError);
-          const record: ToolCallRecord = {
-            name: call.function.name,
-            arguments: call.function.arguments,
+          return [{
+            name: call.function.name, arguments: call.function.arguments,
             result: { success: false, error: lastError },
-            status: 'error',
-            timestamp: Date.now()
-          };
-          allToolRecords.push(record);
-          messages.push({ role: 'tool', tool_name: call.function.name, content: JSON.stringify({ success: false, error: lastError }) });
-          callbacks.onToolCallError(call.function.name, lastError, call);
+            status: 'error' as const, timestamp: Date.now()
+          }, null];
+        }
+      }
+      // unreachable
+      return [{
+        name: call.function.name, arguments: call.function.arguments,
+        result: { success: false, error: lastError }, status: 'error' as const, timestamp: Date.now()
+      }, null];
+    };
+
+    // 按批次执行：批次内并行，批次间串行
+    for (const batch of batches) {
+      if (abortController.signal.aborted) {
+        callbacks.onDone(content, allToolRecords.length > 0 ? allToolRecords : undefined, makeStats());
+        return;
+      }
+
+      const results = await Promise.all(batch.map(call => executeSingleTool(call)));
+
+      for (const [record, cacheKey] of results) {
+        allToolRecords.push(record);
+        messages.push({
+          role: 'tool', tool_name: record.name,
+          content: formatToolResultForModel(record.name, record.result!)
+        });
+        if (cacheKey) toolResultCache.set(cacheKey, record.result!);
+        if (record.status === 'success') {
+          callbacks.onToolCallResult(record.name, record.result!, batch.find(c => c.function.name === record.name)!);
+        } else if (record.status === 'cancelled') {
+          callbacks.onToolCallError(record.name, '用户取消', batch.find(c => c.function.name === record.name)!);
+        } else {
+          callbacks.onToolCallError(record.name, record.result?.error || '执行失败', batch.find(c => c.function.name === record.name)!);
         }
       }
     }

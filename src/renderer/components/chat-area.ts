@@ -368,6 +368,11 @@ export function appendSystemMessage(text: string, tempClass?: string): void {
   scrollToBottom();
 }
 
+/** v4.1: 清除所有消息 DOM 元素（用于 undo/compress 后强制重建） */
+export function clearMessagesDOM(): void {
+  messagesContainerEl.innerHTML = '';
+}
+
 export function clearMessages(): void {
   messagesContainerEl.innerHTML = '';
   currentPlaceholder = null;

@@ -6,7 +6,7 @@ import { state, KEYS } from '../state/state.js';
 import { detectLanguage, truncate, escapeHtml, formatSize } from '../utils/utils.js';
 import { getSelectedModel, isThinkEnabled, isVisionAvailable, isToolCallingSupported } from './model-bar.js';
 import {
-  renderMessages, appendAssistantPlaceholder, appendSystemMessage,
+  renderMessages, clearMessagesDOM, appendAssistantPlaceholder, appendSystemMessage,
   updateLastAssistantMessage, clearMessages, safeMarkdown, enableAutoScroll, updateTotalTokens
 } from './chat-area.js';
 import { showToast } from './toast.js';
@@ -222,6 +222,226 @@ function renderFilePreviews(): void {
   `).join('');
 }
 
+// ══════════════════════════════════════════════
+// v4.1 会话管理命令：/retry, /undo, /compress
+// ══════════════════════════════════════════════
+
+async function handleRetry(): Promise<void> {
+  const currentSession = state.get<ChatSession | null>(KEYS.CURRENT_SESSION);
+  if (!currentSession || currentSession.messages.length < 2) {
+    showToast('没有可重试的消息', 'warning');
+    return;
+  }
+  if (state.get<boolean>(KEYS.IS_STREAMING)) {
+    showToast('请先停止当前生成', 'warning');
+    return;
+  }
+
+  // 找到最后一条 user 消息
+  let lastUserIdx = -1;
+  for (let i = currentSession.messages.length - 1; i >= 0; i--) {
+    if (currentSession.messages[i].role === 'user') { lastUserIdx = i; break; }
+  }
+  if (lastUserIdx < 0) { showToast('没有找到用户消息', 'warning'); return; }
+
+  // 删除该 user 消息之后的所有消息（assistant 回复 + 可能的 tool 调用链）
+  const removedCount = currentSession.messages.length - lastUserIdx - 1;
+  const userMsg = currentSession.messages[lastUserIdx];
+  currentSession.messages = currentSession.messages.slice(0, lastUserIdx + 1);
+
+  logInfo(`重试: 删除了 ${removedCount} 条消息，重新发送`);
+
+  const db = state.get<ChatDB | null>(KEYS.DB);
+  if (db) await db.saveSession(currentSession);
+
+  clearMessagesDOM();
+  renderMessages();
+
+  // 重新触发 Agent Loop / 普通聊天
+  const toolCallingEnabled = state.get<boolean>('toolCallingEnabled', false);
+  const model = getSelectedModel() || currentSession.model;
+
+  appendAssistantPlaceholder();
+  state.set(KEYS.IS_STREAMING, true);
+  updateSendButton(true);
+
+  if (toolCallingEnabled) {
+    const historyMessages = currentSession.messages
+      .filter(m => m.role === 'user' || m.role === 'assistant')
+      .slice(0, -1) // 不包含刚保留的最后一条 user 消息
+      .slice(-20)
+      .map(m => {
+        let content = m.content || '';
+        if (m._fileContents?.length) {
+          const fileParts = m._fileContents.map(f => `📄 文件：\n\`\`\`${f.language}\n${f.content}\n\`\`\``);
+          content = content ? content + '\n\n---\n' + fileParts.join('\n\n---\n') : fileParts.join('\n\n---\n');
+        }
+        return { role: m.role, content, ...(m.images?.length && { images: m.images }) };
+      });
+
+    try {
+      await runAgentLoop(userMsg.content || '', userMsg.images || [], historyMessages, {
+        onThinking: (thinking) => updateLastAssistantMessage('', thinking, null),
+        onContent: (content) => updateLastAssistantMessage(content, null, null),
+        onToolCallStart: () => {},
+        onToolCallResult: () => {},
+        onToolCallError: () => {},
+        onConfirmTool: async (call) => showToolConfirm(call),
+        onDone: async (finalContent, toolRecords, loopStats) => {
+          const assistantMsg: ChatMessage = {
+            role: 'assistant', content: finalContent || '', timestamp: Date.now(),
+            ...(toolRecords?.length && { toolCalls: toolRecords }),
+            ...(loopStats?.eval_count && { eval_count: loopStats.eval_count }),
+            ...(loopStats?.total_duration && { total_duration: loopStats.total_duration }),
+          };
+          state.update(KEYS.CURRENT_SESSION, (s: any) => ({
+            ...s, messages: [...s.messages, assistantMsg], updatedAt: Date.now()
+          }));
+          updateLastAssistantMessage(finalContent, null, loopStats || null);
+          renderMessages();
+          await saveCurrentSession();
+          updateTotalTokens();
+        }
+      });
+    } catch (err) {
+      logError('重试失败', (err as Error).message);
+      appendSystemMessage(`❌ 重试失败: ${(err as Error).message}`);
+    }
+  } else {
+    // 普通聊天模式重试 - 直接调用 sendMessage
+    chatInputEl.value = userMsg.content || '';
+    state.set(KEYS.IS_STREAMING, false);
+    updateSendButton(false);
+    await sendMessage();
+    return;
+  }
+
+  state.set(KEYS.IS_STREAMING, false);
+  updateSendButton(false);
+}
+
+async function handleUndo(): Promise<void> {
+  const currentSession = state.get<ChatSession | null>(KEYS.CURRENT_SESSION);
+  if (!currentSession || currentSession.messages.length < 2) {
+    showToast('没有可撤销的消息', 'warning');
+    return;
+  }
+  if (state.get<boolean>(KEYS.IS_STREAMING)) {
+    showToast('请先停止当前生成', 'warning');
+    return;
+  }
+
+  // 从末尾删除：先删 assistant（含可能的 tool 消息），再删 user
+  const msgs = currentSession.messages;
+  let removeEnd = msgs.length;
+  let removeStart = msgs.length - 1;
+
+  // 找到最后一条 user 消息的位置
+  while (removeStart >= 0 && msgs[removeStart].role !== 'user') {
+    removeStart--;
+  }
+  if (removeStart < 0) { showToast('没有找到用户消息', 'warning'); return; }
+
+  // 删除 user 消息及之后的所有消息
+  const removedCount = removeEnd - removeStart;
+  currentSession.messages = msgs.slice(0, removeStart);
+
+  logInfo(`撤销: 删除了 ${removedCount} 条消息`);
+
+  const db = state.get<ChatDB | null>(KEYS.DB);
+  if (db) await db.saveSession(currentSession);
+
+  clearMessagesDOM();
+  renderMessages();
+  updateTotalTokens();
+  showToast('已撤销上一轮对话', 'success');
+}
+
+async function handleCompress(): Promise<void> {
+  const currentSession = state.get<ChatSession | null>(KEYS.CURRENT_SESSION);
+  if (!currentSession || currentSession.messages.length < 6) {
+    showToast('消息太少，无需压缩', 'warning');
+    return;
+  }
+  if (state.get<boolean>(KEYS.IS_STREAMING)) {
+    showToast('请先停止当前生成', 'warning');
+    return;
+  }
+
+  const api = state.get<OllamaAPI>(KEYS.API);
+  const model = getSelectedModel() || currentSession.model;
+  if (!api || !model) {
+    showToast('请先选择模型', 'warning');
+    return;
+  }
+
+  logInfo('上下文压缩: 开始');
+
+  // 取中间的消息做摘要（保留首尾各 2 条）
+  const messages = currentSession.messages;
+  const keepStart = 2;
+  const keepEnd = 2;
+  const head = messages.slice(0, keepStart);
+  const tail = messages.slice(-keepEnd);
+  const middle = messages.slice(keepStart, messages.length - keepEnd);
+
+  const conversationText = middle.map(m => {
+    const role = m.role === 'user' ? '用户' : 'AI';
+    let content = m.content || '';
+    // 截断过长内容
+    if (content.length > 500) content = content.slice(0, 500) + '...';
+    if (m.toolCalls?.length) content += ` [工具调用: ${m.toolCalls.map(t => t.name).join(', ')}]`;
+    return `${role}: ${content}`;
+  }).join('\n');
+
+  showToast('正在压缩上下文...', 'info');
+
+  try {
+    let summary = '';
+    await api.chatStream({
+      model,
+      messages: [{
+        role: 'user',
+        content: `请将以下对话摘要为一段简洁的上下文总结。保留关键信息：讨论的主题、得出的结论、用户的偏好、未完成的任务。用中文输出，不超过 500 字。\n\n对话记录：\n${conversationText}`
+      }],
+      stream: true,
+      think: false,
+      options: { num_ctx: 8192, temperature: 0.3 }
+    } as any, (chunk: OllamaStreamChunk) => {
+      if (chunk.message?.content) {
+        summary += chunk.message.content;
+      }
+    });
+
+    if (!summary.trim()) {
+      showToast('压缩失败：模型未返回内容', 'error');
+      return;
+    }
+
+    // 构建压缩后的消息列表
+    const summaryMsg: ChatMessage = {
+      role: 'system',
+      content: `📋 以下是对之前对话的摘要（已压缩 ${middle.length} 条消息）：\n\n${summary}`,
+      timestamp: Date.now()
+    };
+
+    currentSession.messages = [...head, summaryMsg, ...tail];
+
+    const db = state.get<ChatDB | null>(KEYS.DB);
+    if (db) await db.saveSession(currentSession);
+
+    clearMessagesDOM();
+    renderMessages();
+    updateTotalTokens();
+
+    logInfo(`上下文压缩完成: ${middle.length} 条 → 1 条摘要`);
+    showToast(`已压缩 ${middle.length} 条消息为摘要`, 'success');
+  } catch (err) {
+    logError('上下文压缩失败', (err as Error).message);
+    showToast(`压缩失败: ${(err as Error).message}`, 'error');
+  }
+}
+
 function updateSendButton(streaming: boolean): void {
   if (streaming) {
     btnSendEl.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>`;
@@ -266,6 +486,24 @@ function buildApiMessages(messages: ChatMessage[]): Array<{ role: string; conten
 
 export async function sendMessage(): Promise<void> {
   const text = chatInputEl.value.trim();
+
+  // ── v4.1 会话管理命令 ──
+  if (text === '/retry') {
+    chatInputEl.value = '';
+    await handleRetry();
+    return;
+  }
+  if (text === '/undo') {
+    chatInputEl.value = '';
+    await handleUndo();
+    return;
+  }
+  if (text === '/compress') {
+    chatInputEl.value = '';
+    await handleCompress();
+    return;
+  }
+
   if (!text && pendingImages.length === 0 && pendingFiles.length === 0) return;
   if (state.get<boolean>(KEYS.IS_STREAMING)) return;
 
