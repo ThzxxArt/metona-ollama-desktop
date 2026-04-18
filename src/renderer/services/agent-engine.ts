@@ -87,6 +87,89 @@ const TOOL_USAGE_GUIDE = `【工具使用规则】
 9. 记忆工具：你可以使用 memory_search 搜索过去的记忆，使用 memory_add 添加新的重要记忆。
 10. 会话工具：你可以使用 session_list 列出历史会话，使用 session_read 读取历史会话内容。`;
 
+/** 工具名白名单：用于文本解析兜底时过滤非法工具名 */
+const VALID_TOOL_NAMES = new Set([
+  'read_file', 'write_file', 'list_directory', 'search_files', 'create_directory',
+  'delete_file', 'run_command', 'move_file', 'copy_file', 'web_fetch', 'web_search',
+  'append_file', 'edit_file', 'get_file_info', 'tree', 'download_file', 'diff_files',
+  'replace_in_files', 'read_multiple_files', 'git', 'compress',
+  'memory_search', 'memory_add', 'session_list', 'session_read'
+]);
+
+/**
+ * 文本解析兜底：当模型没有通过 tool_calls 字段返回工具调用，
+ * 而是在文本中写了 "Action: xxx" / "Action Input: {...}" 时，
+ * 从文本中提取工具调用。
+ */
+function parseToolCallsFromText(content: string): ToolCall[] {
+  const calls: ToolCall[] = [];
+
+  // 匹配模式1: **Action:** tool_name  **Action Input:** {json}
+  // 匹配模式2: Action: tool_name  Action Input: {json}
+  // 同时支持 Action 和 Action Input 写在同一段或多行
+  const actionRegex = /\*?\*?Action:?\*?\*?\s*([\w]+)\s*[\r\n]+\s*\*?\*?Action\s*Input:?\*?\*?\s*(\{[\s\S]*?\})/gi;
+
+  let match;
+  while ((match = actionRegex.exec(content)) !== null) {
+    const toolName = match[1].trim();
+    const argsStr = match[2].trim();
+
+    if (!VALID_TOOL_NAMES.has(toolName)) continue;
+
+    try {
+      // 清理 JSON：去除可能的 markdown 代码块包裹
+      let cleaned = argsStr.replace(/```json?\s*/g, '').replace(/```/g, '').trim();
+      const args = JSON.parse(cleaned);
+      calls.push({
+        type: 'function',
+        function: { name: toolName, arguments: args }
+      });
+    } catch {
+      // JSON 解析失败，尝试修复常见问题
+      try {
+        // 处理单引号、尾逗号等
+        let fixed = argsStr
+          .replace(/'/g, '"')
+          .replace(/,\s*}/g, '}')
+          .replace(/,\s*]/g, ']')
+          .replace(/```json?\s*/g, '')
+          .replace(/```/g, '')
+          .trim();
+        const args = JSON.parse(fixed);
+        calls.push({
+          type: 'function',
+          function: { name: toolName, arguments: args }
+        });
+      } catch {
+        logWarn(`文本解析兜底: 工具 ${toolName} 的参数 JSON 解析失败`, argsStr.slice(0, 100));
+      }
+    }
+  }
+
+  // 备选模式：Action 和 Action Input 写在一行或用不同分隔
+  if (calls.length === 0) {
+    const singleLineRegex = /Action:\s*(\w+)\s*.*?Action\s*Input:\s*(\{[^}]+\})/gi;
+    while ((match = singleLineRegex.exec(content)) !== null) {
+      const toolName = match[1].trim();
+      const argsStr = match[2].trim();
+      if (!VALID_TOOL_NAMES.has(toolName)) continue;
+      try {
+        const args = JSON.parse(argsStr);
+        calls.push({
+          type: 'function',
+          function: { name: toolName, arguments: args }
+        });
+      } catch { /* skip */ }
+    }
+  }
+
+  if (calls.length > 0) {
+    logInfo(`文本解析兜底: 从回复中提取到 ${calls.length} 个工具调用`, calls.map(c => c.function.name).join(', '));
+  }
+
+  return calls;
+}
+
 /** 工具调用缓存：key = toolName + JSON(args)，用于避免重复调用 */
 const toolResultCache = new Map<string, ToolResult>();
 
@@ -339,6 +422,14 @@ export async function runAgentLoop(
     messages.push(assistantMsg);
 
     logModelResponse(content.length, toolCalls.length);
+
+    // 文本解析兜底：模型没通过 tool_calls 返回但文本中写了 Action
+    if (toolCalls.length === 0 && useTools) {
+      const parsedCalls = parseToolCallsFromText(content);
+      if (parsedCalls.length > 0) {
+        toolCalls.push(...parsedCalls);
+      }
+    }
 
     // 检查是否是 Final Answer（没有工具调用且包含 Final Answer）
     const isFinalAnswer = content.includes('Final Answer:') || content.includes('最终答案：');
