@@ -184,6 +184,9 @@ electron-builder 会自动处理所有依赖下载（Electron、NSIS、winCodeSi
 - 🔧 优化 TOOL_USAGE_GUIDE：新增搜索 fallback 规则（fetch 失败时直接用搜索结果回答）、禁止抓取 SPA 页面、搜索查询进化指导
 - 🔧 更新 AGENT_SYSTEM_PROMPT：工具数 25 → 34，新增 fetch 失败 fallback 规则
 - 📝 版本号更新至 5.0.1（package.json / package-lock.json / index.html / README.md / CHANGELOG.md / BUILD.md / DEVELOPMENT.md）
+- ✅ `Metona Ollama Setup 5.0.1.exe`（82MB）
+- ✅ Gitee Release v5.0.1-desktop（ID: 620560）
+- Wine 9.0 已安装，npm 编译无错误，构建一次通过
 
 ### v5.0.0（2026-04-18） — metona-ollama-desktop 仓库
 
