@@ -367,6 +367,10 @@ export async function runAgentLoop(
   // 检查模型是否支持 Tool Calling
   const modelSupportsTools = state.get<boolean>('modelSupportsTools', false);
 
+  // 提前获取工具列表，供后续系统 prompt 构建使用
+  const tools = getEnabledToolDefinitions();
+  const useTools = tools.length > 0;
+
   const messages: OllamaMessage[] = [];
   let systemPromptParts: string[] = [];
 
@@ -448,9 +452,6 @@ export async function runAgentLoop(
     ...(images?.length && { images })
   };
   messages.push(userMsg);
-
-  const tools = getEnabledToolDefinitions();
-  const useTools = tools.length > 0;
 
   logInfo(`ReAct Agent Loop 启动: ${model}`, `工具: ${useTools ? '开启' : '关闭'}, 记忆: ${isMemoryEnabled() ? '开启' : '关闭'}`);
 

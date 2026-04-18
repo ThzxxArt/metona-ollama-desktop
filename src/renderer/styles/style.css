@@ -30,6 +30,9 @@
     --accent-hover: #D4623A;
     --accent-subtle: rgba(232, 115, 74, 0.08);
     --accent-subtle-hover: rgba(232, 115, 74, 0.14);
+    --primary: #E8734A;
+    --primary-bg: rgba(232, 115, 74, 0.08);
+    --bg-hover: #FFF8F0;
 
     --critical: #D94F5C;
     --critical-bg: rgba(217, 79, 92, 0.08);
