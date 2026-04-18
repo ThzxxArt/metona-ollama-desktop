@@ -80,9 +80,20 @@ function summarizeResult(toolName: string, result: Record<string, unknown>): str
 }
 
 export async function setupIPC(): Promise<void> {
-  ipcMain.handle('dialog:openFile', async (_, options?: { filters?: Array<{ name: string; extensions: string[] }> }) => {
+  ipcMain.handle('dialog:openFile', async (_, options?: { filters?: Array<{ name: string; extensions: string[] }>; properties?: string[]; multiple?: boolean }) => {
+    const dialogProperties: Array<'openFile' | 'multiSelections' | 'openDirectory'> = ['openFile'];
+    if (options?.multiple !== false && !options?.properties?.includes('openFile')) {
+      dialogProperties.push('multiSelections');
+    }
+    if (options?.properties) {
+      for (const p of options.properties) {
+        if (p === 'multiSelections' && !dialogProperties.includes('multiSelections')) {
+          dialogProperties.push('multiSelections');
+        }
+      }
+    }
     const result = await dialog.showOpenDialog(mainWindow!, {
-      properties: ['openFile', 'multiSelections'],
+      properties: dialogProperties,
       filters: options?.filters || [{ name: '所有文件', extensions: ['*'] }]
     });
     if (result.canceled) return null;

@@ -8,7 +8,7 @@ contextBridge.exposeInMainWorld('metonaDesktop', {
   isDesktop: true,
   info: () => ipcRenderer.invoke('app:info'),
   dialog: {
-    openFile: (filters?: unknown) => ipcRenderer.invoke('dialog:openFile', { filters }),
+    openFile: (options?: unknown) => ipcRenderer.invoke('dialog:openFile', options),
     saveFile: (options?: unknown) => ipcRenderer.invoke('dialog:saveFile', options)
   },
   fs: {

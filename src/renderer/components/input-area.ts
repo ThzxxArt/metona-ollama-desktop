@@ -90,7 +90,9 @@ export function initInputArea(): void {
     const bridge = getBridge();
     if (!bridge) return;
     const paths = await bridge.dialog.openFile({
-      filters: [{ name: '图片', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'] }]
+      filters: [{ name: '图片', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'] }],
+      properties: ['openFile'],
+      multiple: false
     });
     if (!paths || paths.length === 0) return;
     await handleImagePaths(paths);
