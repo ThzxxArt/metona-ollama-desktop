@@ -24,7 +24,7 @@ import { initToolsModal, closeToolsModal } from './components/tools-modal.js';
 import { initMemoryManager } from './services/memory-manager.js';
 import { restoreHeartbeat } from './components/settings-modal.js';
 import { restoreCronTasks } from './services/cron-manager.js';
-import { setToolEnabled, setRunCommandMode } from './services/tool-registry.js';
+import { setToolEnabled, setRunCommandMode, refreshMCPTools } from './services/tool-registry.js';
 import { initToolConfirmModal } from './components/tool-confirm-modal.js';
 import { initWorkspacePanel } from './components/workspace-panel.js';
 import { initLogPanel, addLog } from './services/log-service.js';
@@ -360,6 +360,9 @@ async function init(): Promise<void> {
     setRunCommandMode(runCommandMode);
     const toggleTC = document.querySelector<HTMLInputElement>('#toggleToolCalling');
     if (toggleTC) toggleTC.checked = toolCallingEnabled;
+
+    // ── MCP 工具注册 ──
+    await refreshMCPTools();
 
     // ── Agent 记忆设置 ──
     const memoryEnabled = await db.getSetting('memoryEnabled', true);

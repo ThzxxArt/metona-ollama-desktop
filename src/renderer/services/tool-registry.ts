@@ -5,6 +5,7 @@
 
 import type { ToolDefinition, ToolResult } from '../types.js';
 import { logToolStart, logToolResult, logError, logInfo } from './log-service.js';
+import { getMCPToolDefinitions } from './mcp-client.js';
 
 export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
@@ -576,7 +577,24 @@ export function isToolEnabled(toolName: string): boolean {
 }
 
 export function getEnabledToolDefinitions(): ToolDefinition[] {
-  return TOOL_DEFINITIONS.filter(def => enabledTools.has(def.function.name));
+  const builtIn = TOOL_DEFINITIONS.filter(def => enabledTools.has(def.function.name));
+  return [...builtIn, ..._mcpToolCache];
+}
+
+/** MCP 工具缓存 */
+let _mcpToolCache: ToolDefinition[] = [];
+
+/** 刷新 MCP 工具缓存（在 MCP 服务器配置变更时调用） */
+export async function refreshMCPTools(): Promise<void> {
+  try {
+    _mcpToolCache = await getMCPToolDefinitions();
+    if (_mcpToolCache.length > 0) {
+      logInfo(`MCP 工具已注册: ${_mcpToolCache.length} 个`, _mcpToolCache.map(t => t.function.name).join(', '));
+    }
+  } catch (err) {
+    logError('MCP 工具刷新失败', (err as Error).message);
+    _mcpToolCache = [];
+  }
 }
 
 export async function executeTool(toolName: string, args: Record<string, unknown>): Promise<ToolResult> {

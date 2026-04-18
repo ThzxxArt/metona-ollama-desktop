@@ -18,6 +18,7 @@ import { showToast } from '../components/toast.js';
 import { logInfo, logWarn, logError, logToolStart, logToolResult, logThink, logAgentLoop, logModelResponse } from './log-service.js';
 import { getWorkspaceDirPath } from '../components/workspace-panel.js';
 import { generateId } from '../utils/utils.js';
+import { buildContext, estimateTokens } from './context-manager.js';
 import type {
   OllamaMessage,
   OllamaStreamChunk,
@@ -436,7 +437,7 @@ export async function runAgentLoop(
 
   messages.push({ role: 'system', content: fullSystemPrompt });
 
-  // 添加历史消息（使用 context-manager 构建）
+  // 添加历史消息
   for (const msg of historyMessages) {
     messages.push({
       role: msg.role as 'user' | 'assistant',
@@ -453,7 +454,13 @@ export async function runAgentLoop(
   };
   messages.push(userMsg);
 
-  logInfo(`ReAct Agent Loop 启动: ${model}`, `工具: ${useTools ? '开启' : '关闭'}, 记忆: ${isMemoryEnabled() ? '开启' : '关闭'}`);
+  // 上下文窗口管理：滑动窗口 + 摘要压缩 + token 裁剪
+  const numCtx = state.get<number>(KEYS.NUM_CTX, 24576);
+  const contextResult = buildContext(messages, { maxTokens: numCtx, windowSize: 20 });
+  messages.length = 0;
+  messages.push(...contextResult);
+
+  logInfo(`ReAct Agent Loop 启动: ${model}`, `工具: ${useTools ? '开启' : '关闭'}, 记忆: ${isMemoryEnabled() ? '开启' : '关闭'}, tokens≈${estimateTokens(messages.map(m => m.content || '').join(''))}`);
 
   let loopCount = 0;
   const allToolRecords: ToolCallRecord[] = [];
