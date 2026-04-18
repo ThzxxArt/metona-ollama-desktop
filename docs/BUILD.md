@@ -14,7 +14,7 @@
 # 1. 克隆并安装依赖
 git clone https://gitee.com/thzxx/metona-ollama-desktop.git
 cd metona-ollama-desktop
-git checkout metona-ollama-desktop-v5.0.0
+git checkout metona-ollama-desktop-v5.0.1
 npm config set registry https://registry.npmmirror.com
 npm install
 
@@ -175,6 +175,15 @@ ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm run dist
 electron-builder 会自动处理所有依赖下载（Electron、NSIS、winCodeSign），虽然首次较慢（~5分钟），但无需手动管理缓存。
 
 ## 构建日志
+
+### v5.0.1（2026-04-18） — metona-ollama-desktop 仓库
+
+- 🔧 修复 DuckDuckGo 搜索超时过长（15s → 8s），添加 Google 作为第三搜索引擎兜底
+- 🔧 修复 web_fetch User-Agent（MetonaOllama/1.0 → Chrome UA），增加超时至 30 秒
+- 🔧 修复 Agent Loop 跨轮去重误杀失败工具的重试（仅对成功的调用去重，失败的允许重试）
+- 🔧 优化 TOOL_USAGE_GUIDE：新增搜索 fallback 规则（fetch 失败时直接用搜索结果回答）、禁止抓取 SPA 页面、搜索查询进化指导
+- 🔧 更新 AGENT_SYSTEM_PROMPT：工具数 25 → 34，新增 fetch 失败 fallback 规则
+- 📝 版本号更新至 5.0.1（package.json / package-lock.json / index.html / README.md / CHANGELOG.md / BUILD.md / DEVELOPMENT.md）
 
 ### v5.0.0（2026-04-18） — metona-ollama-desktop 仓库
 

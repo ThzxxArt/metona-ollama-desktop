@@ -37,22 +37,23 @@ const MAX_RETRIES = 2;              // 工具错误自动重试次数
 /** v4.1: 工具并行执行 — 依赖检测用 */
 const TOOLS_WITH_DATA_DEPS = new Set(['web_fetch', 'edit_file', 'append_file', 'move_file', 'delete_file']);
 
-const AGENT_SYSTEM_PROMPT = `你是一个具备工具调用能力的 AI 助手。你有 25 个工具可以调用，包括文件操作、联网搜索、网页抓取、命令执行、记忆管理等。
+const AGENT_SYSTEM_PROMPT = `你是一个具备工具调用能力的 AI 助手。你有 34 个工具可以调用，包括文件操作、联网搜索、网页抓取、命令执行、浏览器控制、记忆管理、MCP 工具等。
 
 ## 核心规则
 
 1. 直接调用工具，不要写"我来帮你搜索"然后结束。有工具就调用，调用完根据结果继续下一步。
-2. 多步任务必须逐步完成：搜到结果 → 抓取详情 → 给出答案。不要在中间步骤停下。
+2. 多步任务必须逐步完成：搜到结果 → 给出答案。如果需要详情再抓取，但抓取失败时直接用搜索结果回答，不要卡在抓取上。
 3. 需要最新信息（版本号、新闻、日期等）时，必须先用工具获取，不要凭记忆猜测。
-4. 工具出错时分析原因并换方法重试，最多重试 2 次。
+4. 工具出错时分析原因并换方法重试，最多重试 2 次。同一 URL 连续失败 2 次后不要再尝试，换其他方式。
 5. 不要重复调用相同参数的同一工具。
+6. web_search 结果中的标题、URL、snippet 已经包含关键信息，不要忽视它们。
 
 ## 多工具协同
 
 你可以在一轮回复中调用多个工具（并行调用），也可以在一个工具的结果基础上继续调用下一个工具（链式调用）。这是正常且鼓励的工作方式。
 
 常见链式调用模式：
-- web_search → web_fetch（搜索 → 抓取详情）
+- web_search → web_fetch（搜索 → 抓取详情，但 web_fetch 失败时直接用搜索结果回答）
 - list_directory → read_file（列出目录 → 读取文件）
 - search_files → edit_file（搜索 → 修改）
 - run_command → read_file（执行命令 → 读取输出文件）
@@ -63,13 +64,16 @@ const AGENT_SYSTEM_PROMPT = `你是一个具备工具调用能力的 AI 助手�
 
 const TOOL_USAGE_GUIDE = `【工具链规则（强制执行）】
 
-1. 搜索后必须抓取：web_search 搜到结果后，必须选择最相关的 1-3 个 URL，用 web_fetch 抓取详细内容。只看搜索摘要就回答是不够的。这是强制规则。
-2. 先搜索再回答：需要最新信息时，先 search → 再 fetch → 再回答。不要凭记忆猜测版本号、日期、价格等实时数据。
-3. 文件路径上下文：用户说"修改这个文件"等模糊指代时，从最近的工具调用结果中提取实际路径。不要猜测。
-4. 不要重复调用：已经成功调用过的工具+参数组合不要再调用。
-5. 记忆工具：可以用 memory_search 搜索过去记忆，用 memory_add 添加重要信息。
-6. 会话工具：可以用 session_list 列出历史会话，用 session_read 读取会话内容。
-7. 并行调用：当多个工具调用互相独立时，可以在同一次回复中同时调用它们。`;
+1. 搜索后优先抓取：web_search 搜到结果后，选择最相关的 URL 用 web_fetch 抓取详情。
+2. 抓取失败时直接用搜索结果：如果 web_fetch 失败（超时、网络错误等），不要反复重试同一个 URL。直接利用 web_search 返回的摘要和标题回答用户问题。搜索结果的 snippet 已经包含了足够的信息。
+3. 不要抓取 SPA 页面：GitHub releases、npm 包页面等是 SPA（单页应用），纯 HTTP 抓取拿不到有效内容。直接从搜索结果中提取版本号等信息即可。
+4. 搜索查询要进化：如果第一次搜索结果不理想，换更精确的关键词再搜，不要重复相同的查询。
+5. 先搜索再回答：需要最新信息（版本号、新闻、日期等）时，先 search → 再回答。不要凭记忆猜测。
+6. 文件路径上下文：用户说"修改这个文件"等模糊指代时，从最近的工具调用结果中提取实际路径。不要猜测。
+7. 不要重复调用：已经成功调用过的工具+参数组合不要再调用。
+8. 记忆工具：可以用 memory_search 搜索过去记忆，用 memory_add 添加重要信息。
+9. 会话工具：可以用 session_list 列出历史会话，用 session_read 读取会话内容。
+10. 并行调用：当多个工具调用互相独立时，可以在同一次回复中同时调用它们。`;
 
 /** 工具名白名单：用于文本解析兜底时过滤非法工具名 */
 const VALID_TOOL_NAMES = new Set([
@@ -467,7 +471,8 @@ export async function runAgentLoop(
   const loopStartTime = Date.now();
   let content = '';
   let totalEvalCount = 0;
-  let prevLoopToolKeys: string[] = [];
+  /** 跨轮去重：仅跟踪成功的工具调用（失败的允许重试） */
+  let prevLoopSuccessKeys: string[] = [];
   /** 每轮工具调用计数（用于去重） */
   let allCallsThisLoop: ToolCall[] = [];
 
@@ -645,16 +650,22 @@ export async function runAgentLoop(
       return;
     }
 
-    // 跨轮次完整重复检测
+    // 跨轮次重复检测：仅当连续两轮调用完全相同且全部成功时才终止（失败的允许重试）
     const currentLoopKeys = toolCalls.map(c => getToolCacheKey(c.function.name, c.function.arguments)).sort();
     const currentKeysStr = JSON.stringify(currentLoopKeys);
-    const prevKeysStr = JSON.stringify([...prevLoopToolKeys].sort());
+    const prevKeysStr = JSON.stringify([...prevLoopSuccessKeys].sort());
     if (currentKeysStr === prevKeysStr && currentLoopKeys.length > 0) {
-      logWarn('检测到连续两轮工具调用完全相同，终止 ReAct Loop', currentKeysStr.slice(0, 200));
-      callbacks.onDone(content || '（检测到重复工具调用，已自动停止）', allToolRecords, makeStats());
-      return;
+      // 检查是否有上一轮失败的工具——如果有，不终止，允许重试
+      const hasFailedInPrev = allToolRecords
+        .filter(r => prevLoopSuccessKeys.includes(getToolCacheKey(r.name, r.arguments)))
+        .some(r => r.status !== 'success');
+      if (!hasFailedInPrev) {
+        logWarn('检测到连续两轮工具调用完全相同且全部成功，终止 ReAct Loop', currentKeysStr.slice(0, 200));
+        callbacks.onDone(content || '（检测到重复工具调用，已自动停止）', allToolRecords, makeStats());
+        return;
+      }
+      logInfo('检测到重复调用但上一轮有失败，允许重试');
     }
-    prevLoopToolKeys = currentLoopKeys;
 
     // 记录 ReAct 轨迹
     const traceStep = {
@@ -810,6 +821,11 @@ export async function runAgentLoop(
         }
       }
     }
+
+    // 更新跨轮去重：仅跟踪本轮成功的工具调用
+    prevLoopSuccessKeys = allToolRecords
+      .filter(r => r.status === 'success')
+      .map(r => getToolCacheKey(r.name, r.arguments));
 
     // 保存本轮轨迹
     traceStep.observation = allToolRecords.slice(-toolCalls.length).map(r =>

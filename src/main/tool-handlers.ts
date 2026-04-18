@@ -437,8 +437,12 @@ export async function handleWebFetch(params: { url: string; max_chars?: number; 
 
     sendLog('info', `🌐 web_fetch`, `${url} (${maxChars > 0 ? maxChars + ' chars' : '完整内容'})`);
     const resp = await fetch(url, {
-      headers: { 'User-Agent': 'MetonaOllama/1.0' },
-      signal: AbortSignal.timeout(15000)
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'
+      },
+      signal: AbortSignal.timeout(30000)
     });
 
     if (!resp.ok) {
@@ -499,18 +503,20 @@ export async function handleWebSearch(params: { query: string; max_results?: num
 
     sendLog('info', `🔍 web_search`, `"${query}" (${maxResults} 条)`);
 
-    // 1. 尝试 DuckDuckGo HTML 搜索
+    const searchHeaders = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      'Accept': 'text/html',
+      'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'
+    };
+
+    // 1. 尝试 DuckDuckGo HTML 搜索（8 秒超时，国内环境通常不可用）
     let results: Array<{ title: string; url: string; snippet: string }> = [];
 
     try {
       const ddgUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
       const resp = await fetch(ddgUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Accept': 'text/html',
-          'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'
-        },
-        signal: AbortSignal.timeout(15000)
+        headers: searchHeaders,
+        signal: AbortSignal.timeout(8000)
       });
 
       if (resp.ok) {
@@ -518,19 +524,15 @@ export async function handleWebSearch(params: { query: string; max_results?: num
         results = parseDDGResults(html, maxResults);
       }
     } catch (e) {
-      sendLog('warn', `🔍 DuckDuckGo 搜索失败`, (e as Error).message);
+      sendLog('warn', `🔍 DuckDuckGo 搜索失败（8s 超时）`, (e as Error).message);
     }
 
-    // 2. 如果 DuckDuckGo 无结果，尝试备用方案
+    // 2. DuckDuckGo 无结果，尝试 Bing
     if (results.length === 0) {
       try {
         const bingUrl = `https://www.bing.com/search?q=${encodeURIComponent(query)}&count=${maxResults}`;
         const resp = await fetch(bingUrl, {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html',
-            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'
-          },
+          headers: searchHeaders,
           signal: AbortSignal.timeout(15000)
         });
 
@@ -540,6 +542,24 @@ export async function handleWebSearch(params: { query: string; max_results?: num
         }
       } catch (e) {
         sendLog('warn', `🔍 Bing 搜索失败`, (e as Error).message);
+      }
+    }
+
+    // 3. Bing 也失败，尝试 Google（通过 google.com/search）
+    if (results.length === 0) {
+      try {
+        const googleUrl = `https://www.google.com/search?q=${encodeURIComponent(query)}&num=${maxResults}`;
+        const resp = await fetch(googleUrl, {
+          headers: searchHeaders,
+          signal: AbortSignal.timeout(15000)
+        });
+
+        if (resp.ok) {
+          const html = await resp.text();
+          results = parseGoogleResults(html, maxResults);
+        }
+      } catch (e) {
+        sendLog('warn', `🔍 Google 搜索失败`, (e as Error).message);
       }
     }
 
@@ -615,6 +635,38 @@ function parseBingResults(html: string, maxResults: number): Array<{ title: stri
       if (title && url.startsWith('http')) {
         results.push({ title, url, snippet });
       }
+    }
+  }
+
+  return results;
+}
+
+/** 解析 Google HTML 搜索结果 */
+function parseGoogleResults(html: string, maxResults: number): Array<{ title: string; url: string; snippet: string }> {
+  const results: Array<{ title: string; url: string; snippet: string }> = [];
+
+  // Google 结果块：<div class="g">...</div>，内含 <a href="..."><h3>title</h3></a> 和摘要
+  const blockRegex = /<div class="g"[^>]*>([\s\S]*?)(?=<div class="g"|<\/div>\s*<\/div>\s*<\/div>)/gi;
+  let blockMatch;
+
+  while ((blockMatch = blockRegex.exec(html)) !== null && results.length < maxResults) {
+    const block = blockMatch[1];
+
+    const titleMatch = block.match(/<a[^>]*href="(https?:\/\/[^"]*)"[^>]*>[\s\S]*?<h3[^>]*>([\s\S]*?)<\/h3>/);
+    if (!titleMatch) continue;
+
+    const url = titleMatch[1].trim();
+    const title = decodeHTML(titleMatch[2].replace(/<[^>]+>/g, '').trim());
+
+    // 摘要：尝试多种模式
+    const snippetMatch =
+      block.match(/<div[^>]*data-sncf="[^"]*"[^>]*>([\s\S]*?)<\/div>/) ||
+      block.match(/<span[^>]*class="[^"]*st[^"]*"[^>]*>([\s\S]*?)<\/span>/) ||
+      block.match(/<div[^>]*class="[^"]*VwiC3b[^"]*"[^>]*>([\s\S]*?)<\/div>/);
+    const snippet = snippetMatch ? decodeHTML(snippetMatch[1].replace(/<[^>]+>/g, '').trim()) : '';
+
+    if (title && url.startsWith('http') && !url.includes('google.com')) {
+      results.push({ title, url, snippet });
     }
   }
 

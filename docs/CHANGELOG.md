@@ -3,13 +3,40 @@
 ## 分支结构
 
 **桌面版主线**（`master`）：
-- `metona-ollama-desktop-v1.1` → `metona-ollama-desktop-v2` → `metona-ollama-desktop-v3.0.0` → `metona-ollama-desktop-v3.1.0` → `metona-ollama-desktop-v3.1.1` → `metona-ollama-desktop-v3.2.0` → `metona-ollama-desktop-v3.2.1` → `metona-ollama-desktop-v3.2.2` → `metona-ollama-desktop-v3.2.3` → `metona-ollama-desktop-v3.2.4` → `metona-ollama-desktop-v3.2.5` → `metona-ollama-desktop-v3.2.6` → `metona-ollama-desktop-v3.3.0` → `metona-ollama-desktop-v3.3.1` → `metona-ollama-desktop-v3.3.2` → `metona-ollama-desktop-v3.3.3` → `metona-ollama-desktop-v3.3.4` → `metona-ollama-desktop-v4.0.0` → `metona-ollama-desktop-v5.0.0`（当前发布分支）
+- `metona-ollama-desktop-v3.2.6` → `metona-ollama-desktop-v3.3.4` → `metona-ollama-desktop-v4.0.0` → `metona-ollama-desktop-v5.0.0` → `metona-ollama-desktop-v5.0.1`（当前发布分支）
 
 **Web 版历史**已独立为 [metona-ollama-web](https://gitee.com/thzxx/metona-ollama-web) 仓库（v1.1.0 ~ v4.0.3）。
 
 ---
 
 ## 桌面版（Desktop）
+
+### Desktop v5.0.1 — 搜索引擎优化 & Agent 去重修复
+
+- 🔧 **修复 DuckDuckGo 搜索超时过长**
+  - 超时从 15 秒降至 8 秒（国内环境 DuckDuckGo 通常不可达，减少等待）
+  - 添加 Google 作为第三搜索引擎兜底（DuckDuckGo → Bing → Google）
+  - 新增 `parseGoogleResults()` 解析函数
+  - 搜索 User-Agent 统一更新为 Chrome 131
+- 🔧 **修复 web_fetch 无法抓取部分网站**
+  - User-Agent 从 `MetonaOllama/1.0` 改为 Chrome 131 UA（部分网站屏蔽非浏览器 UA）
+  - 超时从 15 秒增加至 30 秒（大页面加载更慢）
+  - 新增 `Accept` 和 `Accept-Language` 请求头
+- 🔧 **修复 Agent Loop 跨轮去重误杀失败工具的重试**
+  - 原逻辑：连续两轮工具调用（工具名+参数）完全相同即终止
+  - 问题：上一轮 `web_fetch` 超时失败，下一轮同样调用是合理重试，却被当作重复终止
+  - 修复：仅对成功的工具调用做去重，失败的允许重试
+  - 新增 `prevLoopSuccessKeys` 替代 `prevLoopToolKeys`
+- 🔧 **优化 TOOL_USAGE_GUIDE（新增 3 条规则）**
+  - 新增规则 2：web_fetch 失败时直接用 web_search 摘要回答，不要反复重试同一 URL
+  - 新增规则 3：禁止抓取 SPA 页面（GitHub releases、npm 等），直接从搜索结果提取信息
+  - 新增规则 4：搜索查询要进化，不要重复相同的查询
+- 🔧 **更新 AGENT_SYSTEM_PROMPT**
+  - 工具数量描述从 25 → 34
+  - 核心规则新增：web_search 结果中的 snippet 已包含关键信息，不要忽视
+  - 核心规则细化：同一 URL 连续失败 2 次后不要再尝试
+  - 多工具协同示例新增：web_fetch 失败时直接用搜索结果回答
+- 📝 **版本号更新至 5.0.1**（7 个文件同步更新）
 
 ### Desktop v5.0.0 — 浏览器控制 & MCP & 技能系统 & 全面重构
 
