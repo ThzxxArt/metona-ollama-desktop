@@ -32,7 +32,7 @@ function getAgentBrowser(): BrowserWindow {
 export async function browserOpen(url: string): Promise<{ success: boolean; title?: string; url?: string; error?: string }> {
   try {
     const win = getAgentBrowser();
-    await win.loadURL(url, { timeout: 15000 });
+    await win.loadURL(url);
     await new Promise(r => setTimeout(r, 1000)); // 等待页面渲染
     return {
       success: true,

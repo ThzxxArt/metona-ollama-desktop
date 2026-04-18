@@ -183,7 +183,7 @@ export async function setupIPC(): Promise<void> {
         case 'browser_extract':    result = await browserExtract(); break;
         case 'browser_click':      result = await browserClick(args.selector as string); break;
         case 'browser_type':       result = await browserType(args.selector as string, args.text as string); break;
-        case 'browser_scroll':     result = await browserScroll((args.direction as string) || 'down'); break;
+        case 'browser_scroll':     result = await browserScroll((args.direction as 'down' | 'up' | 'top' | 'bottom') || 'down'); break;
         case 'browser_close':      browserClose(); result = { success: true }; break;
         default:                   return { success: false, error: `未知工具: ${toolName}` };
       }
