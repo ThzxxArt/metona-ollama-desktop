@@ -641,11 +641,14 @@ export async function handleAppendFile(params: { path: string; content: string; 
     if (!allowed.ok) return { success: false, error: allowed.reason };
 
     const prefix = params.newline !== false ? '\n' : '';
+    sendLog('info', `➕ append_file`, `${filePath} (${params.content.length} chars)`);
     await fs.appendFile(filePath, prefix + params.content, 'utf-8');
 
     const stat = await fs.stat(filePath);
+    sendLog('success', `➕ append_file 完成`, `${stat.size}B`);
     return { success: true, path: filePath, newSize: stat.size };
   } catch (err) {
+    sendLog('error', `➕ append_file 失败`, (err as Error).message);
     return { success: false, error: (err as Error).message };
   }
 }
@@ -674,9 +677,12 @@ export async function handleEditFile(params: { path: string; old_text: string; n
       newContent = content.replace(params.old_text, params.new_text);
     }
 
+    sendLog('info', `✂️ edit_file`, `${filePath} (${replaceCount} 处替换)`);
     await fs.writeFile(filePath, newContent, 'utf-8');
+    sendLog('success', `✂️ edit_file 完成`, `${newContent.length}B`);
     return { success: true, path: filePath, replaceCount, newSize: newContent.length };
   } catch (err) {
+    sendLog('error', `✂️ edit_file 失败`, (err as Error).message);
     return { success: false, error: (err as Error).message };
   }
 }
@@ -770,6 +776,7 @@ export async function handleDownloadFile(params: { url: string; destination: str
       return { success: false, error: '仅支持 http/https 协议' };
     }
 
+    sendLog('info', `⬇️ download_file`, `${params.url} → ${destPath}`);
     const resp = await fetch(params.url, {
       signal: AbortSignal.timeout(60000)
     });
@@ -784,6 +791,7 @@ export async function handleDownloadFile(params: { url: string; destination: str
     await fs.mkdir(destDir, { recursive: true });
     await fs.writeFile(destPath, buf);
 
+    sendLog('success', `⬇️ download_file 完成`, `${buf.length} bytes`);
     return {
       success: true,
       url: params.url,
@@ -792,6 +800,7 @@ export async function handleDownloadFile(params: { url: string; destination: str
       content_type: resp.headers.get('content-type') || 'unknown'
     };
   } catch (err) {
+    sendLog('error', `⬇️ download_file 失败`, (err as Error).message);
     return { success: false, error: (err as Error).message };
   }
 }

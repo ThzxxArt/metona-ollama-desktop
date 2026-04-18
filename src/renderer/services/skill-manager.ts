@@ -181,8 +181,6 @@ export function buildSkillContext(skills: Skill[]): string {
   return `【可用技能提示 — 以下技能曾成功完成过类似任务，可作为参考】\n\n${parts.join('\n\n')}\n\n提示：如果当前任务与某个技能匹配，可以参考其工具链步骤，但根据实际情况调整参数。`;
 }
 
-/**
-
 // ── 辅助函数 ──
 
 /** 生成工具步骤描述 */
@@ -202,6 +200,15 @@ function describeToolStep(t: ToolCallRecord): string {
     case 'create_directory': return `创建目录 ${args.path || ''}`;
     case 'memory_search': return `搜索记忆 "${args.query || ''}"`;
     case 'memory_add': return `添加记忆`;
+    case 'spawn_task': return `子代理委派`;
+    case 'browser_open': return `打开网页 ${args.url || ''}`;
+    case 'browser_screenshot': return `浏览器截图`;
+    case 'browser_evaluate': return `执行浏览器 JS`;
+    case 'browser_extract': return `提取页面内容`;
+    case 'browser_click': return `点击元素 ${args.selector || ''}`;
+    case 'browser_type': return `输入文本 ${args.selector || ''}`;
+    case 'browser_scroll': return `滚动页面`;
+    case 'browser_close': return `关闭浏览器`;
     default: return t.name;
   }
 }

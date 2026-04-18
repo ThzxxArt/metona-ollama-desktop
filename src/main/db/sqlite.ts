@@ -233,7 +233,7 @@ export async function initDatabase(): Promise<SQL.Database> {
     _hasFTS5 = true;
   } catch {
     _hasFTS5 = false;
-    console.warn('[sqlite] FTS5 不可用，记忆搜索降级为 LIKE 模式');
+    // FTS5 不可用时降级为 LIKE 搜索，状态通过 _hasFTS5 跟踪
   }
 
   // 写入一次确保文件存在

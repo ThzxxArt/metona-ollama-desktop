@@ -189,14 +189,24 @@ function renderToolCallCard(tc: ToolCallRecord): string {
   const icons: Record<string, string> = {
     read_file: '📄', write_file: '✏️', list_directory: '📁',
     search_files: '🔍', create_directory: '📂', delete_file: '🗑️', run_command: '💻',
-    web_search: '🔍', web_fetch: '🌐', git: '🔖',
-    memory_search: '🧠', memory_add: '💾', session_list: '📋', session_read: '📖'
+    move_file: '📦', copy_file: '📋', web_fetch: '🌐', append_file: '➕',
+    edit_file: '✂️', get_file_info: 'ℹ️', tree: '🌳', download_file: '⬇️',
+    diff_files: '🔀', replace_in_files: '🔄', read_multiple_files: '📚',
+    git: '🔖', compress: '🗜️', web_search: '🔍',
+    memory_search: '🧠', memory_add: '💾', session_list: '📋', session_read: '📖', spawn_task: '🤖',
+    browser_open: '🌐', browser_screenshot: '📸', browser_evaluate: '⚡', browser_extract: '📰',
+    browser_click: '👆', browser_type: '⌨️', browser_scroll: '↕️', browser_close: '❌'
   };
   const names: Record<string, string> = {
     read_file: '读取文件', write_file: '写入文件', list_directory: '列出目录',
     search_files: '搜索文件', create_directory: '创建目录', delete_file: '删除文件', run_command: '执行命令',
-    web_search: '联网搜索', web_fetch: '网页抓取', git: 'Git 操作',
-    memory_search: '搜索记忆', memory_add: '添加记忆', session_list: '会话列表', session_read: '读取会话'
+    move_file: '移动文件', copy_file: '复制文件', web_fetch: '网页抓取', append_file: '追加文件',
+    edit_file: '编辑文件', get_file_info: '文件信息', tree: '目录树', download_file: '下载文件',
+    diff_files: '文件对比', replace_in_files: '批量替换', read_multiple_files: '批量读取',
+    git: 'Git 操作', compress: '压缩/解压', web_search: '联网搜索',
+    memory_search: '搜索记忆', memory_add: '添加记忆', session_list: '会话列表', session_read: '读取会话', spawn_task: '子代理委派',
+    browser_open: '打开网页', browser_screenshot: '浏览器截图', browser_evaluate: '执行JS', browser_extract: '提取内容',
+    browser_click: '点击元素', browser_type: '输入文本', browser_scroll: '滚动页面', browser_close: '关闭浏览器'
   };
   const statusLabels: Record<string, string> = {
     pending: '⏳ 等待确认', running: '🔄 执行中', success: '✅ 完成', error: '❌ 失败', cancelled: '🚫 已取消'
@@ -211,6 +221,11 @@ function renderToolCallCard(tc: ToolCallRecord): string {
   if (args.path) paramsHtml += `<div class="tool-param">路径: <code>${escapeHtml(String(args.path))}</code></div>`;
   if (args.command) paramsHtml += `<div class="tool-param">命令: <code>${escapeHtml(String(args.command))}</code></div>`;
   if (args.query) paramsHtml += `<div class="tool-param">查询: <code>${escapeHtml(String(args.query))}</code></div>`;
+  if (args.url) paramsHtml += `<div class="tool-param">URL: <code>${escapeHtml(String(args.url))}</code></div>`;
+  if (args.source) paramsHtml += `<div class="tool-param">源: <code>${escapeHtml(String(args.source))}</code></div>`;
+  if (args.destination) paramsHtml += `<div class="tool-param">目标: <code>${escapeHtml(String(args.destination))}</code></div>`;
+  if (args.selector) paramsHtml += `<div class="tool-param">选择器: <code>${escapeHtml(String(args.selector))}</code></div>`;
+  if (args.action) paramsHtml += `<div class="tool-param">操作: <code>${escapeHtml(String(args.action))}</code></div>`;
 
   let resultHtml = '';
   if (tc.result) {
@@ -248,6 +263,52 @@ function renderToolCallCard(tc: ToolCallRecord): string {
         if (stdout) resultHtml += `<pre class="tool-result-content">${escapeHtml(stdout)}</pre>`;
         if (stderr) resultHtml += `<pre class="tool-result-content tool-result-stderr">${escapeHtml(stderr)}</pre>`;
         resultHtml += `<div class="tool-result-meta">exit: ${r.exitCode || 0} · ${r.duration || 0}ms</div>`;
+      } else if (tc.name === 'web_search' && r.results) {
+        const results = r.results as Array<{ title: string; url: string; snippet: string }>;
+        resultHtml = results.slice(0, 5).map((item, i) =>
+          `<div class="tool-result-entry">[${i + 1}] ${escapeHtml(item.title)}<br><code>${escapeHtml(item.url)}</code></div>`
+        ).join('');
+        resultHtml += `<div class="tool-result-meta">共 ${r.total || results.length} 条结果</div>`;
+      } else if (tc.name === 'web_fetch') {
+        const content = String(r.content || '').slice(0, 500);
+        resultHtml = `<pre class="tool-result-content">${escapeHtml(content)}${(r.content as string || '').length > 500 ? '\n...' : ''}</pre>`;
+        resultHtml += `<div class="tool-result-meta">${r.length || content.length} chars</div>`;
+      } else if (tc.name === 'git' && r.action) {
+        if (r.commits) {
+          resultHtml = (r.commits as Array<{ hash: string; message: string }>).slice(0, 10).map(c =>
+            `<div class="tool-result-entry"><code>${escapeHtml(c.hash)}</code> ${escapeHtml(c.message)}</div>`
+          ).join('');
+        } else if (r.branches) {
+          resultHtml = (r.branches as Array<{ name: string; current: boolean }>).map(b =>
+            `<div class="tool-result-entry">${b.current ? '→ ' : ''}${escapeHtml(b.name)}</div>`
+          ).join('');
+        } else {
+          resultHtml = `<div class="tool-result-entry">✅ ${r.action} 完成</div>`;
+        }
+      } else if (tc.name === 'memory_search' && r.results) {
+        const results = r.results as Array<{ type: string; content: string }>;
+        resultHtml = results.slice(0, 5).map(m =>
+          `<div class="tool-result-entry">${m.type === 'rule' ? '📏' : m.type === 'preference' ? '⚙️' : '📌'} ${escapeHtml(m.content).slice(0, 80)}</div>`
+        ).join('');
+      } else if (tc.name === 'session_list' && r.sessions) {
+        const sessions = r.sessions as Array<{ title: string; messageCount: number }>;
+        resultHtml = sessions.slice(0, 5).map(s =>
+          `<div class="tool-result-entry">💬 ${escapeHtml(s.title)}</div>`
+        ).join('');
+      } else if (tc.name?.startsWith('browser_')) {
+        if (tc.name === 'browser_screenshot' && r.png) {
+          resultHtml = `<div class="tool-result-entry">📸 截图已生成</div>`;
+        } else if (tc.name === 'browser_extract') {
+          const text = String(r.text || '').slice(0, 300);
+          resultHtml = `<pre class="tool-result-content">${escapeHtml(text)}</pre>`;
+          resultHtml += `<div class="tool-result-meta">链接: ${(r.links as unknown[])?.length || 0} 个</div>`;
+        } else if (r.title) {
+          resultHtml = `<div class="tool-result-entry">📄 ${escapeHtml(r.title)}</div>`;
+        } else if (r.result) {
+          resultHtml = `<pre class="tool-result-content">${escapeHtml(String(r.result).slice(0, 300))}</pre>`;
+        } else {
+          resultHtml = `<div class="tool-result-entry">✅ 完成</div>`;
+        }
       } else {
         resultHtml = `<div class="tool-result-entry">✅ 操作成功</div>`;
       }
