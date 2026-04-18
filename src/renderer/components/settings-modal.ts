@@ -15,6 +15,16 @@ import { OllamaAPI } from '../api/ollama.js';
 import { ChatDB } from '../db/chat-db.js';
 import type { ChatSession } from '../types.js';
 
+/** v4.2 人格模式 system prompt 映射 */
+export const PERSONALITY_SYSTEM_PROMPTS: Record<string, string> = {
+  default: '',
+  coder: '你是一个专业的编程助手。你注重代码质量、可读性和最佳实践。回答时优先给出可运行的代码，其次才是解释。遇到问题先分析根因再给方案。使用 type hints、合理的命名和注释。代码风格偏向简洁紧凑。',
+  writer: '你是一个专业的写作助手。你的文字流畅、有文采，注重结构和节奏。擅长技术文档、文章、文案、邮件等各种文体。回答时先理解写作目的和受众，再给出合适的风格和内容。',
+  analyst: '你是一个精确的数据分析助手。你注重数据的准确性和逻辑的严密性。回答时先明确数据来源和假设，再给出分析过程和结论。偏好用数字和事实说话，避免模糊表述。',
+  translator: '你是一个专业的翻译助手。你精通多语言互译，注重信达雅。翻译时保留原文的语气和风格，专业术语保持一致。遇到歧义时给出多种翻译并标注区别。',
+  reviewer: '你是一个严格的代码审查助手。你关注：正确性（逻辑错误、边界情况）、安全性（注入、泄露）、性能（时间/空间复杂度）、可维护性（命名、结构、注释）。审查时先给出总体评价，再逐项列出问题并给出修复建议。',
+};
+
 let settingsModalEl: HTMLElement;
 
 export function initSettingsModal(): void {
@@ -62,6 +72,50 @@ export function initSettingsModal(): void {
     logSetting('温度', val.toFixed(1));
   }, 300);
   tempSlider.addEventListener('change', saveTemperature);
+
+  // ── v4.2 人格模式切换 ──
+  const PERSONALITY_TEMPERATURES: Record<string, number> = {
+    default: -1, // 使用用户设置
+    coder: 0.3,
+    writer: 0.8,
+    analyst: 0.2,
+    translator: 0.4,
+    reviewer: 0.3,
+  };
+
+  document.querySelectorAll('.personality-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const personality = (btn as HTMLElement).dataset.personality || 'default';
+      state.set('personality', personality);
+      const db = state.get<ChatDB | null>(KEYS.DB);
+      if (db) await db.saveSetting('personality', personality);
+
+      // 更新按钮样式
+      document.querySelectorAll('.personality-btn').forEach(b => {
+        (b as HTMLElement).style.border = '2px solid var(--border-subtle)';
+        b.classList.remove('active');
+      });
+      (btn as HTMLElement).style.border = '2px solid var(--primary)';
+      btn.classList.add('active');
+
+      // 如果人格有推荐温度，自动调整
+      const recommendedTemp = PERSONALITY_TEMPERATURES[personality];
+      if (recommendedTemp >= 0) {
+        const tempSlider = document.querySelector('#inputTemperature') as HTMLInputElement;
+        tempSlider.value = String(recommendedTemp);
+        document.querySelector('#tempValue')!.textContent = recommendedTemp.toFixed(1);
+        state.set('temperature', recommendedTemp);
+        if (db) await db.saveSetting('temperature', recommendedTemp);
+      }
+
+      const names: Record<string, string> = {
+        default: '通用助手', coder: '编程助手', writer: '写作助手',
+        analyst: '数据分析', translator: '翻译助手', reviewer: '代码审查'
+      };
+      showToast(`已切换到 ${names[personality] || personality}`, 'success');
+      logSetting('人格模式', names[personality] || personality);
+    });
+  });
 
   document.querySelector('#btnReleaseVRAM')!.addEventListener('click', async () => {
     const api = state.get<OllamaAPI>(KEYS.API);

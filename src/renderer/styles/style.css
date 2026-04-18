@@ -1332,6 +1332,22 @@ html, body {
     margin-bottom: 0;
 }
 
+/* v4.2 人格按钮 */
+.personality-btn {
+    transition: all 0.15s ease;
+    color: var(--text-primary);
+}
+.personality-btn:hover {
+    background: var(--bg-hover) !important;
+    border-color: var(--primary) !important;
+}
+.personality-btn.active {
+    background: var(--primary-bg) !important;
+    border-color: var(--primary) !important;
+    color: var(--primary);
+    font-weight: 600;
+}
+
 .setting-label {
     display: flex;
     align-items: center;

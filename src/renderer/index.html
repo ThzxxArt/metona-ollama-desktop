@@ -261,6 +261,18 @@
                 <p class="text-muted" style="margin-top:4px;font-size:11px;">低值更精确稳定，高值更有创意多样（0 = 确定性，2 = 最大随机）</p>
             </div>
             <div class="setting-group">
+                <label class="setting-label">🎭 人格模式</label>
+                <div class="personality-grid" id="personalityGrid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:4px;">
+                    <button class="btn btn-sm personality-btn active" data-personality="default" style="padding:6px 8px;font-size:12px;border:2px solid var(--primary);border-radius:var(--radius-control);background:var(--bg-layer);cursor:pointer;">🤖 通用助手</button>
+                    <button class="btn btn-sm personality-btn" data-personality="coder" style="padding:6px 8px;font-size:12px;border:2px solid var(--border-subtle);border-radius:var(--radius-control);background:var(--bg-layer);cursor:pointer;">💻 编程助手</button>
+                    <button class="btn btn-sm personality-btn" data-personality="writer" style="padding:6px 8px;font-size:12px;border:2px solid var(--border-subtle);border-radius:var(--radius-control);background:var(--bg-layer);cursor:pointer;">✍️ 写作助手</button>
+                    <button class="btn btn-sm personality-btn" data-personality="analyst" style="padding:6px 8px;font-size:12px;border:2px solid var(--border-subtle);border-radius:var(--radius-control);background:var(--bg-layer);cursor:pointer;">📊 数据分析</button>
+                    <button class="btn btn-sm personality-btn" data-personality="translator" style="padding:6px 8px;font-size:12px;border:2px solid var(--border-subtle);border-radius:var(--radius-control);background:var(--bg-layer);cursor:pointer;">🌐 翻译助手</button>
+                    <button class="btn btn-sm personality-btn" data-personality="reviewer" style="padding:6px 8px;font-size:12px;border:2px solid var(--border-subtle);border-radius:var(--radius-control);background:var(--bg-layer);cursor:pointer;">🔍 代码审查</button>
+                </div>
+                <p class="text-muted" style="margin-top:4px;font-size:11px;">不同人格有不同的行为风格和温度偏好。通用助手不做额外约束。</p>
+            </div>
+            <div class="setting-group">
                 <label class="setting-label">运行中的模型</label>
                 <div class="running-models" id="runningModels">
                     <p class="text-muted">无运行中的模型</p>

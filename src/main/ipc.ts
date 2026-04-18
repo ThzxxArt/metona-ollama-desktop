@@ -14,6 +14,7 @@ import {
   saveSetting, getSetting,
   saveToolCall, getToolCallsBySession,
   saveTrace, getTracesBySession,
+  saveSkill, getAllSkills, deleteSkill, clearAllSkills, searchSkills, incrementSkillUsage,
   exportAllSessions, importSessions
 } from './db/sqlite.js';
 import type { ExportData } from './db/sqlite.js';
@@ -370,5 +371,31 @@ export async function setupIPC(): Promise<void> {
   ipcMain.handle('db:importSessions', (_, data: ExportData) => {
     try { return importSessions(data); }
     catch (err) { sendLog('error', '导入失败', (err as Error).message); return { imported: 0, skipped: 0 }; }
+  });
+
+  // ── Skills (v4.2) ──
+  ipcMain.handle('db:saveSkill', (_, skill) => {
+    try { return { success: true, id: saveSkill(skill) }; }
+    catch (err) { return { success: false, error: (err as Error).message }; }
+  });
+  ipcMain.handle('db:getAllSkills', () => {
+    try { return getAllSkills(); }
+    catch { return []; }
+  });
+  ipcMain.handle('db:deleteSkill', (_, id) => {
+    try { deleteSkill(id); return { success: true }; }
+    catch (err) { return { success: false, error: (err as Error).message }; }
+  });
+  ipcMain.handle('db:clearAllSkills', () => {
+    try { clearAllSkills(); return { success: true }; }
+    catch (err) { return { success: false, error: (err as Error).message }; }
+  });
+  ipcMain.handle('db:searchSkills', (_, query: string, limit?: number) => {
+    try { return searchSkills(query, limit ?? 5); }
+    catch { return []; }
+  });
+  ipcMain.handle('db:incrementSkillUsage', (_, id: string, success: boolean, durationMs: number) => {
+    try { incrementSkillUsage(id, success, durationMs); return { success: true }; }
+    catch (err) { return { success: false, error: (err as Error).message }; }
   });
 }

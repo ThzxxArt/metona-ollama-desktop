@@ -12,6 +12,8 @@ import {
   needsConfirmation
 } from './tool-registry.js';
 import { searchMemories, buildMemoryContext, markMemoryUsed, isMemoryEnabled } from './memory-manager.js';
+import { extractSkillsFromToolRecords, matchSkills, buildSkillContext } from './skill-manager.js';
+import { PERSONALITY_SYSTEM_PROMPTS } from '../components/settings-modal.js';
 import { showToast } from '../components/toast.js';
 import { logInfo, logWarn, logError, logToolStart, logToolResult, logThink, logAgentLoop, logModelResponse } from './log-service.js';
 import { getWorkspaceDirPath } from '../components/workspace-panel.js';
@@ -136,7 +138,53 @@ function parseToolCallsFromText(content: string): ToolCall[] {
   return calls;
 }
 
-/** 工具调用缓存：key = toolName + JSON(args)，用于避免重复调用 */
+/** v4.2: 从对话中自动推断用户画像 */
+async function inferUserProfile(userMsg: string, assistantMsg: string): Promise<void> {
+  const bridge = (window as any).metonaDesktop;
+  if (!bridge?.db?.getSetting) return;
+
+  const profile: Record<string, unknown> = await bridge.db.getSetting('user_profile', {}) || {};
+
+  // 技术栈检测
+  const techPatterns: Record<string, RegExp> = {
+    'Python': /\b(python|pip|py|django|flask|fastapi|pandas|numpy)\b/i,
+    'TypeScript': /\b(typescript|ts|tsx|deno)\b/i,
+    'JavaScript': /\b(javascript|js|jsx|node\.?js|npm|yarn|pnpm)\b/i,
+    'Go': /\b(golang|go\s+(run|build|mod)|\.go\b)/i,
+    'Rust': /\b(rust|cargo|rustc|\.rs\b)/i,
+    'Java': /\b(java|maven|gradle|spring|\.java\b)/i,
+    'React': /\b(react|next\.?js|jsx|tsx|vite)\b/i,
+    'Vue': /\b(vue|nuxt|vuex|pinia)\b/i,
+    'Docker': /\b(docker|dockerfile|docker-compose|container)\b/i,
+    'Kubernetes': /\b(k8s|kubernetes|kubectl|helm)\b/i,
+    'Linux': /\b(linux|ubuntu|debian|centos|bash|shell|terminal)\b/i,
+    'Git': /\b(git|github|gitee|gitlab|commit|push|pull|branch|merge)\b/i,
+    'SQL': /\b(sql|sqlite|mysql|postgres|database|查询)\b/i,
+    'AI/ML': /\b(machine learning|深度学习|神经网络|模型训练|ollama|llm|transformer)\b/i,
+  };
+
+  const combinedText = userMsg + ' ' + assistantMsg;
+  const currentStack: string[] = (profile.tech_stack as string[]) || [];
+  let changed = false;
+
+  for (const [tech, pattern] of Object.entries(techPatterns)) {
+    if (pattern.test(combinedText) && !currentStack.includes(tech)) {
+      currentStack.push(tech);
+      changed = true;
+    }
+  }
+
+  // 限制技术栈数量
+  if (currentStack.length > 15) {
+    currentStack.splice(0, currentStack.length - 15);
+    changed = true;
+  }
+
+  if (changed) {
+    profile.tech_stack = currentStack;
+    await bridge.db.saveSetting('user_profile', profile);
+  }
+}
 const toolResultCache = new Map<string, ToolResult>();
 
 /** 生成工具调用缓存 key */
@@ -342,10 +390,45 @@ export async function runAgentLoop(
 文件操作工具（read_file、write_file 等）的相对路径基于此目录解析。`);
   }
 
+  // v4.2 注入匹配的技能上下文
+  if (useTools && userContent) {
+    const matchedSkills = await matchSkills(userContent, 3);
+    if (matchedSkills.length > 0) {
+      const skillContext = buildSkillContext(matchedSkills);
+      if (skillContext) {
+        systemPromptParts.push(skillContext);
+        logInfo(`技能匹配: ${matchedSkills.length} 个技能已注入`, matchedSkills.map(s => s.name).join(', '));
+      }
+    }
+  }
+
+  // v4.2 注入用户画像
+  const db = state.get<any>(KEYS.DB);
+  if (db) {
+    try {
+      const userProfile = await db.getSetting('user_profile', null);
+      if (userProfile && typeof userProfile === 'object') {
+        const parts: string[] = [];
+        if (userProfile.tech_stack?.length) parts.push(`技术栈: ${userProfile.tech_stack.join(', ')}`);
+        if (userProfile.role) parts.push(`角色: ${userProfile.role}`);
+        if (userProfile.style) parts.push(`代码风格: ${userProfile.style}`);
+        if (parts.length > 0) {
+          systemPromptParts.push(`【用户画像】\n${parts.join('\n')}`);
+        }
+      }
+    } catch { /* 不阻塞 */ }
+  }
+
   // 组合 system prompt
-  const fullSystemPrompt = systemPromptParts.length > 0
-    ? systemPromptParts.join('\n\n') + '\n\n' + AGENT_SYSTEM_PROMPT + '\n\n' + TOOL_USAGE_GUIDE
-    : AGENT_SYSTEM_PROMPT + '\n\n' + TOOL_USAGE_GUIDE;
+  const personality = state.get<string>('personality', 'default');
+  const personalityPrompt = PERSONALITY_SYSTEM_PROMPTS[personality] || '';
+
+  const fullSystemPrompt = [
+    ...systemPromptParts,
+    AGENT_SYSTEM_PROMPT,
+    ...(personalityPrompt ? [personalityPrompt] : []),
+    TOOL_USAGE_GUIDE
+  ].join('\n\n');
 
   messages.push({ role: 'system', content: fullSystemPrompt });
 
@@ -537,6 +620,18 @@ export async function runAgentLoop(
           );
         } catch { /* 不阻塞 */ }
       }
+
+      // v4.2 自动提取技能
+      if (allToolRecords.length >= 2) {
+        try {
+          await extractSkillsFromToolRecords(allToolRecords, userContent, currentSession?.title || '');
+        } catch { /* 不阻塞 */ }
+      }
+
+      // v4.2 自动推断用户画像
+      try {
+        await inferUserProfile(userContent, content);
+      } catch { /* 不阻塞 */ }
 
       callbacks.onDone(content || '（模型未返回内容）', allToolRecords.length > 0 ? allToolRecords : undefined, makeStats());
       return;

@@ -363,6 +363,21 @@ async function init(): Promise<void> {
     const memoryEnabled = await db.getSetting('memoryEnabled', true);
     state.set('memoryEnabled', memoryEnabled);
 
+    // ── v4.2 人格模式 ──
+    const personality = await db.getSetting('personality', 'default');
+    state.set('personality', personality);
+    // 激活对应的人格按钮
+    document.querySelectorAll('.personality-btn').forEach(b => {
+      const p = (b as HTMLElement).dataset.personality;
+      if (p === personality) {
+        (b as HTMLElement).style.border = '2px solid var(--primary)';
+        b.classList.add('active');
+      } else {
+        (b as HTMLElement).style.border = '2px solid var(--border-subtle)';
+        b.classList.remove('active');
+      }
+    });
+
     (document.querySelector('#chatInput') as HTMLElement)?.focus();
     updateTotalTokens();
 
