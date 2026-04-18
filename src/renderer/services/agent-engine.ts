@@ -104,10 +104,13 @@ const VALID_TOOL_NAMES = new Set([
 function parseToolCallsFromText(content: string): ToolCall[] {
   const calls: ToolCall[] = [];
 
-  // 匹配模式1: **Action:** tool_name  **Action Input:** {json}
-  // 匹配模式2: Action: tool_name  Action Input: {json}
-  // 同时支持 Action 和 Action Input 写在同一段或多行
-  const actionRegex = /\*?\*?Action:?\*?\*?\s*([\w]+)\s*[\r\n]+\s*\*?\*?Action\s*Input:?\*?\*?\s*(\{[\s\S]*?\})/gi;
+  // 匹配：Action: tool_name（可选加粗标记）
+  // 然后紧跟 Action Input: {json}
+  // 支持格式：
+  //   Action: write_file          Action: write_file
+  //   Action Input: {...}         **Action Input:** {...}
+  // 也支持写在同一段落的情况
+  const actionRegex = /\*{0,2}Action:?\*{0,2}\s*(\w+)\s+[\r\n\s]*\*{0,2}Action\s*Input:?\*{0,2}\s*(\{[\s\S]*?\})/gi;
 
   let match;
   while ((match = actionRegex.exec(content)) !== null) {
@@ -127,7 +130,6 @@ function parseToolCallsFromText(content: string): ToolCall[] {
     } catch {
       // JSON 解析失败，尝试修复常见问题
       try {
-        // 处理单引号、尾逗号等
         let fixed = argsStr
           .replace(/'/g, '"')
           .replace(/,\s*}/g, '}')
@@ -143,23 +145,6 @@ function parseToolCallsFromText(content: string): ToolCall[] {
       } catch {
         logWarn(`文本解析兜底: 工具 ${toolName} 的参数 JSON 解析失败`, argsStr.slice(0, 100));
       }
-    }
-  }
-
-  // 备选模式：Action 和 Action Input 写在一行或用不同分隔
-  if (calls.length === 0) {
-    const singleLineRegex = /Action:\s*(\w+)\s*.*?Action\s*Input:\s*(\{[^}]+\})/gi;
-    while ((match = singleLineRegex.exec(content)) !== null) {
-      const toolName = match[1].trim();
-      const argsStr = match[2].trim();
-      if (!VALID_TOOL_NAMES.has(toolName)) continue;
-      try {
-        const args = JSON.parse(argsStr);
-        calls.push({
-          type: 'function',
-          function: { name: toolName, arguments: args }
-        });
-      } catch { /* skip */ }
     }
   }
 
