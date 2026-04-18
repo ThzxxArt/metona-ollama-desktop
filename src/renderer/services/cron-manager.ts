@@ -183,12 +183,3 @@ export async function restoreCronTasks(): Promise<void> {
     logInfo(`定时任务已恢复: ${scheduled} 个任务`);
   }
 }
-
-/**
- * 清理所有定时器（应用退出时调用）
- */
-export function clearAllTimers(): void {
-  for (const [id] of activeTimers) {
-    clearTimer(id);
-  }
-}

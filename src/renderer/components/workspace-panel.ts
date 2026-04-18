@@ -44,10 +44,6 @@ let currentAiCommand: string | null = null;
 /** 终止通知回调（由外部设置） */
 let onToolTerminated: ((command: string) => void) | null = null;
 
-/** 设置终止通知回调 */
-export function setOnToolTerminated(cb: (command: string) => void): void {
-  onToolTerminated = cb;
-}
 
 function genId(): string {
   return `ws_${Date.now()}_${++_counter}`;
@@ -628,17 +624,3 @@ export function getWorkspaceDirPath(): string {
   return workspaceDir;
 }
 
-/** 设置工作空间目录 */
-export async function setWorkspaceDirPath(dir: string): Promise<boolean> {
-  const bridge = window.metonaDesktop;
-  if (!bridge?.isDesktop) return false;
-
-  const result = await bridge.workspace.setDir(dir);
-  if (result.success && result.dir) {
-    workspaceDir = result.dir;
-    currentFileDir = workspaceDir;
-    logInfo('工作空间目录已更新', workspaceDir);
-    return true;
-  }
-  return false;
-}

@@ -151,15 +151,6 @@ export function initSettingsModal(): void {
     logSetting('检查间隔', `${ms / 60000} 分钟`);
   });
 
-  // ── v5.0 训练数据导出 ──
-  document.querySelector('#btnExportTraining')!.addEventListener('click', async () => {
-    const { saveTrainingData } = await import('../services/training-export.js');
-    showToast('正在导出训练数据...', 'info');
-    const ok = await saveTrainingData();
-    if (ok) showToast('训练数据导出成功', 'success');
-    else showToast('导出取消或无数据', 'warning');
-  });
-
   // ── v5.0 Cron 定时任务 ──
   document.querySelector('#btnAddCronTask')!.addEventListener('click', async () => {
     const name = (document.querySelector('#inputCronName') as HTMLInputElement).value.trim();

@@ -572,9 +572,6 @@ export function setToolEnabled(toolName: string, enabled: boolean): void {
   else enabledTools.delete(toolName);
 }
 
-export function isToolEnabled(toolName: string): boolean {
-  return enabledTools.has(toolName);
-}
 
 export function getEnabledToolDefinitions(): ToolDefinition[] {
   const builtIn = TOOL_DEFINITIONS.filter(def => enabledTools.has(def.function.name));

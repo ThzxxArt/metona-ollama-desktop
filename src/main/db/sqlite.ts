@@ -377,10 +377,6 @@ export function getMessagesBySession(sessionId: string): MessageRow[] {
   return queryAll(getDb(), 'SELECT * FROM messages WHERE session_id = ? ORDER BY created_at ASC', [sessionId]) as unknown as MessageRow[];
 }
 
-export function deleteMessagesBySession(sessionId: string): void {
-  runExec(getDb(), 'DELETE FROM messages WHERE session_id = ?', [sessionId]);
-  persist();
-}
 
 // ─── Memories CRUD ───
 
@@ -531,9 +527,6 @@ export function saveSkill(skill: SkillRow): string {
   return skill.id;
 }
 
-export function getSkill(id: string): SkillRow | null {
-  return queryOne(getDb(), 'SELECT * FROM skills WHERE id = ?', [id]) as unknown as SkillRow | null;
-}
 
 export function getAllSkills(): SkillRow[] {
   return queryAll(getDb(), 'SELECT * FROM skills ORDER BY success_count DESC, updated_at DESC') as unknown as SkillRow[];
@@ -626,12 +619,3 @@ export function importSessions(data: ExportData): { imported: number; skipped: n
   return { imported, skipped };
 }
 
-// ─── Close ───
-
-export function closeDatabase(): void {
-  if (db) {
-    persist();
-    db.close();
-    db = null;
-  }
-}
