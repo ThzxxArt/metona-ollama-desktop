@@ -31,33 +31,39 @@ const TOOL_EXEC_TIMEOUT = 30000;    // 工具执行超时 30 秒
 const STREAM_TIMEOUT = 120000;      // 单次流式调用超时 2 分钟
 const MAX_RETRIES = 2;              // 工具错误自动重试次数
 
-const AGENT_SYSTEM_PROMPT = `你是一个具备工具调用能力的 AI 助手。你可以使用提供的工具来完成用户请求。
+const AGENT_SYSTEM_PROMPT = `你是一个具备工具调用能力的 AI 助手。你有 25 个工具可以调用，包括文件操作、联网搜索、网页抓取、命令执行、记忆管理等。
 
-## 工作方式
+## 核心规则
 
-当用户请求需要工具时，直接调用对应工具。对于多步任务，逐步执行：
-1. 分析需要哪些步骤
-2. 每一步调用合适的工具
-3. 根据工具返回结果决定下一步
-4. 任务完成后给出最终回答
+1. 直接调用工具，不要写"我来帮你搜索"然后结束。有工具就调用，调用完根据结果继续下一步。
+2. 多步任务必须逐步完成：搜到结果 → 抓取详情 → 给出答案。不要在中间步骤停下。
+3. 需要最新信息（版本号、新闻、日期等）时，必须先用工具获取，不要凭记忆猜测。
+4. 工具出错时分析原因并换方法重试，最多重试 2 次。
+5. 不要重复调用相同参数的同一工具。
 
-## 注意事项
-- 不确定时主动调用工具获取信息，不要猜测
-- 工具出错时分析原因并换方法重试，最多重试 2 次
-- 不要重复调用相同参数的同一工具
-- 多步任务完成后汇总所有结果`;
+## 多工具协同
 
-const TOOL_USAGE_GUIDE = `【工具使用规则】
-1. 路径上下文：当用户说"修改这个文件"、"删除它"、"查看里面"等未指定路径时，必须从本次对话中最近的工具调用结果中提取路径。
-2. 工具调用结果中的 path 字段是权威的文件路径，优先使用它。
-3. 如果对话中从未出现过相关路径，应先用 search_files 或 list_directory 定位，不要凭空猜测路径。
-4. 对同一文件的连续操作（读取→修改、读取→删除），路径必须一致。
-5. 当用户要求执行命令时，使用 run_command 工具执行。
-6. 联网搜索联动：当用户询问需要最新信息的问题时，先用 web_search 搜索，然后必须从搜索结果中选择最相关的 1-3 个 URL，用 web_fetch 抓取页面详细内容。
-7. 主动使用工具：当你不确定答案、信息可能已过时、或需要查阅实时数据时，主动调用工具而不是凭记忆猜测。
-8. 严禁重复调用：如果本次对话中已经成功调用过某个工具并获得了结果，不要再次调用相同工具和相同参数。
-9. 记忆工具：你可以使用 memory_search 搜索过去的记忆，使用 memory_add 添加新的重要记忆。
-10. 会话工具：你可以使用 session_list 列出历史会话，使用 session_read 读取历史会话内容。`;
+你可以在一轮回复中调用多个工具（并行调用），也可以在一个工具的结果基础上继续调用下一个工具（链式调用）。这是正常且鼓励的工作方式。
+
+常见链式调用模式：
+- web_search → web_fetch（搜索 → 抓取详情）
+- list_directory → read_file（列出目录 → 读取文件）
+- search_files → edit_file（搜索 → 修改）
+- run_command → read_file（执行命令 → 读取输出文件）
+
+## 重要
+
+永远不要只输出"我将执行xxx"或"让我来搜索"然后结束。如果说了要做什么，就必须真正调用对应的工具。调用 run_command 时命令可能需要很长时间，请耐心等待。`;
+
+const TOOL_USAGE_GUIDE = `【工具链规则（强制执行）】
+
+1. 搜索后必须抓取：web_search 搜到结果后，必须选择最相关的 1-3 个 URL，用 web_fetch 抓取详细内容。只看搜索摘要就回答是不够的。这是强制规则。
+2. 先搜索再回答：需要最新信息时，先 search → 再 fetch → 再回答。不要凭记忆猜测版本号、日期、价格等实时数据。
+3. 文件路径上下文：用户说"修改这个文件"等模糊指代时，从最近的工具调用结果中提取实际路径。不要猜测。
+4. 不要重复调用：已经成功调用过的工具+参数组合不要再调用。
+5. 记忆工具：可以用 memory_search 搜索过去记忆，用 memory_add 添加重要信息。
+6. 会话工具：可以用 session_list 列出历史会话，用 session_read 读取会话内容。
+7. 并行调用：当多个工具调用互相独立时，可以在同一次回复中同时调用它们。`;
 
 /** 工具名白名单：用于文本解析兜底时过滤非法工具名 */
 const VALID_TOOL_NAMES = new Set([
@@ -146,6 +152,116 @@ function isDuplicateCall(call: ToolCall, allCalls: ToolCall[]): boolean {
     if (idx === allCalls.length - 1) return false;
     return getToolCacheKey(prev.function.name, prev.function.arguments) === callKey;
   });
+}
+
+/**
+ * 格式化工具结果，生成模型友好的简洁表示
+ * 原始 ToolResult 对象可能包含大量冗余字段（results数组、formatted字符串等），
+ * 直接 JSON.stringify 会生成臃肿的 JSON，干扰模型理解和后续工具调用。
+ */
+function formatToolResultForModel(toolName: string, result: ToolResult): string {
+  if (!result.success) {
+    return JSON.stringify({ success: false, error: result.error || '工具执行失败' });
+  }
+
+  switch (toolName) {
+    case 'web_search': {
+      const raw = result.results as Array<{ title: string; url: string; snippet: string }> | undefined;
+      if (!raw?.length) return JSON.stringify({ success: true, message: '未找到结果' });
+      // 只保留 top 5，简洁格式
+      const top = raw.slice(0, 5).map((r, i) =>
+        `[${i + 1}] ${r.title}\n    URL: ${r.url}\n    ${r.snippet}`
+      ).join('\n\n');
+      return JSON.stringify({ success: true, query: result.query, total: result.total, results: top });
+    }
+
+    case 'web_fetch': {
+      let content = (result.content as string) || '';
+      // 截断过长内容，避免撑爆上下文
+      if (content.length > 15000) content = content.slice(0, 15000) + '\n... (已截断)';
+      return JSON.stringify({ success: true, url: result.url, content });
+    }
+
+    case 'read_file': {
+      return JSON.stringify({
+        success: true,
+        path: result.path,
+        content: result.content,
+        lines: result.lines,
+        truncated: result.truncated,
+        line_range: result.line_range
+      });
+    }
+
+    case 'read_multiple_files': {
+      return JSON.stringify({
+        success: true,
+        files: result.files,
+        total: result.total
+      });
+    }
+
+    case 'list_directory': {
+      return JSON.stringify({
+        success: true,
+        path: result.path,
+        entries: result.entries,
+        total: result.total,
+        truncated: result.truncated
+      });
+    }
+
+    case 'write_file': {
+      return JSON.stringify({
+        success: true,
+        path: result.path,
+        bytesWritten: result.bytesWritten,
+        created: result.created
+      });
+    }
+
+    case 'run_command': {
+      return JSON.stringify({
+        success: true,
+        stdout: result.stdout,
+        stderr: result.stderr,
+        exitCode: result.exitCode,
+        duration: result.duration
+      });
+    }
+
+    case 'git': {
+      return JSON.stringify({
+        success: true,
+        action: result.action,
+        output: result.output,
+        branch: result.branch,
+        files: result.files,
+        commits: result.commits
+      });
+    }
+
+    case 'search_files': {
+      return JSON.stringify({
+        success: true,
+        query: result.query,
+        total_matches: result.total_matches,
+        total_files: result.total_files,
+        matches: result.matches
+      });
+    }
+
+    default: {
+      // 通用清理：移除内部元数据字段
+      const clean: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(result)) {
+        if (k === 'success' || k === 'formatted' || k === 'content_type' ||
+            k === 'status' || k === 'length' || k === 'isDirectory') continue;
+        clean[k] = v;
+      }
+      return JSON.stringify(clean);
+    }
+  }
 }
 
 export interface AgentCallbacks {
@@ -390,10 +506,25 @@ export async function runAgentLoop(
 
     // 检查是否是 Final Answer（没有工具调用且包含 Final Answer）
     const isFinalAnswer = content.includes('Final Answer:') || content.includes('最终答案：');
+
+    // 处理空响应：如果之前有工具调用但模型返回空内容，不立即结束
+    if (toolCalls.length === 0 && !content.trim() && loopCount > 1 && allToolRecords.length > 0) {
+      logWarn('模型返回空内容（有未处理的工具结果），继续循环');
+      // 移除空的 assistant 消息，避免 Ollama 解析问题
+      messages.pop();
+      // 添加一个提示性的 user 消息引导模型继续
+      messages.push({
+        role: 'user',
+        content: '请根据上面的工具调用结果继续回答。如果需要更多信息，可以继续调用工具。如果已有足够信息，请给出最终回答。'
+      });
+      continue;
+    }
+
     if (toolCalls.length === 0) {
+      // 真正的最终回答（有内容或首次循环就无工具）
       logInfo('无工具调用，ReAct Agent Loop 结束');
 
-      // 自动提取记忆
+      // 自动提取记忆（仅在对话结束后）
       if (isMemoryEnabled() && messages.length >= 4) {
         try {
           const { extractMemoriesFromConversation } = await import('./memory-manager.js');
@@ -404,7 +535,7 @@ export async function runAgentLoop(
         } catch { /* 不阻塞 */ }
       }
 
-      callbacks.onDone(content, allToolRecords.length > 0 ? allToolRecords : undefined, makeStats());
+      callbacks.onDone(content || '（模型未返回内容）', allToolRecords.length > 0 ? allToolRecords : undefined, makeStats());
       return;
     }
 
@@ -444,7 +575,7 @@ export async function runAgentLoop(
         const cachedKey = getToolCacheKey(call.function.name, call.function.arguments);
         const cached = toolResultCache.get(cachedKey);
         if (cached) {
-          messages.push({ role: 'tool', tool_name: call.function.name, content: JSON.stringify(cached) });
+          messages.push({ role: 'tool', tool_name: call.function.name, content: formatToolResultForModel(call.function.name, cached) });
           callbacks.onToolCallResult(call.function.name, cached, call);
         }
         continue;
@@ -455,7 +586,7 @@ export async function runAgentLoop(
       const cachedResult = toolResultCache.get(cacheKey);
       if (cachedResult) {
         logInfo(`工具缓存命中: ${call.function.name}`);
-        messages.push({ role: 'tool', tool_name: call.function.name, content: JSON.stringify(cachedResult) });
+        messages.push({ role: 'tool', tool_name: call.function.name, content: formatToolResultForModel(call.function.name, cachedResult) });
         callbacks.onToolCallResult(call.function.name, cachedResult, call);
         continue;
       }
@@ -512,7 +643,7 @@ export async function runAgentLoop(
             timestamp: Date.now()
           };
           allToolRecords.push(record);
-          messages.push({ role: 'tool', tool_name: call.function.name, content: JSON.stringify(result) });
+          messages.push({ role: 'tool', tool_name: call.function.name, content: formatToolResultForModel(call.function.name, result) });
           if (result.success && call.function.name !== 'run_command') {
             toolResultCache.set(cacheKey, result);
           }
