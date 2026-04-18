@@ -391,6 +391,37 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     type: 'function',
     function: {
+      name: 'memory_replace',
+      description: 'Replace an existing memory entry with updated content. Uses substring matching to find the entry to replace.',
+      parameters: {
+        type: 'object',
+        required: ['target', 'old_text', 'new_content'],
+        properties: {
+          target: { type: 'string', enum: ['memory', 'user'], description: 'Target store: memory (agent notes) or user (user profile).' },
+          old_text: { type: 'string', description: 'Unique substring that identifies the entry to replace.' },
+          new_content: { type: 'string', description: 'The new content to replace the old entry with.' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'memory_remove',
+      description: 'Remove a memory entry. Uses substring matching to find the entry to remove.',
+      parameters: {
+        type: 'object',
+        required: ['target', 'old_text'],
+        properties: {
+          target: { type: 'string', enum: ['memory', 'user'], description: 'Target store: memory (agent notes) or user (user profile).' },
+          old_text: { type: 'string', description: 'Unique substring that identifies the entry to remove.' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'session_list',
       description: 'List previous chat sessions with their titles and timestamps. Useful for referencing past conversations.',
       parameters: {
@@ -413,6 +444,31 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         properties: {
           session_id: { type: 'string', description: 'The session ID to read.' },
           max_messages: { type: 'integer', description: 'Max messages to return. Default: 50.' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'skill_list',
+      description: 'List all available auto-generated skills. Shows name, description, and success rate. Use skill_view to see full details of a specific skill.',
+      parameters: {
+        type: 'object',
+        properties: {}
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'skill_view',
+      description: 'View full details of a specific skill including its tool chain, parameter hints, and usage statistics.',
+      parameters: {
+        type: 'object',
+        required: ['name'],
+        properties: {
+          name: { type: 'string', description: 'The skill name (or partial name) to view.' }
         }
       }
     }
@@ -562,7 +618,8 @@ let enabledTools: Set<string> = new Set([
   'move_file', 'copy_file', 'web_fetch', 'web_search', 'append_file', 'edit_file',
   'get_file_info', 'tree', 'download_file', 'diff_files', 'replace_in_files',
   'read_multiple_files', 'git', 'compress',
-  'memory_search', 'memory_add', 'session_list', 'session_read', 'spawn_task',
+  'memory_search', 'memory_add', 'memory_replace', 'memory_remove',
+  'session_list', 'session_read', 'skill_list', 'skill_view', 'spawn_task',
   'browser_open', 'browser_screenshot', 'browser_evaluate', 'browser_extract',
   'browser_click', 'browser_type', 'browser_scroll', 'browser_close'
 ]);
@@ -637,6 +694,23 @@ export async function executeTool(toolName: string, args: Record<string, unknown
       logToolResult('memory_add', true, `${type}: ${content.slice(0, 50)}`);
       return { success: true, id: entry.id, type: entry.type, content: entry.content };
     }
+    if (toolName === 'memory_replace') {
+      const { replaceMemoryByContent } = await import('./memory-manager.js');
+      const target = String(args.target || 'memory') as 'memory' | 'user';
+      const oldText = String(args.old_text || '');
+      const newContent = String(args.new_content || '');
+      const result = await replaceMemoryByContent(target, oldText, newContent);
+      logToolResult('memory_replace', result.success, result.message);
+      return result;
+    }
+    if (toolName === 'memory_remove') {
+      const { removeMemoryByContent } = await import('./memory-manager.js');
+      const target = String(args.target || 'memory') as 'memory' | 'user';
+      const oldText = String(args.old_text || '');
+      const result = await removeMemoryByContent(target, oldText);
+      logToolResult('memory_remove', result.success, result.message);
+      return result;
+    }
     if (toolName === 'session_list') {
       const bridge = window.metonaDesktop;
       if (!bridge?.db) return { success: false, error: '桌面 API 不可用' };
@@ -688,6 +762,19 @@ export async function executeTool(toolName: string, args: Record<string, unknown
       logToolResult('spawn_task', result.success, result.success ? `完成, ${(result as any).loops} 轮` : result.error);
       return result;
     }
+    if (toolName === 'skill_list') {
+      const { listSkills } = await import('./skill-manager.js');
+      const skills = await listSkills();
+      logToolResult('skill_list', true, `${skills.length} 个技能`);
+      return { success: true, skills, total: skills.length };
+    }
+    if (toolName === 'skill_view') {
+      const { viewSkill } = await import('./skill-manager.js');
+      const name = String(args.name || '');
+      const result = await viewSkill(name);
+      logToolResult('skill_view', result.success, result.success ? result.skill?.name : result.error);
+      return result;
+    }
 
     // run_command 走 workspace IPC
     if (toolName === 'run_command') {
@@ -731,7 +818,8 @@ export function getToolIcon(name: string): string {
     edit_file: '✂️', get_file_info: 'ℹ️', tree: '🌳', download_file: '⬇️',
     diff_files: '🔀', replace_in_files: '🔄', read_multiple_files: '📚',
     git: '🔖', compress: '🗜️', web_search: '🔍',
-    memory_search: '🧠', memory_add: '💾', session_list: '📋', session_read: '📖', spawn_task: '🤖',
+    memory_search: '🧠', memory_add: '💾', memory_replace: '🔄', memory_remove: '🗑️',
+    session_list: '📋', session_read: '📖', skill_list: '📚', skill_view: '📖', spawn_task: '🤖',
     browser_open: '🌐', browser_screenshot: '📸', browser_evaluate: '⚡', browser_extract: '📰',
     browser_click: '👆', browser_type: '⌨️', browser_scroll: '↕️', browser_close: '❌'
   };
@@ -747,7 +835,8 @@ export function formatToolName(name: string): string {
     get_file_info: '文件信息', tree: '目录树', download_file: '下载文件',
     diff_files: '文件对比', replace_in_files: '批量替换', read_multiple_files: '批量读取',
     git: 'Git 操作', compress: '压缩/解压', web_search: '联网搜索',
-    memory_search: '搜索记忆', memory_add: '添加记忆', session_list: '会话列表', session_read: '读取会话', spawn_task: '子代理委派',
+    memory_search: '搜索记忆', memory_add: '添加记忆', memory_replace: '替换记忆', memory_remove: '删除记忆',
+    session_list: '会话列表', session_read: '读取会话', skill_list: '技能列表', skill_view: '技能详情', spawn_task: '子代理委派',
     browser_open: '打开网页', browser_screenshot: '浏览器截图', browser_evaluate: '执行JS', browser_extract: '提取内容',
     browser_click: '点击元素', browser_type: '输入文本', browser_scroll: '滚动页面', browser_close: '关闭浏览器'
   };

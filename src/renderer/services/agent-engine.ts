@@ -28,16 +28,30 @@ import type {
   TraceEntry
 } from '../types.js';
 
-const MAX_LOOPS = 15;
 const MAX_LOOP_TIME = 600000;       // 10 分钟总超时
 const TOOL_EXEC_TIMEOUT = 30000;    // 工具执行超时 30 秒
 const STREAM_TIMEOUT = 120000;      // 单次流式调用超时 2 分钟
 const MAX_RETRIES = 2;              // 工具错误自动重试次数
 
+/** 每个工具返回给模型的最大字符数 */
+const TOOL_MAX_RESULT_SIZE: Record<string, number> = {
+  web_fetch: 20000,       // 网页内容通常较长
+  web_search: 3000,       // 搜索结果已精简
+  read_file: 15000,       // 文件内容
+  read_multiple_files: 10000,
+  list_directory: 5000,
+  search_files: 5000,
+  run_command: 10000,     // 命令输出
+  git: 5000,
+  session_read: 15000,
+  browser_extract: 10000,
+  browser_evaluate: 8000,
+};
+
 /** v4.1: 工具并行执行 — 依赖检测用 */
 const TOOLS_WITH_DATA_DEPS = new Set(['web_fetch', 'edit_file', 'append_file', 'move_file', 'delete_file']);
 
-const AGENT_SYSTEM_PROMPT = `你是一个具备工具调用能力的 AI 助手。你有 34 个工具可以调用，包括文件操作、联网搜索、网页抓取、命令执行、浏览器控制、记忆管理、MCP 工具等。
+const AGENT_SYSTEM_PROMPT = `你是一个具备工具调用能力的 AI 助手。你有 38 个工具可以调用，包括文件操作、联网搜索、网页抓取、命令执行、浏览器控制、记忆管理、MCP 工具等。
 
 ## 核心规则
 
@@ -73,7 +87,9 @@ const TOOL_USAGE_GUIDE = `【工具链规则（强制执行）】
 7. 不要重复调用：已经成功调用过的工具+参数组合不要再调用。
 8. 记忆工具：可以用 memory_search 搜索过去记忆，用 memory_add 添加重要信息。
 9. 会话工具：可以用 session_list 列出历史会话，用 session_read 读取会话内容。
-10. 并行调用：当多个工具调用互相独立时，可以在同一次回复中同时调用它们。`;
+10. 并行调用：当多个工具调用互相独立时，可以在同一次回复中同时调用它们。
+11. 管理记忆：可以用 memory_replace 更新已有记忆（子串匹配 old_text），用 memory_remove 删除不再需要的记忆。
+12. 查看技能：可以用 skill_list 列出所有可用技能，用 skill_view 查看特定技能的详细工具链。`;
 
 /** 工具名白名单：用于文本解析兜底时过滤非法工具名 */
 const VALID_TOOL_NAMES = new Set([
@@ -81,7 +97,8 @@ const VALID_TOOL_NAMES = new Set([
   'delete_file', 'run_command', 'move_file', 'copy_file', 'web_fetch', 'web_search',
   'append_file', 'edit_file', 'get_file_info', 'tree', 'download_file', 'diff_files',
   'replace_in_files', 'read_multiple_files', 'git', 'compress',
-  'memory_search', 'memory_add', 'session_list', 'session_read'
+  'memory_search', 'memory_add', 'memory_replace', 'memory_remove', 'session_list', 'session_read',
+  'skill_list', 'skill_view'
 ]);
 
 /**
@@ -234,7 +251,8 @@ function formatToolResultForModel(toolName: string, result: ToolResult): string 
     case 'web_fetch': {
       let content = (result.content as string) || '';
       // 截断过长内容，避免撑爆上下文
-      if (content.length > 15000) content = content.slice(0, 15000) + '\n... (已截断)';
+      const webFetchMax = TOOL_MAX_RESULT_SIZE['web_fetch'] || 20000;
+      if (content.length > webFetchMax) content = content.slice(0, webFetchMax) + '\n... (已截断)';
       return JSON.stringify({ success: true, url: result.url, content });
     }
 
@@ -315,7 +333,11 @@ function formatToolResultForModel(toolName: string, result: ToolResult): string 
             k === 'status' || k === 'length' || k === 'isDirectory') continue;
         clean[k] = v;
       }
-      return JSON.stringify(clean);
+      let json = JSON.stringify(clean);
+      // 按工具配置截断
+      const maxLen = TOOL_MAX_RESULT_SIZE[toolName] || 15000;
+      if (json.length > maxLen) json = json.slice(0, maxLen) + '\n... (已截断)';
+      return json;
     }
   }
 }
@@ -466,6 +488,9 @@ export async function runAgentLoop(
 
   logInfo(`ReAct Agent Loop 启动: ${model}`, `工具: ${useTools ? '开启' : '关闭'}, 记忆: ${isMemoryEnabled() ? '开启' : '关闭'}, tokens≈${estimateTokens(messages.map(m => m.content || '').join(''))}`);
 
+  // 迭代预算：从 state 读取，默认 15
+  const maxLoops = state.get<number>('maxTurns', 15);
+
   let loopCount = 0;
   const allToolRecords: ToolCallRecord[] = [];
   const loopStartTime = Date.now();
@@ -481,7 +506,7 @@ export async function runAgentLoop(
     return { eval_count: totalEvalCount || undefined, total_duration: totalDuration };
   };
 
-  while (loopCount < MAX_LOOPS) {
+  while (loopCount < maxLoops) {
     loopCount++;
 
     // 全局超时检查
@@ -498,7 +523,7 @@ export async function runAgentLoop(
       return;
     }
 
-    logAgentLoop(loopCount, MAX_LOOPS);
+    logAgentLoop(loopCount, maxLoops);
 
     let thinking = '';
     content = '';

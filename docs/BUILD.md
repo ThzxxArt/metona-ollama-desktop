@@ -14,7 +14,7 @@
 # 1. 克隆并安装依赖
 git clone https://gitee.com/thzxx/metona-ollama-desktop.git
 cd metona-ollama-desktop
-git checkout metona-ollama-desktop-v5.0.1
+git checkout metona-ollama-desktop-v5.1.0
 npm config set registry https://registry.npmmirror.com
 npm install
 
@@ -175,6 +175,14 @@ ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm run dist
 electron-builder 会自动处理所有依赖下载（Electron、NSIS、winCodeSign），虽然首次较慢（~5分钟），但无需手动管理缓存。
 
 ## 构建日志
+
+### v5.1.0（2026-04-18） — metona-ollama-desktop 仓库
+
+- ✨ 新增 4 个工具：memory_replace、memory_remove、skill_list、skill_view（总数 38 个）
+- ✨ 记忆安全扫描（prompt injection / 敏感信息 / 不可见字符检测）
+- 🔧 Agent Loop 迭代预算可配置化（maxTurns）
+- 🔧 工具结果截断按工具独立配置
+- 📝 版本号更新至 5.1.0
 
 ### v5.0.1（2026-04-18） — metona-ollama-desktop 仓库
 

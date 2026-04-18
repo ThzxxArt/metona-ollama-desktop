@@ -248,6 +248,13 @@ export async function addMemory(data: {
 }): Promise<MemoryEntry> {
   const db = state.get<ChatDB | null>(KEYS.DB);
 
+  // 安全扫描：检测 prompt injection 和敏感信息
+  const securityCheck = scanMemorySecurity(data.content);
+  if (!securityCheck.safe) {
+    logWarn('记忆安全扫描拦截', securityCheck.reason);
+    throw new Error(`记忆内容被安全规则拦截: ${securityCheck.reason}`);
+  }
+
   // 检查重复（内容相似度 > 80% 则跳过）
   const existing = memoryCache.find(e => {
     if (e.type !== data.type) return false;
@@ -291,6 +298,112 @@ export async function addMemory(data: {
   }
 
   return entry;
+}
+
+// ── 安全扫描 ──
+
+/** 记忆内容安全扫描 */
+function scanMemorySecurity(content: string): { safe: boolean; reason: string } {
+  // Prompt injection 模式
+  const injectionPatterns = [
+    /ignore\s+(all\s+)?previous/i,
+    /forget\s+(all\s+)?instructions/i,
+    /you\s+are\s+now\s+a/i,
+    /new\s+system\s*prompt/i,
+    /override\s+(your|the)\s+/i,
+    /disregard\s+(all|any|previous)/i,
+  ];
+  for (const p of injectionPatterns) {
+    if (p.test(content)) return { safe: false, reason: '疑似 prompt injection 攻击' };
+  }
+
+  // 敏感信息模式
+  const secretPatterns = [
+    /-----BEGIN\s+(RSA\s+)?PRIVATE\s+KEY-----/,
+    /sk-[a-zA-Z0-9]{20,}/,
+    /ghp_[a-zA-Z0-9]{36}/,
+    /AKIA[A-Z0-9]{16}/,
+    /\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b/,  // 信用卡号
+  ];
+  for (const p of secretPatterns) {
+    if (p.test(content)) return { safe: false, reason: '疑似包含敏感信息（密钥/密码/信用卡号）' };
+  }
+
+  // 不可见字符
+  if (/[\u200B-\u200F\u202A-\u202E\u2060-\u206F\uFEFF]/.test(content)) {
+    return { safe: false, reason: '包含不可见 Unicode 字符' };
+  }
+
+  return { safe: true, reason: '' };
+}
+
+// ── 记忆替换（根据 old_text 子串匹配）──
+
+export async function replaceMemoryByContent(
+  target: 'memory' | 'user',
+  oldText: string,
+  newContent: string
+): Promise<{ success: boolean; message: string }> {
+  if (!oldText || oldText.length < 2) {
+    return { success: false, message: 'old_text 不能为空且至少 2 个字符' };
+  }
+  if (!newContent || newContent.length < 2) {
+    return { success: false, message: 'new_content 不能为空且至少 2 个字符' };
+  }
+
+  // 安全扫描
+  const securityCheck = scanMemorySecurity(newContent);
+  if (!securityCheck.safe) {
+    return { success: false, message: `新内容被安全规则拦截: ${securityCheck.reason}` };
+  }
+
+  // 匹配
+  const matches = memoryCache.filter(e => {
+    if (target === 'user') {
+      return (e.type === 'preference' || e.type === 'fact') && e.content.includes(oldText);
+    }
+    return e.content.includes(oldText);
+  });
+
+  if (matches.length === 0) {
+    return { success: false, message: `未找到包含 "${oldText.slice(0, 50)}" 的记忆` };
+  }
+  if (matches.length > 1) {
+    return { success: false, message: `匹配到 ${matches.length} 条记忆，请使用更精确的 old_text` };
+  }
+
+  await updateMemory(matches[0].id, { content: newContent.trim() });
+  logMemory('替换记忆', `${matches[0].id}: ${oldText.slice(0, 30)} → ${newContent.slice(0, 30)}`);
+  return { success: true, message: `已替换记忆: ${matches[0].id}` };
+}
+
+// ── 记忆删除（根据 old_text 子串匹配）──
+
+export async function removeMemoryByContent(
+  target: 'memory' | 'user',
+  oldText: string
+): Promise<{ success: boolean; message: string }> {
+  if (!oldText || oldText.length < 2) {
+    return { success: false, message: 'old_text 不能为空且至少 2 个字符' };
+  }
+
+  const matches = memoryCache.filter(e => {
+    if (target === 'user') {
+      return (e.type === 'preference' || e.type === 'fact') && e.content.includes(oldText);
+    }
+    return e.content.includes(oldText);
+  });
+
+  if (matches.length === 0) {
+    return { success: false, message: `未找到包含 "${oldText.slice(0, 50)}" 的记忆` };
+  }
+  if (matches.length > 1) {
+    return { success: false, message: `匹配到 ${matches.length} 条记忆，请使用更精确的 old_text` };
+  }
+
+  await deleteMemory(matches[0].id);
+  logMemory('删除记忆', `${matches[0].id}: ${oldText.slice(0, 50)}`);
+  return { success: true, message: `已删除记忆: ${matches[0].id}` };
 }
 
 // ── 记忆更新 ──

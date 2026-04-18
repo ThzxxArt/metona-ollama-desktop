@@ -268,3 +268,56 @@ function generateSkillDescription(chain: ToolChainStep[], sessionTitle: string):
   const steps = chain.map((s, i) => `${i + 1}. ${s.description}`).join('；');
   return `从会话「${sessionTitle}」中提取。步骤：${steps}`;
 }
+
+// ── 渐进式技能加载 ──
+
+/** 列出所有技能（渐进式 Level 0：只返回名称、描述、成功率） */
+export async function listSkills(): Promise<Array<{
+  name: string;
+  description: string;
+  success_rate: string;
+  chain_preview: string;
+}>> {
+  const bridge = (window as any).metonaDesktop;
+  if (!bridge?.db?.getAllSkills) return [];
+  const allSkills: Skill[] = await bridge.db.getAllSkills();
+  return allSkills.map(skill => {
+    const total = skill.success_count + skill.fail_count;
+    const rate = total > 0 ? Math.round(skill.success_count / total * 100) : 100;
+    let chainPreview = '';
+    try {
+      const chain: ToolChainStep[] = JSON.parse(skill.tool_chain);
+      chainPreview = chain.map(s => s.name).join(' → ');
+    } catch { /* */ }
+    return {
+      name: skill.name,
+      description: skill.description,
+      success_rate: `${rate}%`,
+      chain_preview: chainPreview
+    };
+  });
+}
+
+/** 查看技能详情（渐进式 Level 1：返回完整工具链和参数提示） */
+export async function viewSkill(skillName: string): Promise<{
+  success: boolean;
+  skill?: Skill & { chain: ToolChainStep[]; success_rate: string };
+  error?: string;
+}> {
+  const bridge = (window as any).metonaDesktop;
+  if (!bridge?.db?.getAllSkills) return { success: false, error: '数据库不可用' };
+  const allSkills: Skill[] = await bridge.db.getAllSkills();
+  const skill = allSkills.find(s =>
+    s.name.toLowerCase() === skillName.toLowerCase() ||
+    s.name.toLowerCase().includes(skillName.toLowerCase())
+  );
+  if (!skill) return { success: false, error: `未找到技能: ${skillName}` };
+  let chain: ToolChainStep[] = [];
+  try { chain = JSON.parse(skill.tool_chain); } catch { /* */ }
+  const total = skill.success_count + skill.fail_count;
+  const rate = total > 0 ? Math.round(skill.success_count / total * 100) : 100;
+  return {
+    success: true,
+    skill: { ...skill, chain, success_rate: `${rate}%` }
+  };
+}

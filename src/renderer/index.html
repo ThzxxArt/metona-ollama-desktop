@@ -27,7 +27,7 @@
         <div class="header-left">
             <span class="logo">🦙</span>
             <span class="app-title">Metona Ollama</span>
-            <span class="app-version">v5.0.1</span>
+            <span class="app-version">v5.1.0</span>
             <button class="icon-btn help-btn" id="btnHelp" title="使用帮助">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
@@ -413,8 +413,8 @@
         <div class="modal-body">
             <div class="help-section"><h4>🚀 快速开始</h4><ol><li>确保 Ollama 已启动（默认 <code>http://127.0.0.1:11434</code>，可在设置中修改）</li><li>顶部模型栏选择一个模型，右侧会显示模型能力徽章（🧠 Think / 👁️ Vision / 🔧 Tools）</li><li>输入消息，按 <kbd>Enter</kbd> 发送，<kbd>Shift+Enter</kbd> 换行</li></ol></div>
             <div class="help-section"><h4>💬 聊天功能</h4><ul><li><strong>流式回复</strong> — 实时打字效果，随时点 ■ 停止</li><li><strong>Think 推理</strong> — 设置中开启，让模型展示深度思考过程（需模型支持，如 Qwen3）</li><li><strong>多模态</strong> — 上传图片，模型需支持 Vision 能力</li><li><strong>文件分析</strong> — 支持 50+ 种文本/代码格式，单文件 ≤500KB，内容以代码块发送给模型</li><li><strong>上下文长度</strong> — 设置中调整 <code>num_ctx</code>，越大记忆越长，消耗显存越多</li></ul></div>
-            <div class="help-section"><h4>🔧 Tool Calling（AI 自主操作）</h4><ul><li>设置中开启后，AI 可以在对话中<strong>自主调用本地工具</strong>，像一个本地 Agent</li><li><strong>29 个工具</strong>，分为 6 类：<ul><li><strong>文件操作</strong>（14 个）：read_file / write_file / list_directory / search_files / create_directory / delete_file / move_file / copy_file / append_file / edit_file / get_file_info / tree / diff_files / replace_in_files / read_multiple_files</li><li><strong>网络工具</strong>（3 个）：web_search（联网搜索）/ web_fetch（网页抓取）/ download_file</li><li><strong>浏览器控制</strong>（8 个）：browser_open / browser_screenshot / browser_evaluate / browser_extract / browser_click / browser_type / browser_scroll / browser_close</li><li><strong>系统工具</strong>（3 个）：run_command / git / compress</li><li><strong>记忆/会话</strong>（4 个）：memory_search / memory_add / session_list / session_read</li><li><strong>子代理</strong>（1 个）：spawn_task</li></ul></li><li>仅 <code>run_command</code>（命令执行）支持三模式切换：自动/需确认/禁用</li><li>危险命令（<code>rm -rf</code>、<code>mkfs</code>、反弹 shell 等）和系统路径（<code>/etc</code>、<code>~/.ssh</code> 等）被自动拦截</li><li>工具调用以<strong>可视化卡片</strong>展示状态（pending → running → success/error）</li><li>最多自动循环 <strong>15 轮</strong>工具调用，总超时 10 分钟，也可随时中断</li><li>独立工具自动并行执行，有依赖关系的工具串行执行</li><li>⚠️ 需要模型支持 Tool Calling（推荐 Qwen3、Llama 3.1+、Mistral）</li></ul></div>
-            <div class="help-section"><h4>🧠 Agent 记忆系统</h4><ul><li>设置中开启后，AI 从对话中<strong>自动提取关键信息</strong>（事实/偏好/规则），跨会话持续积累</li><li>对话满 <strong>6 条消息</strong>后自动触发记忆提取</li><li>新对话时自动检索相关记忆注入上下文，让 AI "记住"你</li><li>点击顶部 🧠 按钮打开记忆面板：搜索、筛选、编辑、删除</li><li><strong>向量语义搜索</strong>：在设置中选择嵌入模型后，支持语义级别记忆检索（更精准）</li><li>未选择嵌入模型时，使用关键词匹配检索记忆</li><li>AI 可通过 <code>memory_search</code> / <code>memory_add</code> 工具主动管理记忆</li><li>AI 可通过 <code>session_list</code> / <code>session_read</code> 查阅历史会话</li><li>记忆存储在本地 SQLite，不会上传到任何服务器</li></ul></div>
+            <div class="help-section"><h4>🔧 Tool Calling（AI 自主操作）</h4><ul><li>设置中开启后，AI 可以在对话中<strong>自主调用本地工具</strong>，像一个本地 Agent</li><li><strong>38 个工具</strong>，分为 7 类：<ul><li><strong>文件操作</strong>（14 个）：read_file / write_file / list_directory / search_files / create_directory / delete_file / move_file / copy_file / append_file / edit_file / get_file_info / tree / diff_files / replace_in_files / read_multiple_files</li><li><strong>网络工具</strong>（3 个）：web_search（联网搜索）/ web_fetch（网页抓取）/ download_file</li><li><strong>浏览器控制</strong>（8 个）：browser_open / browser_screenshot / browser_evaluate / browser_extract / browser_click / browser_type / browser_scroll / browser_close</li><li><strong>系统工具</strong>（3 个）：run_command / git / compress</li><li><strong>记忆/会话/Skill</strong>（8 个）：memory_search / memory_add / memory_replace / memory_remove / session_list / session_read / skill_list / skill_view</li><li><strong>子代理</strong>（1 个）：spawn_task</li></ul></li><li>仅 <code>run_command</code>（命令执行）支持三模式切换：自动/需确认/禁用</li><li>危险命令（<code>rm -rf</code>、<code>mkfs</code>、反弹 shell 等）和系统路径（<code>/etc</code>、<code>~/.ssh</code> 等）被自动拦截</li><li>工具调用以<strong>可视化卡片</strong>展示状态（pending → running → success/error）</li><li>最多自动循环 <strong>15 轮</strong>工具调用，总超时 10 分钟，也可随时中断</li><li>独立工具自动并行执行，有依赖关系的工具串行执行</li><li>⚠️ 需要模型支持 Tool Calling（推荐 Qwen3、Llama 3.1+、Mistral）</li></ul></div>
+            <div class="help-section"><h4>🧠 Agent 记忆系统</h4><ul><li>设置中开启后，AI 从对话中<strong>自动提取关键信息</strong>（事实/偏好/规则），跨会话持续积累</li><li>对话满 <strong>6 条消息</strong>后自动触发记忆提取</li><li>新对话时自动检索相关记忆注入上下文，让 AI "记住"你</li><li>点击顶部 🧠 按钮打开记忆面板：搜索、筛选、编辑、删除</li><li><strong>向量语义搜索</strong>：在设置中选择嵌入模型后，支持语义级别记忆检索（更精准）</li><li>未选择嵌入模型时，使用关键词匹配检索记忆</li><li>AI 可通过 <code>memory_search</code> / <code>memory_add</code> / <code>memory_replace</code> / <code>memory_remove</code> 工具主动管理记忆</li><li>AI 可通过 <code>session_list</code> / <code>session_read</code> 查阅历史会话</li><li>记忆存储在本地 SQLite，不会上传到任何服务器</li></ul></div>
             <div class="help-section"><h4>🎭 人格模式</h4><ul><li>设置中可切换 6 种预设人格：通用助手 / 编程助手 / 写作助手 / 数据分析 / 翻译助手 / 代码审查</li><li>不同人格有独立的 system prompt 和温度偏好</li><li>通用助手不做额外约束，其他人格会调整行为风格</li></ul></div>
             <div class="help-section"><h4>🔌 MCP（Model Context Protocol）</h4><ul><li>支持连接外部 MCP Server，动态扩展工具能力</li><li>设置面板可添加/启用/禁用/删除 MCP 服务器</li><li>MCP 工具以 <code>mcp_{server}_{tool}</code> 前缀注册，与内置工具统一调度</li><li>启动时自动连接已启用的 MCP 服务器</li></ul></div>
             <div class="help-section"><h4>⏰ 定时任务（Cron）</h4><ul><li>支持一次性（at）和周期性（cron 表达式）任务调度</li><li>任务触发后将描述填入输入框，可直接发送给 AI 执行</li><li>设置面板可添加/管理/删除定时任务</li></ul></div>
@@ -430,7 +430,7 @@
 <div class="modal-overlay" id="toolsModal" style="display:none;">
     <div class="modal">
         <div class="modal-header">
-            <h3>🔧 工具面板（29 个）</h3>
+            <h3>🔧 工具面板（38 个）</h3>
             <button class="icon-btn" id="btnCloseTools">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
@@ -549,6 +549,14 @@
                     <div class="tool-card-desc">添加记忆条目（事实/偏好/规则），跨会话积累</div>
                 </div>
                 <div class="tool-card">
+                    <div class="tool-card-header"><span class="tool-card-icon">🔄</span><span class="tool-card-name">memory_replace</span><span class="tool-card-badge auto">自动</span></div>
+                    <div class="tool-card-desc">替换已有记忆内容（子串匹配 old_text，替换为 new_content）</div>
+                </div>
+                <div class="tool-card">
+                    <div class="tool-card-header"><span class="tool-card-icon">🗑️</span><span class="tool-card-name">memory_remove</span><span class="tool-card-badge auto">自动</span></div>
+                    <div class="tool-card-desc">删除记忆条目（子串匹配 old_text）</div>
+                </div>
+                <div class="tool-card">
                     <div class="tool-card-header"><span class="tool-card-icon">📋</span><span class="tool-card-name">session_list</span><span class="tool-card-badge auto">自动</span></div>
                     <div class="tool-card-desc">列出历史会话，支持按标题搜索</div>
                 </div>
@@ -559,6 +567,14 @@
                 <div class="tool-card">
                     <div class="tool-card-header"><span class="tool-card-icon">🤖</span><span class="tool-card-name">spawn_task</span><span class="tool-card-badge auto">自动</span></div>
                     <div class="tool-card-desc">生成子代理独立执行任务，完成后回传结果</div>
+                </div>
+                <div class="tool-card">
+                    <div class="tool-card-header"><span class="tool-card-icon">📚</span><span class="tool-card-name">skill_list</span><span class="tool-card-badge auto">自动</span></div>
+                    <div class="tool-card-desc">列出所有自动生成的技能（名称、描述、成功率）</div>
+                </div>
+                <div class="tool-card">
+                    <div class="tool-card-header"><span class="tool-card-icon">📖</span><span class="tool-card-name">skill_view</span><span class="tool-card-badge auto">自动</span></div>
+                    <div class="tool-card-desc">查看技能详情（完整工具链、参数提示、使用统计）</div>
                 </div>
                 <div class="tool-card">
                     <div class="tool-card-header"><span class="tool-card-icon">🌐</span><span class="tool-card-name">browser_open</span><span class="tool-card-badge auto">自动</span></div>

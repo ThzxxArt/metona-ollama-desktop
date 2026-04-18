@@ -3,13 +3,40 @@
 ## 分支结构
 
 **桌面版主线**（`master`）：
-- `metona-ollama-desktop-v3.2.6` → `metona-ollama-desktop-v3.3.4` → `metona-ollama-desktop-v4.0.0` → `metona-ollama-desktop-v5.0.0` → `metona-ollama-desktop-v5.0.1`（当前发布分支）
+- `metona-ollama-desktop-v3.2.6` → `metona-ollama-desktop-v3.3.4` → `metona-ollama-desktop-v4.0.0` → `metona-ollama-desktop-v5.0.0` → `metona-ollama-desktop-v5.0.1` → `metona-ollama-desktop-v5.1.0`（当前发布分支）
 
 **Web 版历史**已独立为 [metona-ollama-web](https://gitee.com/thzxx/metona-ollama-web) 仓库（v1.1.0 ~ v4.0.3）。
 
 ---
 
 ## 桌面版（Desktop）
+
+### Desktop v5.1.0 — Hermes 借鉴 & 记忆/Skill 系统增强
+
+- ✨ **记忆 replace/remove 操作**（借鉴 Hermes Agent）
+  - 新增 `memory_replace` 工具：子串匹配 old_text，替换为 new_content
+  - 新增 `memory_remove` 工具：子串匹配 old_text，删除对应记忆
+  - 两种目标：memory（Agent 笔记）和 user（用户画像）
+  - 唯一匹配约束：匹配多条时返回错误，要求更精确的子串
+- ✨ **Skill 渐进式加载**（借鉴 Hermes Agent）
+  - 新增 `skill_list` 工具（Level 0）：返回技能名称、描述、成功率、工具链预览
+  - 新增 `skill_view` 工具（Level 1）：返回完整工具链、参数提示、使用统计
+  - Agent 先看列表，需要时再加载详情，节省 token
+- ✨ **记忆安全扫描**
+  - 记忆写入前自动检查 prompt injection 模式（ignore previous / you are now a 等）
+  - 检测敏感信息（SSH 私钥、API Key、信用卡号）
+  - 检测不可见 Unicode 字符
+  - 拦截时返回明确错误信息
+- 🔧 **迭代预算可配置化**
+  - Agent Loop 最大轮数从硬编码 15 改为 state 读取（`maxTurns`，默认 15）
+  - 用户可通过设置面板调整
+- 🔧 **工具结果截断按工具配置**
+  - 新增 `TOOL_MAX_RESULT_SIZE` 常量，每个工具独立配置最大返回字符数
+  - web_fetch: 20000, web_search: 3000, read_file: 15000, run_command: 10000 等
+- 🔧 **更新 AGENT_SYSTEM_PROMPT**
+  - 工具数量 34 → 38
+  - TOOL_USAGE_GUIDE 新增记忆管理和技能查看规则
+- 📝 **版本号更新至 5.1.0**（7 个文件同步更新）
 
 ### Desktop v5.0.1 — 搜索引擎优化 & Agent 去重修复
 
