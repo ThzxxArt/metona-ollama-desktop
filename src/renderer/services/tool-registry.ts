@@ -595,7 +595,13 @@ export async function refreshMCPTools(): Promise<void> {
 }
 
 export async function executeTool(toolName: string, args: Record<string, unknown>): Promise<ToolResult> {
-  if (!isToolEnabled(toolName)) {
+  // MCP 工具路由
+  if (toolName.startsWith('mcp_')) {
+    const { executeMCPTool } = await import('./mcp-client.js');
+    return executeMCPTool(toolName, args);
+  }
+
+  if (!enabledTools.has(toolName)) {
     logError(`工具未启用: ${toolName}`);
     return { success: false, error: `工具 ${toolName} 未启用` };
   }

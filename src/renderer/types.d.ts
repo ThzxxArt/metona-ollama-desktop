@@ -240,6 +240,15 @@ export interface MetonaDesktopAPI {
     /** 终止当前 AI 命令 */
     cmdKill: () => Promise<{ killed: boolean }>;
   };
+  mcp: {
+    startServer: (config: { name: string; command: string; args: string[]; enabled: boolean; description?: string }) => Promise<{ success: boolean; error?: string }>;
+    stopServer: (name: string) => Promise<{ success: boolean }>;
+    stopAll: () => Promise<{ success: boolean }>;
+    callTool: (serverName: string, toolName: string, args: Record<string, unknown>) => Promise<{ success: boolean; result?: unknown; error?: string }>;
+    getTools: () => Promise<Array<{ serverName: string; name: string; fullName: string; description: string; inputSchema: { type: string; properties?: Record<string, unknown>; required?: string[] } }>>;
+    getStatuses: () => Promise<Array<{ name: string; running: boolean; toolCount: number }>>;
+    refreshTools: (name: string) => Promise<Array<{ name: string; description?: string; inputSchema: Record<string, unknown> }>>;
+  };
 }
 
 export interface AppInfo {

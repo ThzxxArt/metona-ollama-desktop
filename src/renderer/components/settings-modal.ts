@@ -151,6 +151,78 @@ export function initSettingsModal(): void {
     logSetting('检查间隔', `${ms / 60000} 分钟`);
   });
 
+  // ── v5.0 MCP 服务器管理 ──
+  async function renderMCPServerList(): Promise<void> {
+    const { getMCPServers, getMCPServerStatuses, toggleMCPServer, removeMCPServer } = await import('../services/mcp-client.js');
+    const { refreshMCPTools } = await import('../services/tool-registry.js');
+    const container = document.querySelector('#mcpServerList')!;
+    const servers = await getMCPServers();
+    const statuses = await getMCPServerStatuses();
+
+    if (servers.length === 0) {
+      container.innerHTML = '<p class="text-muted" style="margin:4px 0;font-size:11px;">未配置 MCP 服务器。MCP 允许连接外部工具服务。</p>';
+      return;
+    }
+
+    container.innerHTML = servers.map(s => {
+      const status = statuses.find(st => st.name === s.name);
+      const running = status?.running || false;
+      const toolCount = status?.toolCount || 0;
+      return `<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid var(--border-subtle);">
+        <span style="width:8px;height:8px;border-radius:50%;background:${running ? 'var(--success)' : 'var(--text-muted)'};" title="${running ? '已连接' : '未连接'}"></span>
+        <span style="flex:1;font-weight:500;">${s.name}</span>
+        <span class="text-muted" style="font-size:11px;">${s.command} ${s.args.join(' ')}${running ? ` (${toolCount} 工具)` : ''}</span>
+        <button class="btn btn-sm btn-outline mcp-toggle" data-name="${s.name}" style="padding:2px 8px;font-size:11px;">${s.enabled ? '禁用' : '启用'}</button>
+        <button class="btn btn-sm btn-outline mcp-delete" data-name="${s.name}" style="padding:2px 8px;font-size:11px;color:var(--critical);">删除</button>
+      </div>`;
+    }).join('');
+
+    container.querySelectorAll('.mcp-toggle').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const name = (btn as HTMLElement).dataset.name!;
+        await toggleMCPServer(name);
+        await refreshMCPTools();
+        await renderMCPServerList();
+      });
+    });
+
+    container.querySelectorAll('.mcp-delete').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const name = (btn as HTMLElement).dataset.name!;
+        await removeMCPServer(name);
+        await refreshMCPTools();
+        await renderMCPServerList();
+      });
+    });
+  }
+
+  document.querySelector('#btnAddMCPServer')!.addEventListener('click', async () => {
+    const { addMCPServer } = await import('../services/mcp-client.js');
+    const { refreshMCPTools } = await import('../services/tool-registry.js');
+    const name = (document.querySelector('#inputMCPName') as HTMLInputElement).value.trim();
+    const command = (document.querySelector('#inputMCPCommand') as HTMLInputElement).value.trim();
+    const argsStr = (document.querySelector('#inputMCPArgs') as HTMLInputElement).value.trim();
+
+    if (!name || !command) {
+      showToast('请填写名称和命令', 'warning');
+      return;
+    }
+
+    const args = argsStr ? argsStr.split(/\s+/) : [];
+    await addMCPServer({ name, command, args, enabled: true });
+    await refreshMCPTools();
+    (document.querySelector('#inputMCPName') as HTMLInputElement).value = '';
+    (document.querySelector('#inputMCPCommand') as HTMLInputElement).value = '';
+    (document.querySelector('#inputMCPArgs') as HTMLInputElement).value = '';
+    showToast(`MCP 服务器已添加: ${name}`, 'success');
+    await renderMCPServerList();
+  });
+
+  // 设置面板打开时刷新 MCP 列表
+  document.querySelector('#btnSettings')!.addEventListener('click', () => {
+    setTimeout(renderMCPServerList, 100);
+  });
+
   // ── v5.0 Cron 定时任务 ──
   document.querySelector('#btnAddCronTask')!.addEventListener('click', async () => {
     const name = (document.querySelector('#inputCronName') as HTMLInputElement).value.trim();

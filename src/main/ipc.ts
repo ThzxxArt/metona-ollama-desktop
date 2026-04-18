@@ -48,6 +48,7 @@ import {
   handleCompress
 } from './tool-handlers.js';
 import { browserOpen, browserScreenshot, browserEvaluate, browserExtract, browserClick, browserType, browserScroll, browserClose } from './browser.js';
+import { startServer, stopServer, stopAllServers, callTool, getAllTools, getServerStatuses, refreshTools } from './mcp-manager.js';
 import { getAllowedDirs, getBlockedDirs, setAllowedDirs } from './tool-security.js';
 import { startProcess, killProcess, getWorkspaceDir, setWorkspaceDir, listWorkspaceDir } from './workspace.js';
 
@@ -407,5 +408,30 @@ export async function setupIPC(): Promise<void> {
   ipcMain.handle('db:incrementSkillUsage', (_, id: string, success: boolean, durationMs: number) => {
     try { incrementSkillUsage(id, success, durationMs); return { success: true }; }
     catch (err) { return { success: false, error: (err as Error).message }; }
+  });
+
+  // ── MCP IPC ──
+  ipcMain.handle('mcp:startServer', async (_, config) => {
+    return startServer(config);
+  });
+  ipcMain.handle('mcp:stopServer', (_, name: string) => {
+    stopServer(name);
+    return { success: true };
+  });
+  ipcMain.handle('mcp:stopAll', () => {
+    stopAllServers();
+    return { success: true };
+  });
+  ipcMain.handle('mcp:callTool', async (_, serverName: string, toolName: string, args: Record<string, unknown>) => {
+    return callTool(serverName, toolName, args);
+  });
+  ipcMain.handle('mcp:getTools', () => {
+    return getAllTools();
+  });
+  ipcMain.handle('mcp:getStatuses', () => {
+    return getServerStatuses();
+  });
+  ipcMain.handle('mcp:refreshTools', async (_, name: string) => {
+    return refreshTools(name);
   });
 }

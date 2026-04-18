@@ -103,5 +103,14 @@ contextBridge.exposeInMainWorld('metonaDesktop', {
     },
     /** 终止当前 AI 命令 */
     cmdKill: () => ipcRenderer.invoke('cmd:kill')
+  },
+  mcp: {
+    startServer: (config: { name: string; command: string; args: string[]; enabled: boolean; description?: string }) => ipcRenderer.invoke('mcp:startServer', config),
+    stopServer: (name: string) => ipcRenderer.invoke('mcp:stopServer', name),
+    stopAll: () => ipcRenderer.invoke('mcp:stopAll'),
+    callTool: (serverName: string, toolName: string, args: Record<string, unknown>) => ipcRenderer.invoke('mcp:callTool', serverName, toolName, args),
+    getTools: () => ipcRenderer.invoke('mcp:getTools'),
+    getStatuses: () => ipcRenderer.invoke('mcp:getStatuses'),
+    refreshTools: (name: string) => ipcRenderer.invoke('mcp:refreshTools', name)
   }
 });

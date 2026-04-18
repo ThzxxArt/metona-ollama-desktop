@@ -25,6 +25,7 @@ import { initMemoryManager } from './services/memory-manager.js';
 import { restoreHeartbeat } from './components/settings-modal.js';
 import { restoreCronTasks } from './services/cron-manager.js';
 import { setToolEnabled, setRunCommandMode, refreshMCPTools } from './services/tool-registry.js';
+import { startAllMCPServers, stopAllMCPServers } from './services/mcp-client.js';
 import { initToolConfirmModal } from './components/tool-confirm-modal.js';
 import { initWorkspacePanel } from './components/workspace-panel.js';
 import { initLogPanel, addLog } from './services/log-service.js';
@@ -362,6 +363,7 @@ async function init(): Promise<void> {
     if (toggleTC) toggleTC.checked = toolCallingEnabled;
 
     // ── MCP 工具注册 ──
+    await startAllMCPServers();
     await refreshMCPTools();
 
     // ── Agent 记忆设置 ──

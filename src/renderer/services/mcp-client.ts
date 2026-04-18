@@ -1,17 +1,11 @@
 /**
- * MCP Client - Model Context Protocol 客户端 (v4.3)
- * 轻量级实现：管理 MCP Server 配置，提供工具注册框架
- *
- * MCP Server 配置存储在 settings.mcp_servers 中，格式：
- * [
- *   { "name": "filesystem", "command": "npx", "args": ["-y", "@anthropic/mcp-filesystem"], "enabled": true },
- *   { "name": "sqlite", "command": "npx", "args": ["-y", "@anthropic/mcp-sqlite", "./data.db"], "enabled": false }
- * ]
+ * MCP Client - Model Context Protocol 渲染端客户端
+ * 管理 MCP Server 配置，通过 IPC 调用主进程进行协议通信
  */
 
 import { state, KEYS } from '../state/state.js';
-import { logInfo, logWarn } from './log-service.js';
-import type { ToolDefinition } from '../types.js';
+import { logInfo, logWarn, logSuccess, logError } from './log-service.js';
+import type { ToolDefinition, ToolResult } from '../types.js';
 
 export interface MCPServerConfig {
   name: string;
@@ -21,7 +15,8 @@ export interface MCPServerConfig {
   description?: string;
 }
 
-/** 获取所有 MCP 服务器配置 */
+// ─── 配置管理 ───
+
 export async function getMCPServers(): Promise<MCPServerConfig[]> {
   const db = state.get<any>(KEYS.DB);
   if (!db) return [];
@@ -32,13 +27,11 @@ export async function getMCPServers(): Promise<MCPServerConfig[]> {
   }
 }
 
-/** 保存 MCP 服务器配置 */
 export async function saveMCPServers(servers: MCPServerConfig[]): Promise<void> {
   const db = state.get<any>(KEYS.DB);
   if (db) await db.saveSetting('mcp_servers', servers);
 }
 
-/** 添加 MCP 服务器 */
 export async function addMCPServer(config: MCPServerConfig): Promise<void> {
   const servers = await getMCPServers();
   const existing = servers.findIndex(s => s.name === config.name);
@@ -51,14 +44,14 @@ export async function addMCPServer(config: MCPServerConfig): Promise<void> {
   logInfo(`MCP Server 已${existing >= 0 ? '更新' : '添加'}: ${config.name}`);
 }
 
-/** 删除 MCP 服务器 */
 export async function removeMCPServer(name: string): Promise<void> {
+  const bridge = (window as any).metonaDesktop;
+  if (bridge?.mcp) await bridge.mcp.stopServer(name);
   const servers = await getMCPServers();
   await saveMCPServers(servers.filter(s => s.name !== name));
   logInfo(`MCP Server 已删除: ${name}`);
 }
 
-/** 切换 MCP 服务器启用状态 */
 export async function toggleMCPServer(name: string): Promise<boolean> {
   const servers = await getMCPServers();
   const server = servers.find(s => s.name === name);
@@ -69,22 +62,108 @@ export async function toggleMCPServer(name: string): Promise<boolean> {
   return server.enabled;
 }
 
-/** 获取已启用的 MCP 服务器 */
 export async function getEnabledMCPServers(): Promise<MCPServerConfig[]> {
   const servers = await getMCPServers();
   return servers.filter(s => s.enabled);
 }
 
-/**
- * 获取 MCP 工具定义（供 Agent 使用）
- * 目前返回占位工具定义，实际 MCP 协议通信需通过主进程实现
- */
-export async function getMCPToolDefinitions(): Promise<ToolDefinition[]> {
-  const enabled = await getEnabledMCPServers();
-  // MCP 工具通过主进程的 MCP bridge 动态注册
-  // 这里返回空数组，工具定义由 MCP bridge 在 IPC 层注入
-  if (enabled.length > 0) {
-    logInfo(`MCP: ${enabled.length} 个服务器已启用`, enabled.map(s => s.name).join(', '));
+// ─── MCP 服务器生命周期 ───
+
+/** 启动所有已启用的 MCP 服务器 */
+export async function startAllMCPServers(): Promise<void> {
+  const bridge = (window as any).metonaDesktop;
+  if (!bridge?.mcp) return;
+
+  const configs = await getEnabledMCPServers();
+  for (const config of configs) {
+    try {
+      const result = await bridge.mcp.startServer(config);
+      if (result.success) {
+        logSuccess(`MCP 服务器已启动: ${config.name}`);
+      } else {
+        logWarn(`MCP 服务器启动失败: ${config.name}`, result.error);
+      }
+    } catch (err) {
+      logError(`MCP 服务器启动异常: ${config.name}`, (err as Error).message);
+    }
   }
-  return [];
+}
+
+/** 停止所有 MCP 服务器 */
+export async function stopAllMCPServers(): Promise<void> {
+  const bridge = (window as any).metonaDesktop;
+  if (bridge?.mcp) await bridge.mcp.stopAll();
+}
+
+/** 获取 MCP 服务器状态 */
+export async function getMCPServerStatuses(): Promise<Array<{ name: string; running: boolean; toolCount: number }>> {
+  const bridge = (window as any).metonaDesktop;
+  if (!bridge?.mcp) return [];
+  try {
+    return await bridge.mcp.getStatuses();
+  } catch {
+    return [];
+  }
+}
+
+// ─── 工具定义（供 Agent 使用）───
+
+/** 从主进程获取所有 MCP 工具并转换为 ToolDefinition 格式 */
+export async function getMCPToolDefinitions(): Promise<ToolDefinition[]> {
+  const bridge = (window as any).metonaDesktop;
+  if (!bridge?.mcp) return [];
+
+  try {
+    const mcpTools = await bridge.mcp.getTools() as Array<{
+      serverName: string;
+      name: string;
+      fullName: string;
+      description: string;
+      inputSchema: { type: string; properties?: Record<string, unknown>; required?: string[] };
+    }>;
+
+    if (mcpTools.length === 0) return [];
+
+    logInfo(`MCP 工具已注册: ${mcpTools.length} 个`, mcpTools.map(t => t.fullName).join(', '));
+
+    return mcpTools.map(t => ({
+      type: 'function' as const,
+      function: {
+        name: t.fullName,
+        description: t.description,
+        parameters: {
+          type: 'object' as const,
+          required: t.inputSchema.required || [],
+          properties: (t.inputSchema.properties || {}) as Record<string, { type: string; description?: string }>
+        }
+      }
+    }));
+  } catch (err) {
+    logError('MCP 工具获取失败', (err as Error).message);
+    return [];
+  }
+}
+
+/** 执行 MCP 工具调用 */
+export async function executeMCPTool(toolName: string, args: Record<string, unknown>): Promise<ToolResult> {
+  const bridge = (window as any).metonaDesktop;
+  if (!bridge?.mcp) {
+    return { success: false, error: 'MCP API 不可用' };
+  }
+
+  // 解析工具全名: mcp_{serverName}_{toolName}
+  const match = toolName.match(/^mcp_(.+?)_(.+)$/);
+  if (!match) {
+    return { success: false, error: `无效的 MCP 工具名: ${toolName}` };
+  }
+
+  const serverName = match[1];
+  const actualToolName = match[2];
+
+  try {
+    const result = await bridge.mcp.callTool(serverName, actualToolName, args);
+    return result;
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
 }

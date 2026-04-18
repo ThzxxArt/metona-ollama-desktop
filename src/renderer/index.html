@@ -348,6 +348,16 @@
                 <div id="doctorResults" style="display:none;margin-top:8px;padding:10px;background:var(--bg-layer);border-radius:var(--radius-control);font-size:12px;max-height:200px;overflow-y:auto;"></div>
             </div>
             <div class="setting-group">
+                <label class="setting-label">🔌 MCP 服务器</label>
+                <div style="display:flex;gap:8px;margin-bottom:8px;">
+                    <input class="setting-input" id="inputMCPName" type="text" placeholder="名称" style="margin-bottom:0;width:100px;">
+                    <input class="setting-input" id="inputMCPCommand" type="text" placeholder="命令 (如: npx)" style="margin-bottom:0;width:100px;">
+                    <input class="setting-input" id="inputMCPArgs" type="text" placeholder="参数 (空格分隔)" style="margin-bottom:0;flex:1;">
+                    <button class="btn btn-sm btn-outline" id="btnAddMCPServer">➕ 添加</button>
+                </div>
+                <div id="mcpServerList" style="font-size:12px;"></div>
+            </div>
+            <div class="setting-group">
                 <label class="setting-label">⏰ 定时任务 (Cron)</label>
                 <div style="display:flex;gap:8px;margin-bottom:8px;">
                     <input class="setting-input" id="inputCronName" type="text" placeholder="任务名称" style="margin-bottom:0;flex:1;">
