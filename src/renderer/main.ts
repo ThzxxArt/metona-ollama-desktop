@@ -22,6 +22,7 @@ import { initHistoryModal, closeHistoryModal } from './components/history-modal.
 import { initMemoryModal } from './components/memory-modal.js';
 import { initToolsModal, closeToolsModal } from './components/tools-modal.js';
 import { initMemoryManager } from './services/memory-manager.js';
+import { restoreHeartbeat } from './components/settings-modal.js';
 import { setToolEnabled, setRunCommandMode } from './services/tool-registry.js';
 import { initToolConfirmModal } from './components/tool-confirm-modal.js';
 import { initWorkspacePanel } from './components/workspace-panel.js';
@@ -378,10 +379,19 @@ async function init(): Promise<void> {
       }
     });
 
+    // ── v4.3 Heartbeat 恢复 ──
+    const heartbeatEnabled = await db.getSetting('heartbeatEnabled', false);
+    const heartbeatInterval = await db.getSetting('heartbeatInterval', 3600000);
+    state.set('heartbeatEnabled', heartbeatEnabled);
+    state.set('heartbeatInterval', heartbeatInterval);
+
     (document.querySelector('#chatInput') as HTMLElement)?.focus();
     updateTotalTokens();
 
     logSuccess('应用初始化完成');
+
+    // Heartbeat 在 UI 就绪后启动
+    restoreHeartbeat();
   } catch (err) {
     logError('初始化失败', (err as Error).message);
     if (!api!) {

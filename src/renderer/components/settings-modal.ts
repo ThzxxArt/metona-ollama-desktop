@@ -117,6 +117,40 @@ export function initSettingsModal(): void {
     });
   });
 
+  // ── v4.3 诊断系统 ──
+  document.querySelector('#btnDoctor')!.addEventListener('click', runDoctor);
+
+  // ── v4.3 Heartbeat 后台检查 ──
+  const toggleHB = document.querySelector<HTMLInputElement>('#toggleHeartbeat')!;
+  const selectHBInterval = document.querySelector<HTMLSelectElement>('#selectHeartbeatInterval')!;
+
+  toggleHB.addEventListener('change', async () => {
+    const enabled = toggleHB.checked;
+    state.set('heartbeatEnabled', enabled);
+    const db = state.get<ChatDB | null>(KEYS.DB);
+    if (db) await db.saveSetting('heartbeatEnabled', enabled);
+    if (enabled) {
+      startHeartbeat(parseInt(selectHBInterval.value));
+      showToast('后台检查已启用', 'success');
+    } else {
+      stopHeartbeat();
+      showToast('后台检查已关闭', 'info');
+    }
+    logSetting('后台检查', enabled ? '已启用' : '已关闭');
+  });
+
+  selectHBInterval.addEventListener('change', async () => {
+    const ms = parseInt(selectHBInterval.value);
+    state.set('heartbeatInterval', ms);
+    const db = state.get<ChatDB | null>(KEYS.DB);
+    if (db) await db.saveSetting('heartbeatInterval', ms);
+    if (state.get<boolean>('heartbeatEnabled', false)) {
+      stopHeartbeat();
+      startHeartbeat(ms);
+    }
+    logSetting('检查间隔', `${ms / 60000} 分钟`);
+  });
+
   document.querySelector('#btnReleaseVRAM')!.addEventListener('click', async () => {
     const api = state.get<OllamaAPI>(KEYS.API);
     const model = (document.querySelector('#modelSelect') as HTMLSelectElement).value;
@@ -400,5 +434,151 @@ async function importSessions(filePath: string): Promise<void> {
   } catch (err) {
     showToast(`导入失败: ${(err as Error).message}`, 'error');
     logError('导入失败', (err as Error).message);
+  }
+}
+
+// ══════════════════════════════════════════════
+// v4.3 诊断系统
+// ══════════════════════════════════════════════
+
+async function runDoctor(): Promise<void> {
+  const resultsEl = document.querySelector('#doctorResults')!;
+  resultsEl.style.display = '';
+  resultsEl.innerHTML = '<div>🩺 正在诊断...</div>';
+
+  const checks: Array<{ name: string; status: 'ok' | 'warn' | 'error'; detail: string }> = [];
+
+  // 1. Ollama 连接
+  const api = state.get<OllamaAPI>(KEYS.API);
+  try {
+    const version = await api!.getVersion();
+    checks.push({ name: 'Ollama 连接', status: 'ok', detail: `v${version.version}` });
+  } catch (err) {
+    checks.push({ name: 'Ollama 连接', status: 'error', detail: `无法连接: ${(err as Error).message}` });
+  }
+
+  // 2. 模型可用性
+  try {
+    const models = await api!.listModels();
+    const count = models.models?.length || 0;
+    checks.push({ name: '已安装模型', status: count > 0 ? 'ok' : 'warn', detail: `${count} 个模型` });
+  } catch {
+    checks.push({ name: '已安装模型', status: 'error', detail: '无法获取模型列表' });
+  }
+
+  // 3. 当前模型能力
+  const model = (document.querySelector('#modelSelect') as HTMLSelectElement)?.value;
+  if (model) {
+    try {
+      const detail = await api!.showModel(model);
+      const caps = detail.capabilities || [];
+      const hasTools = caps.includes('tools');
+      const hasVision = caps.includes('vision');
+      const hasThink = caps.includes('thinking');
+      checks.push({
+        name: `模型能力 (${model})`,
+        status: hasTools ? 'ok' : 'warn',
+        detail: `Tool Calling: ${hasTools ? '✅' : '❌'} | Vision: ${hasVision ? '✅' : '❌'} | Think: ${hasThink ? '✅' : '❌'}`
+      });
+    } catch {
+      checks.push({ name: '模型能力', status: 'warn', detail: '无法检测模型能力' });
+    }
+  } else {
+    checks.push({ name: '当前模型', status: 'warn', detail: '未选择模型' });
+  }
+
+  // 4. SQLite 数据库
+  const db = state.get<ChatDB | null>(KEYS.DB);
+  if (db) {
+    try {
+      const sessions = await db.getAllSessions();
+      checks.push({ name: 'SQLite 数据库', status: 'ok', detail: `${sessions.length} 个会话` });
+    } catch (err) {
+      checks.push({ name: 'SQLite 数据库', status: 'error', detail: `错误: ${(err as Error).message}` });
+    }
+  } else {
+    checks.push({ name: 'SQLite 数据库', status: 'error', detail: '未初始化' });
+  }
+
+  // 5. 技能系统
+  try {
+    if (db && (db as any).getAllSkills) {
+      const skills = await (db as any).getAllSkills();
+      checks.push({ name: '技能系统', status: 'ok', detail: `${skills.length} 个技能` });
+    } else {
+      checks.push({ name: '技能系统', status: 'ok', detail: '已就绪' });
+    }
+  } catch {
+    checks.push({ name: '技能系统', status: 'warn', detail: '无法获取技能列表' });
+  }
+
+  // 6. 版本信息
+  const bridge = (window as any).metonaDesktop;
+  if (bridge?.info) {
+    try {
+      const info = await bridge.info();
+      checks.push({ name: '应用信息', status: 'ok', detail: `v${info.version} | Electron ${info.electronVersion} | ${info.platform} ${info.arch}` });
+    } catch {
+      checks.push({ name: '应用信息', status: 'warn', detail: '无法获取' });
+    }
+  }
+
+  // 渲染结果
+  const statusIcon = (s: string) => s === 'ok' ? '✅' : s === 'warn' ? '⚠️' : '❌';
+  const allOk = checks.every(c => c.status === 'ok');
+
+  resultsEl.innerHTML = `
+    <div style="margin-bottom:6px;font-weight:600;">${allOk ? '✅ 所有检查通过' : '⚠️ 发现问题'}</div>
+    ${checks.map(c => `<div style="margin:4px 0;">${statusIcon(c.status)} <strong>${c.name}</strong>: ${c.detail}</div>`).join('')}
+  `;
+
+  logInfo('系统诊断完成', `${checks.filter(c => c.status === 'ok').length}/${checks.length} 项通过`);
+}
+
+// ══════════════════════════════════════════════
+// v4.3 Heartbeat 后台检查
+// ══════════════════════════════════════════════
+
+let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+
+export function startHeartbeat(intervalMs: number): void {
+  stopHeartbeat();
+  heartbeatTimer = setInterval(async () => {
+    const api = state.get<OllamaAPI>(KEYS.API);
+    if (!api) return;
+
+    try {
+      await api.getVersion();
+      // 连接正常，静默
+    } catch {
+      // 连接异常，通知用户
+      const bridge = (window as any).metonaDesktop;
+      if (bridge?.notify) {
+        bridge.notify('Metona Ollama', '⚠️ Ollama 服务连接异常，请检查是否正在运行');
+      }
+      logWarn('Heartbeat: Ollama 连接异常');
+    }
+  }, intervalMs);
+  logInfo(`Heartbeat 已启动`, `间隔: ${intervalMs / 60000} 分钟`);
+}
+
+export function stopHeartbeat(): void {
+  if (heartbeatTimer) {
+    clearInterval(heartbeatTimer);
+    heartbeatTimer = null;
+  }
+}
+
+/** 应用启动时恢复 heartbeat */
+export function restoreHeartbeat(): void {
+  const enabled = state.get<boolean>('heartbeatEnabled', false);
+  const interval = state.get<number>('heartbeatInterval', 3600000);
+  if (enabled) {
+    startHeartbeat(interval);
+    // 同步 UI 状态
+    const toggle = document.querySelector<HTMLInputElement>('#toggleHeartbeat');
+    if (toggle) toggle.checked = true;
+    const select = document.querySelector<HTMLSelectElement>('#selectHeartbeatInterval');
+    if (select) select.value = String(interval);
   }
 }

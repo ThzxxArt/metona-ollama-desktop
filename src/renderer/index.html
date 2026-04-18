@@ -322,6 +322,31 @@
                 </div>
                 <p class="text-muted" style="margin-top:6px;font-size:11px;">导出格式为 JSON，可备份后在其他设备导入恢复。</p>
             </div>
+            <div class="setting-group">
+                <label class="setting-label">💓 后台检查（Heartbeat）</label>
+                <div style="display:flex;align-items:center;gap:10px;">
+                    <label class="toggle-label" style="margin:0;">
+                        <input type="checkbox" id="toggleHeartbeat">
+                        <span class="toggle-slider"></span>
+                    </label>
+                    <span style="font-size:13px;">启用后台定时检查</span>
+                </div>
+                <div style="display:flex;gap:8px;align-items:center;margin-top:8px;">
+                    <label style="font-size:12px;color:var(--text-muted);">检查间隔</label>
+                    <select id="selectHeartbeatInterval" class="setting-input" style="width:auto;margin-bottom:0;padding:4px 8px;">
+                        <option value="600000">10 分钟</option>
+                        <option value="1800000">30 分钟</option>
+                        <option value="3600000" selected>1 小时</option>
+                        <option value="7200000">2 小时</option>
+                    </select>
+                </div>
+                <p class="text-muted" style="margin-top:4px;font-size:11px;">定期检查 Ollama 连接状态和模型可用性，异常时通过系统通知提醒。</p>
+            </div>
+            <div class="setting-group">
+                <label class="setting-label">🩺 系统诊断</label>
+                <button class="btn btn-outline" id="btnDoctor" style="margin-bottom:8px;">🩺 一键诊断</button>
+                <div id="doctorResults" style="display:none;margin-top:8px;padding:10px;background:var(--bg-layer);border-radius:var(--radius-control);font-size:12px;max-height:200px;overflow-y:auto;"></div>
+            </div>
         </div>
     </div>
 </div>

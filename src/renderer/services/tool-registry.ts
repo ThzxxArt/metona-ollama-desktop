@@ -415,6 +415,24 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         }
       }
     }
+  },
+  // ══════════════════════════════════════════════
+  // v4.3 新增工具：子代理委派
+  // ══════════════════════════════════════════════
+  {
+    type: 'function',
+    function: {
+      name: 'spawn_task',
+      description: 'Spawn a sub-agent to independently execute a task. The sub-agent runs in isolation without tool access and returns a result. Use this to parallelize independent sub-tasks or delegate focused work.',
+      parameters: {
+        type: 'object',
+        required: ['task'],
+        properties: {
+          task: { type: 'string', description: 'The task description for the sub-agent to execute.' },
+          context: { type: 'string', description: 'Optional additional context or reference data for the sub-agent.' }
+        }
+      }
+    }
   }
 ];
 
@@ -446,7 +464,7 @@ let enabledTools: Set<string> = new Set([
   'move_file', 'copy_file', 'web_fetch', 'web_search', 'append_file', 'edit_file',
   'get_file_info', 'tree', 'download_file', 'diff_files', 'replace_in_files',
   'read_multiple_files', 'git', 'compress',
-  'memory_search', 'memory_add', 'session_list', 'session_read'
+  'memory_search', 'memory_add', 'session_list', 'session_read', 'spawn_task'
 ]);
 
 export function setToolEnabled(toolName: string, enabled: boolean): void {
@@ -539,6 +557,18 @@ export async function executeTool(toolName: string, args: Record<string, unknown
       return { success: true, session: { id: session.id, title: session.title, model: session.model }, messages: msgs, total: messages.length };
     }
 
+    // v4.3 spawn_task 走子代理
+    if (toolName === 'spawn_task') {
+      const { executeSubAgent } = await import('./sub-agent.js');
+      const task = args.task as string;
+      const context = args.context as string | undefined;
+      if (!task) return { success: false, error: '缺少 task 参数' };
+      logInfo(`子代理委派: ${task.slice(0, 80)}`);
+      const result = await executeSubAgent(task, context);
+      logToolResult('spawn_task', result.success, result.success ? `完成, ${(result as any).loops} 轮` : result.error);
+      return result;
+    }
+
     // run_command 走 workspace IPC
     if (toolName === 'run_command') {
       const command = args.command as string;
@@ -581,7 +611,7 @@ export function getToolIcon(name: string): string {
     edit_file: '✂️', get_file_info: 'ℹ️', tree: '🌳', download_file: '⬇️',
     diff_files: '🔀', replace_in_files: '🔄', read_multiple_files: '📚',
     git: '🔖', compress: '🗜️', web_search: '🔍',
-    memory_search: '🧠', memory_add: '💾', session_list: '📋', session_read: '📖'
+    memory_search: '🧠', memory_add: '💾', session_list: '📋', session_read: '📖', spawn_task: '🤖'
   };
   return icons[name] || '🔧';
 }
@@ -595,7 +625,7 @@ export function formatToolName(name: string): string {
     get_file_info: '文件信息', tree: '目录树', download_file: '下载文件',
     diff_files: '文件对比', replace_in_files: '批量替换', read_multiple_files: '批量读取',
     git: 'Git 操作', compress: '压缩/解压', web_search: '联网搜索',
-    memory_search: '搜索记忆', memory_add: '添加记忆', session_list: '会话列表', session_read: '读取会话'
+    memory_search: '搜索记忆', memory_add: '添加记忆', session_list: '会话列表', session_read: '读取会话', spawn_task: '子代理委派'
   };
   return names[name] || name;
 }
