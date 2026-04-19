@@ -4,7 +4,7 @@
 
 **基于 TypeScript + Electron 的本地 Ollama AI 桌面客户端**
 
-全离线运行 · 数据本地存储 · 零外部依赖
+全离线运行 · 数据本地存储 · 第三方库本地化
 
 [![版本](https://img.shields.io/badge/version-5.1.5-brightgreen?style=flat-square)](https://gitee.com/thzxx/metona-ollama-desktop/releases)
 [![平台](https://img.shields.io/badge/platform-Windows%20x64-blue?style=flat-square)](https://gitee.com/thzxx/metona-ollama-desktop/releases)
@@ -278,6 +278,9 @@ src/
 │       └── style.css                       # 暖色调亮色主题
 │
 ├── assets/icons/                           # 应用图标
+├── src/vendor/                             # 第三方库本地化（ESM + 类型声明 + LICENSE）
+│   ├── marked.js                           # Markdown 解析库（v18）
+│   └── dompurify.js                        # HTML 净化库（v3）
 ├── docs/                                   # 文档
 │   ├── BUILD.md                            # 构建指南
 │   ├── CHANGELOG.md                        # 更新日志

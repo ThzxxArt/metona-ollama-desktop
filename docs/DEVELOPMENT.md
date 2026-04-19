@@ -6,7 +6,7 @@
 
 ## 一、项目概述
 
-Metona Ollama Desktop 是基于 TypeScript + Electron 的本地 Ollama AI 桌面客户端，面向 Windows 平台。项目采用零外部依赖策略（仅 sql.js 为运行时依赖），所有核心功能（Markdown 解析、SHA-256、HTML 净化器等）均内联实现。
+Metona Ollama Desktop 是基于 TypeScript + Electron 的本地 Ollama AI 桌面客户端，面向 Windows 平台。项目采用第三方库本地化策略：成熟的第三方库直接 vendor 到 `src/vendor/` 目录内引用，不依赖 npm 运行时安装（sql.js 因含 WASM 二进制除外）。所有核心功能（SHA-256 等）均内联实现。
 
 ---
 
@@ -75,6 +75,9 @@ src/
 │       └── chat-db.ts            # SQLite 渲染端数据库接口
 │   └── styles/
 │       └── style.css             # 暖色调亮色主题
+├── vendor/                       # 第三方库本地化（ESM + 类型声明 + LICENSE）
+│   ├── marked.js                 # Markdown 解析库
+│   └── dompurify.js              # HTML 净化库
 └── ...
 ```
 
@@ -303,7 +306,7 @@ perf:     性能优化
 
 ## 九、注意事项
 
-1. **零外部依赖**：新增功能优先使用内联实现，避免引入 npm 包（sql.js 除外）
+1. **第三方库本地化**：新增依赖优先成熟稳定库，vendor 到 `src/vendor/` 目录内引用（ESM + 类型声明 + LICENSE），避免 npm 运行时依赖（sql.js 因含 WASM 除外）
 2. **安全优先**：所有文件/命令操作必须经过安全检查层
 3. **日志完整**：关键操作必须记录到执行日志面板
 4. **无超时设计**：工作空间相关操作不设超时，由用户控制生命周期
