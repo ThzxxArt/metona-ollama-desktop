@@ -14,7 +14,7 @@
 # 1. 克隆并安装依赖
 git clone https://gitee.com/thzxx/metona-ollama-desktop.git
 cd metona-ollama-desktop
-git checkout metona-ollama-desktop-v5.1.1
+git checkout metona-ollama-desktop-v5.1.3
 npm config set registry https://registry.npmmirror.com
 npm install
 
@@ -178,7 +178,7 @@ electron-builder 会自动处理所有依赖下载（Electron、NSIS、winCodeSi
 
 ### v5.1.3（2026-04-19） — metona-ollama-desktop 仓库
 
-- 🔧 修复 any 滥用：78 处 → 约 15 处，类型安全提升
+- 🔧 修复 any 滥用：78 处 → 38 处（减少 51%），保留 API 参数构造等合理场景
 - ♻️ 拆分 tool-handlers.ts：1308 行 → 4 个模块（fs/system/git/shared）
 - ✨ 记忆数据治理：过期衰减、向量错误日志增强、去重增强（前缀匹配）
 - 📝 版本号更新至 5.1.3

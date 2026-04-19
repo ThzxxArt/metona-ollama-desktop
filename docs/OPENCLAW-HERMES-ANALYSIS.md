@@ -43,7 +43,7 @@ Metona 进化方向：
 
 ## 二、从 Hermes Agent 吸收
 
-### 1. 技能自动生成（Skill Learning Loop）🔴 P0
+### 1. 技能自动生成（Skill Learning Loop） ✅ 已实现 v5.1.0
 
 **Hermes 做法**
 
@@ -55,43 +55,12 @@ Metona 进化方向：
 
 下次遇到类似任务时直接复用已有技能，跳过重新推理。多次使用中持续优化技能实现。
 
-**Metona 现状**
+**Metona 现状** ✅ 已实现
 
-有 ReAct 执行轨迹记录（`traces` 表），但仅用于回溯查看，没有自动提炼为可复用技能。
+`skills` 表 + `skill-manager.ts` 自动提取 + `skill_list` / `skill_view` 工具（Level 0 渐进式）。
+Agent Loop 结束后从 traces 提取成功工具链，下次自动匹配复用。
 
-**改进方案**
-
-1. 在 `traces` 表基础上，Agent Loop 结束后自动分析执行轨迹
-2. 提取成功的工具调用序列 → 保存为 `skills` 表
-3. 下次新会话检索匹配的 skill → 优先复用
-4. 技能质量随使用次数迭代优化
-
-```
-新表结构：
-skills:
-  id              TEXT PRIMARY KEY
-  name            TEXT           -- 技能名称
-  description     TEXT           -- 技能描述
-  trigger_pattern TEXT           -- 触发条件（关键词/意图模式）
-  tool_chain      TEXT           -- 工具调用链（JSON 数组）
-  success_count   INTEGER        -- 成功次数
-  fail_count      INTEGER        -- 失败次数
-  avg_duration    INTEGER        -- 平均执行时长（ms）
-  created_at      INTEGER
-  updated_at      INTEGER
-  last_used_at    INTEGER
-```
-
-Agent Loop 新增流程：
-
-```
-任务完成 → 分析 traces → 提取工具链模式 → 判断是否可复用
-  → 新技能？→ 创建 skill 记录
-  → 匹配已有技能？→ 更新成功率、优化参数
-  → 下次同类任务 → 优先使用 skill → 跳过推理直接执行
-```
-
-### 2. 分层记忆 + 用户画像模型 🟡 P1
+### 2. 分层记忆 + 用户画像模型 ✅ 已实现 v5.0.0
 
 **Hermes 做法**
 
@@ -99,37 +68,16 @@ Agent Loop 新增流程：
 - `user.md`：用户画像（角色、领域经验、编码风格、偏好）
 - 构建一个「关于用户的深层模型」，跨会话持续积累
 
-**Metona 现状**
+**Metona 现状** ✅ 已实现
 
-有 fact/preference/rule 三类记忆 + FTS5 搜索 + 向量语义搜索。但没有独立的用户画像系统，不理解「用户是谁」。
+- fact/preference/rule 三类记忆 + FTS5 搜索 + 向量语义搜索
+- 用户画像自动推断：检测 14 种技术栈，自动注入 system prompt
+- `memory_replace` / `memory_remove` 支持修改和删除（v5.1.0）
+- 记忆写入前安全扫描（prompt injection / 敏感信息检测）（v5.1.0）
+- 记忆容量管理：上限 500 条，超限自动清理低价值条目（v5.1.2）
+- 记忆过期衰减：90 天未使用自动降低 importance（v5.1.3）
 
-**改进方案**
-
-1. 新增 `user_profiles` 表或独立的 `user.md` 文件
-2. 自动推断用户画像：
-   - 技术栈偏好（Python/TypeScript/Go...）
-   - 编码风格（verbose/compact、type hints/any）
-   - 常用工具链
-   - 工作时间段
-   - 对错误的容忍度
-3. 记忆注入时区分层级：
-   - 画像 → 决策上下文（决定 Agent 的行为风格）
-   - 偏好 → 行为引导（决定具体操作方式）
-   - 事实 → 参考信息（决定知识引用）
-
-```
-user_profiles 表：
-  id              TEXT PRIMARY KEY
-  role            TEXT           -- 角色（后端工程师/全栈/数据科学家...）
-  tech_stack      TEXT           -- 技术栈（JSON 数组）
-  code_style      TEXT           -- 编码风格描述
-  experience      TEXT           -- 经验描述
-  work_hours      TEXT           -- 工作时间段
-  error_tolerance TEXT           -- 错误容忍度（high/medium/low）
-  updated_at      INTEGER
-```
-
-### 3. 执行轨迹导出 → 自训练数据 🔵 P3
+### 3. 执行轨迹导出 → 自训练数据 🔵 P3（未实现）
 
 **Hermes 做法**
 
@@ -162,147 +110,76 @@ user_profiles 表：
 
 ## 三、从 OpenClaw 吸收
 
-### 4. Heartbeat 主动检查机制 🟢 P2
+### 4. Heartbeat 主动检查机制 ✅ 已实现 v5.0.0
 
 **OpenClaw 做法**
 
 Agent 定期（默认 30 分钟）主动检查邮箱、日历、通知等，有事才通知用户，没事保持安静（`HEARTBEAT_OK`）。支持在 `HEARTBEAT.md` 中配置检查项。
 
-**Metona 现状**
+**Metona 现状** ✅ 已实现
 
-纯被动模式，用户不说话就不动。
+后台 heartbeat 定时器，检查 Ollama 连接状态等，通过 Electron Notification API 推送通知。
 
-**改进方案**
-
-1. 新增后台 heartbeat 定时器（可配置间隔，默认关闭）
-2. 可配置检查项：
-   - Ollama 服务连接状态
-   - 磁盘空间（workspace 目录）
-   - 新模型可用性（对比 `ollama list` 和本地列表）
-   - 长时间未保存的会话
-3. 有异常时通过 Electron Notification API 推送系统通知
-4. 检查结果写入 `heartbeat-state.json` 避免重复告警
-
-### 5. Cron 定时任务 🔵 P4
+### 5. Cron 定时任务 ✅ 已实现 v5.0.0
 
 **OpenClaw 做法**
 
-支持两种调度：
-- `at`：一次性定时（ISO-8601 时间戳）
-- `cron`：周期性调度（cron 表达式 + 时区）
+支持 `at`（一次性）和 `cron`（周期性）两种调度，systemEvent（注入文本）和 agentTurn（隔离执行）两种任务类型。
 
-任务类型：
-- `systemEvent`：注入文本到主会话
-- `agentTurn`：在隔离会话中执行 Agent 任务
+**Metona 现状** ✅ 已实现
 
-**Metona 现状**
+`cron-manager.ts` 已集成，支持一次性 / 周期性任务调度，任务结果显示在聊天区域。
 
-无定时任务功能。
-
-**改进方案**
-
-1. 集成轻量级调度器（`cron` npm 包或 `setInterval`）
-2. 预设任务模板：
-   - 每日对话摘要（自动总结当天对话）
-   - 定期备份（导出会话为 JSON）
-   - 旧会话清理（超过 N 天的归档）
-   - Ollama 模型更新检查
-3. 任务结果直接显示在聊天区域或工作空间面板
-
-### 6. MCP（Model Context Protocol）生态对接 🔵 P3
+### 6. MCP（Model Context Protocol）生态对接 ✅ 已实现 v5.0.0
 
 **OpenClaw + Hermes**
 
 均支持 MCP 协议，可连接外部工具和 IDE（Cursor、VS Code、Claude Desktop）。工具从硬编码 → 动态发现。
 
-**Metona 现状**
+**Metona 现状** ✅ 已实现
 
-25 个内置工具硬编码在 `tool-registry.ts`，无法扩展外部工具。
+- `mcp-manager.ts`（主进程）+ `mcp-client.ts`（渲染进程）
+- JSON-RPC 2.0 over stdio 通信
+- 7 个 IPC 通道（startServer / stopServer / stopAll / callTool / getTools / getStatuses / refreshTools）
+- Shadowing 防护：MCP 工具注册时自动检测与内置工具重名（v5.1.2）
+- 设置面板管理：添加 / 启用 / 禁用 / 删除
 
-**改进方案**
-
-1. 实现 MCP Client（连接外部 MCP Server）
-2. 工具注册表重构：
-   - 内置工具（现有 25 个）
-   - MCP 工具（通过配置文件或 UI 添加）
-3. 用户可自行添加 MCP 工具，如：
-   - 数据库查询 MCP Server
-   - 外部 API 调用 MCP Server
-   - 专用硬件控制 MCP Server
-4. 设置面板新增「MCP 工具管理」页面
-
-### 7. 浏览器控制（Browser Automation） 🔵 P3
+### 7. 浏览器控制（Browser Automation） ✅ 已实现 v5.0.0
 
 **OpenClaw**
 
 内置 Playwright 浏览器自动化，支持截图、表单填写、页面交互。
 
-**Hermes**
+**Metona 现状** ✅ 已实现
 
-「全网页与浏览器控制」，真正的网页浏览能力。
+`browser.ts`（主进程）提供 8 个浏览器工具：browser_open / browser_screenshot / browser_evaluate / browser_extract / browser_click / browser_type / browser_scroll / browser_close。
 
-**Metona 现状**
-
-只有 `web_fetch`（HTTP 抓取纯文本）和 `web_search`（搜索引擎），无法交互式操作网页。
-
-**改进方案**
-
-1. 集成 Playwright 或 Puppeteer 作为新工具
-2. 新增工具集：
-   - `browser_open`：打开 URL
-   - `browser_click`：点击元素
-   - `browser_type`：输入文本
-   - `browser_screenshot`：截图
-   - `browser_extract`：提取页面数据
-3. 在工作空间面板显示浏览器实时预览
-4. 注意：会增加应用体积约 200MB（Chromium 二进制），可设为可选组件
-
-### 8. 子代理委派（Sub-Agent Delegation） 🔵 P3
+### 8. 子代理委派（Sub-Agent Delegation） ✅ 已实现 v5.0.0
 
 **OpenClaw**
 
-`sessions_spawn` 生成独立子会话，支持 `run`（一次性）和 `session`（持久化）两种模式。子 Agent 完成后自动汇报。
+`sessions_spawn` 生成独立子会话，支持 `run`（一次性）和 `session`（持久化）两种模式。
 
-**Hermes**
+**Metona 现状** ✅ 已实现
 
-生成独立子代理处理并行工作流，零上下文成本。
-
-**Metona 现状**
-
-单 Agent Loop，串行执行，最多 15 轮。
-
-**改进方案**
-
-1. 主 Agent 识别可并行任务后 spawn 子 Agent
-2. 子 Agent 独立执行（独立消息上下文）
-3. 完成后汇报结果给主 Agent
-4. 在聊天区域以可折叠卡片展示子 Agent 进度
-5. 实现方式：复用当前 Agent Loop，但起始消息不同
+`sub-agent.ts` + `spawn_task` 工具，主 Agent 可委派独立子任务执行。
 
 ---
 
 ## 四、从两者共同吸收（通用最佳实践）
 
-### 9. 会话管理增强 🟡 P1
+### 9. 会话管理增强 ✅ 部分实现 v5.0.0
 
-| 功能 | OpenClaw | Hermes | Metona 现状 | 改进方案 |
-|------|----------|--------|------------|----------|
-| `/new` `/reset` | ✅ | ✅ | ✅ 已有 | — |
-| `/retry` 重试 | ✅ | ✅ | ❌ | 回退到上一轮消息，重新生成 |
-| `/undo` 撤销 | ✅ | ✅ | ❌ | 删除最后一条用户/AI 消息对 |
-| `/compress` 压缩 | ✅ | ✅ | ❌ | LLM 摘要长对话，压缩上下文 |
-| `/usage` 统计 | ✅ | ✅ | ⚠️ 部分 | 按日/周/月 token 消耗统计 |
-| `/model` 切换 | ✅ | ✅ | ⚠️ 下拉框 | 输入框快速切换，支持模糊搜索 |
+| 功能 | OpenClaw | Hermes | Metona 现状 |
+|------|----------|--------|------------|
+| `/new` `/reset` | ✅ | ✅ | ✅ 已有 |
+| `/retry` 重试 | ✅ | ✅ | ✅ 已实现 |
+| `/undo` 撤销 | ✅ | ✅ | ✅ 已实现 |
+| `/compress` 压缩 | ✅ | ✅ | ❌ 未实现（上下文压缩） |
+| `/usage` 统计 | ✅ | ✅ | ⚠️ 部分（日志面板有） |
+| `/model` 切换 | ✅ | ✅ | ⚠️ 下拉框 |
 
-**`/retry` 实现方案**：
-
-```typescript
-// 从 messages 数组中找到最后一个 user 消息的位置
-// 删除该位置之后的所有消息（assistant 回复 + 可能的 tool 调用）
-// 用相同的 user 消息重新发起 Agent Loop
-```
-
-**`/compress` 实现方案**：
+**`/compress` 实现方案**（未实现）：
 
 ```typescript
 // 将 messages 中间部分（保留首尾各 2 条）用 LLM 做摘要
@@ -310,7 +187,7 @@ Agent 定期（默认 30 分钟）主动检查邮箱、日历、通知等，有�
 // 大幅减少 token 消耗，保留关键上下文
 ```
 
-### 10. 诊断系统（Doctor） 🟢 P2
+### 10. 诊断系统（Doctor） 🟢 P2（未实现）
 
 **Hermes 做法**
 
@@ -335,7 +212,7 @@ Agent 定期（默认 30 分钟）主动检查邮箱、日历、通知等，有�
 | 工具权限 | 安全配置是否合理 |
 | 版本信息 | Metona 版本、Electron 版本、Node 版本 |
 
-### 11. 人格/模式切换 🟢 P2
+### 11. 人格/模式切换 ✅ 已实现 v5.0.0
 
 **OpenClaw**
 
@@ -345,50 +222,22 @@ Agent 定期（默认 30 分钟）主动检查邮箱、日历、通知等，有�
 
 `/personality [name]` 切换不同人格模式。
 
-**Metona 现状**
+**Metona 现状** ✅ 已实现
 
-只有 system prompt 自定义设置。
+多种预设人格模板（编程助手/写作助手/数据分析师等），每种有独立 system prompt + 温度设置，设置面板快速切换。
 
-**改进方案**
-
-1. 预设多个人格模板：
-
-   | 人格 | 说明 | 温度 | 工具集 |
-   |------|------|------|--------|
-   | 编程助手 | 严谨、注重代码质量 | 0.3 | 文件操作 + Git + 命令 |
-   | 写作助手 | 流畅、有文采 | 0.8 | 文件操作 + 网络搜索 |
-   | 数据分析师 | 精确、数据驱动 | 0.2 | 文件操作 + 命令 |
-   | 翻译 | 准确、信达雅 | 0.4 | 文件操作 |
-   | 通用助手 | 平衡 | 0.7 | 全部 |
-
-2. 每个人格有独立的 system prompt + 工具集 + 温度设置
-3. 在 Header 或 Model Bar 快速切换
-4. 用户可创建自定义人格
-
-### 12. 响应速度优化 ⚡
+### 12. 响应速度优化 ⚡ 部分实现
 
 **Hermes 核心优势**
 
 比 OpenClaw 响应更快，社区反馈明显。
 
-**Metona 可优化方向**
+**Metona 已优化方向**
 
-1. **模型预热**：切换模型后发送空请求保持 `keep_alive`，减少首次推理延迟
-2. **工具并行执行**：当前多个工具串行执行，互相独立的工具可并行
-   ```typescript
-   // 改进前：串行
-   for (const call of toolCalls) {
-     await executeTool(call);
-   }
-   
-   // 改进后：检测依赖关系，并行执行独立工具
-   const independentCalls = toolCalls.filter(/* 无依赖 */);
-   const dependentCalls = toolCalls.filter(/* 有依赖 */);
-   await Promise.all(independentCalls.map(c => executeTool(c)));
-   for (const c of dependentCalls) await executeTool(c);
-   ```
-3. **上下文智能管理**：超过 `num_ctx` 时自动摘要而非截断，保留更多信息
-4. **工具结果预处理**：在格式化前预计算，减少序列化开销
+1. ✅ **工具并行执行**：独立工具通过 `Promise.all` 并行执行（v5.0.0）
+2. ❌ **模型预热**：切换模型后发送空请求保持 `keep_alive`
+3. ❌ **上下文智能管理**：超过 `num_ctx` 时自动摘要而非截断
+4. ❌ **工具结果预处理**：在格式化前预计算，减少序列化开销
 
 ---
 
@@ -396,50 +245,31 @@ Agent 定期（默认 30 分钟）主动检查邮箱、日历、通知等，有�
 
 ### 按投入产出比排序
 
-| 优先级 | 功能 | 复杂度 | 用户价值 | 来源 |
-|--------|------|--------|----------|------|
-| 🔴 P0 | 技能自动生成（Skill Loop） | 高 | ⭐⭐⭐⭐⭐ | Hermes |
-| 🔴 P0 | `/retry` `/undo` 会话操作 | 低 | ⭐⭐⭐⭐⭐ | 共同 |
-| 🟡 P1 | 用户画像模型 | 中 | ⭐⭐⭐⭐ | Hermes |
-| 🟡 P1 | 上下文压缩 (`/compress`) | 中 | ⭐⭐⭐⭐ | 共同 |
-| 🟡 P1 | 工具并行执行优化 | 中 | ⭐⭐⭐⭐ | 共同 |
-| 🟢 P2 | Heartbeat 主动检查 | 低 | ⭐⭐⭐ | OpenClaw |
-| 🟢 P2 | 人格模板切换 | 低 | ⭐⭐⭐ | 共同 |
-| 🟢 P2 | 诊断系统 (`doctor`) | 低 | ⭐⭐⭐ | Hermes |
-| 🔵 P3 | MCP 生态对接 | 高 | ⭐⭐⭐⭐ | 共同 |
-| 🔵 P3 | 浏览器控制 | 高 | ⭐⭐⭐ | 共同 |
-| 🔵 P3 | 子代理委派 | 高 | ⭐⭐⭐ | 共同 |
-| 🔵 P3 | 训练数据导出 | 中 | ⭐⭐ | Hermes |
-| ⚪ P4 | Cron 定时任务 | 中 | ⭐⭐ | OpenClaw |
+| 优先级 | 功能 | 复杂度 | 用户价值 | 来源 | 状态 |
+|--------|------|--------|----------|------|------|
+| 🔴 P0 | 技能自动生成（Skill Loop） | 高 | ⭐⭐⭐⭐⭐ | Hermes | ✅ v5.1.0 |
+| 🔴 P0 | `/retry` `/undo` 会话操作 | 低 | ⭐⭐⭐⭐⭐ | 共同 | ✅ v5.0.0 |
+| 🟡 P1 | 用户画像模型 | 中 | ⭐⭐⭐⭐ | Hermes | ✅ v5.0.0 |
+| 🟡 P1 | 上下文压缩 (`/compress`) | 中 | ⭐⭐⭐⭐ | 共同 | ❌ 未实现 |
+| 🟡 P1 | 工具并行执行优化 | 中 | ⭐⭐⭐⭐ | 共同 | ✅ v5.0.0 |
+| 🟢 P2 | Heartbeat 主动检查 | 低 | ⭐⭐⭐ | OpenClaw | ✅ v5.0.0 |
+| 🟢 P2 | 人格模板切换 | 低 | ⭐⭐⭐ | 共同 | ✅ v5.0.0 |
+| 🟢 P2 | 诊断系统 (`doctor`) | 低 | ⭐⭐⭐ | Hermes | ❌ 未实现 |
+| 🔵 P3 | MCP 生态对接 | 高 | ⭐⭐⭐⭐ | 共同 | ✅ v5.0.0 |
+| 🔵 P3 | 浏览器控制 | 高 | ⭐⭐⭐ | 共同 | ✅ v5.0.0 |
+| 🔵 P3 | 子代理委派 | 高 | ⭐⭐⭐ | 共同 | ✅ v5.0.0 |
+| 🔵 P3 | 训练数据导出 | 中 | ⭐⭐ | Hermes | ❌ 未实现 |
+| ⚪ P4 | Cron 定时任务 | 中 | ⭐⭐ | OpenClaw | ✅ v5.0.0 |
 
-### 建议实施路线
+### 待实施功能
 
-**v4.1 — 会话增强（快速见效）**
-
-- `/retry` 重试上一轮
-- `/undo` 撤销最后消息
-- `/compress` 上下文压缩
-- 工具并行执行优化
-
-**v4.2 — 智能进化（核心差异化）**
-
-- 技能自动生成系统（Skill Loop）
-- 用户画像模型
-- 人格模板切换
-
-**v4.3 — 生态扩展（长期建设）**
-
-- MCP Client 支持
-- Heartbeat 主动检查
-- 诊断系统
-- 子代理委派
-
-**v5.0 — 全面进化**
-
-- 浏览器控制
-- 训练数据导出
-- Cron 定时任务
-- 多实例隔离
+| 功能 | 复杂度 | 说明 |
+|------|--------|------|
+| `/compress` 上下文压缩 | 中 | LLM 摘要中间轮次，而非简单滑动窗口 |
+| 诊断系统 (`doctor`) | 低 | 设置面板一键检查连接/模型/权限/磁盘 |
+| 训练数据导出 | 中 | traces → SFT 格式导出 |
+| Skill 渐进式加载 | 中 | Level 0→1→2，先返回名称+描述，需要时再加载全文 |
+| Session 谱系跟踪 | 中 | 压缩后创建子 session，保留 parent_id |
 
 ---
 
@@ -457,11 +287,24 @@ Metona 的独特价值：
   ✅ 暖色调 UI（非暗色主题，长时间使用不疲劳）
   ✅ 全离线运行（数据不离开本机）
 
+  已吸收（v5.0.0 ~ v5.1.3）：
+  ✅ 技能自动生成（Hermes） — v5.1.0
+  ✅ 用户画像模型（Hermes） — v5.0.0
+  ✅ /retry /undo 会话操作（共同） — v5.0.0
+  ✅ MCP 生态对接（共同） — v5.0.0
+  ✅ 浏览器控制（共同） — v5.0.0
+  ✅ Heartbeat 主动检查（OpenClaw） — v5.0.0
+  ✅ Cron 定时任务（OpenClaw） — v5.0.0
+  ✅ 子代理委派（共同） — v5.0.0
+  ✅ 记忆容量管理 + 安全扫描（Hermes） — v5.1.2 / v5.1.0
+  ✅ Shadowing 防护（Hermes） — v5.1.2
+  ✅ 预算警告临时层（Hermes） — v5.1.2
+
   待吸收：
-  🔜 技能自动生成（Hermes）
-  🔜 用户画像模型（Hermes）
-  🔜 会话管理增强（共同）
-  🔜 MCP 生态对接（共同）
+  🔜 /compress 上下文压缩（Hermes Context）
+  🔜 诊断系统 doctor（Hermes）
+  🔜 Skill 渐进式加载（Hermes）
+  🔜 训练数据导出（Hermes）
 
 最终形态 = 会学习的桌面 Agent
   = Metona 的原生桌面体验
@@ -471,4 +314,4 @@ Metona 的独特价值：
 
 ---
 
-*最后更新：2026-04-18*
+*最后更新：2026-04-19（根据 v5.1.3 实际代码更新实施状态）*

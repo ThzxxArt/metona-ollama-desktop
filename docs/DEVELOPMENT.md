@@ -31,27 +31,37 @@ src/
 │   ├── preload.ts                # contextBridge API 暴露
 │   ├── ipc.ts                    # IPC 处理器（invoke/handle + on/send）
 │   ├── workspace.ts              # 子进程管理、流式输出
-│   ├── tool-handlers.ts          # Tool Calling 25 个工具实现
+│   ├── tool-handlers.ts          # Tool Calling re-export（4 个子模块）
+│   ├── tool-handlers-fs.ts       # 15 个文件系统工具
+│   ├── tool-handlers-system.ts   # 6 个系统网络工具
+│   ├── tool-handlers-git.ts      # 1 个 Git 工具
+│   ├── tool-handlers-shared.ts   # 共享工具函数和类型
 │   ├── tool-security.ts          # 路径/命令安全检查
+│   ├── browser.ts                # 浏览器控制（8 个工具）
+│   ├── mcp-manager.ts            # MCP 协议通信管理
 │   ├── menu.ts                   # 原生菜单
 │   ├── tray.ts                   # 系统托盘
 │   ├── utils.ts                  # 工具函数
 │   └── db/
-│       └── sqlite.ts             # SQLite 数据库层（6 张表 + FTS5）
+│       └── sqlite.ts             # SQLite 数据库层（7 张表 + FTS5）
 ├── renderer/                     # 渲染进程
 │   ├── main.ts                   # 入口、全局初始化
 │   ├── types.d.ts                # 完整类型定义
 │   ├── index.html                # 入口 HTML
 │   ├── api/
 │   │   └── ollama.ts             # Ollama REST API 客户端
-│   ├── components/               # 13 个 UI 组件
+│   ├── components/               # 14 个 UI 组件
 │   ├── services/
 │   │   ├── agent-engine.ts       # ReAct Agent Loop 引擎
-│   │   ├── tool-registry.ts      # 工具注册与调度（25 个工具定义）
+│   │   ├── tool-registry.ts      # 工具注册与调度（38 个内置工具 + MCP 动态）
 │   │   ├── memory-manager.ts     # 记忆管理核心
 │   │   ├── vector-memory.ts      # 记忆向量索引（IVF）
 │   │   ├── vector-store.ts       # 向量存储 + IVF 索引
 │   │   ├── context-manager.ts    # 上下文窗口管理
+│   │   ├── skill-manager.ts      # 技能自动生成（Level 0）
+│   │   ├── sub-agent.ts          # 子代理委派
+│   │   ├── cron-manager.ts       # 定时任务
+│   │   ├── mcp-client.ts         # MCP 渲染端客户端
 │   │   ├── document-processor.ts # 文档分块
 │   │   ├── log-service.ts        # 结构化日志
 │   │   └── crypto.ts             # AES-256-GCM 加密
@@ -61,6 +71,8 @@ src/
 │   │   └── marked-config.ts      # Markdown 渲染
 │   ├── state/
 │   │   └── state.ts              # 响应式状态管理
+│   └── db/
+│       └── chat-db.ts            # SQLite 渲染端数据库接口
 │   └── styles/
 │       └── style.css             # 暖色调亮色主题
 └── ...
@@ -142,11 +154,11 @@ import {
 ### 5.1 四大子系统
 
 ```
-① Agent 系统    → agent-engine.ts + tool-registry.ts（25 工具）
+① Agent 系统    → agent-engine.ts + tool-registry.ts（38 工具 + MCP 动态）
 ② 记忆系统      → memory-manager.ts + vector-memory.ts
 ③ 向量存储      → vector-store.ts（IVF 索引）
 ④ 工作空间      → workspace.ts (主进程) + workspace-panel.ts (渲染进程)
-⑤ 数据层       → db/sqlite.ts（SQLite, 6 张表, FTS5）
+⑤ 数据层       → db/sqlite.ts（SQLite, 7 张表, FTS5）
 ```
 
 ### 5.2 ReAct Agent Loop
@@ -164,16 +176,17 @@ import {
 
 ### 5.3 SQLite 数据库
 
-6 张表，WAL 模式 + NORMAL 同步：
+7 张表，WAL 模式 + NORMAL 同步：
 
 | 表 | 用途 | 关键特性 |
 |---|---|---|
 | `sessions` | 会话 | parent_id 父子关系 |
 | `messages` | 消息 | 外键级联删除，thinking/tool_calls |
 | `tool_calls` | 工具调用记录 | 按会话+工具名索引 |
-| `memories` | Agent 记忆 | FTS5 全文搜索，向量嵌入 |
+| `memories` | Agent 记忆 | FTS5 全文搜索，向量嵌入，容量 500 上限 |
 | `settings` | 设置 | JSON 序列化 |
 | `traces` | ReAct 执行轨迹 | Agent 可观测性 |
+| `skills` | 自动生成的可复用技能 | 成功/失败次数、平均时长 |
 
 ### 5.4 联网搜索联动
 
@@ -186,6 +199,7 @@ import {
 - AI 通过 `run_command` 工具执行命令，命令在工作空间终端实时显示
 - 执行路径：tool-registry.ts → bridge.workspace.execTool() → IPC → handleRunCommand() → spawn
 - stdout/stderr 通过 `cmd:output` 实时推送到渲染进程终端面板
+- 执行路径（浏览器工具）：tool-registry.ts → bridge.callTool('browser_xxx') → IPC → browser.ts → 执行
 
 ---
 
