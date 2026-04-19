@@ -300,7 +300,7 @@ src/
 
 | 文件 | 类型 |
 |------|------|
-| `Metona Ollama Setup 5.1.1.exe` | NSIS 安装包（可选目录、创建快捷方式） |
+| `Metona Ollama Setup 5.1.3.exe` | NSIS 安装包（可选目录、创建快捷方式） |
 
 > ⚠️ 未签名版本，首次运行 Windows 可能弹出安全警告，点击「仍要运行」即可。
 
