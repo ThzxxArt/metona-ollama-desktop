@@ -2594,6 +2594,9 @@ html, body {
     align-items: center;
     gap: 6px;
     margin-bottom: 6px;
+    padding: 0;
+    background: none;
+    border-bottom: none;
 }
 
 .ws-tools-output .tool-call-icon {
