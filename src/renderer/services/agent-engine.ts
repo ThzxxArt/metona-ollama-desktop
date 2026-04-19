@@ -518,8 +518,10 @@ export async function runAgentLoop(
     // 检查是否已中止
     if (state.get<AbortController | null>(KEYS.ABORT_CONTROLLER)?.signal.aborted) {
       logInfo('ReAct Agent Loop 已中止');
-      callbacks.onDone(content, allToolRecords.length > 0 ? allToolRecords : undefined, makeStats());
-      return;
+      if (allToolRecords.length > 0) {
+        state.set('_abortToolRecords', allToolRecords);
+      }
+      throw new DOMException('Aborted', 'AbortError');
     }
 
     logAgentLoop(loopCount, maxLoops);
@@ -591,11 +593,11 @@ export async function runAgentLoop(
     } catch (err) {
       if (abortController.signal.aborted) {
         logInfo('流式调用已中止');
-        if (content || thinking) {
-          messages.push({ role: 'assistant', content, ...(thinking && { thinking }) });
+        // 保存工具记录到 state，供消费方的 catch 处理中止消息
+        if (allToolRecords.length > 0) {
+          state.set('_abortToolRecords', allToolRecords);
         }
-        callbacks.onDone(content, allToolRecords.length > 0 ? allToolRecords : undefined, makeStats());
-        return;
+        throw err; // 抛出 AbortError，由消费方统一处理
       }
       logError('流式调用异常', (err as Error).message);
       // 清理预算警告临时消息

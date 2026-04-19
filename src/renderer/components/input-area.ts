@@ -12,7 +12,7 @@ import {
   appendToolCallCardToPlaceholder, updateToolCallCardInPlaceholder
 } from './chat-area.js';
 import { showToast } from './toast.js';
-import { addToolCard, updateToolCard } from './workspace-panel.js';
+import { addToolCard, updateToolCard, clearToolCardsExternal, clearTerminalExternal } from './workspace-panel.js';
 import { ChatDB } from '../db/chat-db.js';
 import { OllamaAPI } from '../api/ollama.js';
 import { runAgentLoop } from '../services/agent-engine.js';
@@ -266,6 +266,12 @@ async function handleRetry(): Promise<void> {
   const toolCallingEnabled = state.get<boolean>('toolCallingEnabled', false);
   const model = getSelectedModel() || currentSession.model;
 
+  // 新一轮开始：清理上一轮的工作空间状态
+  if (toolCallingEnabled) {
+    clearToolCardsExternal();
+    clearTerminalExternal();
+  }
+
   appendAssistantPlaceholder();
   state.set(KEYS.IS_STREAMING, true);
   updateSendButton(true);
@@ -285,9 +291,10 @@ async function handleRetry(): Promise<void> {
       });
 
     try {
+      let retryThinkContent = '';
       await runAgentLoop(userMsg.content || '', userMsg.images || [], historyMessages, {
-        onThinking: (thinking) => updateLastAssistantMessage('', thinking, null),
-        onContent: (content) => updateLastAssistantMessage(content, null, null),
+        onThinking: (thinking) => { retryThinkContent = thinking; updateLastAssistantMessage('', thinking, null); },
+        onContent: (content) => updateLastAssistantMessage(content, retryThinkContent || null, null),
         onToolCallStart: (call) => {
           addToolCard({
             name: call.function.name, arguments: call.function.arguments,
@@ -310,6 +317,7 @@ async function handleRetry(): Promise<void> {
         onDone: async (finalContent, toolRecords, loopStats) => {
           const assistantMsg: ChatMessage = {
             role: 'assistant', content: finalContent || '', timestamp: Date.now(),
+            ...(retryThinkContent && { think: retryThinkContent }),
             ...(toolRecords?.length && { toolCalls: toolRecords }),
             ...(loopStats?.eval_count && { eval_count: loopStats.eval_count }),
             ...(loopStats?.total_duration && { total_duration: loopStats.total_duration }),
@@ -317,7 +325,7 @@ async function handleRetry(): Promise<void> {
           state.update(KEYS.CURRENT_SESSION, (s: ChatSession | null) => ({
             ...s, messages: [...s.messages, assistantMsg], updatedAt: Date.now()
           }));
-          updateLastAssistantMessage(finalContent, null, loopStats || null);
+          updateLastAssistantMessage(finalContent, retryThinkContent || null, loopStats || null);
           renderMessages();
           await saveCurrentSession();
           updateTotalTokens();
@@ -856,6 +864,10 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
   filePreviewEl.innerHTML = '';
   autoResizeTextarea();
 
+  // 新一轮开始：清理上一轮的工作空间状态
+  clearToolCardsExternal();
+  clearTerminalExternal();
+
   appendAssistantPlaceholder();
   state.set(KEYS.IS_STREAMING, true);
   updateSendButton(true);
@@ -951,11 +963,16 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
           contentDiv.innerHTML = html;
         }
       }
+      // 获取中止时已执行的工具记录
+      const abortToolRecords = state.get<ToolCallRecord[] | null>('_abortToolRecords', null);
+      if (abortToolRecords) state.set('_abortToolRecords', null);
+
       const partialMsg: ChatMessage = {
         role: 'assistant',
         content: assistantContent,
         timestamp: Date.now(),
         ...(thinkContent && { think: thinkContent }),
+        ...(abortToolRecords?.length && { toolCalls: abortToolRecords }),
         stopped: true
       };
       state.update(KEYS.CURRENT_SESSION, (session: ChatSession | null) => ({

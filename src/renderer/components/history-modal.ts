@@ -5,6 +5,7 @@
 import { state, KEYS } from '../state/state.js';
 import { debounce, escapeHtml, formatTime } from '../utils/utils.js';
 import { exportAsMarkdown, exportAsHtml, exportAsTxt, renderMessages, clearMessages, updateTotalTokens } from './chat-area.js';
+import { clearToolCardsExternal, clearTerminalExternal } from './workspace-panel.js';
 import { showConfirm } from './prompt-modal.js';
 import { ChatDB } from '../db/chat-db.js';
 import { logSession, logWarn } from '../services/log-service.js';
@@ -178,6 +179,10 @@ async function loadHistorySession(sessionId: string): Promise<void> {
 
   (document.querySelector('#historyBar') as HTMLElement).style.display = '';
   (document.querySelector('#inputArea') as HTMLElement).style.display = 'none';
+
+  // 切换会话时清理工作空间状态
+  clearToolCardsExternal();
+  clearTerminalExternal();
 
   clearMessages();
   renderMessages();

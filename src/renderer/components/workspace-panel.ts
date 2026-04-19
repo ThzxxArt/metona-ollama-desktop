@@ -63,6 +63,25 @@ const IDLE_TIPS = [
 let tipIndex = Math.floor(Math.random() * IDLE_TIPS.length);
 let tipTimer: ReturnType<typeof setInterval> | null = null;
 
+/** 清空工具卡片（供外部调用） */
+export function clearToolCardsExternal(): void {
+  toolCards = [];
+  if (activeTab === 'tools') renderToolCalls();
+  updateToolsHint();
+}
+
+/** 清空终端（供外部调用） */
+export function clearTerminalExternal(): void {
+  if (terminal) {
+    terminal.lines = [];
+    terminal.running = false;
+  }
+  currentAiCommand = null;
+  if (activeTab === 'terminal') renderTerminal();
+  updateStopBtnState();
+  updateHint();
+}
+
 /** 工具调用卡片列表 */
 let toolCards: ToolCallRecord[] = [];
 let toolAutoScroll = true;
