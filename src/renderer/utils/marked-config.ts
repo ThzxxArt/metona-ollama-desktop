@@ -2,7 +2,7 @@
  * Markdown 渲染器配置 — 基于 marked 库
  */
 
-import { marked as markedLib, Renderer } from 'marked';
+import { marked as markedLib, Renderer } from '../../vendor/marked.js';
 import { sanitize } from './sanitizer.js';
 
 // 自定义渲染器：链接安全检查

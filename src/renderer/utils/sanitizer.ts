@@ -2,7 +2,7 @@
  * Sanitizer — 基于 DOMPurify 的 HTML 净化器
  */
 
-import DOMPurify from 'dompurify';
+import DOMPurify from '../../vendor/dompurify.js';
 
 // 允许的 data URI 类型
 const SAFE_DATA_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml']);

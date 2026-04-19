@@ -27,9 +27,7 @@
       "dist/**/*",
       "assets/**/*",
       "!node_modules/**/*",
-      "node_modules/sql.js/**/*",
-      "node_modules/marked/**/*",
-      "node_modules/dompurify/**/*"
+      "node_modules/sql.js/**/*"
     ],
     "extraResources": [
       {
@@ -61,7 +59,6 @@
     }
   },
   "devDependencies": {
-    "@types/dompurify": "^3.0.5",
     "@types/node": "^20.17.0",
     "electron": "^33.4.11",
     "electron-builder": "^25.1.8",
@@ -69,8 +66,6 @@
     "vite": "^5.4.0"
   },
   "dependencies": {
-    "dompurify": "^3.4.0",
-    "marked": "^18.0.2",
     "sql.js": "^1.11.0"
   }
 }
