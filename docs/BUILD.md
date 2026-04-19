@@ -178,7 +178,7 @@ electron-builder 会自动处理所有依赖下载（Electron、NSIS、winCodeSi
 
 ### v5.1.1（2026-04-19） — metona-ollama-desktop 仓库
 
-- 🔧 搜索引擎：DuckDuckGo → 百度（Baidu），解决国内不可达问题
+- 🔧 搜索引擎：DuckDuckGo → Bing + 百度 + Google（三引擎），解决国内不可达问题
 - 🔧 移除全部超时限制：Agent Loop、流式响应、工具执行、web_fetch、download_file
 - 🔧 Agent 最大轮数默认 85 轮，设置面板可配置
 - ✨ 执行日志导出功能（日志面板新增导出按钮）

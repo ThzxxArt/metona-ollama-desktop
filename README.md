@@ -60,7 +60,7 @@ AI 在对话中**主动调用**本地工具完成任务，所有操作在用户�
 |------|------|
 | `run_command` | 执行 Shell 命令（自动/需确认/禁用 三模式） |
 | `web_fetch` | 抓取网页内容（HTTP/HTTPS） |
-| `web_search` | 联网搜索（DuckDuckGo + Bing 双引擎） |
+| `web_search` | 联网搜索（Bing + 百度 + Google 三引擎） |
 | `download_file` | 从 URL 下载文件 |
 | `diff_files` | 对比文件差异（unified diff） |
 | `replace_in_files` | 批量查找替换（glob 模式） |

@@ -13,10 +13,10 @@
 
 ### Desktop v5.1.1 — 搜索引擎替换 & 超时移除 & 日志导出
 
-- 🔧 **搜索引擎：DuckDuckGo → 百度**
+- 🔧 **搜索引擎：DuckDuckGo → Bing + 百度 + Google**
   - 移除 DuckDuckGo 搜索引擎（国内不可达，每次浪费 8 秒超时）
-  - 首选百度搜索（Baidu），Bing 和 Google 作为备用
-  - 新增 `parseBaiduResults()` 解析函数
+  - 首选 Bing 搜索，百度作为备用，Google 作为兜底
+  - 新增 `parseBaiduResults()` 和 `parseGoogleResults()` 解析函数
   - 移除所有搜索引擎的超时限制
 - 🔧 **移除全部超时限制**
   - 移除 Agent Loop 全局 10 分钟总超时（`MAX_LOOP_TIME`）
@@ -37,6 +37,11 @@
   - 新增规则 13：严禁猜测或编造 URL 路径，所有 URL 必须从搜索结果获取
   - 新增规则 14：不要忽视来自知乎、CSDN 等中文来源的搜索结果
   - 修复工具去重缓存 key 逻辑，失败工具不再被误杀
+- 🔧 **esbuild 反引号兼容性修复**
+  - `agent-engine.ts` 多余反引号导致 esbuild 模板字面量解析错误
+  - 正则表达式中反引号改用 `String.fromCharCode(96)` 拼接
+  - `memory-manager.ts`、`marked-config.ts` 中类似正则改用 `new RegExp()` 构造器
+  - 关键教训：esbuild 0.21.5 对源码中反引号字符解析有兼容性问题
 - 📝 **版本号更新至 5.1.1**（7 个文件同步更新）
 
 ### Desktop v5.1.0 — Hermes 借鉴 & 记忆/Skill 系统增强
