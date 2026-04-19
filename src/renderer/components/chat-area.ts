@@ -157,6 +157,22 @@ export function appendMessageDOM(msg: ChatMessage, index: number): void {
     contentHtml = contentHtml.replace('<div class="msg-content"></div>', '');
   }
 
+  // v5.1.2 工具卡片移至文字上方（先展示工具执行过程，再展示最终回答）
+  if (msg.role === 'assistant' && msg.toolCalls && msg.toolCalls.length > 0) {
+    let toolHtml = '<div class="tool-calls-container">';
+    for (const tc of msg.toolCalls) {
+      toolHtml += renderToolCallCard(tc);
+    }
+    toolHtml += '</div>';
+    // 插入到 msg-content 之前
+    const contentIdx = contentHtml.indexOf('<div class="msg-content">');
+    if (contentIdx >= 0) {
+      contentHtml = contentHtml.slice(0, contentIdx) + toolHtml + contentHtml.slice(contentIdx);
+    } else {
+      contentHtml = toolHtml + contentHtml;
+    }
+  }
+
   const stats: string[] = [];
   const statClasses: string[] = [];
   if (msg.timestamp) { stats.push(formatTime(msg.timestamp)); statClasses.push(''); }
@@ -164,14 +180,6 @@ export function appendMessageDOM(msg: ChatMessage, index: number): void {
   if (msg.total_duration != null && msg.total_duration > 0) { stats.push(`${(msg.total_duration / 1e9).toFixed(1)}s`); statClasses.push('stat-duration'); }
   if (stats.length > 0) {
     contentHtml += `<div class="msg-stats">${stats.map((s, i) => `<span${statClasses[i] ? ` class="${statClasses[i]}"` : ''}>${s}</span>`).join(' · ')}</div>`;
-  }
-
-  if (msg.role === 'assistant' && msg.toolCalls && msg.toolCalls.length > 0) {
-    contentHtml += '<div class="tool-calls-container">';
-    for (const tc of msg.toolCalls) {
-      contentHtml += renderToolCallCard(tc);
-    }
-    contentHtml += '</div>';
   }
 
   div.innerHTML = `

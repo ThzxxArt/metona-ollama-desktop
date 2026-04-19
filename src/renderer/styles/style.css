@@ -833,6 +833,11 @@ html, body {
     box-shadow: var(--shadow-card);
 }
 
+.tool-calls-container + .msg-stats + .msg-content,
+.tool-calls-container + .msg-content {
+    margin-top: 4px;
+}
+
 .msg-content {
     font-size: 14px;
     line-height: 1.7;
@@ -1976,7 +1981,9 @@ html, body {
    ═══════════════════════════════════════════════════════════════ */
 
 .tool-calls-container {
-    margin-top: 10px;
+    margin-bottom: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px dashed var(--border-subtle);
 }
 
 .tool-call-card {
