@@ -504,7 +504,7 @@ export function updateTotalTokens(): void {
 // ── 导出功能 ──
 
 async function nativeSaveFile(defaultName: string, content: string): Promise<void> {
-  const bridge = (window as any).metonaDesktop;
+  const bridge = window.metonaDesktop;
   if (bridge) {
     const ext = defaultName.split('.').pop() || 'txt';
     const filePath = await bridge.dialog.saveFile({

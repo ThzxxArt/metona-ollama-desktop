@@ -264,9 +264,14 @@ export async function addMemory(data: {
     }
   }
 
-  // 检查重复（内容相似度 > 80% 则跳过）
+  // 检查重复（内容相似度 > 80% 或前缀匹配则跳过）
   const existing = memoryCache.find(e => {
     if (e.type !== data.type) return false;
+    // v5.1.3 前缀匹配：前 50 字符完全相同视为重复
+    const prefixLen = Math.min(50, data.content.length, e.content.length);
+    if (prefixLen > 20 && data.content.slice(0, prefixLen) === e.content.slice(0, prefixLen)) {
+      return true;
+    }
     const similarity = simpleSimilarity(e.content, data.content);
     return similarity > 0.8;
   });
@@ -302,7 +307,9 @@ export async function addMemory(data: {
       await addMemoryVector(entry, embedding, colId);
       if (db) await db.saveMemory(entry); // 保存包含 embedding 的版本
     } catch (err) {
-      logWarn('向量存储失败', (err as Error).message);
+      const errMsg = (err as Error).message;
+      logWarn('向量存储失败', `记忆 "${entry.content.slice(0, 40)}" (${entry.id}): ${errMsg}`);
+      logDebug('向量存储失败详情', `模型: ${embeddingModel}, 类型: ${entry.type}, 错误: ${(err as Error).stack?.split('\n')[0] || errMsg}`);
     }
   }
 
@@ -322,13 +329,25 @@ function autoCleanMemories(): number {
   const db = state.get<ChatDB | null>(KEYS.DB);
   const now = Date.now();
   const SEVEN_DAYS = 7 * 24 * 3600 * 1000;
+  const NINETY_DAYS = 90 * 24 * 3600 * 1000;
+
+  // v5.1.3 记忆过期衰减：90 天未使用的记忆自动降级 importance
+  for (const entry of memoryCache) {
+    if (entry.type === 'rule') continue; // rule 受保护
+    const unusedDays = now - entry.lastUsedAt;
+    if (unusedDays > NINETY_DAYS && entry.importance > 1) {
+      entry.importance = Math.max(1, entry.importance - 2);
+      if (db) db.saveMemory(entry);
+    }
+  }
 
   // 计算综合评分
   const scored = memoryCache
-    .map((entry, idx) => {
+    .map((entry) => {
       const recencyBonus = (now - entry.lastUsedAt) < SEVEN_DAYS ? 5 : 0;
-      const score = entry.importance * 2 + entry.useCount * 3 + recencyBonus;
-      return { entry, idx, score };
+      const agePenalty = (now - entry.createdAt) > NINETY_DAYS ? 3 : 0;
+      const score = entry.importance * 2 + entry.useCount * 3 + recencyBonus - agePenalty;
+      return { entry, score };
     })
     // rule 类型受保护
     .filter(s => s.entry.type !== 'rule')

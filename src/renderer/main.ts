@@ -35,7 +35,7 @@ import type { ChatSession } from './types.js';
 // ─── v4.0 数据迁移：IndexedDB → SQLite ───
 
 async function migrateIndexedDBToSQLite(db: ChatDB): Promise<void> {
-  const bridge = (window as any).metonaDesktop;
+  const bridge = window.metonaDesktop;
   if (!bridge?.isDesktop || !bridge?.db) {
     logInit('非桌面环境，跳过迁移');
     return;
@@ -65,7 +65,7 @@ async function migrateIndexedDBToSQLite(db: ChatDB): Promise<void> {
       req.onerror = () => reject(req.error);
     });
 
-    const memories: any[] = await new Promise((resolve, reject) => {
+    const memories: Record<string, unknown>[] = await new Promise((resolve, reject) => {
       const tx = idb.transaction('memories', 'readonly');
       const store = tx.objectStore('memories');
       const req = store.getAll();
@@ -73,7 +73,7 @@ async function migrateIndexedDBToSQLite(db: ChatDB): Promise<void> {
       req.onerror = () => reject(req.error);
     });
 
-    const settings: any[] = await new Promise((resolve, reject) => {
+    const settings: Record<string, unknown>[] = await new Promise((resolve, reject) => {
       const tx = idb.transaction('settings', 'readonly');
       const store = tx.objectStore('settings');
       const req = store.getAll();
@@ -102,7 +102,7 @@ async function migrateIndexedDBToSQLite(db: ChatDB): Promise<void> {
         updated_at: s.updatedAt
       })),
       messages: sessions.flatMap(s =>
-        s.messages.map((m: any, idx: number) => ({
+        s.messages.map((m: Record<string, unknown>, idx: number) => ({
           id: `${s.id}_msg_${idx}_${m.timestamp}`,
           session_id: s.id,
           role: m.role,
@@ -116,7 +116,7 @@ async function migrateIndexedDBToSQLite(db: ChatDB): Promise<void> {
           created_at: m.timestamp || Date.now()
         }))
       ),
-      memories: memories.map((m: any) => ({
+      memories: memories.map((m: Record<string, unknown>) => ({
         id: m.id,
         type: m.type,
         content: m.content,
@@ -130,7 +130,7 @@ async function migrateIndexedDBToSQLite(db: ChatDB): Promise<void> {
         updated_at: m.updatedAt,
         last_used_at: m.lastUsedAt
       })),
-      settings: settings.map((s: any) => ({ key: s.key, value: s.value })),
+      settings: settings.map((s: Record<string, unknown>) => ({ key: s.key, value: s.value })),
       exportedAt: Date.now()
     };
 
@@ -196,7 +196,7 @@ function setupDesktopIntegration(): void {
 
   // 主进程日志转发到日志面板
   bridge.onMainLog((data: { level: string; message: string; detail?: string }) => {
-    addLog(data.level as any, data.message, data.detail);
+    addLog(data.level as 'info' | 'success' | 'warn' | 'error' | 'debug', data.message, data.detail);
   });
 
   // 退出时释放显存
@@ -204,7 +204,7 @@ function setupDesktopIntegration(): void {
     const api = state.get<OllamaAPI | null>(KEYS.API);
     const model = state.get<string>('_defaultModel', '');
     if (api && model) {
-      api.chat({ model, messages: [], keep_alive: 0 } as any).catch(() => {});
+      api.chat({ model, messages: [], keep_alive: 0 }).catch(() => {});
     }
   });
 
@@ -244,7 +244,7 @@ async function startNewSession(): Promise<void> {
   const model = currentSession?.model || state.get<string>('_defaultModel', '');
   if (api && model) {
     try {
-      await api.chat({ model, messages: [], keep_alive: 0 } as any);
+      await api.chat({ model, messages: [], keep_alive: 0 });
       logDebug('释放旧模型显存');
     } catch (e) {
       logWarn('释放显存失败', (e as Error).message);

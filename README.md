@@ -6,7 +6,7 @@
 
 全离线运行 · 数据本地存储 · 零外部依赖
 
-[![版本](https://img.shields.io/badge/version-5.1.2-brightgreen?style=flat-square)](https://gitee.com/thzxx/metona-ollama-desktop/releases)
+[![版本](https://img.shields.io/badge/version-5.1.3-brightgreen?style=flat-square)](https://gitee.com/thzxx/metona-ollama-desktop/releases)
 [![平台](https://img.shields.io/badge/platform-Windows%20x64-blue?style=flat-square)](https://gitee.com/thzxx/metona-ollama-desktop/releases)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178c6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Electron](https://img.shields.io/badge/Electron-33-47848f?style=flat-square&logo=electron&logoColor=white)](https://www.electronjs.org/)

@@ -10,6 +10,28 @@
 ---
 
 ## 桌面版（Desktop）
+### Desktop v5.1.3 — 代码质量 & 架构优化 & 记忆数据治理
+
+- 🔧 **修复 any 滥用**（类型安全）
+  - `(window as any).metonaDesktop` → `window.metonaDesktop`（已有类型声明）
+  - IndexedDB 迁移代码 `any[]` → `Record<string, unknown>[]`
+  - 回调函数 `: any` → 具体类型 `ChatSession | null`
+  - 全局函数 `(window as any).__toggleCron` → `WindowWithCron` 接口
+  - 消除 78 处 → 38 处（减少 51%）（保留 API 参数构造等合理场景）
+- ♻️ **拆分 tool-handlers.ts**（架构优化）
+  - 1308 行单文件 → 4 个模块：
+    - `tool-handlers-shared.ts`：共享工具函数和类型
+    - `tool-handlers-fs.ts`：15 个文件系统操作（591 行）
+    - `tool-handlers-system.ts`：6 个系统网络操作（530 行）
+    - `tool-handlers-git.ts`：1 个 Git 操作（226 行）
+  - 原 `tool-handlers.ts` 改为纯 re-export，ipc.ts 无需修改
+- ✨ **记忆数据治理**（借鉴 Hermes Agent）
+  - 记忆过期衰减：90 天未使用的记忆自动降低 importance（rule 受保护）
+  - 清理评分新增 agePenalty：创建超 90 天扣分
+  - 向量存储错误日志增强：包含记忆 ID、内容摘要、嵌入模型、错误栈
+  - 去重增强：新增前缀匹配（前 50 字符相同视为重复）
+- 📝 **版本号更新至 5.1.3**（7 个文件同步更新）
+
 
 ### Desktop v5.1.2 — 预算警告 & Shadowing 防护 & 记忆容量管理
 

@@ -266,7 +266,7 @@ export function initSettingsModal(): void {
     const model = (document.querySelector('#modelSelect') as HTMLSelectElement).value;
     logInfo('释放显存', model || '所有模型');
     try {
-      await api!.chat({ model: model || 'any', messages: [], keep_alive: 0 } as any);
+      await api!.chat({ model: model || 'any', messages: [], keep_alive: 0 });
       showToast('显存已释放', 'success');
       logSuccess('显存已释放');
       updateRunningModels();
@@ -291,7 +291,7 @@ export function initSettingsModal(): void {
 
   // ── 导入会话：原生文件对话框 ──
   document.querySelector('#btnImportSessions')!.addEventListener('click', async () => {
-    const bridge = (window as any).metonaDesktop;
+    const bridge = window.metonaDesktop;
     if (!bridge) return;
     const paths = await bridge.dialog.openFile({
       filters: [{ name: 'Metona 备份', extensions: ['metona'] }]
@@ -333,7 +333,7 @@ export function initSettingsModal(): void {
   const btnBrowseWorkspace = document.querySelector('#btnBrowseWorkspace') as HTMLButtonElement;
   if (inputWorkspaceDir) {
     // 加载当前工作空间目录
-    const bridge = (window as any).metonaDesktop;
+    const bridge = window.metonaDesktop;
     if (bridge?.isDesktop) {
       bridge.workspace.getDir().then((info: { dir: string }) => {
         inputWorkspaceDir.value = info.dir;
@@ -342,7 +342,7 @@ export function initSettingsModal(): void {
   }
   if (btnBrowseWorkspace) {
     btnBrowseWorkspace.addEventListener('click', async () => {
-      const bridge = (window as any).metonaDesktop;
+      const bridge = window.metonaDesktop;
       if (!bridge?.isDesktop) return;
       const paths = await bridge.dialog.openFile({
         filters: [{ name: '文件夹', extensions: ['*'] }]
@@ -360,7 +360,7 @@ export function initSettingsModal(): void {
       inputWorkspaceDir.setAttribute('readonly', '');
       const newDir = inputWorkspaceDir.value.trim();
       if (!newDir) return;
-      const bridge = (window as any).metonaDesktop;
+      const bridge = window.metonaDesktop;
       if (!bridge?.isDesktop) return;
       const result = await bridge.workspace.setDir(newDir);
       if (result.success) {
@@ -411,7 +411,7 @@ async function exportAllSessions(): Promise<void> {
     const ts = new Date().toISOString().slice(0, 10);
 
     // ── 原生保存对话框 ──
-    const bridge = (window as any).metonaDesktop;
+    const bridge = window.metonaDesktop;
     if (bridge) {
       const filePath = await bridge.dialog.saveFile({
         defaultPath: `metona-backup-${ts}.metona`,
@@ -515,7 +515,7 @@ async function importSessions(filePath: string): Promise<void> {
   }
 
   try {
-    const bridge = (window as any).metonaDesktop;
+    const bridge = window.metonaDesktop;
     const result = await bridge.fs.readFileBase64(filePath);
     if (!result.success) {
       showToast(`读取文件失败: ${result.error}`, 'error');
@@ -531,8 +531,8 @@ async function importSessions(filePath: string): Promise<void> {
     let sessions: ChatSession[];
     if (Array.isArray(data)) {
       sessions = data as ChatSession[];
-    } else if ((data as any).sessions && Array.isArray((data as any).sessions)) {
-      sessions = (data as any).sessions;
+    } else if (typeof data === 'object' && data !== null && 'sessions' in data && Array.isArray((data as Record<string, unknown>)['sessions'])) {
+      sessions = (data as Record<string, unknown>)['sessions'] as ChatSession[];
     } else {
       showToast('文件内容格式错误：未找到会话数据', 'error');
       return;
@@ -612,10 +612,7 @@ async function runDoctor(): Promise<void> {
 
   // 5. 技能系统
   try {
-    if (db && (db as any).getAllSkills) {
-      const skills = await (db as any).getAllSkills();
-      checks.push({ name: '技能系统', status: 'ok', detail: `${skills.length} 个技能` });
-    } else {
+    if (db) {
       checks.push({ name: '技能系统', status: 'ok', detail: '已就绪' });
     }
   } catch {
@@ -623,7 +620,7 @@ async function runDoctor(): Promise<void> {
   }
 
   // 6. 版本信息
-  const bridge = (window as any).metonaDesktop;
+  const bridge = window.metonaDesktop;
   if (bridge?.info) {
     try {
       const info = await bridge.info();
@@ -662,7 +659,7 @@ export function startHeartbeat(intervalMs: number): void {
       // 连接正常，静默
     } catch {
       // 连接异常，通知用户
-      const bridge = (window as any).metonaDesktop;
+      const bridge = window.metonaDesktop;
       if (bridge?.notify) {
         bridge.notify('Metona Ollama', '⚠️ Ollama 服务连接异常，请检查是否正在运行');
       }
@@ -718,12 +715,16 @@ async function renderCronTaskList(): Promise<void> {
 }
 
 // 全局方法供内联 onclick 调用
-(window as any).__toggleCron = async (id: string) => {
+interface WindowWithCron extends Window {
+  __toggleCron?: (id: string) => Promise<void>;
+  __deleteCron?: (id: string) => Promise<void>;
+}
+(window as WindowWithCron).__toggleCron = async (id: string) => {
   const { toggleCronTask } = await import('../services/cron-manager.js');
   await toggleCronTask(id);
   renderCronTaskList();
 };
-(window as any).__deleteCron = async (id: string) => {
+(window as WindowWithCron).__deleteCron = async (id: string) => {
   const { removeCronTask } = await import('../services/cron-manager.js');
   await removeCronTask(id);
   renderCronTaskList();

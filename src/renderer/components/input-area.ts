@@ -3,6 +3,7 @@
  */
 
 import { state, KEYS } from '../state/state.js';
+import type { MetonaDesktopAPI } from '../types.js';
 import { detectLanguage, truncate, escapeHtml, formatSize } from '../utils/utils.js';
 import { getSelectedModel, isThinkEnabled, isVisionAvailable, isToolCallingSupported } from './model-bar.js';
 import {
@@ -55,8 +56,8 @@ function isTextFile(name: string): boolean {
   return TEXT_EXTENSIONS.has(ext);
 }
 
-function getBridge(): any {
-  return (window as any).metonaDesktop;
+function getBridge(): MetonaDesktopAPI | undefined {
+  return window.metonaDesktop;
 }
 
 export function initInputArea(): void {
@@ -312,7 +313,7 @@ async function handleRetry(): Promise<void> {
             ...(loopStats?.eval_count && { eval_count: loopStats.eval_count }),
             ...(loopStats?.total_duration && { total_duration: loopStats.total_duration }),
           };
-          state.update(KEYS.CURRENT_SESSION, (s: any) => ({
+          state.update(KEYS.CURRENT_SESSION, (s: ChatSession | null) => ({
             ...s, messages: [...s.messages, assistantMsg], updatedAt: Date.now()
           }));
           updateLastAssistantMessage(finalContent, null, loopStats || null);
@@ -582,7 +583,7 @@ export async function sendMessage(): Promise<void> {
   }
 
   const isFirstMsg = currentSession.messages.length === 0;
-  state.update(KEYS.CURRENT_SESSION, (session: any) => ({
+  state.update(KEYS.CURRENT_SESSION, (session: ChatSession | null) => ({
     ...session,
     ...(isFirstMsg && {
       title: truncate(text || (pendingFiles.length > 0 ? `[文件: ${pendingFiles.map(f => f.name).join(', ')}]` : '[图片消息]'), 30),
@@ -690,7 +691,7 @@ export async function sendMessage(): Promise<void> {
       ...(thinkContent && { think: thinkContent }),
       ...(finalStats && { eval_count: finalStats.eval_count, total_duration: finalStats.total_duration })
     };
-    state.update(KEYS.CURRENT_SESSION, (session: any) => ({
+    state.update(KEYS.CURRENT_SESSION, (session: ChatSession | null) => ({
       ...session,
       messages: [...session.messages, assistantMsg],
       updatedAt: Date.now()
@@ -735,7 +736,7 @@ export async function sendMessage(): Promise<void> {
         ...(thinkContent && { think: thinkContent }),
         stopped: true
       };
-      state.update(KEYS.CURRENT_SESSION, (session: any) => ({
+      state.update(KEYS.CURRENT_SESSION, (session: ChatSession | null) => ({
         ...session,
         messages: [...session.messages, partialMsg],
         updatedAt: Date.now()
@@ -764,7 +765,7 @@ export async function sendMessage(): Promise<void> {
     const contentDiv = placeholder?.querySelector('.msg-content');
 
     if (assistantContent && contentDiv) {
-      state.update(KEYS.CURRENT_SESSION, (session: any) => ({
+      state.update(KEYS.CURRENT_SESSION, (session: ChatSession | null) => ({
         ...session,
         messages: [...session.messages, { role: 'assistant', content: assistantContent + '\n\n`[已中断]`', timestamp: Date.now() } as ChatMessage],
         updatedAt: Date.now()
@@ -829,7 +830,7 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
   }
 
   const isFirstMsg = currentSession.messages.length === 0;
-  state.update(KEYS.CURRENT_SESSION, (session: any) => ({
+  state.update(KEYS.CURRENT_SESSION, (session: ChatSession | null) => ({
     ...session,
     ...(isFirstMsg && {
       title: truncate(text || (pendingFiles.length > 0 ? `[文件: ${pendingFiles.map(f => f.name).join(', ')}]` : '[图片消息]'), 30),
@@ -921,7 +922,7 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
           ...(loopStats?.eval_count && { eval_count: loopStats.eval_count }),
           ...(loopStats?.total_duration && { total_duration: loopStats.total_duration }),
         };
-        state.update(KEYS.CURRENT_SESSION, (session: any) => ({
+        state.update(KEYS.CURRENT_SESSION, (session: ChatSession | null) => ({
           ...session,
           messages: [...session.messages, assistantMsg],
           updatedAt: Date.now()
@@ -956,7 +957,7 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
         ...(thinkContent && { think: thinkContent }),
         stopped: true
       };
-      state.update(KEYS.CURRENT_SESSION, (session: any) => ({
+      state.update(KEYS.CURRENT_SESSION, (session: ChatSession | null) => ({
         ...session,
         messages: [...session.messages, partialMsg],
         updatedAt: Date.now()

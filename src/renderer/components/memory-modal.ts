@@ -152,8 +152,8 @@ export function initMemoryModal(): void {
   document.querySelector('#btnMemory')?.addEventListener('click', openMemoryModal);
 
   // 全局状态监听
-  if (typeof (window as any).__memoryStateListener === 'undefined') {
-    (window as any).__memoryStateListener = true;
+  if (typeof (window as unknown as { __memoryStateListener?: boolean }).__memoryStateListener === 'undefined') {
+    (window as unknown as { __memoryStateListener?: boolean }).__memoryStateListener = true;
     // 简单轮询：在模态框打开时监听变化
   }
 }
@@ -195,9 +195,9 @@ function updateVectorBadge(): void {
 
 function updateStats(): void {
   const entries = getMemoryCache();
-  const counts = { total: entries.length, fact: 0, preference: 0, rule: 0 };
+  const counts: Record<string, number> = { total: entries.length, fact: 0, preference: 0, rule: 0 };
   for (const e of entries) {
-    if (e.type in counts) (counts as any)[e.type]++;
+    if (e.type in counts) counts[e.type]++;
   }
   const el = (id: string) => modalEl.querySelector(`#${id}`)!;
   el('memStatTotal').textContent = String(counts.total);
@@ -295,7 +295,7 @@ async function importMemoryFromMd(): Promise<void> {
     return;
   }
 
-  const bridge = (window as any).metonaDesktop;
+  const bridge = window.metonaDesktop;
   if (!bridge || !bridge.isDesktop) {
     showToast('导入功能仅在桌面端可用', 'warning');
     return;

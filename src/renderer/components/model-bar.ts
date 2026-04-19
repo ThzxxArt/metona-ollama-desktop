@@ -3,6 +3,7 @@
  */
 
 import { state, KEYS } from '../state/state.js';
+import type { ChatSession } from '../types.js';
 import { formatSize } from '../utils/utils.js';
 import { OllamaAPI } from '../api/ollama.js';
 import { ChatDB } from '../db/chat-db.js';
@@ -33,7 +34,7 @@ export function initModelBar(): void {
     const db = state.get<ChatDB | null>(KEYS.DB);
     if (db) await db.saveSetting('selectedModel', model);
     state.set('_defaultModel', model);
-    state.update(KEYS.CURRENT_SESSION, (session: any) => session ? ({ ...session, model }) : session);
+    state.update(KEYS.CURRENT_SESSION, (session: ChatSession | null) => session ? ({ ...session, model }) : session);
     if (model) {
       logModel(model, '切换');
       await checkModelCapability(model);

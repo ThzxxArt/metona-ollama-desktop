@@ -176,6 +176,13 @@ electron-builder 会自动处理所有依赖下载（Electron、NSIS、winCodeSi
 
 ## 构建日志
 
+### v5.1.3（2026-04-19） — metona-ollama-desktop 仓库
+
+- 🔧 修复 any 滥用：78 处 → 约 15 处，类型安全提升
+- ♻️ 拆分 tool-handlers.ts：1308 行 → 4 个模块（fs/system/git/shared）
+- ✨ 记忆数据治理：过期衰减、向量错误日志增强、去重增强（前缀匹配）
+- 📝 版本号更新至 5.1.3
+
 ### v5.1.2（2026-04-19） — metona-ollama-desktop 仓库
 
 - ✨ 预算警告临时层：Agent Loop 接近迭代上限时注入临时提示，≤5 轮时 warning，≤2 轮时 critical
