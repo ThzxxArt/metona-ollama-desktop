@@ -12,7 +12,8 @@ function parseMarkdown(md: string): string {
   let html = escapeForMd(md);
 
   // 代码块 ```...```
-  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_m, lang, code) => {
+  const codeBlockRe = new RegExp('```(\\w*)\\n([\\s\\S]*?)```', 'g');
+  html = html.replace(codeBlockRe, (_m, lang, code) => {
     return `<pre><code class="language-${lang}">${code.trim()}</code></pre>`;
   });
 

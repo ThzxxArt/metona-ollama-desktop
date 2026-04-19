@@ -607,7 +607,7 @@ ${conversationText.slice(0, 4000)}
     });
 
     const content = (response as { message?: { content?: string } })?.message?.content || '';
-    const jsonMatch = content.match(/```json\s*([\s\S]*?)\s*```/) || content.match(/\{[\s\S]*"entries"[\s\S]*\}/);
+    const jsonMatch = content.match(new RegExp('```json\\s*([\\s\\S]*?)\\s*```')) || content.match(/\{[\s\S]*"entries"[\s\S]*\}/);
 
     if (!jsonMatch) return 0;
 

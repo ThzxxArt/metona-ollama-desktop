@@ -88,7 +88,7 @@ const TOOL_USAGE_GUIDE = `【工具链规则（强制执行）】
 11. 管理记忆：可以用 memory_replace 更新已有记忆（子串匹配 old_text），用 memory_remove 删除不再需要的记忆。
 12. 查看技能：可以用 skill_list 列出所有可用技能，用 skill_view 查看特定技能的详细工具链。
 13. 【严禁猜 URL】绝对不要猜测或编造 URL 路径（如 https://example.com/docs/install）。所有 URL 必须从搜索结果中获取。如果你猜了一个 URL 并得到 404 错误，不要继续猜其他路径，应该回到搜索结果中找正确的链接。
-14. 搜索结果来源：搜索结果中每条都带有标题、URL 和摘要。摘要已经包含关键信息，优先从摘要中提取答案。不要忽视来自知乎、CSDN、博客园等中文来源的结果，它们通常包含有效的技术信息。`;`;
+14. 搜索结果来源：搜索结果中每条都带有标题、URL 和摘要。摘要已经包含关键信息，优先从摘要中提取答案。不要忽视来自知乎、CSDN、博客园等中文来源的结果，它们通常包含有效的技术信息。`;
 
 /** 工具名白名单：用于文本解析兜底时过滤非法工具名 */
 const VALID_TOOL_NAMES = new Set([
@@ -123,9 +123,16 @@ function parseToolCallsFromText(content: string): ToolCall[] {
 
     if (!VALID_TOOL_NAMES.has(toolName)) continue;
 
+    const TICK = String.fromCharCode(96);
+    const tickJson = TICK + TICK + TICK + 'json';
+    const tick3 = TICK + TICK + TICK;
+
     try {
       // 清理 JSON：去除可能的 markdown 代码块包裹
-      let cleaned = argsStr.replace(/```json?\s*/g, '').replace(/```/g, '').trim();
+      let cleaned = argsStr
+        .split(tickJson).join('')
+        .split(tick3).join('')
+        .trim();
       const args = JSON.parse(cleaned);
       calls.push({
         type: 'function',
@@ -138,8 +145,8 @@ function parseToolCallsFromText(content: string): ToolCall[] {
           .replace(/'/g, '"')
           .replace(/,\s*}/g, '}')
           .replace(/,\s*]/g, ']')
-          .replace(/```json?\s*/g, '')
-          .replace(/```/g, '')
+          .split(tickJson).join('')
+          .split(tick3).join('')
           .trim();
         const args = JSON.parse(fixed);
         calls.push({
@@ -147,13 +154,13 @@ function parseToolCallsFromText(content: string): ToolCall[] {
           function: { name: toolName, arguments: args }
         });
       } catch {
-        logWarn(`文本解析兜底: 工具 ${toolName} 的参数 JSON 解析失败`, argsStr.slice(0, 100));
+        logWarn("文本解析兜底: 工具 " + toolName + " 的参数 JSON 解析失败", argsStr.slice(0, 100));
       }
     }
   }
 
   if (calls.length > 0) {
-    logInfo(`文本解析兜底: 从回复中提取到 ${calls.length} 个工具调用`, calls.map(c => c.function.name).join(', '));
+      logInfo("文本解析兜底: 从回复中提取到 " + calls.length + " 个工具调用", calls.map(c => c.function.name).join(', '));
   }
 
   return calls;
