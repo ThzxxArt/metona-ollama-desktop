@@ -15,7 +15,7 @@ import { searchMemories, buildMemoryContext, markMemoryUsed, isMemoryEnabled } f
 import { extractSkillsFromToolRecords, matchSkills, buildSkillContext } from './skill-manager.js';
 import { PERSONALITY_SYSTEM_PROMPTS } from '../components/settings-modal.js';
 import { showToast } from '../components/toast.js';
-import { logInfo, logWarn, logError, logToolStart, logToolResult, logThink, logAgentLoop, logModelResponse } from './log-service.js';
+import { logInfo, logWarn, logError, logToolStart, logToolResult, logAgentLoop, logModelResponse } from './log-service.js';
 import { getWorkspaceDirPath } from '../components/workspace-panel.js';
 import { generateId } from '../utils/utils.js';
 import { buildContext, estimateTokens } from './context-manager.js';

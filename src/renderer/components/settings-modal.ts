@@ -5,7 +5,7 @@
 import { state, KEYS } from '../state/state.js';
 import { debounce } from '../utils/utils.js';
 import { encryptData, decryptData } from '../services/crypto.js';
-import { setMemoryEnabled, setEmbeddingModel, getEmbeddingModel, isVectorMemoryEnabled, getMemoryCache } from '../services/memory-manager.js';
+import { setMemoryEnabled, setEmbeddingModel, getEmbeddingModel, getMemoryCache } from '../services/memory-manager.js';
 import { logSetting, logInfo, logWarn, logError, logSuccess } from '../services/log-service.js';
 import { checkConnection, updateConnectionInfo, updateRunningModels } from './header.js';
 import { loadModels } from './model-bar.js';

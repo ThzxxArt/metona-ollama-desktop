@@ -286,9 +286,24 @@ async function handleRetry(): Promise<void> {
       await runAgentLoop(userMsg.content || '', userMsg.images || [], historyMessages, {
         onThinking: (thinking) => updateLastAssistantMessage('', thinking, null),
         onContent: (content) => updateLastAssistantMessage(content, null, null),
-        onToolCallStart: () => {},
-        onToolCallResult: () => {},
-        onToolCallError: () => {},
+        onToolCallStart: (call) => {
+          appendToolCallCardToPlaceholder({
+            name: call.function.name, arguments: call.function.arguments,
+            result: null, status: 'running', timestamp: Date.now()
+          });
+        },
+        onToolCallResult: (name, result, call) => {
+          updateToolCallCardInPlaceholder({
+            name, arguments: call.function.arguments,
+            result, status: result.success ? 'success' : 'error', timestamp: Date.now()
+          });
+        },
+        onToolCallError: (name, error, call) => {
+          updateToolCallCardInPlaceholder({
+            name, arguments: call.function.arguments,
+            result: { success: false, error }, status: 'error', timestamp: Date.now()
+          });
+        },
         onConfirmTool: async (call) => showToolConfirm(call),
         onDone: async (finalContent, toolRecords, loopStats) => {
           const assistantMsg: ChatMessage = {
