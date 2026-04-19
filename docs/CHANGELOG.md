@@ -3,13 +3,23 @@
 ## 分支结构
 
 **桌面版主线**（`master`）：
-- `metona-ollama-desktop-v3.2.6` → `metona-ollama-desktop-v3.3.4` → `metona-ollama-desktop-v4.0.0` → `metona-ollama-desktop-v5.0.0` → `metona-ollama-desktop-v5.0.1` → `metona-ollama-desktop-v5.1.0` → `metona-ollama-desktop-v5.1.1` → `metona-ollama-desktop-v5.1.2` → `metona-ollama-desktop-v5.1.3`（当前发布分支）
+- `metona-ollama-desktop-v3.2.6` → `metona-ollama-desktop-v3.3.4` → `metona-ollama-desktop-v4.0.0` → `metona-ollama-desktop-v5.0.0` → `metona-ollama-desktop-v5.0.1` → `metona-ollama-desktop-v5.1.0` → `metona-ollama-desktop-v5.1.1` → `metona-ollama-desktop-v5.1.2` → `metona-ollama-desktop-v5.1.3` → `metona-ollama-desktop-v5.1.4`（当前发布分支）
 
 **Web 版历史**已独立为 [metona-ollama-web](https://gitee.com/thzxx/metona-ollama-web) 仓库（v1.1.0 ~ v4.0.3）。
 
 ---
 
 ## 桌面版（Desktop）
+### Desktop v5.1.4 — 工具卡片迁移到工作空间面板
+
+- ♻️ **工具卡片从聊天区域迁移到工作空间面板**
+  - 工作空间新增「🔧 工具」页签，专门展示工具调用卡片
+  - 工具执行时自动切换到工具页签
+  - `run_command` 执行时自动切换到终端页签
+  - AI 回复消息不再显示工具卡片，保持聊天区域简洁
+  - 工具页签支持清空、自动滚动、状态统计（共 N 个 ✅N ❌N）
+- 📝 **版本号更新至 5.1.4**（7 个文件同步更新）
+
 ### Desktop v5.1.3 — 代码质量 & 架构优化 & 记忆数据治理
 
 - 🔧 **修复 any 滥用**（类型安全）
