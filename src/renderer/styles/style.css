@@ -2351,6 +2351,89 @@ html, body {
     font-family: var(--font);
 }
 
+/* ── 终端空闲状态 ── */
+.ws-idle-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    padding: 20px 16px;
+    gap: 16px;
+}
+
+.ws-idle-logo {
+    text-align: center;
+}
+
+.ws-idle-ascii {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 1.4;
+    color: rgba(232, 115, 74, 0.65);
+    margin: 0;
+    white-space: pre;
+    text-shadow: 0 0 20px rgba(232, 115, 74, 0.15);
+    animation: idle-glow 3s ease-in-out infinite;
+}
+
+@keyframes idle-glow {
+    0%, 100% { text-shadow: 0 0 20px rgba(232, 115, 74, 0.1); }
+    50% { text-shadow: 0 0 25px rgba(232, 115, 74, 0.25); }
+}
+
+.ws-idle-info {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    width: 100%;
+    max-width: 260px;
+}
+
+.ws-idle-info-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 11px;
+}
+
+.ws-idle-label {
+    color: rgba(245, 240, 232, 0.35);
+    font-family: var(--font);
+    flex-shrink: 0;
+}
+
+.ws-idle-value {
+    color: rgba(245, 240, 232, 0.6);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    text-align: right;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ws-idle-divider {
+    width: 60px;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(232, 115, 74, 0.3), transparent);
+}
+
+.ws-idle-tip {
+    font-size: 11px;
+    color: rgba(245, 240, 232, 0.45);
+    font-family: var(--font);
+    text-align: center;
+    line-height: 1.5;
+    max-width: 240px;
+    transition: opacity 0.3s ease;
+}
+
+.ws-idle-tip.fading {
+    opacity: 0;
+}
+
 /* 工具调用 Tab */
 .ws-tools-output {
     flex: 1;

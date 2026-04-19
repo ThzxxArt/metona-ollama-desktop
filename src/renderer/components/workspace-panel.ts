@@ -47,6 +47,22 @@ let fileTree: FileNode[] = [];
 let previewFile: { name: string; content: string; path: string } | null = null;
 let _counter = 0;
 
+// ── 空闲状态轮转贴士 ──
+const IDLE_TIPS = [
+  '💡 可以让我读取文件、搜索代码、执行命令',
+  '💡 试试说"帮我看看这个目录里有什么"',
+  '💡 我可以联网搜索并抓取网页内容',
+  '💡 支持 Git 操作：状态查看、提交、分支管理',
+  '💡 我能记住你说过的重要信息，跨会话保留',
+  '💡 上传图片让我分析，支持 Vision 模型',
+  '💡 说"搜索..."我会自动联网查找最新信息',
+  '💡 我会从成功经验中学习，越用越聪明',
+  '💡 可以让我对比文件差异、批量替换文本',
+  '💡 支持浏览器控制，帮你操作网页',
+];
+let tipIndex = Math.floor(Math.random() * IDLE_TIPS.length);
+let tipTimer: ReturnType<typeof setInterval> | null = null;
+
 /** 工具调用卡片列表 */
 let toolCards: ToolCallRecord[] = [];
 let toolAutoScroll = true;
@@ -491,8 +507,17 @@ function renderTerminal(): void {
     return;
   }
 
+  // 空闲状态：显示 Logo + 信息 + 贴士
+  if (session.lines.length === 0 && !session.running) {
+    renderIdleState(container);
+    startTipRotation(container);
+    return;
+  }
+
+  // 有内容时停止贴士轮转
+  stopTipRotation();
+
   // 使用 DocumentFragment 优化渲染
-  const fragment = document.createDocumentFragment();
   const wrapper = document.createElement('div');
 
   for (const line of session.lines) {
@@ -514,6 +539,74 @@ function renderTerminal(): void {
     const atBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 50;
     session.autoScroll = atBottom;
   };
+}
+
+/** 渲染空闲状态 */
+function renderIdleState(container: HTMLElement): void {
+  const tip = IDLE_TIPS[tipIndex];
+  const dirDisplay = workspaceDir
+    ? workspaceDir.replace(/.*[/\\]/, '~/.')
+    : '未设置';
+
+  // 截取目录最后一段
+  const shortDir = workspaceDir
+    ? '...' + workspaceDir.slice(-30)
+    : '未设置';
+
+  container.innerHTML = `
+    <div class="ws-idle-state">
+      <div class="ws-idle-logo">
+        <pre class="ws-idle-ascii">   ╭───────╮
+   │ ◕  ◕ │
+   │   ▽   │
+   ╰─┬───┬─╯
+    ╱│   │╲
+   ╱ │   │ ╲
+  🦙 Metona</pre>
+      </div>
+      <div class="ws-idle-info">
+        <div class="ws-idle-info-row">
+          <span class="ws-idle-label">工作空间</span>
+          <span class="ws-idle-value" title="${escapeHtml(workspaceDir)}">${escapeHtml(shortDir)}</span>
+        </div>
+      </div>
+      <div class="ws-idle-divider"></div>
+      <div class="ws-idle-tip" id="wsIdleTip">${escapeHtml(tip)}</div>
+    </div>
+  `;
+
+  // 重置滚动
+  container.scrollTop = 0;
+}
+
+/** 启动贴士轮转 */
+function startTipRotation(container: HTMLElement): void {
+  if (tipTimer) return;
+  tipTimer = setInterval(() => {
+    // 只在空闲状态时轮转
+    const session = getActiveSession();
+    if (!session || session.lines.length > 0 || session.running) {
+      stopTipRotation();
+      return;
+    }
+    tipIndex = (tipIndex + 1) % IDLE_TIPS.length;
+    const tipEl = container.querySelector('#wsIdleTip');
+    if (tipEl) {
+      tipEl.classList.add('fading');
+      setTimeout(() => {
+        tipEl.textContent = IDLE_TIPS[tipIndex];
+        tipEl.classList.remove('fading');
+      }, 300);
+    }
+  }, 6000);
+}
+
+/** 停止贴士轮转 */
+function stopTipRotation(): void {
+  if (tipTimer) {
+    clearInterval(tipTimer);
+    tipTimer = null;
+  }
 }
 
 function renderFileList(): void {
