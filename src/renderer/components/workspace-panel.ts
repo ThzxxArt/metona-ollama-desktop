@@ -744,14 +744,6 @@ function getToolIcon(name: string): string {
   return icons[name] || '🔧';
 }
 
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
 function renderToolCard(tc: ToolCallRecord): string {
   const icon = getToolIcon(tc.name);
   const name = getToolDisplayName(tc.name);
