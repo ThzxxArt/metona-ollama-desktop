@@ -641,9 +641,20 @@ let _mcpToolCache: ToolDefinition[] = [];
 /** 刷新 MCP 工具缓存（在 MCP 服务器配置变更时调用） */
 export async function refreshMCPTools(): Promise<void> {
   try {
-    _mcpToolCache = await getMCPToolDefinitions();
-    if (_mcpToolCache.length > 0) {
-      logInfo(`MCP 工具已注册: ${_mcpToolCache.length} 个`, _mcpToolCache.map(t => t.function.name).join(', '));
+    const rawTools = await getMCPToolDefinitions();
+    // v5.1.2 Shadowing 防护：MCP 工具不能覆盖内置工具
+    const builtInNames = new Set(TOOL_DEFINITIONS.map(d => d.function.name));
+    const filtered = rawTools.filter(t => {
+      if (builtInNames.has(t.function.name)) {
+        logWarn(`MCP 工具 "${t.function.name}" 与内置工具重名，已跳过`);
+        return false;
+      }
+      return true;
+    });
+    const skipped = rawTools.length - filtered.length;
+    _mcpToolCache = filtered;
+    if (filtered.length > 0) {
+      logInfo(`MCP 工具已注册: ${filtered.length} 个${skipped > 0 ? `（${skipped} 个因重名被跳过）` : ''}`, filtered.map(t => t.function.name).join(', '));
     }
   } catch (err) {
     logError('MCP 工具刷新失败', (err as Error).message);

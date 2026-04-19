@@ -255,6 +255,15 @@ export async function addMemory(data: {
     throw new Error(`记忆内容被安全规则拦截: ${securityCheck.reason}`);
   }
 
+  // v5.1.2 记忆容量限制：超过上限自动清理低价值条目
+  const MAX_MEMORIES = 500;
+  if (memoryCache.length >= MAX_MEMORIES) {
+    const evicted = autoCleanMemories();
+    if (evicted > 0) {
+      logInfo('记忆容量清理', `已清理 ${evicted} 条低价值记忆（上限 ${MAX_MEMORIES}）`);
+    }
+  }
+
   // 检查重复（内容相似度 > 80% 则跳过）
   const existing = memoryCache.find(e => {
     if (e.type !== data.type) return false;
@@ -298,6 +307,45 @@ export async function addMemory(data: {
   }
 
   return entry;
+}
+
+// ── 容量管理 ──
+
+/**
+ * 自动清理低价值记忆条目
+ * 策略：按综合评分排序，清理后 20% 的条目
+ * 评分 = importance * 2 + useCount * 3 + recencyBonus（最近 7 天使用过 +5）
+ * rule 类型记忆受保护不被清理
+ * @returns 清理的条目数
+ */
+function autoCleanMemories(): number {
+  const db = state.get<ChatDB | null>(KEYS.DB);
+  const now = Date.now();
+  const SEVEN_DAYS = 7 * 24 * 3600 * 1000;
+
+  // 计算综合评分
+  const scored = memoryCache
+    .map((entry, idx) => {
+      const recencyBonus = (now - entry.lastUsedAt) < SEVEN_DAYS ? 5 : 0;
+      const score = entry.importance * 2 + entry.useCount * 3 + recencyBonus;
+      return { entry, idx, score };
+    })
+    // rule 类型受保护
+    .filter(s => s.entry.type !== 'rule')
+    .sort((a, b) => a.score - b.score);
+
+  const evictCount = Math.max(1, Math.floor(memoryCache.length * 0.2));
+  const toEvict = scored.slice(0, evictCount);
+
+  // 从缓存和数据库中移除
+  const evictIds = new Set(toEvict.map(s => s.entry.id));
+  for (const id of evictIds) {
+    if (db) db.deleteMemory(id);
+  }
+  memoryCache = memoryCache.filter(e => !evictIds.has(e.id));
+  state.set('memoryEntries', [...memoryCache]);
+
+  return evictIds.size;
 }
 
 // ── 安全扫描 ──

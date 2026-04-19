@@ -176,6 +176,13 @@ electron-builder 会自动处理所有依赖下载（Electron、NSIS、winCodeSi
 
 ## 构建日志
 
+### v5.1.2（2026-04-19） — metona-ollama-desktop 仓库
+
+- ✨ 预算警告临时层：Agent Loop 接近迭代上限时注入临时提示，≤5 轮时 warning，≤2 轮时 critical
+- ✨ Shadowing 防护：MCP 工具注册时检测与内置工具重名，自动跳过并日志警告
+- ✨ 记忆容量限制：上限 500 条，超限时自动清理低价值条目（按 importance + useCount + 近期使用综合评分，rule 类型受保护）
+- 📝 版本号更新至 5.1.2
+
 ### v5.1.1（2026-04-19） — metona-ollama-desktop 仓库
 
 - 🔧 搜索引擎：DuckDuckGo → Bing + 百度 + Google（三引擎），解决国内不可达问题

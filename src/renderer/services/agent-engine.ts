@@ -529,6 +529,17 @@ export async function runAgentLoop(
     const toolCalls: ToolCall[] = [];
     allCallsThisLoop = [];
 
+    // v5.1.2 预算警告：接近迭代上限时注入临时提示
+    let budgetWarningIdx = -1;
+    const remaining = maxLoops - loopCount + 1;
+    if (remaining <= 5 && remaining > 0) {
+      const warning = remaining <= 2
+        ? `\n⚠️ CRITICAL: You have only ${remaining} iteration(s) left. Stop using tools and provide your final answer NOW.`
+        : `\n⚠️ WARNING: You have approximately ${remaining} iterations remaining. Start wrapping up and prepare your final answer.`;
+      messages.push({ role: 'system', content: warning });
+      budgetWarningIdx = messages.length - 1;
+    }
+
     const abortController = new AbortController();
     state.set(KEYS.ABORT_CONTROLLER, abortController);
 
@@ -587,11 +598,20 @@ export async function runAgentLoop(
         return;
       }
       logError('流式调用异常', (err as Error).message);
+      // 清理预算警告临时消息
+      if (budgetWarningIdx >= 0) {
+        messages.splice(budgetWarningIdx, 1);
+      }
       if (content || thinking) {
         messages.push({ role: 'assistant', content: content || '（模型响应异常）', ...(thinking && { thinking }) });
       }
       callbacks.onDone(content || '（模型响应异常，已自动中断）', allToolRecords.length > 0 ? allToolRecords : undefined, makeStats());
       return;
+    }
+
+    // 清理预算警告临时消息
+    if (budgetWarningIdx >= 0) {
+      messages.splice(budgetWarningIdx, 1);
     }
 
     // 提取 ReAct 思考过程

@@ -3,13 +3,31 @@
 ## 分支结构
 
 **桌面版主线**（`master`）：
-- `metona-ollama-desktop-v3.2.6` → `metona-ollama-desktop-v3.3.4` → `metona-ollama-desktop-v4.0.0` → `metona-ollama-desktop-v5.0.0` → `metona-ollama-desktop-v5.0.1` → `metona-ollama-desktop-v5.1.0` → `metona-ollama-desktop-v5.1.1`（当前发布分支）
+- `metona-ollama-desktop-v3.2.6` → `metona-ollama-desktop-v3.3.4` → `metona-ollama-desktop-v4.0.0` → `metona-ollama-desktop-v5.0.0` → `metona-ollama-desktop-v5.0.1` → `metona-ollama-desktop-v5.1.0` → `metona-ollama-desktop-v5.1.1` → `metona-ollama-desktop-v5.1.2`（当前发布分支）
 
 **Web 版历史**已独立为 [metona-ollama-web](https://gitee.com/thzxx/metona-ollama-web) 仓库（v1.1.0 ~ v4.0.3）。
 
 ---
 
 ## 桌面版（Desktop）
+
+### Desktop v5.1.2 — 预算警告 & Shadowing 防护 & 记忆容量管理
+
+- ✨ **预算警告临时层**（借鉴 Hermes Agent）
+  - Agent Loop 接近迭代上限时自动注入临时提示
+  - 剩余 ≤5 轮：WARNING 级别，提示模型准备收尾
+  - 剩余 ≤2 轮：CRITICAL 级别，要求模型立即给出最终答案
+  - 临时消息在 API 调用后自动清理，不影响对话历史
+- ✨ **MCP Shadowing 防护**（借鉴 Hermes Agent）
+  - MCP 工具注册时自动检测与内置工具重名
+  - 重名工具自动跳过，日志输出警告信息
+  - 防止外部 MCP Server 覆盖内置工具导致行为异常或绕过安全检查
+- ✨ **记忆容量限制**（借鉴 Hermes Agent）
+  - memories 表上限 500 条，超限时自动清理
+  - 清理策略：按综合评分排序，清理后 20%
+  - 评分公式：importance × 2 + useCount × 3 + recencyBonus（7 天内使用过 +5）
+  - rule 类型记忆受保护，不会被自动清理
+- 📝 **版本号更新至 5.1.2**（7 个文件同步更新）
 
 ### Desktop v5.1.1 — 搜索引擎替换 & 超时移除 & 日志导出
 
