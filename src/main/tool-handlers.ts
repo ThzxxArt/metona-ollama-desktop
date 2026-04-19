@@ -441,8 +441,7 @@ export async function handleWebFetch(params: { url: string; max_chars?: number; 
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'
-      },
-      signal: AbortSignal.timeout(30000)
+      }
     });
 
     if (!resp.ok) {
@@ -490,7 +489,7 @@ export async function handleWebFetch(params: { url: string; max_chars?: number; 
 
 /**
  * Web Search — 联网搜索
- * 使用 DuckDuckGo HTML 搜索并提取结果
+ * 使用百度搜索（国内可用）+ Bing 作为备用
  */
 export async function handleWebSearch(params: { query: string; max_results?: number }): Promise<ToolResult> {
   try {
@@ -509,31 +508,29 @@ export async function handleWebSearch(params: { query: string; max_results?: num
       'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'
     };
 
-    // 1. 尝试 DuckDuckGo HTML 搜索（8 秒超时，国内环境通常不可用）
+    // 1. 百度搜索（国内首选）
     let results: Array<{ title: string; url: string; snippet: string }> = [];
 
     try {
-      const ddgUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
-      const resp = await fetch(ddgUrl, {
+      const baiduUrl = `https://www.baidu.com/s?wd=${encodeURIComponent(query)}&rn=${maxResults}`;
+      const resp = await fetch(baiduUrl, {
         headers: searchHeaders,
-        signal: AbortSignal.timeout(8000)
       });
 
       if (resp.ok) {
         const html = await resp.text();
-        results = parseDDGResults(html, maxResults);
+        results = parseBaiduResults(html, maxResults);
       }
     } catch (e) {
-      sendLog('warn', `🔍 DuckDuckGo 搜索失败（8s 超时）`, (e as Error).message);
+      sendLog('warn', `🔍 百度搜索失败`, (e as Error).message);
     }
 
-    // 2. DuckDuckGo 无结果，尝试 Bing
+    // 2. 百度无结果，尝试 Bing
     if (results.length === 0) {
       try {
         const bingUrl = `https://www.bing.com/search?q=${encodeURIComponent(query)}&count=${maxResults}`;
         const resp = await fetch(bingUrl, {
           headers: searchHeaders,
-          signal: AbortSignal.timeout(15000)
         });
 
         if (resp.ok) {
@@ -545,13 +542,12 @@ export async function handleWebSearch(params: { query: string; max_results?: num
       }
     }
 
-    // 3. Bing 也失败，尝试 Google（通过 google.com/search）
+    // 3. Bing 也失败，尝试 Google
     if (results.length === 0) {
       try {
         const googleUrl = `https://www.google.com/search?q=${encodeURIComponent(query)}&num=${maxResults}`;
         const resp = await fetch(googleUrl, {
           headers: searchHeaders,
-          signal: AbortSignal.timeout(15000)
         });
 
         if (resp.ok) {
@@ -586,27 +582,39 @@ export async function handleWebSearch(params: { query: string; max_results?: num
   }
 }
 
-/** 解析 DuckDuckGo HTML 搜索结果 */
-function parseDDGResults(html: string, maxResults: number): Array<{ title: string; url: string; snippet: string }> {
+/** 解析百度 HTML 搜索结果 */
+function parseBaiduResults(html: string, maxResults: number): Array<{ title: string; url: string; snippet: string }> {
   const results: Array<{ title: string; url: string; snippet: string }> = [];
 
-  // 匹配结果块：<a class="result__a" href="...">title</a> ... <a class="result__snippet">snippet</a>
-  const resultRegex = /<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<a[^>]*class="result__snippet"[^>]*>([\s\S]*?)<\/a>/gi;
+  // 百度结果块：<div class="result" ...> 或 <div class="result-op" ...>
+  // 标题：<h3 class="t"> 内的 <a href="...">title</a>
+  // 摘要：<div class="c-abstract">...</div>
+  const blockRegex = /<div class="result[^"]*"[^>]*>([\s\S]*?)(?=<div class="result|<div id="content_right|$)/gi;
+  let blockMatch;
 
-  let match;
-  while ((match = resultRegex.exec(html)) !== null && results.length < maxResults) {
-    let url = match[1].trim();
-    // DuckDuckGo 使用重定向链接，提取真实 URL
-    const uddgMatch = url.match(/[?&]uddg=([^&]+)/);
-    if (uddgMatch) {
-      url = decodeURIComponent(uddgMatch[1]);
+  while ((blockMatch = blockRegex.exec(html)) !== null && results.length < maxResults) {
+    const block = blockMatch[1];
+
+    // 提取标题和 URL
+    const titleMatch = block.match(/<h3[^>]*class="[^"]*t[^"]*"[^>]*>[\s\S]*?<a[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/);
+    if (!titleMatch) continue;
+
+    let url = titleMatch[1].trim();
+    const title = decodeHTML(titleMatch[2].replace(/<[^>]+>/g, '').trim());
+
+    // 百度有时使用 data-url 属性
+    if (!url.startsWith('http')) {
+      const dataUrlMatch = block.match(/data-url="(https?:\/\/[^"]*)"/);
+      if (dataUrlMatch) url = dataUrlMatch[1];
     }
 
-    const title = decodeHTML(match[2].replace(/<[^>]+>/g, '').trim());
-    const snippet = decodeHTML(match[3].replace(/<[^>]+>/g, '').trim());
+    // 提取摘要
+    const snippetMatch = block.match(/<div class="c-abstract"[^>]*>([\s\S]*?)<\/div>/) ||
+      block.match(/<span class="content-right_[^"]*"[^>]*>([\s\S]*?)<\/span>/);
+    const snippet = snippetMatch ? decodeHTML(snippetMatch[1].replace(/<[^>]+>/g, '').trim()) : '';
 
-    if (title && url.startsWith('http')) {
-      results.push({ title, url, snippet });
+    if (title) {
+      results.push({ title, url: url.startsWith('http') ? url : `https://www.baidu.com${url}`, snippet });
     }
   }
 
@@ -829,9 +837,7 @@ export async function handleDownloadFile(params: { url: string; destination: str
     }
 
     sendLog('info', `⬇️ download_file`, `${params.url} → ${destPath}`);
-    const resp = await fetch(params.url, {
-      signal: AbortSignal.timeout(60000)
-    });
+    const resp = await fetch(params.url);
     if (!resp.ok) return { success: false, error: `HTTP ${resp.status}: ${resp.statusText}` };
 
     const buf = Buffer.from(await resp.arrayBuffer());

@@ -185,3 +185,8 @@ export function logSkill(action: string, detail?: string): void { addLog('debug'
 export function logRAG(action: string, detail?: string): void { addLog('info', `向量: ${action}`, detail); }
 export function logSetting(key: string, value: string): void { addLog('debug', `设置: ${key}`, value); }
 export function logInit(msg: string): void { addLog('info', `初始化: ${msg}`); }
+
+/** 获取当前所有日志条目（供导出使用） */
+export function getLogs(): LogEntry[] {
+  return [...logs];
+}

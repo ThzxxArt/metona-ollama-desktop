@@ -28,9 +28,6 @@ import type {
   TraceEntry
 } from '../types.js';
 
-const MAX_LOOP_TIME = 600000;       // 10 分钟总超时
-const TOOL_EXEC_TIMEOUT = 30000;    // 工具执行超时 30 秒
-const STREAM_TIMEOUT = 120000;      // 单次流式调用超时 2 分钟
 const MAX_RETRIES = 2;              // 工具错误自动重试次数
 
 /** 每个工具返回给模型的最大字符数 */
@@ -89,7 +86,9 @@ const TOOL_USAGE_GUIDE = `【工具链规则（强制执行）】
 9. 会话工具：可以用 session_list 列出历史会话，用 session_read 读取会话内容。
 10. 并行调用：当多个工具调用互相独立时，可以在同一次回复中同时调用它们。
 11. 管理记忆：可以用 memory_replace 更新已有记忆（子串匹配 old_text），用 memory_remove 删除不再需要的记忆。
-12. 查看技能：可以用 skill_list 列出所有可用技能，用 skill_view 查看特定技能的详细工具链。`;
+12. 查看技能：可以用 skill_list 列出所有可用技能，用 skill_view 查看特定技能的详细工具链。
+13. 【严禁猜 URL】绝对不要猜测或编造 URL 路径（如 https://example.com/docs/install）。所有 URL 必须从搜索结果中获取。如果你猜了一个 URL 并得到 404 错误，不要继续猜其他路径，应该回到搜索结果中找正确的链接。
+14. 搜索结果来源：搜索结果中每条都带有标题、URL 和摘要。摘要已经包含关键信息，优先从摘要中提取答案。不要忽视来自知乎、CSDN、博客园等中文来源的结果，它们通常包含有效的技术信息。`;`;
 
 /** 工具名白名单：用于文本解析兜底时过滤非法工具名 */
 const VALID_TOOL_NAMES = new Set([
@@ -488,8 +487,8 @@ export async function runAgentLoop(
 
   logInfo(`ReAct Agent Loop 启动: ${model}`, `工具: ${useTools ? '开启' : '关闭'}, 记忆: ${isMemoryEnabled() ? '开启' : '关闭'}, tokens≈${estimateTokens(messages.map(m => m.content || '').join(''))}`);
 
-  // 迭代预算：从 state 读取，默认 15
-  const maxLoops = state.get<number>('maxTurns', 15);
+  // 迭代预算：从 state 读取，默认 85
+  const maxLoops = state.get<number>('maxTurns', 85);
 
   let loopCount = 0;
   const allToolRecords: ToolCallRecord[] = [];
@@ -509,13 +508,6 @@ export async function runAgentLoop(
   while (loopCount < maxLoops) {
     loopCount++;
 
-    // 全局超时检查
-    if (Date.now() - loopStartTime > MAX_LOOP_TIME) {
-      logWarn('ReAct Agent Loop 达到最大运行时间（10分钟），自动停止');
-      callbacks.onDone(content || '（达到最大运行时间限制）', allToolRecords, makeStats());
-      return;
-    }
-
     // 检查是否已中止
     if (state.get<AbortController | null>(KEYS.ABORT_CONTROLLER)?.signal.aborted) {
       logInfo('ReAct Agent Loop 已中止');
@@ -534,9 +526,8 @@ export async function runAgentLoop(
     state.set(KEYS.ABORT_CONTROLLER, abortController);
 
     try {
-      // 带超时保护的流式调用
-      await Promise.race([
-        api.chatStream(
+      // 流式调用（无超时限制）
+      await api.chatStream(
           {
             model,
             messages,
@@ -578,11 +569,7 @@ export async function runAgentLoop(
             }
           },
           abortController
-        ),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('模型响应超时（2分钟无数据）')), STREAM_TIMEOUT)
-        )
-      ]);
+        );
     } catch (err) {
       if (abortController.signal.aborted) {
         logInfo('流式调用已中止');
@@ -592,15 +579,12 @@ export async function runAgentLoop(
         callbacks.onDone(content, allToolRecords.length > 0 ? allToolRecords : undefined, makeStats());
         return;
       }
-      if ((err as Error).message.includes('超时')) {
-        logError('流式调用超时', (err as Error).message);
-        if (content || thinking) {
-          messages.push({ role: 'assistant', content: content || '（模型响应超时）', ...(thinking && { thinking }) });
-        }
-        callbacks.onDone(content || '（模型响应超时，已自动中断）', allToolRecords.length > 0 ? allToolRecords : undefined, makeStats());
-        return;
+      logError('流式调用异常', (err as Error).message);
+      if (content || thinking) {
+        messages.push({ role: 'assistant', content: content || '（模型响应异常）', ...(thinking && { thinking }) });
       }
-      throw err;
+      callbacks.onDone(content || '（模型响应异常，已自动中断）', allToolRecords.length > 0 ? allToolRecords : undefined, makeStats());
+      return;
     }
 
     // 提取 ReAct 思考过程
@@ -781,24 +765,13 @@ export async function runAgentLoop(
       let lastError = '';
       for (let retry = 0; retry <= MAX_RETRIES; retry++) {
         try {
-          let result: ToolResult;
-          if (call.function.name === 'run_command') {
-            result = await executeTool(call.function.name, call.function.arguments);
-          } else {
-            result = await Promise.race([
-              executeTool(call.function.name, call.function.arguments).catch(err =>
-                ({ success: false, error: err?.message || String(err) }) as ToolResult
-              ),
-              new Promise<ToolResult>((_, reject) =>
-                setTimeout(() => reject(new Error('工具执行超时（30秒）')), TOOL_EXEC_TIMEOUT)
-              )
-            ]);
-          }
+          const result = await executeTool(call.function.name, call.function.arguments)
+            .catch(err => ({ success: false, error: err?.message || String(err) }) as ToolResult);
           logToolResult(call.function.name, result.success, result.success ? undefined : result.error);
           return [{
             name: call.function.name, arguments: call.function.arguments,
             result, status: result.success ? 'success' as const : 'error' as const, timestamp: Date.now()
-          }, result.success && call.function.name !== 'run_command' ? cacheKey : null];
+          }, result.success ? cacheKey : null];
         } catch (err) {
           lastError = (err as Error).message;
           if (retry < MAX_RETRIES) {

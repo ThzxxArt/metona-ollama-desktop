@@ -6,7 +6,7 @@ import { state, KEYS } from '../state/state.js';
 import { debounce } from '../utils/utils.js';
 import { encryptData, decryptData } from '../services/crypto.js';
 import { setMemoryEnabled, setEmbeddingModel, getEmbeddingModel, isVectorMemoryEnabled, getMemoryCache } from '../services/memory-manager.js';
-import { logSetting, logInfo, logWarn, logError, logSuccess } from '../services/log-service.js';
+import { logSetting, logInfo, logWarn, logError, logSuccess, getLogs } from '../services/log-service.js';
 import { checkConnection, updateConnectionInfo, updateRunningModels } from './header.js';
 import { loadModels } from './model-bar.js';
 import { showToast } from './toast.js';
@@ -72,6 +72,20 @@ export function initSettingsModal(): void {
     logSetting('温度', val.toFixed(1));
   }, 300);
   tempSlider.addEventListener('change', saveTemperature);
+
+  // ── v5.1.1 Agent 最大轮数 ──
+  const saveMaxTurns = debounce(async () => {
+    const db = state.get<ChatDB | null>(KEYS.DB);
+    const val = (document.querySelector('#inputMaxTurns') as HTMLInputElement).value.trim();
+    const maxTurns = val ? parseInt(val) : 85;
+    state.set('maxTurns', maxTurns);
+    if (db) await db.saveSetting('maxTurns', maxTurns);
+    logSetting('Agent 最大轮数', `${maxTurns} 轮`);
+  }, 500);
+  document.querySelector('#inputMaxTurns')!.addEventListener('input', saveMaxTurns);
+
+  // ── v5.1.1 执行日志导出 ──
+  document.querySelector('#btnExportLog')!.addEventListener('click', exportExecutionLog);
 
   // ── v4.2 人格模式切换 ──
   const PERSONALITY_TEMPERATURES: Record<string, number> = {
@@ -376,6 +390,57 @@ export function openSettingsModal(): void {
 
 export function closeSettingsModal(): void {
   settingsModalEl.style.display = 'none';
+}
+
+/** 导出执行日志为 TXT 文件 */
+async function exportExecutionLog(): Promise<void> {
+  const logs = getLogs();
+  if (logs.length === 0) {
+    showToast('没有可导出的日志', 'warning');
+    return;
+  }
+
+  const formatTime = (ts: number): string => {
+    const d = new Date(ts);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
+  };
+
+  const lines = logs.map(e => {
+    let line = `[${formatTime(e.time)}] ${e.level.toUpperCase()} ${e.icon} ${e.message}`;
+    if (e.detail) line += `\n  ${e.detail}`;
+    return line;
+  });
+
+  const content = `Metona Ollama Desktop — 执行日志\n导出时间: ${formatTime(Date.now())}\n日志条数: ${logs.length}\n${'═'.repeat(60)}\n\n${lines.join('\n')}`;
+
+  try {
+    const bridge = (window as any).metonaDesktop;
+    if (bridge) {
+      const ts = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
+      const filePath = await bridge.dialog.saveFile({
+        defaultPath: `metona-log-${ts}.txt`,
+        filters: [{ name: '文本文件', extensions: ['txt'] }]
+      });
+      if (!filePath) return;
+      const result = await bridge.fs.writeFile(filePath, content, 'utf-8');
+      if (!result.success) {
+        showToast(`导出失败: ${result.error}`, 'error');
+        return;
+      }
+    } else {
+      const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `metona-log-${Date.now()}.txt`;
+      a.click();
+    }
+
+    showToast(`已导出 ${logs.length} 条日志`, 'success');
+    logSuccess(`日志导出完成: ${logs.length} 条`);
+  } catch (err) {
+    showToast(`导出失败: ${(err as Error).message}`, 'error');
+    logError('日志导出失败', (err as Error).message);
+  }
 }
 
 async function exportAllSessions(): Promise<void> {

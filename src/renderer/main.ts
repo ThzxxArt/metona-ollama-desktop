@@ -353,6 +353,11 @@ async function init(): Promise<void> {
     (document.querySelector('#inputTemperature') as HTMLInputElement).value = String(temperature);
     document.querySelector('#tempValue')!.textContent = parseFloat(temperature).toFixed(1);
 
+    // ── v5.1.1 Agent 最大轮数 ──
+    const maxTurns = await db.getSetting('maxTurns', 85);
+    state.set('maxTurns', maxTurns);
+    (document.querySelector('#inputMaxTurns') as HTMLInputElement).value = String(maxTurns);
+
     // ── Tool Calling 设置 ──
     const toolCallingEnabled = await db.getSetting('toolCallingEnabled', false);
     const runCommandMode = await db.getSetting('runCommandMode', 'confirm') as 'auto' | 'confirm' | 'disabled';

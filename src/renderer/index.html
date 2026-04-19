@@ -15,6 +15,7 @@
     <aside class="log-panel" id="logPanel">
         <div class="log-panel-header">
             <span class="log-panel-title">📋 执行日志</span>
+            <button class="btn btn-sm" id="btnExportLog" title="导出日志" style="padding:2px 8px;font-size:11px;opacity:0.7;">📥 导出</button>
         </div>
         <div class="log-panel-body" id="logPanelBody"></div>
     </aside>
@@ -259,6 +260,12 @@
                 <label class="setting-label" style="margin-top:12px;">温度（Temperature）：<span id="tempValue">0.7</span></label>
                 <input type="range" id="inputTemperature" class="temp-slider" min="0" max="2" step="0.1" value="0.7">
                 <p class="text-muted" style="margin-top:4px;font-size:11px;">低值更精确稳定，高值更有创意多样（0 = 确定性，2 = 最大随机）</p>
+                <label class="setting-label" style="margin-top:12px;">Agent 最大轮数（maxTurns）</label>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <input class="setting-input" id="inputMaxTurns" type="number" min="1" max="500" step="1" value="85" style="margin-bottom:0;">
+                    <span class="text-muted" style="white-space:nowrap;">轮</span>
+                </div>
+                <p class="text-muted" style="margin-top:4px;font-size:11px;">Agent Loop 最大工具调用轮数。默认 85 轮，复杂任务可能需要更多轮次。</p>
             </div>
             <div class="setting-group">
                 <label class="setting-label">🎭 人格模式</label>
