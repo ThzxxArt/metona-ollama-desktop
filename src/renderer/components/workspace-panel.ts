@@ -622,7 +622,15 @@ function renderFileList(): void {
   }
 
   if (fileTree.length === 0) {
-    container.innerHTML = '<div class="ws-file-empty">空目录</div>';
+    const relDir = currentFileDir.replace(workspaceDir, '~') || '~';
+    container.innerHTML = `
+      <div class="ws-idle-state">
+        <div class="ws-idle-icon ws-idle-icon-lg">📂</div>
+        <div class="ws-idle-desc">${escapeHtml(relDir)}</div>
+        <div class="ws-idle-divider"></div>
+        <div class="ws-idle-hint">空目录 · AI 创建的文件会出现在这里</div>
+      </div>
+    `;
     return;
   }
 
@@ -784,7 +792,23 @@ function renderToolCalls(): void {
   if (!container) return;
 
   if (toolCards.length === 0) {
-    container.innerHTML = '<div class="ws-tools-placeholder">等待工具调用...</div>';
+    container.innerHTML = `
+      <div class="ws-idle-state">
+        <div class="ws-idle-icon-grid">
+          <div class="ws-idle-icon-item" title="文件系统"><span>📄</span><small>文件</small></div>
+          <div class="ws-idle-icon-item" title="系统命令"><span>💻</span><small>命令</small></div>
+          <div class="ws-idle-icon-item" title="联网搜索"><span>🔍</span><small>搜索</small></div>
+          <div class="ws-idle-icon-item" title="浏览器"><span>🌐</span><small>浏览器</small></div>
+          <div class="ws-idle-icon-item" title="Git"><span>🔖</span><small>Git</small></div>
+          <div class="ws-idle-icon-item" title="记忆"><span>🧠</span><small>记忆</small></div>
+          <div class="ws-idle-icon-item" title="技能"><span>🎯</span><small>技能</small></div>
+          <div class="ws-idle-icon-item" title="子代理"><span>🤖</span><small>代理</small></div>
+        </div>
+        <div class="ws-idle-divider"></div>
+        <div class="ws-idle-desc">AI 对话中自动调用工具，结果在此展示</div>
+        <div class="ws-idle-hint">共 38 个内置工具 · MCP 动态扩展</div>
+      </div>
+    `;
     return;
   }
 

@@ -2434,6 +2434,60 @@ html, body {
     opacity: 0;
 }
 
+/* ── 工具页签空闲 ── */
+.ws-idle-icon-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    max-width: 240px;
+}
+
+.ws-idle-icon-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    padding: 8px 4px;
+    border-radius: 8px;
+    background: rgba(245, 240, 232, 0.04);
+    border: 1px solid rgba(245, 240, 232, 0.06);
+    transition: background 0.2s;
+}
+
+.ws-idle-icon-item span {
+    font-size: 18px;
+}
+
+.ws-idle-icon-item small {
+    font-size: 9px;
+    color: rgba(245, 240, 232, 0.4);
+    font-family: var(--font);
+}
+
+/* ── 文件页签空闲 ── */
+.ws-idle-icon {
+    font-size: 28px;
+    opacity: 0.6;
+}
+
+.ws-idle-icon-lg {
+    font-size: 36px;
+}
+
+.ws-idle-desc {
+    font-size: 12px;
+    color: rgba(245, 240, 232, 0.55);
+    font-family: var(--font-mono);
+    text-align: center;
+}
+
+.ws-idle-hint {
+    font-size: 10px;
+    color: rgba(245, 240, 232, 0.3);
+    font-family: var(--font);
+    text-align: center;
+}
+
 /* 工具调用 Tab */
 .ws-tools-output {
     flex: 1;
