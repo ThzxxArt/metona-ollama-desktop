@@ -50,7 +50,9 @@ export function initLogPanel(): void {
       } catch { /* ignore */ }
     });
 
-    // ── 关键修复：flush initLogPanel 前缓冲的日志 ──
+    // 导出日志按钮
+    document.querySelector('#btnExportLog')?.addEventListener('click', exportLog);
+
     panelInitialized = true;
     if (earlyBuffer.length > 0 && logBodyEl) {
       const frag = document.createDocumentFragment();
@@ -189,4 +191,44 @@ export function logInit(msg: string): void { addLog('info', `初始化: ${msg}`)
 /** 获取当前所有日志条目（供导出使用） */
 export function getLogs(): LogEntry[] {
   return [...logs];
+}
+
+/** 导出执行日志为 TXT 文件 */
+async function exportLog(): Promise<void> {
+  if (logs.length === 0) {
+    return;
+  }
+
+  const fmtTime = (ts: number): string => {
+    const d = new Date(ts);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
+  };
+
+  const lines = logs.map(e => {
+    let line = `[${fmtTime(e.time)}] ${e.level.toUpperCase()} ${e.icon} ${e.message}`;
+    if (e.detail) line += `\n  ${e.detail}`;
+    return line;
+  });
+
+  const header = `Metona Ollama Desktop — 执行日志\n导出时间: ${fmtTime(Date.now())}\n日志条数: ${logs.length}\n${'═'.repeat(60)}\n\n`;
+  const content = header + lines.join('\n');
+
+  try {
+    const bridge = (window as any).metonaDesktop;
+    if (bridge) {
+      const ts = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
+      const filePath = await bridge.dialog.saveFile({
+        defaultPath: `metona-log-${ts}.txt`,
+        filters: [{ name: '文本文件', extensions: ['txt'] }]
+      });
+      if (!filePath) return;
+      await bridge.fs.writeFile(filePath, content, 'utf-8');
+    } else {
+      const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `metona-log-${Date.now()}.txt`;
+      a.click();
+    }
+  } catch { /* ignore */ }
 }

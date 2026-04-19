@@ -489,7 +489,7 @@ export async function handleWebFetch(params: { url: string; max_chars?: number; 
 
 /**
  * Web Search — 联网搜索
- * 使用百度搜索（国内可用）+ Bing 作为备用
+ * 使用 Bing 搜索（首选）+ 百度作为备用
  */
 export async function handleWebSearch(params: { query: string; max_results?: number }): Promise<ToolResult> {
   try {
@@ -508,41 +508,41 @@ export async function handleWebSearch(params: { query: string; max_results?: num
       'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'
     };
 
-    // 1. 百度搜索（国内首选）
+    // 1. Bing 搜索（首选）
     let results: Array<{ title: string; url: string; snippet: string }> = [];
 
     try {
-      const baiduUrl = `https://www.baidu.com/s?wd=${encodeURIComponent(query)}&rn=${maxResults}`;
-      const resp = await fetch(baiduUrl, {
+      const bingUrl = `https://www.bing.com/search?q=${encodeURIComponent(query)}&count=${maxResults}`;
+      const resp = await fetch(bingUrl, {
         headers: searchHeaders,
       });
 
       if (resp.ok) {
         const html = await resp.text();
-        results = parseBaiduResults(html, maxResults);
+        results = parseBingResults(html, maxResults);
       }
     } catch (e) {
-      sendLog('warn', `🔍 百度搜索失败`, (e as Error).message);
+      sendLog('warn', `🔍 Bing 搜索失败`, (e as Error).message);
     }
 
-    // 2. 百度无结果，尝试 Bing
+    // 2. Bing 无结果，尝试百度
     if (results.length === 0) {
       try {
-        const bingUrl = `https://www.bing.com/search?q=${encodeURIComponent(query)}&count=${maxResults}`;
-        const resp = await fetch(bingUrl, {
+        const baiduUrl = `https://www.baidu.com/s?wd=${encodeURIComponent(query)}&rn=${maxResults}`;
+        const resp = await fetch(baiduUrl, {
           headers: searchHeaders,
         });
 
         if (resp.ok) {
           const html = await resp.text();
-          results = parseBingResults(html, maxResults);
+          results = parseBaiduResults(html, maxResults);
         }
       } catch (e) {
-        sendLog('warn', `🔍 Bing 搜索失败`, (e as Error).message);
+        sendLog('warn', `🔍 百度搜索失败`, (e as Error).message);
       }
     }
 
-    // 3. Bing 也失败，尝试 Google
+    // 3. 百度也失败，尝试 Google
     if (results.length === 0) {
       try {
         const googleUrl = `https://www.google.com/search?q=${encodeURIComponent(query)}&num=${maxResults}`;
