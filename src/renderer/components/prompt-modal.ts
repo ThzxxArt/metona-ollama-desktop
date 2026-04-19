@@ -8,6 +8,8 @@ let titleEl: HTMLElement | null = null;
 let bodyEl: HTMLElement | null = null;
 let inputEl: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null = null;
 let okBtn: HTMLButtonElement | null = null;
+
+import { escapeHtml } from '../utils/utils.js';
 let cancelBtn: HTMLButtonElement | null = null;
 let resolveFn: ((value: string | null) => void) | null = null;
 
@@ -136,6 +138,4 @@ export function showConfirm(message: string, title = '确认'): Promise<boolean>
   });
 }
 
-function escapeHtml(text: string): string {
-  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
+

@@ -5,6 +5,7 @@
 import type { ToolCall } from '../types.js';
 import { getToolIcon, formatToolName } from '../services/tool-registry.js';
 import { logDebug, logInfo } from '../services/log-service.js';
+import { escapeHtml } from '../utils/utils.js';
 
 let modalEl: HTMLElement | null = null;
 let resolveConfirm: ((confirmed: boolean) => void) | null = null;
@@ -117,7 +118,4 @@ function cancelConfirm(): void {
   }
 }
 
-function escapeHtml(str: string): string {
-  const map: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
-  return str.replace(/[&<>"']/g, c => map[c]);
-}
+

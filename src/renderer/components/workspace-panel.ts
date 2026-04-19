@@ -4,6 +4,7 @@
  */
 
 import { logInfo, logError, logDebug } from '../services/log-service.js';
+import { escapeHtml, formatSize } from '../utils/utils.js';
 
 // ── 工具卡片类型 ──
 interface ToolCallRecord {
@@ -105,13 +106,6 @@ const ANSI_COLORS: Record<string, string> = {
   '94': '#8ec8ff', '95': '#e8a0e8', '96': '#5ee8e8', '97': '#fff',
 };
 
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
 
 function ansiToHtml(raw: string): string {
   // 先转义 HTML
@@ -757,12 +751,6 @@ function getFileIcon(name: string): string {
     xml: '📋', csv: '📊', zip: '📦', tar: '📦', gz: '📦',
   };
   return iconMap[ext] || '📄';
-}
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return bytes + ' B';
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
 }
 
 // ── 工具调用管理 ──

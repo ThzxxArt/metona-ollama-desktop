@@ -3,13 +3,37 @@
 ## 分支结构
 
 **桌面版主线**（`master`）：
-- `metona-ollama-desktop-v3.2.6` → `metona-ollama-desktop-v3.3.4` → `metona-ollama-desktop-v4.0.0` → `metona-ollama-desktop-v5.0.0` → `metona-ollama-desktop-v5.0.1` → `metona-ollama-desktop-v5.1.0` → `metona-ollama-desktop-v5.1.1` → `metona-ollama-desktop-v5.1.2` → `metona-ollama-desktop-v5.1.3` → `metona-ollama-desktop-v5.1.4`（当前发布分支）
+- `metona-ollama-desktop-v3.2.6` → `metona-ollama-desktop-v3.3.4` → `metona-ollama-desktop-v4.0.0` → `metona-ollama-desktop-v5.0.0` → `metona-ollama-desktop-v5.0.1` → `metona-ollama-desktop-v5.1.0` → `metona-ollama-desktop-v5.1.1` → `metona-ollama-desktop-v5.1.2` → `metona-ollama-desktop-v5.1.3` → `metona-ollama-desktop-v5.1.4` → `metona-ollama-desktop-v5.1.5`（当前发布分支）
 
 **Web 版历史**已独立为 [metona-ollama-web](https://gitee.com/thzxx/metona-ollama-web) 仓库（v1.1.0 ~ v4.0.3）。
 
 ---
 
 ## 桌面版（Desktop）
+### Desktop v5.1.5 — 第三方库替换 & 代码精简
+
+- ♻️ **Markdown 解析器替换：内联实现 → `marked` 库**
+  - 移除 `marked-config.ts` 中约 80 行正则解析器（仅支持基本 GFM）
+  - 接入 `marked` 库：完整 GFM 支持（表格、删除线、任务列表、自动链接等）
+  - 渲染后自动经 DOMPurify 净化，双重安全
+  - 链接/图片安全检查保留（阻止 javascript: / vbscript: / file: 等危险协议）
+- ♻️ **HTML 净化器替换：内联实现 → `DOMPurify`**
+  - 移除 `sanitizer.ts` 中约 70 行 DOM 遍历净化器
+  - 接入 `DOMPurify`（业界标准 HTML 净化库）
+  - 保留原有的白名单标签/属性/URI 协议配置
+  - 移除不再需要的 `SAFE_URI_SCHEMES` 导出
+- 🧹 **精简 crypto.ts：删除死代码**
+  - 移除 `sha256js()` 纯 JS SHA-256 回退实现（~60 行）
+  - 移除 `xorBytes()` 异或加密回退（~10 行）
+  - 移除 `SECURE` 标志及所有分支判断
+  - Electron 环境下 `crypto.subtle` 始终可用，回退代码从未执行
+  - 旧版 XOR 加密的 .metona 文件提供明确错误提示
+- 🧹 **消除重复代码**
+  - `escapeHtml()` 在 5 个文件中重复定义 → 统一从 `utils.ts` 导入
+  - `formatSize()` 在 `workspace-panel.ts` 中重复定义 → 统一从 `utils.ts` 导入
+  - 消除文件：`log-service.ts`、`prompt-modal.ts`、`tool-confirm-modal.ts`、`workspace-panel.ts`
+- 📝 **版本号更新至 5.1.5**（7 个文件同步更新）
+
 ### Desktop v5.1.4 — 工具卡片迁移 & 空闲状态优化 & 工作流修复
 
 - ♻️ **工具卡片从聊天区域迁移到工作空间面板**

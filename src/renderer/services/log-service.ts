@@ -4,6 +4,8 @@
  * 全程 try-catch，任何情况下不阻塞主流程
  */
 
+import { escapeHtml } from '../utils/utils.js';
+
 export type LogLevel = 'info' | 'success' | 'warn' | 'error' | 'debug' | 'tool' | 'think' | 'stream';
 
 export interface LogEntry {
@@ -83,10 +85,6 @@ function genId(): string {
 function formatTime(ts: number): string {
   const d = new Date(ts);
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
-}
-
-function escapeHtml(text: string): string {
-  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 /** 批量渲染队列 — 使用 rAF 避免阻塞主线程 */

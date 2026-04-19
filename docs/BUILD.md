@@ -14,7 +14,7 @@
 # 1. 克隆并安装依赖
 git clone https://gitee.com/thzxx/metona-ollama-desktop.git
 cd metona-ollama-desktop
-git checkout metona-ollama-desktop-v5.1.4
+git checkout metona-ollama-desktop-v5.1.5
 npm config set registry https://registry.npmmirror.com
 npm install
 
@@ -176,7 +176,7 @@ electron-builder 会自动处理所有依赖下载（Electron、NSIS、winCodeSi
 
 ## 构建日志
 
-### v5.1.4（2026-04-19） — metona-ollama-desktop 仓库
+### v5.1.5（2026-04-19） — metona-ollama-desktop 仓库
 
 - ♻️ 工具卡片从聊天区域迁移到工作空间面板（新增「🔧 工具」页签）
 - 工具执行自动切换工具页签，run_command 自动切换终端页签
@@ -186,9 +186,9 @@ electron-builder 会自动处理所有依赖下载（Electron、NSIS、winCodeSi
 - 🔧 自动记忆优化（禁止自动提取规则、提高提取门槛与质量）
 - 🔧 工具页签自动切换协调性修复
 - 🔧 工作流完整性和协调性修复（清理旧状态、中止保留记录、retry 保存 think）
-- 📝 版本号更新至 5.1.4
-- ✅ `Metona Ollama Setup 5.1.4.exe`（82MB）
-- ✅ Gitee Release v5.1.4-desktop（ID: 622607）
+- 📝 版本号更新至 5.1.5
+- ✅ `Metona Ollama Setup 5.1.5.exe`（82MB）
+- ✅ Gitee Release v5.1.5-desktop（ID: 622607）
 - 构建一次通过，无需代码修复
 
 ### v5.1.3（2026-04-19） — metona-ollama-desktop 仓库

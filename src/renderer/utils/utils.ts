@@ -44,9 +44,9 @@ export function formatSize(bytes: number): string {
 
 /** HTML 转义 */
 export function escapeHtml(str: string): string {
-  const map: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
-  return String(str).replace(/[&<>"']/g, (c) => map[c]);
+  return str.replace(/[&<>"']/g, (c) => ESCAPE_MAP[c]);
 }
+const ESCAPE_MAP: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 
 /** 根据文件名检测语言标识（用于 Markdown 代码块） */
 export function detectLanguage(filename: string): string {
