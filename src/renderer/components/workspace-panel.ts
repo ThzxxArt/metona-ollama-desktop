@@ -329,6 +329,12 @@ function handleToolDone(command: string, exitCode: number | null): void {
   renderTerminal();
   updateStopBtnState();
   updateHint();
+
+  // 命令结束后，如果没有其他正在运行的工具，切到工具页签看结果
+  const hasRunningTools = toolCards.some(c => c.status === 'running' && c.name !== 'run_command');
+  if (!hasRunningTools && toolCards.length > 0) {
+    setTimeout(() => switchToTab('tools'), 600);
+  }
 }
 
 function appendTerminalOutput(sessionId: string, type: 'stdout' | 'stderr', data: string): void {
@@ -739,17 +745,23 @@ function formatSize(bytes: number): string {
 
 // ── 工具调用管理 ──
 
+/** 是否有命令正在终端中执行 */
+function isTerminalBusy(): boolean {
+  return currentAiCommand !== null || (terminal?.running ?? false);
+}
+
 /** 添加工具调用卡片（由外部调用） */
 export function addToolCard(tc: ToolCallRecord): void {
   toolCards.push(tc);
-  // 如果是 run_command，自动切到终端 tab
+
   if (tc.name === 'run_command') {
+    // run_command：始终切到终端
     switchToTab('terminal');
-  } else {
+  } else if (!isTerminalBusy()) {
+    // 终端空闲时才切到工具页签
     switchToTab('tools');
   }
-  renderToolCalls();
-  updateToolsHint();
+  // 终端忙碌时不切换，避免打断用户看命令输出
 }
 
 /** 更新工具调用卡片状态（由外部调用） */
@@ -761,13 +773,19 @@ export function updateToolCard(tc: ToolCallRecord): void {
       break;
     }
   }
-  renderToolCalls();
+
+  // 如果当前在工具页签，刷新显示
+  if (activeTab === 'tools') {
+    renderToolCalls();
+  }
   updateToolsHint();
 }
 
 function clearToolCards(): void {
   toolCards = [];
-  renderToolCalls();
+  if (activeTab === 'tools') {
+    renderToolCalls();
+  }
   updateToolsHint();
 }
 
