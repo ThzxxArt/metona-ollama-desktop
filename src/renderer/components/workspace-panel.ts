@@ -249,6 +249,9 @@ export async function initWorkspacePanel(): Promise<void> {
   };
 
   logInfo('工作空间面板已初始化');
+
+  // 首次渲染：显示空闲状态
+  renderPanel();
 }
 
 function bindEvents(): void {
