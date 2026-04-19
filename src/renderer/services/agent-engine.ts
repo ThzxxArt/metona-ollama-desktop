@@ -660,7 +660,7 @@ export async function runAgentLoop(
       logInfo('无工具调用，ReAct Agent Loop 结束');
 
       // 自动提取记忆（仅在对话结束后）
-      if (isMemoryEnabled() && messages.length >= 4) {
+      if (isMemoryEnabled() && messages.length >= 10) {
         try {
           const { extractMemoriesFromConversation } = await import('./memory-manager.js');
           await extractMemoriesFromConversation(

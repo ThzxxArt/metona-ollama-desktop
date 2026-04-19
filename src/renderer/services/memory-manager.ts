@@ -248,6 +248,12 @@ export async function addMemory(data: {
 }): Promise<MemoryEntry> {
   const db = state.get<ChatDB | null>(KEYS.DB);
 
+  // 自动提取来源禁止添加 rule 类型
+  if (data.type === 'rule' && data.source === '自动提取') {
+    logWarn('记忆提取拦截', '自动提取不允许创建规则类型，规则只能由用户手动添加');
+    throw new Error('规则类型记忆只能由用户手动添加');
+  }
+
   // 安全扫描：检测 prompt injection 和敏感信息
   const securityCheck = scanMemorySecurity(data.content);
   if (!securityCheck.safe) {
@@ -651,18 +657,30 @@ ${conversationText.slice(0, 4000)}
 }
 \`\`\`
 
-记忆类型说明：
-- fact: 关于用户的事实（项目、身份、背景、习惯）
-- preference: 用户偏好（语言风格、输出格式、技术栈偏好）
-- rule: 用户要求遵守的规则（编码规范、输出要求）
+记忆类型说明（自动提取仅支持以下两种）：
+- fact: 关于用户的具体事实（项目信息、技术栈、工作内容、个人背景）
+- preference: 用户明确表达的偏好（喜欢某种输出格式、编码风格等）
 
-提取规则：
-1. 只提取真正有价值、值得跨会话记住的信息
-2. 每条记忆精炼简洁，不超过 50 字
-3. importance 1-10，5 为普通，8+ 为必须记住
-4. tags 2-5 个关键词，用于检索匹配
-5. 最多提取 5 条，宁缺毋滥
-6. 如果对话中没有值得记住的信息，返回 {"entries": []}`;
+⚠️ 严禁自动提取的类型：
+- rule（规则）: 规则只能由用户手动添加，绝对不要自动提取规则
+
+提取标准（极其严格）：
+1. 只提取用户**明确陈述**的、有长期价值的信息，不要猜测或推断
+2. 必须是**跨会话有用**的信息——如果只是本次对话的临时内容，不要提取
+3. 每条记忆精炼简洁，不超过 50 字
+4. importance 1-10，只有真正重要的才给 7+
+5. tags 2-5 个关键词，用于检索匹配
+6. 最多提取 3 条，宁缺毋滥
+
+以下内容**不要提取**（常见错误）：
+- 对话中的临时任务描述（如"帮我写个函数"）
+- AI 的回复或建议内容
+- 泛泛的表述（如"用户喜欢编程"、"用户是开发者"）
+- 一次性的查询或请求
+- 用户没有明确表达的隐含偏好
+- 任何可以简单从对话上下文推断的信息
+
+如果对话中没有真正值得跨会话记住的信息，返回 {"entries": []}`;
 
   try {
     const response = await api.chat({
@@ -685,13 +703,18 @@ ${conversationText.slice(0, 4000)}
     const currentSession = state.get(KEYS.CURRENT_SESSION);
     for (const entry of parsed.entries) {
       if (!entry.content || entry.content.length < 5) continue;
-      const validType = (['fact', 'preference', 'rule'] as const).includes(entry.type as any) ? entry.type : 'fact';
+      const validType = entry.type === 'fact' || entry.type === 'preference' ? entry.type : 'fact';
+      // 自动提取仅允许 fact 和 preference
+      if (entry.type === 'rule') {
+        logDebug('跳过自动提取的规则类型', entry.content.slice(0, 40));
+        continue;
+      }
       await addMemory({
-        type: validType as any,
+        type: validType,
         content: entry.content,
         importance: Math.min(10, Math.max(1, entry.importance || 5)),
         tags: entry.tags || [],
-        source: sessionTitle || '自动提取',
+        source: '自动提取',
         sessionId: currentSession?.id
       });
       count++;

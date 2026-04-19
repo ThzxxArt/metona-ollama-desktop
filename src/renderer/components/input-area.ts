@@ -706,7 +706,7 @@ export async function sendMessage(): Promise<void> {
     updateTotalTokens();
 
     // ── 自动提取记忆（非阻塞）──
-    if (isMemoryEnabled() && freshSession.messages.length >= 6) {
+    if (isMemoryEnabled() && freshSession.messages.length >= 10) {
       const currentSession2 = state.get<ChatSession | null>(KEYS.CURRENT_SESSION);
       if (currentSession2) {
         extractMemoriesFromConversation(
