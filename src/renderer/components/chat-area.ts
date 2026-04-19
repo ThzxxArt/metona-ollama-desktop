@@ -400,6 +400,43 @@ export function updateLastAssistantMessage(content: string, think: string | null
   scrollToBottom();
 }
 
+/** 实时追加工具调用卡片到当前 placeholder（直播聊天时使用） */
+export function appendToolCallCardToPlaceholder(tc: ToolCallRecord): void {
+  if (!currentPlaceholder) return;
+  let container = currentPlaceholder.querySelector('.tool-calls-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.className = 'tool-calls-container';
+    const msgBody = currentPlaceholder.querySelector('.msg-body');
+    if (msgBody) msgBody.appendChild(container);
+  }
+  const cardDiv = document.createElement('div');
+  cardDiv.innerHTML = renderToolCallCard(tc);
+  const card = cardDiv.firstElementChild as HTMLElement;
+  card.dataset.toolName = tc.name;
+  container.appendChild(card);
+  scrollToBottom();
+}
+
+/** 更新 placeholder 中已有的工具卡片状态（running → success/error） */
+export function updateToolCallCardInPlaceholder(tc: ToolCallRecord): void {
+  if (!currentPlaceholder) return;
+  const container = currentPlaceholder.querySelector('.tool-calls-container');
+  if (!container) return;
+  // 找到第一个同名且状态为 running 的卡片
+  const existing = container.querySelector(`.tool-call-card[data-tool-name="${tc.name}"].tool-call-running`) as HTMLElement;
+  if (existing) {
+    const cardDiv = document.createElement('div');
+    cardDiv.innerHTML = renderToolCallCard(tc);
+    const newCard = cardDiv.firstElementChild as HTMLElement;
+    newCard.dataset.toolName = tc.name;
+    existing.replaceWith(newCard);
+  } else {
+    // 没找到 running 的卡片，直接追加
+    appendToolCallCardToPlaceholder(tc);
+  }
+}
+
 export function appendAssistantPlaceholder(): void {
   const div = document.createElement('div');
   div.className = 'message assistant loading';

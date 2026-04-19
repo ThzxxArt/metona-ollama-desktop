@@ -7,7 +7,8 @@ import { detectLanguage, truncate, escapeHtml, formatSize } from '../utils/utils
 import { getSelectedModel, isThinkEnabled, isVisionAvailable, isToolCallingSupported } from './model-bar.js';
 import {
   renderMessages, clearMessagesDOM, appendAssistantPlaceholder, appendSystemMessage,
-  updateLastAssistantMessage, clearMessages, safeMarkdown, enableAutoScroll, updateTotalTokens
+  updateLastAssistantMessage, clearMessages, safeMarkdown, enableAutoScroll, updateTotalTokens,
+  appendToolCallCardToPlaceholder, updateToolCallCardInPlaceholder
 } from './chat-area.js';
 import { showToast } from './toast.js';
 import { ChatDB } from '../db/chat-db.js';
@@ -872,14 +873,23 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
         assistantContent = content;
         updateLastAssistantMessage(assistantContent, thinkContent || null, null);
       },
-      onToolCallStart: (_call) => {
-        // 实时更新已由 agent-engine 的 callbacks 处理
+      onToolCallStart: (call) => {
+        appendToolCallCardToPlaceholder({
+          name: call.function.name, arguments: call.function.arguments,
+          result: null, status: 'running', timestamp: Date.now()
+        });
       },
-      onToolCallResult: (_name, _result, _call) => {
-        // 工具结果实时更新
+      onToolCallResult: (name, result, call) => {
+        updateToolCallCardInPlaceholder({
+          name, arguments: call.function.arguments,
+          result, status: result.success ? 'success' : 'error', timestamp: Date.now()
+        });
       },
-      onToolCallError: (_name, _error, _call) => {
-        // 工具错误实时更新
+      onToolCallError: (name, error, call) => {
+        updateToolCallCardInPlaceholder({
+          name, arguments: call.function.arguments,
+          result: { success: false, error }, status: 'error', timestamp: Date.now()
+        });
       },
       onConfirmTool: async (call) => {
         return showToolConfirm(call);
