@@ -3,7 +3,7 @@
 ## 分支结构
 
 **桌面版主线**（`master`）：
-- `metona-ollama-desktop-v3.2.6` → `metona-ollama-desktop-v3.3.4` → `metona-ollama-desktop-v4.0.0` → `metona-ollama-desktop-v5.0.0` → `metona-ollama-desktop-v5.0.1` → `metona-ollama-desktop-v5.1.0`（当前发布分支）
+- `metona-ollama-desktop-v3.2.6` → `metona-ollama-desktop-v3.3.4` → `metona-ollama-desktop-v4.0.0` → `metona-ollama-desktop-v5.0.0` → `metona-ollama-desktop-v5.0.1` → `metona-ollama-desktop-v5.1.0` → `metona-ollama-desktop-v5.1.1`（当前发布分支）
 
 **Web 版历史**已独立为 [metona-ollama-web](https://gitee.com/thzxx/metona-ollama-web) 仓库（v1.1.0 ~ v4.0.3）。
 
