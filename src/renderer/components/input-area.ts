@@ -12,6 +12,7 @@ import {
   appendToolCallCardToPlaceholder, updateToolCallCardInPlaceholder
 } from './chat-area.js';
 import { showToast } from './toast.js';
+import { addToolCard, updateToolCard } from './workspace-panel.js';
 import { ChatDB } from '../db/chat-db.js';
 import { OllamaAPI } from '../api/ollama.js';
 import { runAgentLoop } from '../services/agent-engine.js';
@@ -288,19 +289,19 @@ async function handleRetry(): Promise<void> {
         onThinking: (thinking) => updateLastAssistantMessage('', thinking, null),
         onContent: (content) => updateLastAssistantMessage(content, null, null),
         onToolCallStart: (call) => {
-          appendToolCallCardToPlaceholder({
+          addToolCard({
             name: call.function.name, arguments: call.function.arguments,
             result: null, status: 'running', timestamp: Date.now()
           });
         },
         onToolCallResult: (name, result, call) => {
-          updateToolCallCardInPlaceholder({
+          updateToolCard({
             name, arguments: call.function.arguments,
             result, status: result.success ? 'success' : 'error', timestamp: Date.now()
           });
         },
         onToolCallError: (name, error, call) => {
-          updateToolCallCardInPlaceholder({
+          updateToolCard({
             name, arguments: call.function.arguments,
             result: { success: false, error }, status: 'error', timestamp: Date.now()
           });
@@ -890,19 +891,19 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
         updateLastAssistantMessage(assistantContent, thinkContent || null, null);
       },
       onToolCallStart: (call) => {
-        appendToolCallCardToPlaceholder({
+        addToolCard({
           name: call.function.name, arguments: call.function.arguments,
           result: null, status: 'running', timestamp: Date.now()
         });
       },
       onToolCallResult: (name, result, call) => {
-        updateToolCallCardInPlaceholder({
+        updateToolCard({
           name, arguments: call.function.arguments,
           result, status: result.success ? 'success' : 'error', timestamp: Date.now()
         });
       },
       onToolCallError: (name, error, call) => {
-        updateToolCallCardInPlaceholder({
+        updateToolCard({
           name, arguments: call.function.arguments,
           result: { success: false, error }, status: 'error', timestamp: Date.now()
         });

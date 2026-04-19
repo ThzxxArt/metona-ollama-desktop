@@ -2351,6 +2351,142 @@ html, body {
     font-family: var(--font);
 }
 
+/* 工具调用 Tab */
+.ws-tools-output {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px 14px;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--text-primary);
+    background: #2D2016;
+}
+
+.ws-tools-placeholder {
+    color: rgba(245, 240, 232, 0.4);
+    text-align: center;
+    padding: 40px 20px;
+}
+
+.ws-tools-output .tool-call-card {
+    background: rgba(245, 240, 232, 0.06);
+    border: 1px solid rgba(245, 240, 232, 0.1);
+    border-radius: 8px;
+    margin-bottom: 8px;
+    padding: 10px 12px;
+    font-family: var(--font);
+}
+
+.ws-tools-output .tool-call-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 6px;
+}
+
+.ws-tools-output .tool-call-icon {
+    font-size: 14px;
+}
+
+.ws-tools-output .tool-call-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: #FAF7F2;
+    flex: 1;
+}
+
+.ws-tools-output .tool-call-status {
+    font-size: 11px;
+    color: rgba(245, 240, 232, 0.6);
+}
+
+.ws-tools-output .tool-call-params {
+    margin-bottom: 6px;
+    padding-left: 20px;
+}
+
+.ws-tools-output .tool-param {
+    font-size: 11px;
+    color: rgba(245, 240, 232, 0.7);
+    margin-bottom: 2px;
+}
+
+.ws-tools-output .tool-param code {
+    color: #D4A03C;
+    background: rgba(212, 160, 60, 0.15);
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+}
+
+.ws-tools-output .tool-call-result {
+    border-top: 1px solid rgba(245, 240, 232, 0.08);
+    padding-top: 6px;
+}
+
+.ws-tools-output .tool-result-content {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 1.5;
+    color: rgba(245, 240, 232, 0.8);
+    background: rgba(0, 0, 0, 0.2);
+    padding: 6px 8px;
+    border-radius: 4px;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+    margin: 0;
+}
+
+.ws-tools-output .tool-result-stderr {
+    color: #ff8a8a;
+}
+
+.ws-tools-output .tool-result-entry {
+    font-size: 11px;
+    color: rgba(245, 240, 232, 0.75);
+    padding: 2px 0;
+}
+
+.ws-tools-output .tool-result-entry code {
+    color: #6db5f5;
+    font-family: var(--font-mono);
+    font-size: 10px;
+}
+
+.ws-tools-output .tool-result-meta {
+    font-size: 10px;
+    color: rgba(245, 240, 232, 0.4);
+    margin-top: 4px;
+}
+
+.ws-tools-output .tool-result-error {
+    color: #ff8a8a;
+    font-size: 12px;
+}
+
+.ws-tools-output .tool-call-running {
+    border-color: rgba(232, 115, 74, 0.4);
+}
+
+.ws-tools-output .tool-call-error {
+    border-color: rgba(255, 138, 138, 0.3);
+}
+
+.ws-tools-hint {
+    font-size: 11px;
+    color: rgba(245, 240, 232, 0.4);
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ws-tools-hint.running {
+    color: #E8734A;
+}
+
 .ws-term-line {
     min-height: 1.6em;
 }
@@ -2582,6 +2718,7 @@ html, body {
 /* ── 滚动条 ── */
 
 .ws-term-output::-webkit-scrollbar,
+.ws-tools-output::-webkit-scrollbar,
 .ws-file-list::-webkit-scrollbar,
 .ws-preview-content::-webkit-scrollbar,
 .ws-term-tab-bar::-webkit-scrollbar {
@@ -2589,12 +2726,14 @@ html, body {
 }
 
 .ws-term-output::-webkit-scrollbar-track,
+.ws-tools-output::-webkit-scrollbar-track,
 .ws-file-list::-webkit-scrollbar-track,
 .ws-preview-content::-webkit-scrollbar-track {
     background: transparent;
 }
 
-.ws-term-output::-webkit-scrollbar-thumb {
+.ws-term-output::-webkit-scrollbar-thumb,
+.ws-tools-output::-webkit-scrollbar-thumb {
     background: rgba(245, 240, 232, 0.15);
     border-radius: 3px;
 }
@@ -2605,7 +2744,8 @@ html, body {
     border-radius: 3px;
 }
 
-.ws-term-output::-webkit-scrollbar-thumb:hover {
+.ws-term-output::-webkit-scrollbar-thumb:hover,
+.ws-tools-output::-webkit-scrollbar-thumb:hover {
     background: rgba(245, 240, 232, 0.25);
 }
 

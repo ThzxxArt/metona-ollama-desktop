@@ -5,6 +5,15 @@
 
 import { logInfo, logError, logDebug } from '../services/log-service.js';
 
+// ── 工具卡片类型 ──
+interface ToolCallRecord {
+  name: string;
+  arguments: Record<string, unknown>;
+  result: Record<string, unknown> | null;
+  status: string;
+  timestamp: number;
+}
+
 // ── 状态 ──
 interface TerminalSession {
   id: string;
@@ -30,13 +39,17 @@ interface FileNode {
 }
 
 let panelVisible = true; // 常驻显示，不可关闭
-let activeTab: 'terminal' | 'files' = 'terminal';
+let activeTab: 'terminal' | 'tools' | 'files' = 'terminal';
 let terminal: TerminalSession | null = null; // 唯一终端
 let workspaceDir = '';
 let currentFileDir = '';
 let fileTree: FileNode[] = [];
 let previewFile: { name: string; content: string; path: string } | null = null;
 let _counter = 0;
+
+/** 工具调用卡片列表 */
+let toolCards: ToolCallRecord[] = [];
+let toolAutoScroll = true;
 
 /** 当前正在运行的 AI 命令（用于用户手动终止时通知 AI） */
 let currentAiCommand: string | null = null;
@@ -206,6 +219,7 @@ export async function initWorkspacePanel(): Promise<void> {
 function bindEvents(): void {
   // Tab 切换
   document.querySelector('#wsTabTerminal')?.addEventListener('click', () => switchTab('terminal'));
+  document.querySelector('#wsTabTools')?.addEventListener('click', () => switchTab('tools'));
   document.querySelector('#wsTabFiles')?.addEventListener('click', () => switchTab('files'));
 
   // 停止按钮
@@ -213,6 +227,9 @@ function bindEvents(): void {
 
   // 清空按钮
   document.querySelector('#wsClearBtn')?.addEventListener('click', clearTerminal);
+
+  // 工具清空按钮
+  document.querySelector('#wsToolsClearBtn')?.addEventListener('click', clearToolCards);
 
   // 文件刷新
   document.querySelector('#wsFileRefreshBtn')?.addEventListener('click', () => {
@@ -235,7 +252,7 @@ function bindEvents(): void {
 }
 
 // ── 面板控制 ──（常驻显示，无需切换）
-function switchTab(tab: 'terminal' | 'files'): void {
+function switchTab(tab: 'terminal' | 'tools' | 'files'): void {
   activeTab = tab;
   renderPanel();
 
@@ -438,23 +455,25 @@ export function renderPanel(): void {
   if (!panel) return;
 
   const termTab = document.querySelector('#wsTabTerminal') as HTMLElement;
+  const toolsTab = document.querySelector('#wsTabTools') as HTMLElement;
   const filesTab = document.querySelector('#wsTabFiles') as HTMLElement;
 
-  if (termTab) {
-    termTab.classList.toggle('active', activeTab === 'terminal');
-  }
-  if (filesTab) {
-    filesTab.classList.toggle('active', activeTab === 'files');
-  }
+  if (termTab) termTab.classList.toggle('active', activeTab === 'terminal');
+  if (toolsTab) toolsTab.classList.toggle('active', activeTab === 'tools');
+  if (filesTab) filesTab.classList.toggle('active', activeTab === 'files');
 
   const termContent = document.querySelector('#wsTerminalContent') as HTMLElement;
+  const toolsContent = document.querySelector('#wsToolsContent') as HTMLElement;
   const filesContent = document.querySelector('#wsFilesContent') as HTMLElement;
 
   if (termContent) termContent.style.display = activeTab === 'terminal' ? '' : 'none';
+  if (toolsContent) toolsContent.style.display = activeTab === 'tools' ? '' : 'none';
   if (filesContent) filesContent.style.display = activeTab === 'files' ? '' : 'none';
 
   if (activeTab === 'terminal') {
     renderTerminal();
+  } else if (activeTab === 'tools') {
+    renderToolCalls();
   } else {
     renderFileList();
   }
@@ -617,10 +636,207 @@ function formatSize(bytes: number): string {
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
 }
 
+// ── 工具调用管理 ──
+
+/** 添加工具调用卡片（由外部调用） */
+export function addToolCard(tc: ToolCallRecord): void {
+  toolCards.push(tc);
+  // 如果是 run_command，自动切到终端 tab
+  if (tc.name === 'run_command') {
+    switchToTab('terminal');
+  } else {
+    switchToTab('tools');
+  }
+  renderToolCalls();
+  updateToolsHint();
+}
+
+/** 更新工具调用卡片状态（由外部调用） */
+export function updateToolCard(tc: ToolCallRecord): void {
+  // 找到最后一个同名且 running 的卡片
+  for (let i = toolCards.length - 1; i >= 0; i--) {
+    if (toolCards[i].name === tc.name && toolCards[i].status === 'running') {
+      toolCards[i] = tc;
+      break;
+    }
+  }
+  renderToolCalls();
+  updateToolsHint();
+}
+
+function clearToolCards(): void {
+  toolCards = [];
+  renderToolCalls();
+  updateToolsHint();
+}
+
+function updateToolsHint(): void {
+  const hint = document.querySelector('#wsToolsHint') as HTMLElement;
+  if (!hint) return;
+  const running = toolCards.filter(c => c.status === 'running');
+  if (running.length > 0) {
+    hint.textContent = `⏳ 执行中: ${running.map(c => getToolDisplayName(c.name)).join(', ')}`;
+    hint.classList.add('running');
+  } else {
+    const total = toolCards.length;
+    const success = toolCards.filter(c => c.status === 'success').length;
+    const error = toolCards.filter(c => c.status === 'error').length;
+    hint.textContent = total > 0 ? `共 ${total} 个工具调用（✅${success} ❌${error}）` : '等待工具调用...';
+    hint.classList.remove('running');
+  }
+}
+
+function renderToolCalls(): void {
+  const container = document.querySelector('#wsToolsOutput') as HTMLElement;
+  if (!container) return;
+
+  if (toolCards.length === 0) {
+    container.innerHTML = '<div class="ws-tools-placeholder">等待工具调用...</div>';
+    return;
+  }
+
+  let html = '';
+  for (const tc of toolCards) {
+    html += renderToolCard(tc);
+  }
+  container.innerHTML = html;
+
+  if (toolAutoScroll) {
+    container.scrollTop = container.scrollHeight;
+  }
+
+  container.onscroll = () => {
+    toolAutoScroll = container.scrollHeight - container.scrollTop - container.clientHeight < 50;
+  };
+}
+
+function getToolDisplayName(name: string): string {
+  const names: Record<string, string> = {
+    read_file: '读取文件', write_file: '写入文件', list_directory: '列出目录',
+    search_files: '搜索文件', create_directory: '创建目录', delete_file: '删除文件', run_command: '执行命令',
+    move_file: '移动文件', copy_file: '复制文件', web_fetch: '网页抓取', append_file: '追加文件',
+    edit_file: '编辑文件', get_file_info: '文件信息', tree: '目录树', download_file: '下载文件',
+    diff_files: '文件对比', replace_in_files: '批量替换', read_multiple_files: '批量读取',
+    git: 'Git 操作', compress: '压缩/解压', web_search: '联网搜索',
+    memory_search: '搜索记忆', memory_add: '添加记忆', memory_replace: '替换记忆', memory_remove: '删除记忆',
+    skill_list: '技能列表', skill_view: '查看技能',
+    session_list: '会话列表', session_read: '读取会话', spawn_task: '子代理委派',
+    browser_open: '打开网页', browser_screenshot: '浏览器截图', browser_evaluate: '执行JS', browser_extract: '提取内容',
+    browser_click: '点击元素', browser_type: '输入文本', browser_scroll: '滚动页面', browser_close: '关闭浏览器'
+  };
+  return names[name] || name;
+}
+
+function getToolIcon(name: string): string {
+  const icons: Record<string, string> = {
+    read_file: '📄', write_file: '✏️', list_directory: '📁',
+    search_files: '🔍', create_directory: '📂', delete_file: '🗑️', run_command: '💻',
+    move_file: '📦', copy_file: '📋', web_fetch: '🌐', append_file: '➕',
+    edit_file: '✂️', get_file_info: 'ℹ️', tree: '🌳', download_file: '⬇️',
+    diff_files: '🔀', replace_in_files: '🔄', read_multiple_files: '📚',
+    git: '🔖', compress: '🗜️', web_search: '🔍',
+    memory_search: '🧠', memory_add: '💾', memory_replace: '✏️', memory_remove: '🗑️',
+    skill_list: '🎯', skill_view: '👁️',
+    session_list: '📋', session_read: '📖', spawn_task: '🤖',
+    browser_open: '🌐', browser_screenshot: '📸', browser_evaluate: '⚡', browser_extract: '📰',
+    browser_click: '👆', browser_type: '⌨️', browser_scroll: '↕️', browser_close: '❌'
+  };
+  return icons[name] || '🔧';
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function renderToolCard(tc: ToolCallRecord): string {
+  const icon = getToolIcon(tc.name);
+  const name = getToolDisplayName(tc.name);
+  const statusLabels: Record<string, string> = {
+    pending: '⏳ 等待确认', running: '🔄 执行中', success: '✅ 完成', error: '❌ 失败', cancelled: '🚫 已取消'
+  };
+  const status = statusLabels[tc.status] || tc.status;
+  const args = tc.arguments || {};
+
+  let paramsHtml = '';
+  if (args.path) paramsHtml += `<div class="tool-param">路径: <code>${escapeHtml(String(args.path))}</code></div>`;
+  if (args.command) paramsHtml += `<div class="tool-param">命令: <code>${escapeHtml(String(args.command))}</code></div>`;
+  if (args.query) paramsHtml += `<div class="tool-param">查询: <code>${escapeHtml(String(args.query))}</code></div>`;
+  if (args.url) paramsHtml += `<div class="tool-param">URL: <code>${escapeHtml(String(args.url))}</code></div>`;
+  if (args.source) paramsHtml += `<div class="tool-param">源: <code>${escapeHtml(String(args.source))}</code></div>`;
+  if (args.destination) paramsHtml += `<div class="tool-param">目标: <code>${escapeHtml(String(args.destination))}</code></div>`;
+  if (args.selector) paramsHtml += `<div class="tool-param">选择器: <code>${escapeHtml(String(args.selector))}</code></div>`;
+  if (args.action) paramsHtml += `<div class="tool-param">操作: <code>${escapeHtml(String(args.action))}</code></div>`;
+
+  let resultHtml = '';
+  if (tc.result) {
+    const r = tc.result as Record<string, unknown>;
+    if (r.success) {
+      if (tc.name === 'run_command') {
+        const stdout = String(r.stdout || '').slice(0, 500);
+        const stderr = String(r.stderr || '').slice(0, 300);
+        if (stdout) resultHtml += `<pre class="tool-result-content">${escapeHtml(stdout)}${String(r.stdout || '').length > 500 ? '\n...' : ''}</pre>`;
+        if (stderr) resultHtml += `<pre class="tool-result-content tool-result-stderr">${escapeHtml(stderr)}</pre>`;
+        resultHtml += `<div class="tool-result-meta">exit: ${r.exitCode || 0}</div>`;
+      } else if (tc.name === 'web_search' && r.results) {
+        const results = r.results as Array<{ title: string; url: string }>;
+        resultHtml = results.slice(0, 5).map((item, i) =>
+          `<div class="tool-result-entry">[${i + 1}] ${escapeHtml(item.title)}<br><code>${escapeHtml(item.url)}</code></div>`
+        ).join('');
+        resultHtml += `<div class="tool-result-meta">共 ${r.total || results.length} 条结果</div>`;
+      } else if (tc.name === 'read_file' && r.content) {
+        const content = String(r.content);
+        const lines = content.split('\n');
+        const preview = lines.slice(0, 15).join('\n');
+        resultHtml = `<pre class="tool-result-content">${escapeHtml(preview)}${lines.length > 15 ? `\n... (共 ${lines.length} 行)` : ''}</pre>`;
+      } else if (tc.name === 'list_directory' && r.entries) {
+        const entries = r.entries as Array<{ name: string; type: string }>;
+        resultHtml = entries.slice(0, 20).map(e =>
+          `<div class="tool-result-entry">${e.type === 'directory' ? '📁' : '📄'} ${escapeHtml(e.name)}</div>`
+        ).join('');
+        if (entries.length > 20) resultHtml += `<div class="tool-result-entry">... 共 ${entries.length} 项</div>`;
+      } else if (tc.name === 'write_file') {
+        resultHtml = `<div class="tool-result-entry">✅ 已写入 ${escapeHtml(String(r.path || ''))}</div>`;
+      } else if (tc.name === 'delete_file') {
+        resultHtml = `<div class="tool-result-entry">✅ 已删除 ${escapeHtml(String(r.path || ''))}</div>`;
+      } else if (tc.name === 'create_directory') {
+        resultHtml = `<div class="tool-result-entry">✅ 已创建 ${escapeHtml(String(r.path || ''))}</div>`;
+      } else {
+        // 通用成功显示
+        const summary = JSON.stringify(r).slice(0, 300);
+        resultHtml = `<pre class="tool-result-content">${escapeHtml(summary)}${JSON.stringify(r).length > 300 ? '\n...' : ''}</pre>`;
+      }
+    } else {
+      resultHtml = `<div class="tool-result-error">${escapeHtml(String(r.error || '未知错误'))}</div>`;
+    }
+  }
+
+  const statusClass = tc.status === 'running' ? 'tool-call-running' : tc.status === 'error' ? 'tool-call-error' : '';
+
+  return `<div class="tool-call-card ${statusClass}" data-tool-name="${escapeHtml(tc.name)}">
+    <div class="tool-call-header">
+      <span class="tool-call-icon">${icon}</span>
+      <span class="tool-call-name">${escapeHtml(name)}</span>
+      <span class="tool-call-status">${status}</span>
+    </div>
+    ${paramsHtml ? `<div class="tool-call-params">${paramsHtml}</div>` : ''}
+    ${resultHtml ? `<div class="tool-call-result">${resultHtml}</div>` : ''}
+  </div>`;
+}
+
 // ── 外部调用接口 ──
 
 /** 获取工作空间目录 */
 export function getWorkspaceDirPath(): string {
   return workspaceDir;
+}
+
+/** 外部自动切换 tab */
+export function switchToTab(tab: 'terminal' | 'tools' | 'files'): void {
+  activeTab = tab;
+  renderPanel();
 }
 

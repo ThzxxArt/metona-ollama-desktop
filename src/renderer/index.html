@@ -170,6 +170,7 @@
         <span class="ws-title">🖥️ 工作空间</span>
         <div class="ws-tabs">
             <button class="ws-header-tab active" id="wsTabTerminal">💻 命令行</button>
+            <button class="ws-header-tab" id="wsTabTools">🔧 工具</button>
             <button class="ws-header-tab" id="wsTabFiles">📁 文件</button>
         </div>
     </div>
@@ -186,6 +187,22 @@
                     </svg>
                 </button>
                 <button class="ws-toolbar-btn" id="wsClearBtn" title="清空">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="3 6 5 6 21 6"/>
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 工具调用 Tab -->
+    <div class="ws-content" id="wsToolsContent" style="display:none;">
+        <div class="ws-tools-output" id="wsToolsOutput"></div>
+        <div class="ws-term-toolbar">
+            <span class="ws-tools-hint" id="wsToolsHint">等待工具调用...</span>
+            <div class="ws-term-toolbar-btns">
+                <button class="ws-toolbar-btn" id="wsToolsClearBtn" title="清空">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <polyline points="3 6 5 6 21 6"/>
                         <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
