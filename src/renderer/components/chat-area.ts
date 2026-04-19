@@ -157,6 +157,32 @@ export function appendMessageDOM(msg: ChatMessage, index: number): void {
     contentHtml = contentHtml.replace('<div class="msg-content"></div>', '');
   }
 
+  // ── 工具调用历史记录（可折叠）──
+  if (msg.role === 'assistant' && msg.toolCalls && msg.toolCalls.length > 0) {
+    const tcCount = msg.toolCalls.length;
+    const successCount = msg.toolCalls.filter(t => t.status === 'success').length;
+    const errorCount = msg.toolCalls.filter(t => t.status === 'error').length;
+    const summary = msg.toolCalls.map(t => {
+      const names: Record<string, string> = {
+        read_file: 'read_file', write_file: 'write_file', list_directory: 'list_directory',
+        search_files: 'search_files', run_command: 'run_command', web_fetch: 'web_fetch',
+        web_search: 'web_search', git: 'git', browser_open: 'browser_open',
+        memory_search: 'memory_search', memory_add: 'memory_add', spawn_task: 'spawn_task',
+      };
+      return names[t.name] || t.name;
+    }).slice(0, 5).join(', ') + (tcCount > 5 ? ` +${tcCount - 5}` : '');
+
+    contentHtml += `<div class="tool-calls-history">
+      <div class="tool-calls-toggle" onclick="this.parentElement.classList.toggle('expanded')">
+        <span class="tool-calls-chevron">▸</span>
+        <span class="tool-calls-summary">🔧 ${tcCount} 个工具调用（✅${successCount} ❌${errorCount}）</span>
+      </div>
+      <div class="tool-calls-list">
+        ${msg.toolCalls.map(tc => renderToolCallCard(tc)).join('')}
+      </div>
+    </div>`;
+  }
+
   const stats: string[] = [];
   const statClasses: string[] = [];
   if (msg.timestamp) { stats.push(formatTime(msg.timestamp)); statClasses.push(''); }
