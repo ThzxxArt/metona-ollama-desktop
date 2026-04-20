@@ -181,6 +181,14 @@ electron-builder 会自动处理所有依赖下载（Electron、NSIS、winCodeSi
 - 🔧 移除所有工具执行超时：tool-registry.ts 移除 25s/60s IPC 硬超时，browser.ts 移除 executeJsWithTimeout
 - 🔧 browser 工具状态检查：所有 browser 函数入口检查 isBrowserOpen()，关闭后返回明确错误
 - 📝 版本号更新至 5.1.6
+- ✅ `Metona Ollama Setup 5.1.6.exe`（81MB）
+- ✅ Gitee Release v5.1.6-desktop
+- ⚠️ 构建问题及处理：
+  1. apt 源 `mirrors.cloud.aliyuncs.com` 不可达 → 切换 `archive.ubuntu.com`
+  2. `restore-build-cache.sh` npmmirror NoSuchKey → 跳过，electron-builder 自动下载
+  3. winCodeSign 从 GitHub 下载 EOF → 使用 ghfast.top 代理手动下载缓存
+  4. NSIS 从 GitHub 下载 EOF → 使用 ghfast.top 代理手动下载缓存
+  5. 无编译错误，手动缓存后构建一次通过
 
 ### v5.1.5（2026-04-20） — metona-ollama-desktop 仓库
 

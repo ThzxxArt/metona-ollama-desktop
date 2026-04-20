@@ -21,6 +21,10 @@
   - 浏览器关闭后返回明确错误 `"浏览器未打开，请先使用 browser_open 加载页面"`，不再自动重建空窗口
   - 避免 browser_close 后 AI 继续调用 evaluate 浪费循环
 - 📝 **版本号更新至 5.1.6**（7 个文件同步更新）
+- 📦 **构建产物**
+  - `Metona Ollama Setup 5.1.6.exe`（81MB）
+  - Gitee Release v5.1.6-desktop
+  - apt 源切 archive.ubuntu.com，winCodeSign/NSIS 用 ghfast.top 代理手动缓存，无编译错误
 
 ### Desktop v5.1.5 — 第三方库替换 & 代码精简 & 联网日期修复
 
