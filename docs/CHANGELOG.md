@@ -3,13 +3,25 @@
 ## 分支结构
 
 **桌面版主线**（`master`）：
-- `metona-ollama-desktop-v3.2.6` → `metona-ollama-desktop-v3.3.4` → `metona-ollama-desktop-v4.0.0` → `metona-ollama-desktop-v5.0.0` → `metona-ollama-desktop-v5.0.1` → `metona-ollama-desktop-v5.1.0` → `metona-ollama-desktop-v5.1.1` → `metona-ollama-desktop-v5.1.2` → `metona-ollama-desktop-v5.1.3` → `metona-ollama-desktop-v5.1.4` → `metona-ollama-desktop-v5.1.5`（当前发布分支）
+- `metona-ollama-desktop-v3.2.6` → `metona-ollama-desktop-v3.3.4` → `metona-ollama-desktop-v4.0.0` → `metona-ollama-desktop-v5.0.0` → `metona-ollama-desktop-v5.0.1` → `metona-ollama-desktop-v5.1.0` → `metona-ollama-desktop-v5.1.1` → `metona-ollama-desktop-v5.1.2` → `metona-ollama-desktop-v5.1.3` → `metona-ollama-desktop-v5.1.4` → `metona-ollama-desktop-v5.1.5` → `metona-ollama-desktop-v5.1.6`（当前发布分支）
 
 **Web 版历史**已独立为 [metona-ollama-web](https://gitee.com/thzxx/metona-ollama-web) 仓库（v1.1.0 ~ v4.0.3）。
 
 ---
 
 ## 桌面版（Desktop）
+### Desktop v5.1.6 — 浏览器工具超时修复
+
+- 🔧 **移除所有工具执行超时**
+  - tool-registry.ts：移除 `Promise.race` + `setTimeout` 25 秒/60 秒硬超时，所有工具直接 `await bridge.tool.execute()`，无超时限制
+  - browser.ts：移除 `executeJsWithTimeout` 包装，直接调用 `executeJavaScript`
+  - 用户控制生命周期，宁可等待也不中断
+- 🔧 **browser 工具状态检查**
+  - 所有 browser 函数（evaluate/extract/click/type/scroll/screenshot）入口统一检查 `isBrowserOpen()`
+  - 浏览器关闭后返回明确错误 `"浏览器未打开，请先使用 browser_open 加载页面"`，不再自动重建空窗口
+  - 避免 browser_close 后 AI 继续调用 evaluate 浪费循环
+- 📝 **版本号更新至 5.1.6**（7 个文件同步更新）
+
 ### Desktop v5.1.5 — 第三方库替换 & 代码精简 & 联网日期修复
 
 - ♻️ **Markdown 解析器替换：内联实现 → `marked` 库**
