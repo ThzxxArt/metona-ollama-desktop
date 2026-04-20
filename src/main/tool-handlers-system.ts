@@ -255,8 +255,10 @@ export async function handleWebSearch(params: { query: string; max_results?: num
       return { success: false, error: '未找到搜索结果，请尝试其他关键词' };
     }
 
-    // 构建格式化的搜索结果
-    const formatted = results.map((r, i) =>
+    // 构建格式化的搜索结果（附带当前日期）
+    const now = new Date();
+    const dateStr = `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日`;
+    const formatted = `[当前日期: ${dateStr}（搜索时的实时日期）]\n\n` + results.map((r, i) =>
       `[${i + 1}] ${r.title}\n    URL: ${r.url}\n    ${r.snippet}`
     ).join('\n\n');
 
