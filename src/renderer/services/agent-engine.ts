@@ -461,8 +461,13 @@ export async function runAgentLoop(
   const personality = state.get<string>('personality', 'default');
   const personalityPrompt = PERSONALITY_SYSTEM_PROMPTS[personality] || '';
 
+  // 实时注入当前日期（来自系统时钟，非模型知识库）
+  const _now = new Date();
+  const realDate = `${_now.getFullYear()}年${_now.getMonth() + 1}月${_now.getDate()}日`;
+
   const fullSystemPrompt = [
     ...systemPromptParts,
+    `【当前日期】${realDate}（此日期来自系统时钟，绝对可信。你的训练数据可能已过时，请以此日期为准构造所有搜索查询和时效性回答。绝对不要基于训练数据推断日期。）`,
     AGENT_SYSTEM_PROMPT,
     ...(personalityPrompt ? [personalityPrompt] : []),
     TOOL_USAGE_GUIDE
