@@ -12,6 +12,11 @@ function sendLog(level: 'info' | 'success' | 'warn' | 'error', message: string, 
 
 let agentBrowser: BrowserWindow | null = null;
 
+/** 浏览器是否已打开且可用 */
+export function isBrowserOpen(): boolean {
+  return agentBrowser !== null && !agentBrowser.isDestroyed();
+}
+
 /** 获取或创建 Agent 浏览器窗口 */
 function getAgentBrowser(): BrowserWindow {
   if (agentBrowser && !agentBrowser.isDestroyed()) return agentBrowser;
@@ -30,6 +35,23 @@ function getAgentBrowser(): BrowserWindow {
 
   agentBrowser.on('closed', () => { agentBrowser = null; });
   return agentBrowser;
+}
+
+/**
+ * 在 webContents 上执行 JS，带超时保护。
+ * renderer 冻结时 executeJavaScript 会无限挂起，必须加超时。
+ */
+function executeJsWithTimeout(webContents: Electron.WebContents, js: string, timeoutMs = 15000): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error('浏览器 JS 执行超时（renderer 无响应）'));
+    }, timeoutMs);
+
+    webContents.executeJavaScript(js, true).then(
+      result => { clearTimeout(timer); resolve(result); },
+      err => { clearTimeout(timer); reject(err); }
+    );
+  });
 }
 
 /** 打开 URL */
@@ -51,7 +73,10 @@ export async function browserOpen(url: string): Promise<{ success: boolean; titl
 /** 截图 */
 export async function browserScreenshot(): Promise<{ success: boolean; png?: string; error?: string }> {
   try {
-    const win = getAgentBrowser();
+    if (!isBrowserOpen()) {
+      return { success: false, error: '浏览器未打开，请先使用 browser_open 加载页面' };
+    }
+    const win = agentBrowser!;
     if (win.webContents.getURL() === 'about:blank') {
       return { success: false, error: '浏览器未加载任何页面' };
     }
@@ -68,12 +93,15 @@ export async function browserScreenshot(): Promise<{ success: boolean; png?: str
 /** 执行 JavaScript */
 export async function browserEvaluate(js: string): Promise<{ success: boolean; result?: string; error?: string }> {
   try {
-    const win = getAgentBrowser();
+    if (!isBrowserOpen()) {
+      return { success: false, error: '浏览器未打开，请先使用 browser_open 加载页面' };
+    }
+    const win = agentBrowser!; // isBrowserOpen 已确认非 null
     if (win.webContents.getURL() === 'about:blank') {
-      return { success: false, error: '浏览器未加载任何页面' };
+      return { success: false, error: '浏览器未加载任何页面，请先使用 browser_open 加载页面' };
     }
     sendLog('info', `🌐 browser 执行 JS`, js.slice(0, 100));
-    const result = await win.webContents.executeJavaScript(js, true);
+    const result = await executeJsWithTimeout(win.webContents, js, 15000);
     const resultStr = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
     sendLog('success', `🌐 browser JS 完成`, resultStr?.slice(0, 100));
     return { success: true, result: resultStr };
@@ -86,12 +114,15 @@ export async function browserEvaluate(js: string): Promise<{ success: boolean; r
 /** 提取页面文本和链接 */
 export async function browserExtract(): Promise<{ success: boolean; title?: string; text?: string; links?: Array<{text: string; href: string}>; error?: string }> {
   try {
-    const win = getAgentBrowser();
+    if (!isBrowserOpen()) {
+      return { success: false, error: '浏览器未打开，请先使用 browser_open 加载页面' };
+    }
+    const win = agentBrowser!;
     if (win.webContents.getURL() === 'about:blank') {
       return { success: false, error: '浏览器未加载任何页面' };
     }
 
-    const result = await win.webContents.executeJavaScript(`
+    const result = await executeJsWithTimeout(win.webContents, `
       (() => {
         const title = document.title;
         const getText = (el) => {
@@ -112,7 +143,7 @@ export async function browserExtract(): Promise<{ success: boolean; title?: stri
         });
         return { title, text, links: links.slice(0, 50) };
       })()
-    `, true);
+    `, 15000);
 
     sendLog('success', `🌐 browser 提取完成`, `标题: ${result.title}, 文本: ${result.text?.length || 0}字, 链接: ${result.links?.length || 0}个`);
     return { success: true, ...result };
@@ -125,9 +156,12 @@ export async function browserExtract(): Promise<{ success: boolean; title?: stri
 /** 点击元素 */
 export async function browserClick(selector: string): Promise<{ success: boolean; error?: string }> {
   try {
-    const win = getAgentBrowser();
+    if (!isBrowserOpen()) {
+      return { success: false, error: '浏览器未打开，请先使用 browser_open 加载页面' };
+    }
+    const win = agentBrowser!;
     sendLog('info', `🌐 browser 点击`, selector);
-    await win.webContents.executeJavaScript(`document.querySelector('${selector.replace(/'/g, "\\'")}').click()`, true);
+    await executeJsWithTimeout(win.webContents, `document.querySelector('${selector.replace(/'/g, "\\'")}').click()`, 10000);
     await new Promise(r => setTimeout(r, 500));
     sendLog('success', `🌐 browser 点击完成`, selector);
     return { success: true };
@@ -140,11 +174,14 @@ export async function browserClick(selector: string): Promise<{ success: boolean
 /** 输入文本 */
 export async function browserType(selector: string, text: string): Promise<{ success: boolean; error?: string }> {
   try {
-    const win = getAgentBrowser();
+    if (!isBrowserOpen()) {
+      return { success: false, error: '浏览器未打开，请先使用 browser_open 加载页面' };
+    }
+    const win = agentBrowser!;
     const escapedSelector = selector.replace(/'/g, "\\'");
     const escapedText = text.replace(/'/g, "\\'").replace(/\n/g, "\\n");
     sendLog('info', `🌐 browser 输入`, `${selector}: ${text.slice(0, 50)}`);
-    await win.webContents.executeJavaScript(`
+    await executeJsWithTimeout(win.webContents, `
       (() => {
         const el = document.querySelector('${escapedSelector}');
         if (!el) throw new Error('元素未找到: ${escapedSelector}');
@@ -153,7 +190,7 @@ export async function browserType(selector: string, text: string): Promise<{ suc
         el.dispatchEvent(new Event('input', { bubbles: true }));
         el.dispatchEvent(new Event('change', { bubbles: true }));
       })()
-    `, true);
+    `, 10000);
     sendLog('success', `🌐 browser 输入完成`, selector);
     return { success: true };
   } catch (err) {
@@ -165,12 +202,15 @@ export async function browserType(selector: string, text: string): Promise<{ suc
 /** 滚动页面 */
 export async function browserScroll(direction: 'down' | 'up' | 'top' | 'bottom'): Promise<{ success: boolean; error?: string }> {
   try {
-    const win = getAgentBrowser();
+    if (!isBrowserOpen()) {
+      return { success: false, error: '浏览器未打开，请先使用 browser_open 加载页面' };
+    }
+    const win = agentBrowser!;
     const js = direction === 'down' ? 'window.scrollBy(0, 500)'
       : direction === 'up' ? 'window.scrollBy(0, -500)'
       : direction === 'top' ? 'window.scrollTo(0, 0)'
       : 'window.scrollTo(0, document.body.scrollHeight)';
-    await win.webContents.executeJavaScript(js, true);
+    await executeJsWithTimeout(win.webContents, js, 10000);
     await new Promise(r => setTimeout(r, 300));
     sendLog('info', `🌐 browser 滚动`, direction);
     return { success: true };

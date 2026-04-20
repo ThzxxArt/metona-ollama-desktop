@@ -806,11 +806,12 @@ export async function executeTool(toolName: string, args: Record<string, unknown
       };
     }
 
-    // 其他工具：IPC 调用 + 25 秒硬超时
+    // 其他工具：IPC 调用 + 硬超时（browser 工具 60 秒，其余 25 秒）
+    const timeoutMs = toolName.startsWith('browser_') ? 60000 : 25000;
     const result = await Promise.race([
       bridge.tool.execute(toolName, args),
       new Promise<ToolResult>((_, reject) =>
-        setTimeout(() => reject(new Error(`工具 ${toolName} IPC 超时（25秒）`)), 25000)
+        setTimeout(() => reject(new Error(`工具 ${toolName} IPC 超时（${Math.round(timeoutMs / 1000)}秒）`)), timeoutMs)
       )
     ]);
     logToolResult(toolName, result.success, result.success ? undefined : result.error);
