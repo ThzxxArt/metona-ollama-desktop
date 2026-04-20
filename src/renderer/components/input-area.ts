@@ -291,10 +291,28 @@ async function handleRetry(): Promise<void> {
       });
 
     try {
+      let retryContent = '';
       let retryThinkContent = '';
+      let retryIterations = 0;
       await runAgentLoop(userMsg.content || '', userMsg.images || [], historyMessages, {
-        onThinking: (thinking) => { retryThinkContent = thinking; updateLastAssistantMessage('', thinking, null); },
-        onContent: (content) => updateLastAssistantMessage(content, retryThinkContent || null, null),
+        onNewIteration: () => {
+          if (retryContent) {
+            const prevMsg: ChatMessage = {
+              role: 'assistant', content: retryContent, timestamp: Date.now(),
+              ...(retryThinkContent && { think: retryThinkContent }),
+            };
+            state.update(KEYS.CURRENT_SESSION, (s: ChatSession | null) => ({
+              ...s, messages: [...s.messages, prevMsg], updatedAt: Date.now()
+            }));
+            renderMessages();
+          }
+          appendAssistantPlaceholder();
+          retryContent = '';
+          retryThinkContent = '';
+          retryIterations++;
+        },
+        onThinking: (thinking) => { retryThinkContent = thinking; updateLastAssistantMessage(retryContent, thinking, null); },
+        onContent: (content) => { retryContent = content; updateLastAssistantMessage(content, retryThinkContent || null, null); },
         onToolCallStart: (call) => {
           addToolCard({
             name: call.function.name, arguments: call.function.arguments,
@@ -315,17 +333,34 @@ async function handleRetry(): Promise<void> {
         },
         onConfirmTool: async (call) => showToolConfirm(call),
         onDone: async (finalContent, toolRecords, loopStats) => {
-          const assistantMsg: ChatMessage = {
-            role: 'assistant', content: finalContent || '', timestamp: Date.now(),
-            ...(retryThinkContent && { think: retryThinkContent }),
-            ...(toolRecords?.length && { toolCalls: toolRecords }),
-            ...(loopStats?.eval_count && { eval_count: loopStats.eval_count }),
-            ...(loopStats?.total_duration && { total_duration: loopStats.total_duration }),
-          };
-          state.update(KEYS.CURRENT_SESSION, (s: ChatSession | null) => ({
-            ...s, messages: [...s.messages, assistantMsg], updatedAt: Date.now()
-          }));
-          updateLastAssistantMessage(finalContent, retryThinkContent || null, loopStats || null);
+          retryContent = finalContent;
+          if (retryIterations > 0) {
+            updateLastAssistantMessage(finalContent, retryThinkContent || null, loopStats || null);
+            state.update(KEYS.CURRENT_SESSION, (s: ChatSession | null) => {
+              const msgs = [...s.messages];
+              for (let i = msgs.length - 1; i >= 0; i--) {
+                if (msgs[i].role === 'assistant') {
+                  if (toolRecords?.length) msgs[i] = { ...msgs[i], toolCalls: toolRecords };
+                  if (loopStats?.eval_count) msgs[i] = { ...msgs[i], eval_count: loopStats.eval_count };
+                  if (loopStats?.total_duration) msgs[i] = { ...msgs[i], total_duration: loopStats.total_duration };
+                  break;
+                }
+              }
+              return { ...s, messages: msgs, updatedAt: Date.now() };
+            });
+          } else {
+            const assistantMsg: ChatMessage = {
+              role: 'assistant', content: finalContent || '', timestamp: Date.now(),
+              ...(retryThinkContent && { think: retryThinkContent }),
+              ...(toolRecords?.length && { toolCalls: toolRecords }),
+              ...(loopStats?.eval_count && { eval_count: loopStats.eval_count }),
+              ...(loopStats?.total_duration && { total_duration: loopStats.total_duration }),
+            };
+            state.update(KEYS.CURRENT_SESSION, (s: ChatSession | null) => ({
+              ...s, messages: [...s.messages, assistantMsg], updatedAt: Date.now()
+            }));
+            updateLastAssistantMessage(finalContent, retryThinkContent || null, loopStats || null);
+          }
           renderMessages();
           await saveCurrentSession();
           updateTotalTokens();
@@ -891,9 +926,32 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
 
   let assistantContent = '';
   let thinkContent = '';
+  let agentModeIterations = 0; // 跟踪 onNewIteration 调用次数
 
   try {
     await runAgentLoop(text || (pendingFiles.length > 0 ? `请分析 ${pendingFiles.map(f => f.name).join(', ')}` : ''), images, historyMessages, {
+      onNewIteration: () => {
+        // Agent Loop 新迭代开始：保存上一轮内容为独立消息，创建新 placeholder
+        if (assistantContent) {
+          const prevMsg: ChatMessage = {
+            role: 'assistant',
+            content: assistantContent,
+            timestamp: Date.now(),
+            ...(thinkContent && { think: thinkContent }),
+          };
+          state.update(KEYS.CURRENT_SESSION, (session: ChatSession | null) => ({
+            ...session,
+            messages: [...session.messages, prevMsg],
+            updatedAt: Date.now()
+          }));
+          renderMessages();
+        }
+        // 创建新 placeholder，重置内容
+        appendAssistantPlaceholder();
+        assistantContent = '';
+        thinkContent = '';
+        agentModeIterations++;
+      },
       onThinking: (thinking) => {
         thinkContent = thinking;
         updateLastAssistantMessage(assistantContent, thinkContent || null, null);
@@ -926,22 +984,40 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
       onDone: async (finalContent, toolRecords, loopStats) => {
         assistantContent = finalContent;
 
-        const assistantMsg: ChatMessage = {
-          role: 'assistant',
-          content: assistantContent || '',
-          timestamp: Date.now(),
-          ...(thinkContent && { think: thinkContent }),
-          ...(toolRecords?.length && { toolCalls: toolRecords }),
-          ...(loopStats?.eval_count && { eval_count: loopStats.eval_count }),
-          ...(loopStats?.total_duration && { total_duration: loopStats.total_duration }),
-        };
-        state.update(KEYS.CURRENT_SESSION, (session: ChatSession | null) => ({
-          ...session,
-          messages: [...session.messages, assistantMsg],
-          updatedAt: Date.now()
-        }));
-
-        updateLastAssistantMessage(assistantContent, thinkContent || null, loopStats || null);
+        // 如果有多个迭代，最后一条消息已由 onNewIteration 保存，这里只更新 placeholder
+        if (agentModeIterations > 0) {
+          updateLastAssistantMessage(assistantContent, thinkContent || null, loopStats || null);
+          // 更新最后一条消息的工具记录（onNewIteration 保存时没有 toolCalls）
+          state.update(KEYS.CURRENT_SESSION, (session: ChatSession | null) => {
+            const msgs = [...session.messages];
+            for (let i = msgs.length - 1; i >= 0; i--) {
+              if (msgs[i].role === 'assistant') {
+                if (toolRecords?.length) msgs[i] = { ...msgs[i], toolCalls: toolRecords };
+                if (loopStats?.eval_count) msgs[i] = { ...msgs[i], eval_count: loopStats.eval_count };
+                if (loopStats?.total_duration) msgs[i] = { ...msgs[i], total_duration: loopStats.total_duration };
+                break;
+              }
+            }
+            return { ...session, messages: msgs, updatedAt: Date.now() };
+          });
+        } else {
+          // 单迭代模式：正常保存
+          const assistantMsg: ChatMessage = {
+            role: 'assistant',
+            content: assistantContent || '',
+            timestamp: Date.now(),
+            ...(thinkContent && { think: thinkContent }),
+            ...(toolRecords?.length && { toolCalls: toolRecords }),
+            ...(loopStats?.eval_count && { eval_count: loopStats.eval_count }),
+            ...(loopStats?.total_duration && { total_duration: loopStats.total_duration }),
+          };
+          state.update(KEYS.CURRENT_SESSION, (session: ChatSession | null) => ({
+            ...session,
+            messages: [...session.messages, assistantMsg],
+            updatedAt: Date.now()
+          }));
+          updateLastAssistantMessage(assistantContent, thinkContent || null, loopStats || null);
+        }
         renderMessages();
         await saveCurrentSession();
         updateTotalTokens();
