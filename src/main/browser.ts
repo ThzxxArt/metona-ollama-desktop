@@ -37,23 +37,6 @@ function getAgentBrowser(): BrowserWindow {
   return agentBrowser;
 }
 
-/**
- * 在 webContents 上执行 JS，带超时保护。
- * renderer 冻结时 executeJavaScript 会无限挂起，必须加超时。
- */
-function executeJsWithTimeout(webContents: Electron.WebContents, js: string, timeoutMs = 15000): Promise<unknown> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      reject(new Error('浏览器 JS 执行超时（renderer 无响应）'));
-    }, timeoutMs);
-
-    webContents.executeJavaScript(js, true).then(
-      result => { clearTimeout(timer); resolve(result); },
-      err => { clearTimeout(timer); reject(err); }
-    );
-  });
-}
-
 /** 打开 URL */
 export async function browserOpen(url: string): Promise<{ success: boolean; title?: string; url?: string; error?: string }> {
   try {
@@ -101,7 +84,7 @@ export async function browserEvaluate(js: string): Promise<{ success: boolean; r
       return { success: false, error: '浏览器未加载任何页面，请先使用 browser_open 加载页面' };
     }
     sendLog('info', `🌐 browser 执行 JS`, js.slice(0, 100));
-    const result = await executeJsWithTimeout(win.webContents, js, 15000);
+    const result = await win.webContents.executeJavaScript(js, true);
     const resultStr = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
     sendLog('success', `🌐 browser JS 完成`, resultStr?.slice(0, 100));
     return { success: true, result: resultStr };
@@ -122,7 +105,7 @@ export async function browserExtract(): Promise<{ success: boolean; title?: stri
       return { success: false, error: '浏览器未加载任何页面' };
     }
 
-    const result = await executeJsWithTimeout(win.webContents, `
+    const result = await win.webContents.executeJavaScript(`
       (() => {
         const title = document.title;
         const getText = (el) => {
@@ -143,7 +126,7 @@ export async function browserExtract(): Promise<{ success: boolean; title?: stri
         });
         return { title, text, links: links.slice(0, 50) };
       })()
-    `, 15000);
+    `, true);
 
     sendLog('success', `🌐 browser 提取完成`, `标题: ${result.title}, 文本: ${result.text?.length || 0}字, 链接: ${result.links?.length || 0}个`);
     return { success: true, ...result };
@@ -161,7 +144,7 @@ export async function browserClick(selector: string): Promise<{ success: boolean
     }
     const win = agentBrowser!;
     sendLog('info', `🌐 browser 点击`, selector);
-    await executeJsWithTimeout(win.webContents, `document.querySelector('${selector.replace(/'/g, "\\'")}').click()`, 10000);
+    await win.webContents.executeJavaScript(`document.querySelector('${selector.replace(/'/g, "\\'")}').click()`, true);
     await new Promise(r => setTimeout(r, 500));
     sendLog('success', `🌐 browser 点击完成`, selector);
     return { success: true };
@@ -181,7 +164,7 @@ export async function browserType(selector: string, text: string): Promise<{ suc
     const escapedSelector = selector.replace(/'/g, "\\'");
     const escapedText = text.replace(/'/g, "\\'").replace(/\n/g, "\\n");
     sendLog('info', `🌐 browser 输入`, `${selector}: ${text.slice(0, 50)}`);
-    await executeJsWithTimeout(win.webContents, `
+    await win.webContents.executeJavaScript(`
       (() => {
         const el = document.querySelector('${escapedSelector}');
         if (!el) throw new Error('元素未找到: ${escapedSelector}');
@@ -190,7 +173,7 @@ export async function browserType(selector: string, text: string): Promise<{ suc
         el.dispatchEvent(new Event('input', { bubbles: true }));
         el.dispatchEvent(new Event('change', { bubbles: true }));
       })()
-    `, 10000);
+    `, true);
     sendLog('success', `🌐 browser 输入完成`, selector);
     return { success: true };
   } catch (err) {
@@ -210,7 +193,7 @@ export async function browserScroll(direction: 'down' | 'up' | 'top' | 'bottom')
       : direction === 'up' ? 'window.scrollBy(0, -500)'
       : direction === 'top' ? 'window.scrollTo(0, 0)'
       : 'window.scrollTo(0, document.body.scrollHeight)';
-    await executeJsWithTimeout(win.webContents, js, 10000);
+    await win.webContents.executeJavaScript(js, true);
     await new Promise(r => setTimeout(r, 300));
     sendLog('info', `🌐 browser 滚动`, direction);
     return { success: true };

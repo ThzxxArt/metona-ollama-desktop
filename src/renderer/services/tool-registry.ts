@@ -806,14 +806,8 @@ export async function executeTool(toolName: string, args: Record<string, unknown
       };
     }
 
-    // 其他工具：IPC 调用 + 硬超时（browser 工具 60 秒，其余 25 秒）
-    const timeoutMs = toolName.startsWith('browser_') ? 60000 : 25000;
-    const result = await Promise.race([
-      bridge.tool.execute(toolName, args),
-      new Promise<ToolResult>((_, reject) =>
-        setTimeout(() => reject(new Error(`工具 ${toolName} IPC 超时（${Math.round(timeoutMs / 1000)}秒）`)), timeoutMs)
-      )
-    ]);
+    // 其他工具：IPC 调用（无超时，由 renderer 内部处理）
+    const result = await bridge.tool.execute(toolName, args);
     logToolResult(toolName, result.success, result.success ? undefined : result.error);
     return result;
   } catch (err) {
