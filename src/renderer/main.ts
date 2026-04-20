@@ -27,7 +27,7 @@ import { restoreCronTasks } from './services/cron-manager.js';
 import { setToolEnabled, setRunCommandMode, refreshMCPTools } from './services/tool-registry.js';
 import { startAllMCPServers } from './services/mcp-client.js';
 import { initToolConfirmModal } from './components/tool-confirm-modal.js';
-import { initWorkspacePanel } from './components/workspace-panel.js';
+import { initWorkspacePanel, clearToolCardsExternal, clearTerminalExternal, switchToTab } from './components/workspace-panel.js';
 import { initLogPanel, addLog } from './services/log-service.js';
 import { logInfo, logSuccess, logError, logDebug, logInit, logWarn } from './services/log-service.js';
 import type { ChatSession } from './types.js';
@@ -280,6 +280,12 @@ async function startNewSession(): Promise<void> {
   enableAutoScroll();
   renderMessages();
   updateTotalTokens();
+
+  // ── 重置工作空间到空闲状态 ──
+  clearToolCardsExternal();
+  clearTerminalExternal();
+  switchToTab('terminal');
+
   (document.querySelector('#chatInput') as HTMLElement)?.focus();
 }
 
