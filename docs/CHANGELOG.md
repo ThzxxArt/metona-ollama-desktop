@@ -10,7 +10,7 @@
 ---
 
 ## 桌面版（Desktop）
-### Desktop v5.1.5 — 第三方库替换 & 代码精简
+### Desktop v5.1.5 — 第三方库替换 & 代码精简 & 联网日期修复
 
 - ♻️ **Markdown 解析器替换：内联实现 → `marked` 库**
   - 移除 `marked-config.ts` 中约 80 行正则解析器（仅支持基本 GFM）
@@ -33,6 +33,16 @@
   - `formatSize()` 在 `workspace-panel.ts` 中重复定义 → 统一从 `utils.ts` 导入
   - 消除文件：`log-service.ts`、`prompt-modal.ts`、`tool-confirm-modal.ts`、`workspace-panel.ts`
 - 📝 **版本号更新至 5.1.5**（7 个文件同步更新）
+- ✨ **联网搜索强制注入真实系统日期**
+  - system prompt 开头动态注入 `new Date()` 获取的真实日期，AI 构造搜索查询前即可知晓当前时间
+  - web_search 返回结果头部强制附带 `[当前日期: ...]`，每次搜索都有日期锚点
+  - AGENT_SYSTEM_PROMPT + TOOL_USAGE_GUIDE 双重禁止 AI 使用知识库推断的日期
+  - 解决模型训练数据截止导致搜索查询使用旧年份（如"2025"）的问题
+- ✨ **推荐规则记忆新增规则 #13**
+  - 联网前确认当前日期，确保引用信息时效性准确
+- ✨ **新建会话重置工作空间**
+  - 点击新建会话后自动清空工具卡片和终端输出，回到空闲状态
+  - 自动切回终端页签
 
 ### Desktop v5.1.4 — 工具卡片迁移 & 空闲状态优化 & 工作流修复
 
