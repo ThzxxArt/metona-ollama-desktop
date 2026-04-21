@@ -89,8 +89,8 @@ export function renderMessages(): void {
   emptyStateEl.style.display = 'none';
   messagesContainerEl.style.display = '';
 
-  // 只计算已渲染的 .message 元素（排除 placeholder 和其他非消息元素）
-  const existingCount = messagesContainerEl.querySelectorAll('.message').length;
+  // 只计算已渲染的 .message 元素（排除 loading placeholder 和其他非消息元素）
+  const existingCount = messagesContainerEl.querySelectorAll('.message:not(.loading)').length;
   const isNewMessage = existingCount > 0 && existingCount < msgs.length;
   for (let i = existingCount; i < msgs.length; i++) {
     appendMessageDOM(msgs[i], i);
