@@ -581,7 +581,7 @@ export async function runAgentLoop(
               content += chunk.message.content;
               callbacks.onContent(content);
             }
-            if (chunk.eval_count) totalEvalCount = chunk.eval_count;
+            if (chunk.eval_count) { totalEvalCount = chunk.eval_count; state.set('_currentEvalCount', totalEvalCount); }
             if (chunk.message?.tool_calls?.length) {
               for (const tc of chunk.message.tool_calls) {
                 if (tc.function?.name) {

@@ -927,17 +927,32 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
   let assistantContent = '';
   let thinkContent = '';
   let agentModeIterations = 0; // 跟踪 onNewIteration 调用次数
+  state.set('_currentEvalCount', 0); // 重置累计 token 计数，防止跨会话残留
+  let lastIterationEvalCount = 0; // 上一轮迭代结束时的累计 token 数
+  let lastIterationStartTime = Date.now(); // 当前迭代开始时间
 
   try {
     await runAgentLoop(text || (pendingFiles.length > 0 ? `请分析 ${pendingFiles.map(f => f.name).join(', ')}` : ''), images, historyMessages, {
       onNewIteration: () => {
         // Agent Loop 新迭代开始：保存上一轮内容为独立消息，创建新 placeholder
+        // 先移除旧 placeholder（防止被 renderMessages 当作已渲染消息计数）
+        const oldPlaceholder = document.querySelector('#messagesContainer .message.assistant.loading') as HTMLElement;
+        if (oldPlaceholder) oldPlaceholder.remove();
+
         if (assistantContent) {
+          const now = Date.now();
+          // 计算本轮迭代的 token 和时长
+          const currentEvalCount = state.get<number>('_currentEvalCount', 0);
+          const iterationEvalCount = Math.max(0, currentEvalCount - lastIterationEvalCount);
+          const iterationDuration = (now - lastIterationStartTime) * 1e6;
+
           const prevMsg: ChatMessage = {
             role: 'assistant',
             content: assistantContent,
-            timestamp: Date.now(),
+            timestamp: now,
             ...(thinkContent && { think: thinkContent }),
+            ...(iterationEvalCount > 0 && { eval_count: iterationEvalCount }),
+            ...(iterationDuration > 0 && { total_duration: iterationDuration }),
           };
           state.update(KEYS.CURRENT_SESSION, (session: ChatSession | null) => ({
             ...session,
@@ -945,6 +960,9 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
             updatedAt: Date.now()
           }));
           renderMessages();
+
+          lastIterationEvalCount = currentEvalCount;
+          lastIterationStartTime = Date.now();
         }
         // 创建新 placeholder，重置内容
         appendAssistantPlaceholder();
@@ -986,15 +1004,24 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
 
         // 如果有多个迭代，最后一条消息已由 onNewIteration 保存，这里只更新 placeholder
         if (agentModeIterations > 0) {
-          updateLastAssistantMessage(assistantContent, thinkContent || null, loopStats || null);
-          // 更新最后一条消息的工具记录（onNewIteration 保存时没有 toolCalls）
+          // 最后一轮迭代的 per-iteration stats（保证每条消息统计一致，不重复计数）
+          const finalEvalCount = loopStats?.eval_count || 0;
+          const lastIterTokens = Math.max(0, finalEvalCount - lastIterationEvalCount);
+          const lastIterDuration = (Date.now() - lastIterationStartTime) * 1e6;
+          const perIterStats = {
+            eval_count: lastIterTokens > 0 ? lastIterTokens : undefined,
+            total_duration: lastIterDuration > 0 ? lastIterDuration : undefined,
+          };
+
+          updateLastAssistantMessage(assistantContent, thinkContent || null, perIterStats);
+          // 更新最后一条消息的工具记录和 per-iteration stats（onNewIteration 保存时没有 toolCalls）
           state.update(KEYS.CURRENT_SESSION, (session: ChatSession | null) => {
             const msgs = [...session.messages];
             for (let i = msgs.length - 1; i >= 0; i--) {
               if (msgs[i].role === 'assistant') {
                 if (toolRecords?.length) msgs[i] = { ...msgs[i], toolCalls: toolRecords };
-                if (loopStats?.eval_count) msgs[i] = { ...msgs[i], eval_count: loopStats.eval_count };
-                if (loopStats?.total_duration) msgs[i] = { ...msgs[i], total_duration: loopStats.total_duration };
+                if (lastIterTokens > 0) msgs[i] = { ...msgs[i], eval_count: lastIterTokens };
+                if (lastIterDuration > 0) msgs[i] = { ...msgs[i], total_duration: lastIterDuration };
                 break;
               }
             }
