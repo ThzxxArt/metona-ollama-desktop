@@ -359,7 +359,7 @@ export interface AgentCallbacks {
   onDone: (finalContent: string, toolRecords?: ToolCallRecord[], stats?: { eval_count?: number; total_duration?: number }) => void;
   onConfirmTool: (call: ToolCall) => Promise<boolean>;
   /** Agent Loop 新迭代开始（前一轮工具执行完毕，下一轮流式输出即将开始） */
-  onNewIteration?: () => void;
+  onNewIteration?: (toolCalls?: ToolCall[]) => void;
 }
 
 /** 保存执行轨迹到 SQLite */
@@ -535,7 +535,7 @@ export async function runAgentLoop(
 
     // 非首轮迭代：通知 UI 创建新的消息气泡（防止每轮内容互相覆盖）
     if (loopCount > 1 && callbacks.onNewIteration) {
-      callbacks.onNewIteration();
+      callbacks.onNewIteration(toolCalls.length > 0 ? toolCalls : undefined);
     }
 
     logAgentLoop(loopCount, maxLoops);
