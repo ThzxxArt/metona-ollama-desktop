@@ -513,8 +513,8 @@ export async function runAgentLoop(
   let totalEvalCount = 0;
   /** 跨轮去重：仅跟踪成功的工具调用（失败的允许重试） */
   let prevLoopSuccessKeys: string[] = [];
-  /** 每轮工具调用计数（用于去重） */
-  let allCallsThisLoop: ToolCall[] = [];
+  /** 保存上一轮的工具调用，供 onNewIteration 使用 */
+  let prevToolCalls: ToolCall[] = [];
 
   const makeStats = () => {
     const totalDuration = (Date.now() - loopStartTime) * 1e6;
@@ -535,7 +535,7 @@ export async function runAgentLoop(
 
     // 非首轮迭代：通知 UI 创建新的消息气泡（防止每轮内容互相覆盖）
     if (loopCount > 1 && callbacks.onNewIteration) {
-      callbacks.onNewIteration(toolCalls.length > 0 ? toolCalls : undefined);
+      callbacks.onNewIteration(prevToolCalls.length > 0 ? prevToolCalls : undefined);
     }
 
     logAgentLoop(loopCount, maxLoops);
@@ -543,7 +543,6 @@ export async function runAgentLoop(
     let thinking = '';
     content = '';
     const toolCalls: ToolCall[] = [];
-    allCallsThisLoop = [];
 
     // v5.1.2 预算警告：接近迭代上限时注入临时提示
     let budgetWarningIdx = -1;
@@ -873,6 +872,9 @@ export async function runAgentLoop(
       `${r.name}: ${r.result?.success ? 'success' : 'error'}`
     ).join('; ');
     saveTrace(traceStep);
+
+    // 保存本轮工具调用，供下一轮 onNewIteration 使用
+    prevToolCalls = toolCalls;
   }
 
   logWarn('ReAct Agent Loop 达到最大工具调用次数限制');

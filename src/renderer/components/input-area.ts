@@ -9,7 +9,7 @@ import { getSelectedModel, isThinkEnabled, isVisionAvailable, isToolCallingSuppo
 import {
   renderMessages, clearMessagesDOM, appendAssistantPlaceholder, appendSystemMessage,
   updateLastAssistantMessage, clearMessages, safeMarkdown, enableAutoScroll, updateTotalTokens,
-  appendToolCallCardToPlaceholder, updateToolCallCardInPlaceholder
+  appendToolCallCardToPlaceholder, updateToolCallCardInPlaceholder, resetCurrentPlaceholder
 } from './chat-area.js';
 import { showToast } from './toast.js';
 import { addToolCard, updateToolCard, clearToolCardsExternal, clearTerminalExternal } from './workspace-panel.js';
@@ -1109,8 +1109,10 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
         placeholder.classList.remove('loading');
         placeholder.querySelector('.loading-dots')?.remove();
         placeholder.querySelector('.loading-text')?.remove();
-        if (!assistantContent) placeholder.remove();
-        else {
+        if (!assistantContent) {
+          placeholder.remove();
+          resetCurrentPlaceholder();
+        } else {
           const contentDiv = placeholder.querySelector('.msg-content');
           if (contentDiv) contentDiv.innerHTML = safeMarkdown(assistantContent) + '<p><code>[已中断]</code></p>';
         }

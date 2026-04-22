@@ -495,6 +495,13 @@ export function clearMessages(): void {
   currentPlaceholder = null;
 }
 
+/** 清理 currentPlaceholder 引用（当 placeholder 从外部被移除时调用） */
+export function resetCurrentPlaceholder(): void {
+  if (currentPlaceholder && !currentPlaceholder.isConnected) {
+    currentPlaceholder = null;
+  }
+}
+
 export function enableAutoScroll(): void {
   autoScroll = true;
   if (scrollBtnEl) scrollBtnEl.style.display = 'none';
