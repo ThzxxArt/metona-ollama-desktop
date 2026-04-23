@@ -148,7 +148,10 @@ function renderDashboard(): void {
       const tooltip = `第${r.round}轮 · 输入 ${formatTokenCount(r.prompt_eval_count)} + 输出 ${formatTokenCount(r.eval_count)} = ${formatTokenCount(total)} tokens · ${formatDuration(r.total_duration)}`;
       return `
         <div class="td-bar-col" title="${tooltip}">
-          <div class="td-bar-value">${formatTokenCount(total)}</div>
+          <div class="td-bar-values">
+            <span class="td-val-output">${formatTokenCount(r.eval_count)}</span>
+            <span class="td-val-input">${formatTokenCount(r.prompt_eval_count)}</span>
+          </div>
           <div class="td-bar" style="height:${heightPct}%;">
             <div class="td-bar-fill">
               <div class="td-bar-input" style="height:${inputPct}%;"></div>

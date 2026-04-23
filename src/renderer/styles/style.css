@@ -3595,12 +3595,23 @@ html, body {
     cursor: default;
 }
 
-.td-bar-value {
+.td-bar-values {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+    margin-bottom: 2px;
     font-size: 9px;
     font-family: var(--font-mono);
-    color: var(--text-secondary);
-    margin-bottom: 2px;
     white-space: nowrap;
+}
+
+.td-val-output {
+    color: #E8734A;
+}
+
+.td-val-input {
+    color: #9B7ED8;
 }
 
 .td-bar {
