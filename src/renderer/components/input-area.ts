@@ -349,6 +349,7 @@ async function handleRetry(): Promise<void> {
                 ...(retryThinkContent && { think: retryThinkContent }),
                 ...(toolRecords?.length && { toolCalls: toolRecords }),
                 ...(loopStats?.eval_count && { eval_count: loopStats.eval_count }),
+                ...(loopStats?.prompt_eval_count && { prompt_eval_count: loopStats.prompt_eval_count }),
                 ...(loopStats?.total_duration && { total_duration: loopStats.total_duration }),
               };
               state.update(KEYS.CURRENT_SESSION, (s: ChatSession | null) => ({
@@ -362,6 +363,7 @@ async function handleRetry(): Promise<void> {
               ...(retryThinkContent && { think: retryThinkContent }),
               ...(toolRecords?.length && { toolCalls: toolRecords }),
               ...(loopStats?.eval_count && { eval_count: loopStats.eval_count }),
+              ...(loopStats?.prompt_eval_count && { prompt_eval_count: loopStats.prompt_eval_count }),
               ...(loopStats?.total_duration && { total_duration: loopStats.total_duration }),
             };
             state.update(KEYS.CURRENT_SESSION, (s: ChatSession | null) => ({
@@ -1056,7 +1058,8 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
               ...(thinkContent && { think: thinkContent }),
               ...(toolRecords?.length && { toolCalls: toolRecords }),
               ...(loopStats?.eval_count && { eval_count: loopStats.eval_count }),
-              ...(lastIterDuration > 0 && { total_duration: lastIterDuration }),
+              ...(loopStats?.prompt_eval_count && { prompt_eval_count: loopStats.prompt_eval_count }),
+              ...(loopStats?.total_duration && { total_duration: loopStats.total_duration }),
             };
             state.update(KEYS.CURRENT_SESSION, (session: ChatSession | null) => ({
               ...session,
@@ -1064,14 +1067,7 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
               updatedAt: Date.now()
             }));
           }
-          const perIterStats = {
-            eval_count: loopStats?.eval_count,
-            total_duration: (() => {
-              const dur = (Date.now() - lastIterationStartTime) * 1e6;
-              return dur > 0 ? dur : undefined;
-            })(),
-          };
-          updateLastAssistantMessage(assistantContent, thinkContent || null, perIterStats);
+          updateLastAssistantMessage(assistantContent, thinkContent || null, loopStats || null);
         } else {
           // 单迭代模式：正常保存
           const assistantMsg: ChatMessage = {
@@ -1081,6 +1077,7 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
             ...(thinkContent && { think: thinkContent }),
             ...(toolRecords?.length && { toolCalls: toolRecords }),
             ...(loopStats?.eval_count && { eval_count: loopStats.eval_count }),
+            ...(loopStats?.prompt_eval_count && { prompt_eval_count: loopStats.prompt_eval_count }),
             ...(loopStats?.total_duration && { total_duration: loopStats.total_duration }),
           };
           state.update(KEYS.CURRENT_SESSION, (session: ChatSession | null) => ({

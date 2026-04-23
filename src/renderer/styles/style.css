@@ -3516,6 +3516,13 @@ html, body {
     font-weight: 500;
 }
 
+.td-stat-detail {
+    font-size: 10px;
+    color: var(--text-tertiary);
+    margin-top: 2px;
+    font-family: var(--font-mono);
+}
+
 /* 区块标题 */
 .td-section {
     margin-bottom: 20px;
@@ -3601,6 +3608,43 @@ html, body {
     background: linear-gradient(180deg, #E8734A 0%, #F0976E 100%);
     border-radius: 4px 4px 0 0;
     transition: height 0.3s ease;
+    display: flex;
+    flex-direction: column-reverse;
+}
+
+.td-bar-input {
+    width: 100%;
+    background: linear-gradient(180deg, #9B7ED8 0%, #B99BE5 100%);
+    border-radius: 4px 4px 0 0;
+    min-height: 0;
+}
+
+.td-chart-legend {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 10px;
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+
+.td-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.td-legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+}
+
+.td-legend-output {
+    background: #E8734A;
+}
+
+.td-legend-input {
+    background: #9B7ED8;
 }
 
 .td-bar-label {
@@ -3674,6 +3718,11 @@ html, body {
     font-family: var(--font-mono);
     font-weight: 500;
     text-align: right;
+}
+
+.td-num-total {
+    font-weight: 700;
+    color: var(--accent);
 }
 
 .td-time {

@@ -52,6 +52,7 @@ interface RoundData {
   round: number;
   role: string;
   eval_count: number;
+  prompt_eval_count: number;
   total_duration: number;
   timestamp: number;
   model?: string;
@@ -61,12 +62,13 @@ function collectRoundData(messages: ChatMessage[]): RoundData[] {
   const rounds: RoundData[] = [];
   let roundNum = 0;
   for (const msg of messages) {
-    if (msg.role === 'assistant' && (msg.eval_count || msg.total_duration)) {
+    if (msg.role === 'assistant' && (msg.eval_count || msg.prompt_eval_count || msg.total_duration)) {
       roundNum++;
       rounds.push({
         round: roundNum,
         role: msg.role,
         eval_count: msg.eval_count || 0,
+        prompt_eval_count: msg.prompt_eval_count || 0,
         total_duration: msg.total_duration || 0,
         timestamp: msg.timestamp,
         model: msg.model,
@@ -101,7 +103,9 @@ function renderDashboard(): void {
   const aiMsgs = messages.filter(m => m.role === 'assistant');
   const rounds = collectRoundData(messages);
 
-  const totalTokens = rounds.reduce((sum, r) => sum + r.eval_count, 0);
+  const totalOutputTokens = rounds.reduce((sum, r) => sum + r.eval_count, 0);
+  const totalInputTokens = rounds.reduce((sum, r) => sum + r.prompt_eval_count, 0);
+  const totalTokens = totalInputTokens + totalOutputTokens;
   const totalDurationNs = rounds.reduce((sum, r) => sum + r.total_duration, 0);
   const avgTokens = rounds.length > 0 ? Math.round(totalTokens / rounds.length) : 0;
 
@@ -112,6 +116,7 @@ function renderDashboard(): void {
       <div class="td-stat-icon">🔥</div>
       <div class="td-stat-value">${formatTokenCount(totalTokens)}</div>
       <div class="td-stat-label">总 Token 消耗</div>
+      <div class="td-stat-detail">输入 ${formatTokenCount(totalInputTokens)} / 输出 ${formatTokenCount(totalOutputTokens)}</div>
     </div>
     <div class="td-stat-card">
       <div class="td-stat-icon">💬</div>
@@ -135,15 +140,19 @@ function renderDashboard(): void {
   if (rounds.length === 0) {
     chartEl.innerHTML = '<div class="td-empty">暂无数据，发送消息后开始统计</div>';
   } else {
-    const maxTokens = Math.max(...rounds.map(r => r.eval_count), 1);
+    const maxTokens = Math.max(...rounds.map(r => r.eval_count + r.prompt_eval_count), 1);
     const barsHtml = rounds.map(r => {
-      const heightPct = Math.max((r.eval_count / maxTokens) * 100, 2);
-      const tooltip = `第${r.round}轮 · ${formatTokenCount(r.eval_count)} tokens · ${formatDuration(r.total_duration)}`;
+      const total = r.eval_count + r.prompt_eval_count;
+      const heightPct = Math.max((total / maxTokens) * 100, 2);
+      const inputPct = total > 0 ? (r.prompt_eval_count / total) * 100 : 0;
+      const tooltip = `第${r.round}轮 · 输入 ${formatTokenCount(r.prompt_eval_count)} + 输出 ${formatTokenCount(r.eval_count)} = ${formatTokenCount(total)} tokens · ${formatDuration(r.total_duration)}`;
       return `
         <div class="td-bar-col" title="${tooltip}">
-          <div class="td-bar-value">${formatTokenCount(r.eval_count)}</div>
+          <div class="td-bar-value">${formatTokenCount(total)}</div>
           <div class="td-bar" style="height:${heightPct}%;">
-            <div class="td-bar-fill"></div>
+            <div class="td-bar-fill">
+              <div class="td-bar-input" style="height:${inputPct}%;"></div>
+            </div>
           </div>
           <div class="td-bar-label">R${r.round}</div>
         </div>
@@ -151,6 +160,10 @@ function renderDashboard(): void {
     }).join('');
 
     chartEl.innerHTML = `
+      <div class="td-chart-legend">
+        <span class="td-legend-item"><span class="td-legend-dot td-legend-output"></span>输出 Token</span>
+        <span class="td-legend-item"><span class="td-legend-dot td-legend-input"></span>输入 Token</span>
+      </div>
       <div class="td-chart-container">
         <div class="td-chart-y-axis">
           <span>${formatTokenCount(maxTokens)}</span>
@@ -165,18 +178,23 @@ function renderDashboard(): void {
   // C. 明细表格
   const tableEl = dashboardModalEl.querySelector('#tdTableBody')!;
   if (rounds.length === 0) {
-    tableEl.innerHTML = '<tr><td colspan="5" class="td-empty-row">暂无数据</td></tr>';
+    tableEl.innerHTML = '<tr><td colspan="6" class="td-empty-row">暂无数据</td></tr>';
   } else {
     // 按时间倒序
     const sorted = [...rounds].reverse();
-    tableEl.innerHTML = sorted.map(r => `
+    tableEl.innerHTML = sorted.map(r => {
+      const total = r.eval_count + r.prompt_eval_count;
+      return `
       <tr>
         <td>R${r.round}</td>
         <td><span class="td-role-badge">🤖 AI</span>${r.model ? ` <span class="td-model-tag">${r.model}</span>` : ''}</td>
+        <td class="td-num">${formatTokenCount(r.prompt_eval_count)}</td>
         <td class="td-num">${formatTokenCount(r.eval_count)}</td>
+        <td class="td-num td-num-total">${formatTokenCount(total)}</td>
         <td class="td-num">${formatDuration(r.total_duration)}</td>
         <td class="td-time">${r.timestamp ? formatTime(r.timestamp) : '-'}</td>
       </tr>
-    `).join('');
+    `;
+    }).join('');
   }
 }

@@ -36,6 +36,7 @@ export interface OllamaStreamChunk {
   };
   done?: boolean;
   eval_count?: number;
+  prompt_eval_count?: number;
   total_duration?: number;
 }
 
@@ -99,6 +100,7 @@ export interface ChatMessage {
   model?: string;
   think?: string;
   eval_count?: number;
+  prompt_eval_count?: number;
   total_duration?: number;
   images?: string[];
   files?: ChatFile[];

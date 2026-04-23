@@ -356,7 +356,7 @@ export interface AgentCallbacks {
   onToolCallStart: (call: ToolCall) => void;
   onToolCallResult: (name: string, result: ToolResult, call: ToolCall) => void;
   onToolCallError: (name: string, error: string, call: ToolCall) => void;
-  onDone: (finalContent: string, toolRecords?: ToolCallRecord[], stats?: { eval_count?: number; total_duration?: number }) => void;
+  onDone: (finalContent: string, toolRecords?: ToolCallRecord[], stats?: { eval_count?: number; prompt_eval_count?: number; total_duration?: number }) => void;
   onConfirmTool: (call: ToolCall) => Promise<boolean>;
   /** Agent Loop 新迭代开始（前一轮工具执行完毕，下一轮流式输出即将开始） */
   onNewIteration?: (toolCalls?: ToolCall[]) => void;
@@ -510,16 +510,24 @@ export async function runAgentLoop(
   const allToolRecords: ToolCallRecord[] = [];
   const loopStartTime = Date.now();
   let content = '';
+  /** 每轮累计 token 统计 */
   let totalEvalCount = 0;
+  let totalPromptEvalCount = 0;
+  let totalInferenceNs = 0;
+  /** 当前轮的 Ollama 统计（流式最后一个 chunk 赋值） */
+  let loopEvalCount = 0;
+  let loopPromptEvalCount = 0;
+  let loopInferenceNs = 0;
   /** 跨轮去重：仅跟踪成功的工具调用（失败的允许重试） */
   let prevLoopSuccessKeys: string[] = [];
   /** 保存上一轮的工具调用，供 onNewIteration 使用 */
   let prevToolCalls: ToolCall[] = [];
 
-  const makeStats = () => {
-    const totalDuration = (Date.now() - loopStartTime) * 1e6;
-    return { eval_count: totalEvalCount || undefined, total_duration: totalDuration };
-  };
+  const makeStats = () => ({
+    eval_count: totalEvalCount || undefined,
+    prompt_eval_count: totalPromptEvalCount || undefined,
+    total_duration: totalInferenceNs || undefined,
+  });
 
   while (loopCount < maxLoops) {
     loopCount++;
@@ -581,7 +589,9 @@ export async function runAgentLoop(
               content += chunk.message.content;
               callbacks.onContent(content);
             }
-            if (chunk.eval_count) { totalEvalCount = chunk.eval_count; state.set('_currentEvalCount', totalEvalCount); }
+            if (chunk.eval_count) { loopEvalCount = chunk.eval_count; }
+            if (chunk.prompt_eval_count) { loopPromptEvalCount = chunk.prompt_eval_count; }
+            if (chunk.total_duration) { loopInferenceNs = chunk.total_duration; }
             if (chunk.message?.tool_calls?.length) {
               for (const tc of chunk.message.tool_calls) {
                 if (tc.function?.name) {
@@ -603,6 +613,16 @@ export async function runAgentLoop(
           },
           abortController
         );
+
+    // 本轮流式结束，累加 token 统计
+    totalEvalCount += loopEvalCount;
+    totalPromptEvalCount += loopPromptEvalCount;
+    totalInferenceNs += loopInferenceNs;
+    state.set('_currentEvalCount', totalEvalCount);
+    // 重置本轮计数器（下一轮重新从 chunk 收集）
+    loopEvalCount = 0;
+    loopPromptEvalCount = 0;
+    loopInferenceNs = 0;
     } catch (err) {
       if (abortController.signal.aborted) {
         logInfo('流式调用已中止');

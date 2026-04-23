@@ -143,6 +143,7 @@ export async function initDatabase(): Promise<SQL.Database> {
       tool_calls TEXT,
       tool_name TEXT,
       eval_count INTEGER,
+      prompt_eval_count INTEGER,
       total_duration INTEGER,
       created_at INTEGER NOT NULL,
       FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
@@ -221,6 +222,9 @@ export async function initDatabase(): Promise<SQL.Database> {
     CREATE INDEX IF NOT EXISTS idx_skills_updated ON skills(updated_at DESC);
   `);
 
+  // 兼容迁移：为已有 messages 表补充 prompt_eval_count 列（新库已有，旧库需要 ALTER）
+  try { db.run('ALTER TABLE messages ADD COLUMN prompt_eval_count INTEGER'); } catch { /* 列已存在，忽略 */ }
+
   // 尝试创建 FTS5 全文搜索（可选，sql.js 默认 WASM 可能不包含 FTS5）
   try {
     db.run(`
@@ -265,6 +269,7 @@ export interface MessageRow {
   tool_calls: string | null;
   tool_name: string | null;
   eval_count: number | null;
+  prompt_eval_count: number | null;
   total_duration: number | null;
   created_at: number;
 }
@@ -364,10 +369,10 @@ export function clearAllSessions(): void {
 
 export function saveMessage(msg: MessageRow): string {
   const d = getDb();
-  runExec(d, `INSERT OR REPLACE INTO messages (id, session_id, role, content, thinking, images, tool_calls, tool_name, eval_count, total_duration, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  runExec(d, `INSERT OR REPLACE INTO messages (id, session_id, role, content, thinking, images, tool_calls, tool_name, eval_count, prompt_eval_count, total_duration, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [msg.id, msg.session_id, msg.role, msg.content, msg.thinking, msg.images,
-     msg.tool_calls, msg.tool_name, msg.eval_count, msg.total_duration, msg.created_at]
+     msg.tool_calls, msg.tool_name, msg.eval_count, msg.prompt_eval_count, msg.total_duration, msg.created_at]
   );
   persist();
   return msg.id;

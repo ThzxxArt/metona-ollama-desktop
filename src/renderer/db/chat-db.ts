@@ -90,6 +90,7 @@ export class ChatDB {
           tool_calls: msg.toolCalls?.length ? JSON.stringify(msg.toolCalls) : null,
           tool_name: null,
           eval_count: msg.eval_count || null,
+          prompt_eval_count: msg.prompt_eval_count || null,
           total_duration: msg.total_duration || null,
           created_at: msg.timestamp
         };
@@ -112,6 +113,7 @@ export class ChatDB {
         think: r.thinking || undefined,
         images: r.images ? JSON.parse(r.images) : undefined,
         eval_count: r.eval_count || undefined,
+        prompt_eval_count: r.prompt_eval_count || undefined,
         total_duration: r.total_duration || undefined,
         toolCalls: r.tool_calls ? JSON.parse(r.tool_calls) : undefined
       }));
@@ -170,6 +172,7 @@ export class ChatDB {
           images: m.images?.length ? JSON.stringify(m.images) : null,
           tool_calls: m.toolCalls?.length ? JSON.stringify(m.toolCalls) : null,
           tool_name: null, eval_count: m.eval_count || null,
+          prompt_eval_count: m.prompt_eval_count || null,
           total_duration: m.total_duration || null, created_at: m.timestamp
         }))),
         memories: [],
