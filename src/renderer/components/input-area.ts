@@ -330,12 +330,14 @@ async function handleRetry(): Promise<void> {
             name, arguments: call.function.arguments,
             result, status: result.success ? 'success' : 'error', timestamp: Date.now()
           });
+          updateMessageToolRecord(name, result.success ? 'success' : 'error', result);
         },
         onToolCallError: (name, error, call) => {
           updateToolCard({
             name, arguments: call.function.arguments,
             result: { success: false, error }, status: 'error', timestamp: Date.now()
           });
+          updateMessageToolRecord(name, 'error', { success: false, error });
         },
         onConfirmTool: async (call) => showToolConfirm(call),
         onDone: async (finalContent, toolRecords, loopStats) => {
@@ -345,6 +347,7 @@ async function handleRetry(): Promise<void> {
               const lastMsg: ChatMessage = {
                 role: 'assistant', content: finalContent, timestamp: Date.now(),
                 ...(retryThinkContent && { think: retryThinkContent }),
+                ...(toolRecords?.length && { toolCalls: toolRecords }),
                 ...(loopStats?.eval_count && { eval_count: loopStats.eval_count }),
                 ...(loopStats?.total_duration && { total_duration: loopStats.total_duration }),
               };
@@ -846,6 +849,27 @@ export async function sendMessage(): Promise<void> {
   }
 }
 
+/** 更新当前会话消息中最近一个 'running' 状态的同名工具记录 */
+function updateMessageToolRecord(toolName: string, status: 'success' | 'error', result: Record<string, unknown>): void {
+  state.update(KEYS.CURRENT_SESSION, (session: ChatSession | null) => {
+    if (!session) return session;
+    const messages = [...session.messages];
+    // 从后往前找最近一条包含该工具 running 状态记录的消息
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      if (!msg.toolCalls) continue;
+      const idx = msg.toolCalls.findIndex(tc => tc.name === toolName && tc.status === 'running');
+      if (idx !== -1) {
+        const updated = [...msg.toolCalls];
+        updated[idx] = { ...updated[idx], status, result };
+        messages[i] = { ...msg, toolCalls: updated };
+        return { ...session, messages, updatedAt: Date.now() };
+      }
+    }
+    return session;
+  });
+}
+
 async function sendMessageWithAgentLoop(text: string, currentSession: ChatSession, model: string): Promise<void> {
   const now = Date.now();
   const msgsToAdd: ChatMessage[] = [];
@@ -1004,12 +1028,14 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
           name, arguments: call.function.arguments,
           result, status: result.success ? 'success' : 'error', timestamp: Date.now()
         });
+        updateMessageToolRecord(name, result.success ? 'success' : 'error', result);
       },
       onToolCallError: (name, error, call) => {
         updateToolCard({
           name, arguments: call.function.arguments,
           result: { success: false, error }, status: 'error', timestamp: Date.now()
         });
+        updateMessageToolRecord(name, 'error', { success: false, error });
       },
       onConfirmTool: async (call) => {
         return showToolConfirm(call);
@@ -1028,6 +1054,7 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
               content: assistantContent,
               timestamp: Date.now(),
               ...(thinkContent && { think: thinkContent }),
+              ...(toolRecords?.length && { toolCalls: toolRecords }),
               ...(loopStats?.eval_count && { eval_count: loopStats.eval_count }),
               ...(lastIterDuration > 0 && { total_duration: lastIterDuration }),
             };
