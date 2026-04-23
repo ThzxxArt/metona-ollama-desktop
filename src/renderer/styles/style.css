@@ -2691,7 +2691,7 @@ html, body {
 
 .ws-tools-hint {
     font-size: 11px;
-    color: rgba(245, 240, 232, 0.4);
+    color: var(--text-tertiary);
     flex: 1;
     overflow: hidden;
     text-overflow: ellipsis;
