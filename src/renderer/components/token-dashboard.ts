@@ -137,6 +137,9 @@ function renderDashboard(): void {
 
   // B. 柱状图
   const chartEl = dashboardModalEl.querySelector('#tdChart')!;
+  // 保存滚动位置（每 2 秒重建 HTML 会重置滚动）
+  const barsEl = chartEl.querySelector('.td-chart-bars') as HTMLElement | null;
+  const savedScrollLeft = barsEl?.scrollLeft ?? 0;
   if (rounds.length === 0) {
     chartEl.innerHTML = '<div class="td-empty">暂无数据，发送消息后开始统计</div>';
   } else {
@@ -178,6 +181,12 @@ function renderDashboard(): void {
         <div class="td-chart-bars">${barsHtml}</div>
       </div>
     `;
+  }
+
+  // 恢复滚动位置
+  if (savedScrollLeft > 0) {
+    const newBarsEl = chartEl.querySelector('.td-chart-bars') as HTMLElement | null;
+    if (newBarsEl) newBarsEl.scrollLeft = savedScrollLeft;
   }
 
   // C. 明细表格
