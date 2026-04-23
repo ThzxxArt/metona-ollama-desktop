@@ -672,7 +672,7 @@ export async function sendMessage(): Promise<void> {
 
   let assistantContent = '';
   let thinkContent = '';
-  let finalStats: { eval_count?: number; total_duration?: number } | null = null;
+  let finalStats: { eval_count?: number; prompt_eval_count?: number; total_duration?: number } | null = null;
   let modelName = '';
 
   try {
@@ -711,9 +711,10 @@ export async function sendMessage(): Promise<void> {
       }
       if (chunk.model) modelName = chunk.model;
       // 捕获任何包含统计的 chunk（不限于 done）
-      if (chunk.eval_count || chunk.total_duration) {
+      if (chunk.eval_count || chunk.prompt_eval_count || chunk.total_duration) {
         finalStats = {
           eval_count: chunk.eval_count ?? finalStats?.eval_count,
+          prompt_eval_count: chunk.prompt_eval_count ?? finalStats?.prompt_eval_count,
           total_duration: chunk.total_duration ?? finalStats?.total_duration,
         };
       }
@@ -722,6 +723,7 @@ export async function sendMessage(): Promise<void> {
         // done chunk 优先使用其统计，保留之前的兜底
         finalStats = {
           eval_count: chunk.eval_count ?? finalStats?.eval_count,
+          prompt_eval_count: chunk.prompt_eval_count ?? finalStats?.prompt_eval_count,
           total_duration: chunk.total_duration ?? finalStats?.total_duration,
         };
       }
@@ -740,7 +742,7 @@ export async function sendMessage(): Promise<void> {
       timestamp: Date.now(),
       ...(modelName && { model: modelName }),
       ...(thinkContent && { think: thinkContent }),
-      ...(finalStats && { eval_count: finalStats.eval_count, total_duration: finalStats.total_duration })
+      ...(finalStats && { eval_count: finalStats.eval_count, prompt_eval_count: finalStats.prompt_eval_count, total_duration: finalStats.total_duration })
     };
     state.update(KEYS.CURRENT_SESSION, (session: ChatSession | null) => ({
       ...session,
