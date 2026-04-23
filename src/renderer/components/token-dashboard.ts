@@ -152,9 +152,11 @@ function renderDashboard(): void {
             <span class="td-val-output">${formatTokenCount(r.eval_count)}</span>
             <span class="td-val-input">${formatTokenCount(r.prompt_eval_count)}</span>
           </div>
-          <div class="td-bar" style="height:${heightPct}%;">
-            <div class="td-bar-fill">
-              <div class="td-bar-input" style="height:${inputPct}%;"></div>
+          <div class="td-bar-wrapper">
+            <div class="td-bar" style="height:${heightPct}%;">
+              <div class="td-bar-fill">
+                <div class="td-bar-input" style="height:${inputPct}%;"></div>
+              </div>
             </div>
           </div>
           <div class="td-bar-label">R${r.round}</div>
