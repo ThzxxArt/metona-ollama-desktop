@@ -4,7 +4,7 @@
 
 import { state, KEYS } from '../state/state.js';
 import { debounce, escapeHtml, formatTime } from '../utils/utils.js';
-import { exportAsMarkdown, exportAsHtml, exportAsTxt, renderMessages, clearMessages, updateTotalTokens } from './chat-area.js';
+import { exportAsMarkdown, exportAsHtml, exportAsTxt, renderMessages, clearMessages } from './chat-area.js';
 import { clearToolCardsExternal, clearTerminalExternal } from './workspace-panel.js';
 import { showConfirm } from './prompt-modal.js';
 import { ChatDB } from '../db/chat-db.js';
@@ -186,7 +186,6 @@ async function loadHistorySession(sessionId: string): Promise<void> {
 
   clearMessages();
   renderMessages();
-  updateTotalTokens();
   closeHistoryModal();
 }
 

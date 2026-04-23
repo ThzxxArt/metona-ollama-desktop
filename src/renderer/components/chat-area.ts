@@ -184,13 +184,8 @@ export function appendMessageDOM(msg: ChatMessage, index: number): void {
     </div>`;
   }
 
-  const stats: string[] = [];
-  const statClasses: string[] = [];
-  if (msg.timestamp) { stats.push(formatTime(msg.timestamp)); statClasses.push(''); }
-  if (msg.eval_count != null && msg.eval_count > 0) { stats.push(`${msg.eval_count} tokens`); statClasses.push('stat-tokens'); }
-  if (msg.total_duration != null && msg.total_duration > 0) { stats.push(`${(msg.total_duration / 1e9).toFixed(1)}s`); statClasses.push('stat-duration'); }
-  if (stats.length > 0) {
-    contentHtml += `<div class="msg-stats">${stats.map((s, i) => `<span${statClasses[i] ? ` class="${statClasses[i]}"` : ''}>${s}</span>`).join(' · ')}</div>`;
+  if (msg.timestamp) {
+    contentHtml += `<div class="msg-stats"><span>${formatTime(msg.timestamp)}</span></div>`;
   }
 
   div.innerHTML = `
@@ -246,96 +241,6 @@ function renderToolCallCard(tc: ToolCallRecord): string {
   if (args.selector) paramsHtml += `<div class="tool-param">选择器: <code>${escapeHtml(String(args.selector))}</code></div>`;
   if (args.action) paramsHtml += `<div class="tool-param">操作: <code>${escapeHtml(String(args.action))}</code></div>`;
 
-  let resultHtml = '';
-  if (tc.result) {
-    if (tc.result.success) {
-      const r = tc.result as Record<string, unknown>;
-      if (tc.name === 'read_file' && r.content) {
-        const content = String(r.content);
-        const lines = content.split('\n');
-        const preview = lines.slice(0, 20).join('\n');
-        resultHtml = `<pre class="tool-result-content">${escapeHtml(preview)}${lines.length > 20 ? `\n... (共 ${r.lines || lines.length} 行)` : ''}</pre>`;
-        resultHtml += `<div class="tool-result-meta">📄 ${(r.size as number || 0) > 0 ? formatFileSize(r.size as number) : ''} · ${r.lines || '?'} 行</div>`;
-      } else if (tc.name === 'list_directory' && r.entries) {
-        const entries = r.entries as Array<{ name: string; type: string; size: number | null }>;
-        resultHtml = entries.slice(0, 30).map(e =>
-          `<div class="tool-result-entry">${e.type === 'directory' ? '📁' : '📄'} ${escapeHtml(e.name)}${e.size != null ? ` (${formatFileSize(e.size)})` : ''}</div>`
-        ).join('');
-        if (entries.length > 30) resultHtml += `<div class="tool-result-entry">... 共 ${(r.total as number) || entries.length} 项</div>`;
-      } else if (tc.name === 'search_files' && r.results) {
-        const results = r.results as Array<{ path: string; matches: Array<{ line: number; text: string }> }>;
-        resultHtml = results.slice(0, 10).map(file =>
-          file.matches.slice(0, 3).map(m =>
-            `<div class="tool-result-entry">📄 ${escapeHtml(file.path)}:${m.line} ${escapeHtml(m.text).slice(0, 80)}</div>`
-          ).join('')
-        ).join('');
-        resultHtml += `<div class="tool-result-meta">共 ${r.total_files || '?'} 个文件，${r.total_matches || '?'} 处匹配</div>`;
-      } else if (tc.name === 'write_file') {
-        resultHtml = `<div class="tool-result-entry">✅ 已写入 ${escapeHtml(String(r.path || ''))} (${formatFileSize(r.bytesWritten as number || 0)})</div>`;
-      } else if (tc.name === 'create_directory') {
-        resultHtml = `<div class="tool-result-entry">✅ 已创建 ${escapeHtml(String(r.path || ''))}</div>`;
-      } else if (tc.name === 'delete_file') {
-        resultHtml = `<div class="tool-result-entry">✅ 已删除 ${escapeHtml(String(r.path || ''))}</div>`;
-      } else if (tc.name === 'run_command') {
-        const stdout = String(r.stdout || '').slice(0, 1000);
-        const stderr = String(r.stderr || '').slice(0, 500);
-        if (stdout) resultHtml += `<pre class="tool-result-content">${escapeHtml(stdout)}</pre>`;
-        if (stderr) resultHtml += `<pre class="tool-result-content tool-result-stderr">${escapeHtml(stderr)}</pre>`;
-        resultHtml += `<div class="tool-result-meta">exit: ${r.exitCode || 0} · ${r.duration || 0}ms</div>`;
-      } else if (tc.name === 'web_search' && r.results) {
-        const results = r.results as Array<{ title: string; url: string; snippet: string }>;
-        resultHtml = results.slice(0, 5).map((item, i) =>
-          `<div class="tool-result-entry">[${i + 1}] ${escapeHtml(item.title)}<br><code>${escapeHtml(item.url)}</code></div>`
-        ).join('');
-        resultHtml += `<div class="tool-result-meta">共 ${r.total || results.length} 条结果</div>`;
-      } else if (tc.name === 'web_fetch') {
-        const content = String(r.content || '').slice(0, 500);
-        resultHtml = `<pre class="tool-result-content">${escapeHtml(content)}${(r.content as string || '').length > 500 ? '\n...' : ''}</pre>`;
-        resultHtml += `<div class="tool-result-meta">${r.length || content.length} chars</div>`;
-      } else if (tc.name === 'git' && r.action) {
-        if (r.commits) {
-          resultHtml = (r.commits as Array<{ hash: string; message: string }>).slice(0, 10).map(c =>
-            `<div class="tool-result-entry"><code>${escapeHtml(c.hash)}</code> ${escapeHtml(c.message)}</div>`
-          ).join('');
-        } else if (r.branches) {
-          resultHtml = (r.branches as Array<{ name: string; current: boolean }>).map(b =>
-            `<div class="tool-result-entry">${b.current ? '→ ' : ''}${escapeHtml(b.name)}</div>`
-          ).join('');
-        } else {
-          resultHtml = `<div class="tool-result-entry">✅ ${r.action} 完成</div>`;
-        }
-      } else if (tc.name === 'memory_search' && r.results) {
-        const results = r.results as Array<{ type: string; content: string }>;
-        resultHtml = results.slice(0, 5).map(m =>
-          `<div class="tool-result-entry">${m.type === 'rule' ? '📏' : m.type === 'preference' ? '⚙️' : '📌'} ${escapeHtml(m.content).slice(0, 80)}</div>`
-        ).join('');
-      } else if (tc.name === 'session_list' && r.sessions) {
-        const sessions = r.sessions as Array<{ title: string; messageCount: number }>;
-        resultHtml = sessions.slice(0, 5).map(s =>
-          `<div class="tool-result-entry">💬 ${escapeHtml(s.title)}</div>`
-        ).join('');
-      } else if (tc.name?.startsWith('browser_')) {
-        if (tc.name === 'browser_screenshot' && r.png) {
-          resultHtml = `<div class="tool-result-entry">📸 截图已生成</div>`;
-        } else if (tc.name === 'browser_extract') {
-          const text = String(r.text || '').slice(0, 300);
-          resultHtml = `<pre class="tool-result-content">${escapeHtml(text)}</pre>`;
-          resultHtml += `<div class="tool-result-meta">链接: ${(r.links as unknown[])?.length || 0} 个</div>`;
-        } else if (r.title) {
-          resultHtml = `<div class="tool-result-entry">📄 ${escapeHtml(r.title)}</div>`;
-        } else if (r.result) {
-          resultHtml = `<pre class="tool-result-content">${escapeHtml(String(r.result).slice(0, 300))}</pre>`;
-        } else {
-          resultHtml = `<div class="tool-result-entry">✅ 完成</div>`;
-        }
-      } else {
-        resultHtml = `<div class="tool-result-entry">✅ 操作成功</div>`;
-      }
-    } else {
-      resultHtml = `<div class="tool-result-entry tool-result-error">❌ ${escapeHtml(tc.result.error || '未知错误')}</div>`;
-    }
-  }
-
   return `<div class="tool-call-card tool-call-${tc.status}">
     <div class="tool-call-header">
       <span class="tool-call-icon">${icon}</span>
@@ -343,7 +248,6 @@ function renderToolCallCard(tc: ToolCallRecord): string {
       <span class="tool-call-status">${status}</span>
     </div>
     ${paramsHtml ? `<div class="tool-call-params">${paramsHtml}</div>` : ''}
-    ${resultHtml ? `<div class="tool-call-result">${resultHtml}</div>` : ''}
   </div>`;
 }
 
@@ -401,19 +305,6 @@ export function updateLastAssistantMessage(content: string, think: string | null
       msgBody.insertBefore(thinkBlock, contentDiv);
     }
     thinkBlock.querySelector('pre')!.textContent = think;
-  }
-
-  if (stats) {
-    let statsDiv = lastMsg.querySelector('.msg-stats');
-    if (!statsDiv) {
-      statsDiv = document.createElement('div');
-      statsDiv.className = 'msg-stats';
-      lastMsg.querySelector('.msg-body')!.appendChild(statsDiv);
-    }
-    const parts: string[] = [];
-    if (stats.eval_count != null && stats.eval_count > 0) parts.push(`<span class="stat-tokens">${stats.eval_count} tokens</span>`);
-    if (stats.total_duration != null && stats.total_duration > 0) parts.push(`<span class="stat-duration">${(stats.total_duration / 1e9).toFixed(1)}s</span>`);
-    if (parts.length) statsDiv.innerHTML = parts.join(' · ');
   }
 
   scrollToBottom();
@@ -505,18 +396,6 @@ export function resetCurrentPlaceholder(): void {
 export function enableAutoScroll(): void {
   autoScroll = true;
   if (scrollBtnEl) scrollBtnEl.style.display = 'none';
-}
-
-/** 统计当前会话总 token 消耗并更新 header 显示 */
-export function updateTotalTokens(): void {
-  const session = state.get<ChatSession | null>(KEYS.CURRENT_SESSION);
-  const el = document.querySelector('#totalTokensValue');
-  if (!el) return;
-  if (!session) { el.textContent = '0'; return; }
-  const total = session.messages
-    .filter(m => m.role === 'assistant' && m.eval_count)
-    .reduce((sum, m) => sum + (m.eval_count || 0), 0);
-  el.textContent = total > 0 ? total.toLocaleString() : '0';
 }
 
 // ── 导出功能 ──

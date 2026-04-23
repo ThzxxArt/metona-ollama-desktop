@@ -374,28 +374,6 @@ html, body {
     opacity: 1;
 }
 
-.total-tokens {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    margin-left: 8px;
-    padding: 3px 10px;
-    font-size: 11px;
-    font-weight: 500;
-    color: var(--caution);
-    background: var(--caution-bg);
-    border: 1px solid rgba(212, 160, 60, 0.15);
-    border-radius: 20px;
-    white-space: nowrap;
-    user-select: none;
-}
-
-.token-icon {
-    width: 14px;
-    height: 14px;
-    flex-shrink: 0;
-    color: var(--caution);
-}
 
 /* ═══ 模型选择栏 ═══ */
 .model-bar {
@@ -1022,14 +1000,6 @@ html, body {
     margin-top: 8px;
     font-size: 11px;
     color: var(--text-tertiary);
-}
-
-.msg-stats .stat-tokens {
-    color: var(--caution);
-}
-
-.msg-stats .stat-duration {
-    color: var(--accent);
 }
 
 /* ═══ 输入区域 ═══ */

@@ -8,7 +8,7 @@ import { detectLanguage, truncate, escapeHtml, formatSize } from '../utils/utils
 import { getSelectedModel, isThinkEnabled, isVisionAvailable, isToolCallingSupported } from './model-bar.js';
 import {
   renderMessages, clearMessagesDOM, appendAssistantPlaceholder, appendSystemMessage,
-  updateLastAssistantMessage, clearMessages, safeMarkdown, enableAutoScroll, updateTotalTokens,
+  updateLastAssistantMessage, clearMessages, safeMarkdown, enableAutoScroll,
   appendToolCallCardToPlaceholder, updateToolCallCardInPlaceholder, resetCurrentPlaceholder
 } from './chat-area.js';
 import { showToast } from './toast.js';
@@ -371,7 +371,6 @@ async function handleRetry(): Promise<void> {
           }
           renderMessages();
           await saveCurrentSession();
-          updateTotalTokens();
         }
       });
     } catch (err) {
@@ -424,7 +423,6 @@ async function handleUndo(): Promise<void> {
 
   clearMessagesDOM();
   renderMessages();
-  updateTotalTokens();
   showToast('已撤销上一轮对话', 'success');
 }
 
@@ -503,7 +501,6 @@ async function handleCompress(): Promise<void> {
 
     clearMessagesDOM();
     renderMessages();
-    updateTotalTokens();
 
     logInfo(`上下文压缩完成: ${middle.length} 条 → 1 条摘要`);
     showToast(`已压缩 ${middle.length} 条消息为摘要`, 'success');
@@ -754,7 +751,6 @@ export async function sendMessage(): Promise<void> {
     }
 
     await saveCurrentSession();
-    updateTotalTokens();
 
     // ── 自动提取记忆（非阻塞）──
     if (isMemoryEnabled() && freshSession.messages.length >= 10) {
@@ -1096,7 +1092,6 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
         }
         renderMessages();
         await saveCurrentSession();
-        updateTotalTokens();
       }
     });
   } catch (err) {
