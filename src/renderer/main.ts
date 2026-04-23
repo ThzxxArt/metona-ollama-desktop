@@ -21,6 +21,7 @@ import { initSettingsModal, closeSettingsModal } from './components/settings-mod
 import { initHistoryModal, closeHistoryModal } from './components/history-modal.js';
 import { initMemoryModal } from './components/memory-modal.js';
 import { initToolsModal, closeToolsModal } from './components/tools-modal.js';
+import { initTokenDashboard, closeTokenDashboard } from './components/token-dashboard.js';
 import { initMemoryManager } from './services/memory-manager.js';
 import { restoreHeartbeat } from './components/settings-modal.js';
 import { restoreCronTasks } from './services/cron-manager.js';
@@ -331,6 +332,7 @@ async function init(): Promise<void> {
     initToolConfirmModal();
     initMemoryModal();
     initToolsModal();
+    initTokenDashboard();
     initWorkspacePanel();
     setupDesktopIntegration();
 
@@ -433,6 +435,7 @@ async function init(): Promise<void> {
     initToolConfirmModal();
     initMemoryModal();
     initToolsModal();
+    initTokenDashboard();
     initWorkspacePanel();
     setupDesktopIntegration();
     checkConnection().then(loadModels);
@@ -450,6 +453,7 @@ function bindGlobalEvents(): void {
       closeHistoryModal();
       closeLightbox();
       closeToolsModal();
+      closeTokenDashboard();
       (document.querySelector('#helpModal') as HTMLElement).style.display = 'none';
       (document.querySelector('#memoryModal') as HTMLElement).style.display = 'none';
     }

@@ -3468,3 +3468,240 @@ html, body {
     margin-bottom: 6px;
     font-size: 12px;
 }
+
+/* ═══════════════════════════════════════════════════════
+   Token 监控仪表盘
+   ═══════════════════════════════════════════════════════ */
+
+/* 概览卡片组 */
+.td-overview {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.td-stat-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    padding: 16px 14px;
+    text-align: center;
+    box-shadow: var(--shadow-card);
+    transition: var(--transition);
+}
+
+.td-stat-card:hover {
+    box-shadow: var(--shadow-flyout);
+    transform: translateY(-1px);
+}
+
+.td-stat-icon {
+    font-size: 22px;
+    margin-bottom: 6px;
+}
+
+.td-stat-value {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--accent);
+    font-family: var(--font-mono);
+    line-height: 1.2;
+}
+
+.td-stat-label {
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin-top: 4px;
+    font-weight: 500;
+}
+
+/* 区块标题 */
+.td-section {
+    margin-bottom: 20px;
+}
+
+.td-section-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 10px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+/* 柱状图 */
+.td-chart {
+    background: var(--bg-card);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    padding: 16px;
+    box-shadow: var(--shadow-card);
+    min-height: 180px;
+}
+
+.td-chart-container {
+    display: flex;
+    gap: 8px;
+    height: 180px;
+}
+
+.td-chart-y-axis {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    font-size: 10px;
+    color: var(--text-tertiary);
+    font-family: var(--font-mono);
+    padding: 2px 0;
+    min-width: 36px;
+    text-align: right;
+}
+
+.td-chart-bars {
+    flex: 1;
+    display: flex;
+    align-items: flex-end;
+    gap: 6px;
+    border-left: 1px solid var(--border-subtle);
+    border-bottom: 1px solid var(--border-subtle);
+    padding: 0 8px 0 4px;
+    overflow-x: auto;
+}
+
+.td-bar-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex: 1;
+    min-width: 36px;
+    max-width: 60px;
+    cursor: default;
+}
+
+.td-bar-value {
+    font-size: 9px;
+    font-family: var(--font-mono);
+    color: var(--text-secondary);
+    margin-bottom: 2px;
+    white-space: nowrap;
+}
+
+.td-bar {
+    width: 100%;
+    border-radius: 4px 4px 0 0;
+    overflow: hidden;
+    position: relative;
+    min-height: 2px;
+}
+
+.td-bar-fill {
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(180deg, #E8734A 0%, #F0976E 100%);
+    border-radius: 4px 4px 0 0;
+    transition: height 0.3s ease;
+}
+
+.td-bar-label {
+    font-size: 10px;
+    color: var(--text-tertiary);
+    margin-top: 4px;
+    font-family: var(--font-mono);
+}
+
+.td-bar-col:hover .td-bar-fill {
+    background: linear-gradient(180deg, #D4623A 0%, #E8734A 100%);
+}
+
+/* 空状态 */
+.td-empty {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--text-tertiary);
+    font-size: 13px;
+}
+
+/* 明细表格 */
+.td-table-wrap {
+    background: var(--bg-card);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-card);
+    max-height: 260px;
+    overflow-y: auto;
+}
+
+.td-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+}
+
+.td-table thead {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+
+.td-table th {
+    background: var(--bg-layer);
+    color: var(--text-secondary);
+    font-weight: 600;
+    text-align: left;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border-subtle);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.td-table td {
+    padding: 7px 12px;
+    border-bottom: 1px solid var(--border-subtle);
+    color: var(--text-primary);
+}
+
+.td-table tr:last-child td {
+    border-bottom: none;
+}
+
+.td-table tr:hover td {
+    background: var(--bg-card-hover);
+}
+
+.td-num {
+    font-family: var(--font-mono);
+    font-weight: 500;
+    text-align: right;
+}
+
+.td-time {
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+
+.td-role-badge {
+    font-size: 11px;
+}
+
+.td-model-tag {
+    font-size: 10px;
+    color: var(--text-tertiary);
+    background: var(--bg-layer);
+    padding: 1px 5px;
+    border-radius: 4px;
+}
+
+.td-empty-row {
+    text-align: center;
+    color: var(--text-tertiary);
+    padding: 24px !important;
+}
+
+/* 响应式 */
+@media (max-width: 900px) {
+    .td-overview {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}

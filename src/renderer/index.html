@@ -57,6 +57,11 @@
                     <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
                 </svg>
             </button>
+            <button class="icon-btn" id="btnTokenDashboard" title="Token 监控">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="3" width="18" height="18" rx="2"/><line x1="7" y1="13" x2="7" y2="17"/><line x1="11" y1="9" x2="11" y2="17"/><line x1="15" y1="5" x2="15" y2="17"/>
+                </svg>
+            </button>
             <button class="icon-btn" id="btnHistory" title="历史记录">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
@@ -632,6 +637,44 @@
                 <div class="tool-card">
                     <div class="tool-card-header"><span class="tool-card-icon">❌</span><span class="tool-card-name">browser_close</span><span class="tool-card-badge auto">自动</span></div>
                     <div class="tool-card-desc">关闭 Agent 浏览器并释放资源</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════ Token 监控仪表盘 ═══════════════ -->
+<div class="modal-overlay" id="tokenDashboardModal" style="display:none;">
+    <div class="modal" style="max-width:860px;width:860px;">
+        <div class="modal-header">
+            <h3>📊 Token 实时监控</h3>
+            <button class="icon-btn" id="btnCloseTokenDashboard">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+            </button>
+        </div>
+        <div class="modal-body" style="max-height:75vh;overflow-y:auto;">
+            <div class="td-overview" id="tdOverview"></div>
+            <div class="td-section">
+                <div class="td-section-title">📈 Token 消耗趋势</div>
+                <div class="td-chart" id="tdChart"></div>
+            </div>
+            <div class="td-section">
+                <div class="td-section-title">📋 明细（按时间倒序）</div>
+                <div class="td-table-wrap">
+                    <table class="td-table">
+                        <thead>
+                            <tr>
+                                <th>轮次</th>
+                                <th>角色</th>
+                                <th>Token 数</th>
+                                <th>耗时</th>
+                                <th>时间</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tdTableBody"></tbody>
+                    </table>
                 </div>
             </div>
         </div>
