@@ -260,7 +260,10 @@ function renderToolCallCard(tc: ToolCallRecord): string {
   </div>`;
 }
 
-export function updateLastAssistantMessage(content: string, think: string | null, _stats: unknown, model?: string): void {
+export function updateLastAssistantMessage(
+  content: string, think: string | null, _stats: unknown, model?: string,
+  timestamp?: number, toolCalls?: ToolCallRecord[]
+): void {
   const lastMsg = currentPlaceholder;
   if (!lastMsg) return;
 
@@ -305,6 +308,45 @@ export function updateLastAssistantMessage(content: string, think: string | null
       msgBody.insertBefore(thinkBlock, contentDiv);
     }
     thinkBlock.querySelector('pre')!.textContent = think;
+  }
+
+  // ── 工具调用历史记录（可折叠）──
+  if (toolCalls && toolCalls.length > 0) {
+    let existingHistory = lastMsg.querySelector('.tool-calls-history');
+    if (existingHistory) existingHistory.remove();
+
+    const tcCount = toolCalls.length;
+    const successCount = toolCalls.filter(t => t.status === 'success').length;
+    const errorCount = toolCalls.filter(t => t.status === 'error').length;
+
+    const historyDiv = document.createElement('div');
+    historyDiv.className = 'tool-calls-history';
+    historyDiv.innerHTML = `
+      <div class="tool-calls-toggle" onclick="this.parentElement.classList.toggle('expanded')">
+        <span class="tool-calls-chevron">▸</span>
+        <span class="tool-calls-summary">🔧 ${tcCount} 个工具调用（✅${successCount} ❌${errorCount}）</span>
+      </div>
+      <div class="tool-calls-list">
+        ${toolCalls.map(tc => renderToolCallCard(tc)).join('')}
+      </div>
+    `;
+    const msgBody = lastMsg.querySelector('.msg-body');
+    if (msgBody) {
+      const refNode = contentDiv?.nextSibling || null;
+      msgBody.insertBefore(historyDiv, refNode);
+    }
+  }
+
+  // ── 时间戳 ──
+  if (timestamp) {
+    let statsDiv = lastMsg.querySelector('.msg-stats');
+    if (!statsDiv) {
+      statsDiv = document.createElement('div');
+      statsDiv.className = 'msg-stats';
+      const msgBody = lastMsg.querySelector('.msg-body');
+      if (msgBody) msgBody.appendChild(statsDiv);
+    }
+    statsDiv.innerHTML = `<span>${formatTime(timestamp)}</span>`;
   }
 
   scrollToBottom();
