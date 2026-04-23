@@ -851,6 +851,7 @@ export async function sendMessage(): Promise<void> {
 
 /** 更新当前会话消息中最近一个 'running' 状态的同名工具记录 */
 function updateMessageToolRecord(toolName: string, status: 'success' | 'error', result: Record<string, unknown>): void {
+  let updated = false;
   state.update(KEYS.CURRENT_SESSION, (session: ChatSession | null) => {
     if (!session) return session;
     const messages = [...session.messages];
@@ -860,14 +861,17 @@ function updateMessageToolRecord(toolName: string, status: 'success' | 'error', 
       if (!msg.toolCalls) continue;
       const idx = msg.toolCalls.findIndex(tc => tc.name === toolName && tc.status === 'running');
       if (idx !== -1) {
-        const updated = [...msg.toolCalls];
-        updated[idx] = { ...updated[idx], status, result };
-        messages[i] = { ...msg, toolCalls: updated };
+        const updatedRecords = [...msg.toolCalls];
+        updatedRecords[idx] = { ...updatedRecords[idx], status, result };
+        messages[i] = { ...msg, toolCalls: updatedRecords };
+        updated = true;
         return { ...session, messages, updatedAt: Date.now() };
       }
     }
     return session;
   });
+  // 状态更新后重新渲染消息，使工具卡片状态即时生效
+  if (updated) renderMessages();
 }
 
 async function sendMessageWithAgentLoop(text: string, currentSession: ChatSession, model: string): Promise<void> {
