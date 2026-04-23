@@ -241,6 +241,14 @@ function renderToolCallCard(tc: ToolCallRecord): string {
   if (args.selector) paramsHtml += `<div class="tool-param">选择器: <code>${escapeHtml(String(args.selector))}</code></div>`;
   if (args.action) paramsHtml += `<div class="tool-param">操作: <code>${escapeHtml(String(args.action))}</code></div>`;
 
+  // 失败/取消时显示错误信息（成功结果在工作空间工具页签查看）
+  let errorHtml = '';
+  if (tc.status === 'error' && tc.result?.error) {
+    errorHtml = `<div class="tool-call-error">❌ ${escapeHtml(String(tc.result.error))}</div>`;
+  } else if (tc.status === 'cancelled') {
+    errorHtml = `<div class="tool-call-error">🚫 用户取消了操作</div>`;
+  }
+
   return `<div class="tool-call-card tool-call-${tc.status}">
     <div class="tool-call-header">
       <span class="tool-call-icon">${icon}</span>
@@ -248,19 +256,11 @@ function renderToolCallCard(tc: ToolCallRecord): string {
       <span class="tool-call-status">${status}</span>
     </div>
     ${paramsHtml ? `<div class="tool-call-params">${paramsHtml}</div>` : ''}
+    ${errorHtml}
   </div>`;
 }
 
-function formatFileSize(bytes: number): string {
-  if (!bytes) return '0 B';
-  const units = ['B', 'KB', 'MB', 'GB'];
-  let i = 0;
-  let size = bytes;
-  while (size >= 1024 && i < units.length - 1) { size /= 1024; i++; }
-  return `${size.toFixed(1)} ${units[i]}`;
-}
-
-export function updateLastAssistantMessage(content: string, think: string | null, stats: { eval_count?: number; total_duration?: number } | null, model?: string): void {
+export function updateLastAssistantMessage(content: string, think: string | null, _stats: unknown, model?: string): void {
   const lastMsg = currentPlaceholder;
   if (!lastMsg) return;
 
