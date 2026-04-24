@@ -289,18 +289,6 @@
                 <p class="text-muted" style="margin-top:4px;font-size:11px;">Agent Loop 最大工具调用轮数。默认 85 轮，复杂任务可能需要更多轮次。</p>
             </div>
             <div class="setting-group">
-                <label class="setting-label">🎭 人格模式</label>
-                <div class="personality-grid" id="personalityGrid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:4px;">
-                    <button class="btn btn-sm personality-btn active" data-personality="default" style="padding:6px 8px;font-size:12px;border:2px solid var(--primary);border-radius:var(--radius-control);background:var(--bg-layer);cursor:pointer;">🤖 通用助手</button>
-                    <button class="btn btn-sm personality-btn" data-personality="coder" style="padding:6px 8px;font-size:12px;border:2px solid var(--border-subtle);border-radius:var(--radius-control);background:var(--bg-layer);cursor:pointer;">💻 编程助手</button>
-                    <button class="btn btn-sm personality-btn" data-personality="writer" style="padding:6px 8px;font-size:12px;border:2px solid var(--border-subtle);border-radius:var(--radius-control);background:var(--bg-layer);cursor:pointer;">✍️ 写作助手</button>
-                    <button class="btn btn-sm personality-btn" data-personality="analyst" style="padding:6px 8px;font-size:12px;border:2px solid var(--border-subtle);border-radius:var(--radius-control);background:var(--bg-layer);cursor:pointer;">📊 数据分析</button>
-                    <button class="btn btn-sm personality-btn" data-personality="translator" style="padding:6px 8px;font-size:12px;border:2px solid var(--border-subtle);border-radius:var(--radius-control);background:var(--bg-layer);cursor:pointer;">🌐 翻译助手</button>
-                    <button class="btn btn-sm personality-btn" data-personality="reviewer" style="padding:6px 8px;font-size:12px;border:2px solid var(--border-subtle);border-radius:var(--radius-control);background:var(--bg-layer);cursor:pointer;">🔍 代码审查</button>
-                </div>
-                <p class="text-muted" style="margin-top:4px;font-size:11px;">不同人格有不同的行为风格和温度偏好。通用助手不做额外约束。</p>
-            </div>
-            <div class="setting-group">
                 <label class="setting-label">运行中的模型</label>
                 <div class="running-models" id="runningModels">
                     <p class="text-muted">无运行中的模型</p>
@@ -351,31 +339,6 @@
                 <p class="text-muted" style="margin-top:6px;font-size:11px;">导出格式为 JSON，可备份后在其他设备导入恢复。</p>
             </div>
             <div class="setting-group">
-                <label class="setting-label">💓 后台检查（Heartbeat）</label>
-                <div style="display:flex;align-items:center;gap:10px;">
-                    <label class="toggle-label" style="margin:0;">
-                        <input type="checkbox" id="toggleHeartbeat">
-                        <span class="toggle-slider"></span>
-                    </label>
-                    <span style="font-size:13px;">启用后台定时检查</span>
-                </div>
-                <div style="display:flex;gap:8px;align-items:center;margin-top:8px;">
-                    <label style="font-size:12px;color:var(--text-muted);">检查间隔</label>
-                    <select id="selectHeartbeatInterval" class="setting-input" style="width:auto;margin-bottom:0;padding:4px 8px;">
-                        <option value="600000">10 分钟</option>
-                        <option value="1800000">30 分钟</option>
-                        <option value="3600000" selected>1 小时</option>
-                        <option value="7200000">2 小时</option>
-                    </select>
-                </div>
-                <p class="text-muted" style="margin-top:4px;font-size:11px;">定期检查 Ollama 连接状态和模型可用性，异常时通过系统通知提醒。</p>
-            </div>
-            <div class="setting-group">
-                <label class="setting-label">🩺 系统诊断</label>
-                <button class="btn btn-outline" id="btnDoctor" style="margin-bottom:8px;">🩺 一键诊断</button>
-                <div id="doctorResults" style="display:none;margin-top:8px;padding:10px;background:var(--bg-layer);border-radius:var(--radius-control);font-size:12px;max-height:200px;overflow-y:auto;"></div>
-            </div>
-            <div class="setting-group">
                 <label class="setting-label">🔌 MCP 服务器</label>
                 <div style="display:flex;gap:8px;margin-bottom:8px;">
                     <input class="setting-input" id="inputMCPName" type="text" placeholder="名称" style="margin-bottom:0;width:100px;">
@@ -384,22 +347,6 @@
                     <button class="btn btn-sm btn-outline" id="btnAddMCPServer">➕ 添加</button>
                 </div>
                 <div id="mcpServerList" style="font-size:12px;"></div>
-            </div>
-            <div class="setting-group">
-                <label class="setting-label">⏰ 定时任务 (Cron)</label>
-                <div style="display:flex;gap:8px;margin-bottom:8px;">
-                    <input class="setting-input" id="inputCronName" type="text" placeholder="任务名称" style="margin-bottom:0;flex:1;">
-                    <select id="selectCronType" class="setting-input" style="width:auto;margin-bottom:0;padding:4px 8px;">
-                        <option value="oneshot">一次性</option>
-                        <option value="recurring">周期性</option>
-                    </select>
-                </div>
-                <div style="display:flex;gap:8px;margin-bottom:8px;">
-                    <input class="setting-input" id="inputCronSchedule" type="text" placeholder="时间 (如: 2026-04-18T10:00 或 every 30m)" style="margin-bottom:0;flex:1;">
-                    <button class="btn btn-sm btn-outline" id="btnAddCronTask">➕ 添加</button>
-                </div>
-                <input class="setting-input" id="inputCronMessage" type="text" placeholder="任务描述（将作为 Agent 指令）" style="margin-bottom:8px;">
-                <div id="cronTaskList" style="font-size:12px;"></div>
             </div>
         </div>
     </div>
@@ -443,12 +390,8 @@
             <div class="help-section"><h4>💬 聊天功能</h4><ul><li><strong>流式回复</strong> — 实时打字效果，随时点 ■ 停止</li><li><strong>Think 推理</strong> — 设置中开启，让模型展示深度思考过程（需模型支持，如 Qwen3）</li><li><strong>多模态</strong> — 上传图片，模型需支持 Vision 能力</li><li><strong>文件分析</strong> — 支持 50+ 种文本/代码格式，单文件 ≤500KB，内容以代码块发送给模型</li><li><strong>上下文长度</strong> — 设置中调整 <code>num_ctx</code>，越大记忆越长，消耗显存越多</li></ul></div>
             <div class="help-section"><h4>🔧 Tool Calling（AI 自主操作）</h4><ul><li>设置中开启后，AI 可以在对话中<strong>自主调用本地工具</strong>，像一个本地 Agent</li><li><strong>38 个工具</strong>，分为 6 类：<ul><li><strong>文件系统</strong>（12 个）：read_file / write_file / list_directory / search_files / create_directory / delete_file / move_file / copy_file / append_file / edit_file / get_file_info / tree</li><li><strong>系统 & 网络</strong>（6 个）：run_command（执行命令）/ web_search（联网搜索，Bing + 百度 + Google 三引擎）/ web_fetch（网页抓取）/ download_file / diff_files / replace_in_files / read_multiple_files</li><li><strong>Git</strong>（1 个）：git（status / log / diff / add / commit / push / pull / branch / checkout / stash / reset / merge / clone / init / remote / tag，共 16 个子操作）</li><li><strong>浏览器控制</strong>（8 个）：browser_open / browser_screenshot / browser_evaluate / browser_extract / browser_click / browser_type / browser_scroll / browser_close</li><li><strong>压缩</strong>（1 个）：compress（创建/解压 zip/tar.gz）</li><li><strong>记忆 & 会话 & Skill</strong>（8 个）：memory_search / memory_add / memory_replace / memory_remove / session_list / session_read / skill_list / skill_view</li><li><strong>子代理</strong>（1 个）：spawn_task</li></ul></li><li>仅 <code>run_command</code>（命令执行）支持三模式切换：自动/需确认/禁用</li><li>危险命令（<code>rm -rf</code>、<code>mkfs</code>、反弹 shell 等）和系统路径（<code>/etc</code>、<code>~/.ssh</code> 等）被自动拦截</li><li>工具调用以<strong>可视化卡片</strong>展示状态（pending → running → success/error），在工作空间🔧工具页签中显示</li><li>默认最大 <strong>85 轮</strong>工具调用循环，可在设置中调整，也可随时中断</li><li>无超时限制，宁可等待也不中断，由用户控制生命周期</li><li>独立工具自动并行执行，有依赖关系的工具串行执行</li><li>⚠️ 需要模型支持 Tool Calling（推荐 Qwen3、Llama 3.1+、Mistral）</li></ul></div>
             <div class="help-section"><h4>🧠 Agent 记忆系统</h4><ul><li>设置中开启后，AI 从对话中<strong>自动提取关键信息</strong>（事实/偏好/规则），跨会话持续积累</li><li>对话满 <strong>6 条消息</strong>后自动触发记忆提取</li><li>新对话时自动检索相关记忆注入上下文，让 AI "记住"你</li><li>点击顶部 🧠 按钮打开记忆面板：搜索、筛选、编辑、删除</li><li><strong>记忆容量上限 500 条</strong>，超限时自动清理低价值条目（规则类型受保护）</li><li><strong>向量语义搜索</strong>：在设置中选择嵌入模型后，支持语义级别记忆检索（更精准）</li><li>未选择嵌入模型时，使用关键词匹配检索记忆</li><li>AI 可通过 <code>memory_search</code> / <code>memory_add</code> / <code>memory_replace</code> / <code>memory_remove</code> 工具主动管理记忆</li><li>AI 可通过 <code>session_list</code> / <code>session_read</code> 查阅历史会话</li><li>记忆写入前自动安全扫描（prompt injection / 敏感信息 / 不可见字符检测）</li><li>记忆存储在本地 SQLite，不会上传到任何服务器</li></ul></div>
-            <div class="help-section"><h4>🎭 人格模式</h4><ul><li>设置中可切换 6 种预设人格：通用助手 / 编程助手 / 写作助手 / 数据分析 / 翻译助手 / 代码审查</li><li>不同人格有独立的 system prompt 和温度偏好</li><li>通用助手不做额外约束，其他人格会调整行为风格</li></ul></div>
             <div class="help-section"><h4>🔌 MCP（Model Context Protocol）</h4><ul><li>支持连接外部 MCP Server，动态扩展工具能力</li><li>设置面板可添加/启用/禁用/删除 MCP 服务器</li><li>MCP 工具以 <code>mcp_{server}_{tool}</code> 前缀注册，与内置工具统一调度</li><li>启动时自动连接已启用的 MCP 服务器</li></ul></div>
-            <div class="help-section"><h4>⏰ 定时任务（Cron）</h4><ul><li>支持一次性（at）和周期性（cron 表达式）任务调度</li><li>任务触发后将描述填入输入框，可直接发送给 AI 执行</li><li>设置面板可添加/管理/删除定时任务</li></ul></div>
-            <div class="help-section"><h4>💓 Heartbeat 后台检查</h4><ul><li>启用后定期检查 Ollama 连接状态和模型可用性</li><li>支持 10 分钟 / 30 分钟 / 1 小时 / 2 小时间隔（默认 1 小时）</li><li>异常时通过系统通知提醒</li></ul></div>
             <div class="help-section"><h4>🧠 技能自动生成</h4><ul><li>AI 完成包含 <strong>2+ 工具调用</strong>的复杂任务后，自动从执行轨迹中提取可复用技能</li><li>技能包含工具链步骤、成功/失败次数、平均执行时长等统计</li><li>下次遇到类似任务时自动匹配已有技能，跳过重新推理</li><li>AI 可通过 <code>skill_list</code> 查看技能列表（名称+描述+成功率），<code>skill_view</code> 查看完整工具链详情</li><li>技能存储在本地 SQLite，不会上传到任何服务器</li></ul></div>
-            <div class="help-section"><h4>🩺 系统诊断</h4><ul><li>设置面板点击「🩺 一键诊断」按钮，自动检查以下项目：<ul><li>Ollama 服务连接与版本</li><li>当前模型可用性与 Tool Calling / Vision 支持</li><li>工作空间目录与磁盘空间</li><li>SQLite 数据库完整性</li><li>工具安全配置</li></ul></li><li>诊断结果以 ✅/⚠️/❌ 标记，附带修复建议</li></ul></div>
             <div class="help-section"><h4>🖥️ 布局说明</h4><ul><li><strong>左侧面板</strong> — 执行日志，实时显示应用运行日志（连接、模型加载、工具调用等）</li><li><strong>中间区域</strong> — 聊天消息，顶部 Header + 模型栏，底部输入框</li><li><strong>右侧面板</strong> — 工作空间（常驻显示），包含 3 个页签：<ul><li><strong>💻 命令行 Tab</strong> — 终端界面，实时流式输出，支持长时间运行（无超时），单一终端进程</li><li><strong>🔧 工具 Tab</strong> — 展示本轮对话的工具调用卡片，含状态统计（总数 ✅ 成功 ❌ 失败），AI 执行命令时自动切到此页签</li><li><strong>📁 文件 Tab</strong> — 浏览工作空间目录，点击文件预览内容（带行号），支持上级目录导航</li></ul></li><li>工作空间目录可在设置中修改</li></ul></div>
             <div class="help-section"><h4>🕐 历史记录</h4><ul><li>所有会话自动保存到本地 SQLite</li><li>点击顶部 🕐 按钮查看、搜索、恢复历史会话</li><li>支持导出 JSON / <code>.metona</code> 加密备份</li></ul></div>
             <div class="help-section"><h4>⚡ 快捷键 & 命令</h4><table class="help-shortcuts"><tr><td><kbd>Enter</kbd></td><td>发送消息</td></tr><tr><td><kbd>Shift + Enter</kbd></td><td>换行</td></tr><tr><td><kbd>Ctrl + N</kbd></td><td>新建会话</td></tr><tr><td><kbd>Ctrl + M</kbd></td><td>记忆管理</td></tr><tr><td><kbd>Esc</kbd></td><td>关闭弹窗</td></tr></table><p style="margin-top:8px;font-size:12px;color:var(--text-secondary);">输入框命令（直接输入后发送）：</p><table class="help-shortcuts"><tr><td><code>/retry</code></td><td>重试上一轮回复</td></tr><tr><td><code>/undo</code></td><td>撤销最后一条用户消息及回复</td></tr><tr><td><code>/compress</code></td><td>用 AI 摘要压缩长对话上下文</td></tr></table></div>

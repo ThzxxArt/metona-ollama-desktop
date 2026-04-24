@@ -13,7 +13,6 @@ import {
 } from './tool-registry.js';
 import { searchMemories, buildMemoryContext, markMemoryUsed, isMemoryEnabled } from './memory-manager.js';
 import { extractSkillsFromToolRecords, matchSkills, buildSkillContext } from './skill-manager.js';
-import { PERSONALITY_SYSTEM_PROMPTS } from '../components/settings-modal.js';
 import { showToast } from '../components/toast.js';
 import { logInfo, logWarn, logError, logToolStart, logToolResult, logAgentLoop, logModelResponse } from './log-service.js';
 import { getWorkspaceDirPath } from '../components/workspace-panel.js';
@@ -461,8 +460,6 @@ export async function runAgentLoop(
   }
 
   // 组合 system prompt
-  const personality = state.get<string>('personality', 'default');
-  const personalityPrompt = PERSONALITY_SYSTEM_PROMPTS[personality] || '';
 
   // 实时注入当前日期（来自系统时钟，非模型知识库）
   const _now = new Date();
@@ -472,7 +469,6 @@ export async function runAgentLoop(
     ...systemPromptParts,
     `【当前日期】${realDate}（此日期来自系统时钟，绝对可信。你的训练数据可能已过时，请以此日期为准构造所有搜索查询和时效性回答。绝对不要基于训练数据推断日期。）`,
     AGENT_SYSTEM_PROMPT,
-    ...(personalityPrompt ? [personalityPrompt] : []),
     TOOL_USAGE_GUIDE
   ].join('\n\n');
 

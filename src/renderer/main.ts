@@ -23,8 +23,6 @@ import { initMemoryModal } from './components/memory-modal.js';
 import { initToolsModal, closeToolsModal } from './components/tools-modal.js';
 import { initTokenDashboard, closeTokenDashboard } from './components/token-dashboard.js';
 import { initMemoryManager } from './services/memory-manager.js';
-import { restoreHeartbeat } from './components/settings-modal.js';
-import { restoreCronTasks } from './services/cron-manager.js';
 import { setToolEnabled, setRunCommandMode, refreshMCPTools } from './services/tool-registry.js';
 import { startAllMCPServers } from './services/mcp-client.js';
 import { initToolConfirmModal } from './components/tool-confirm-modal.js';
@@ -382,35 +380,9 @@ async function init(): Promise<void> {
     const memoryEnabled = await db.getSetting('memoryEnabled', true);
     state.set('memoryEnabled', memoryEnabled);
 
-    // ── v4.2 人格模式 ──
-    const personality = await db.getSetting('personality', 'default');
-    state.set('personality', personality);
-    // 激活对应的人格按钮
-    document.querySelectorAll('.personality-btn').forEach(b => {
-      const p = (b as HTMLElement).dataset.personality;
-      if (p === personality) {
-        (b as HTMLElement).style.border = '2px solid var(--primary)';
-        b.classList.add('active');
-      } else {
-        (b as HTMLElement).style.border = '2px solid var(--border-subtle)';
-        b.classList.remove('active');
-      }
-    });
-
-    // ── v4.3 Heartbeat 恢复 ──
-    const heartbeatEnabled = await db.getSetting('heartbeatEnabled', false);
-    const heartbeatInterval = await db.getSetting('heartbeatInterval', 3600000);
-    state.set('heartbeatEnabled', heartbeatEnabled);
-    state.set('heartbeatInterval', heartbeatInterval);
-
     (document.querySelector('#chatInput') as HTMLElement)?.focus();
 
     logSuccess('应用初始化完成');
-
-    // Heartbeat 在 UI 就绪后启动
-    restoreHeartbeat();
-    // Cron 定时任务恢复
-    restoreCronTasks();
   } catch (err) {
     logError('初始化失败', (err as Error).message);
     if (!api!) {
@@ -476,20 +448,6 @@ function bindGlobalEvents(): void {
     showToast(`操作失败: ${msg}`, 'error', 5000);
   });
 
-  // v5.0 Cron 定时任务事件
-  window.addEventListener('metona:cron-task', ((e: CustomEvent) => {
-    const task = e.detail;
-    if (task?.message) {
-      showToast(`⏰ 定时任务: ${task.name}`, 'info', 5000);
-      logInfo(`定时任务触发: ${task.name}`, task.message.slice(0, 60));
-      // 将任务描述填入输入框
-      const chatInput = document.querySelector('#chatInput') as HTMLTextAreaElement;
-      if (chatInput) {
-        chatInput.value = task.message;
-        chatInput.focus();
-      }
-    }
-  }) as EventListener);
 }
 
 init();
