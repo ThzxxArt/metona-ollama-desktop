@@ -16,7 +16,7 @@ import {
   deleteMemoryVector, searchMemoriesByVector, reindexAllMemories,
   getMemoryCollectionId
 } from './vector-memory.js';
-import { logMemory, logDebug, logWarn } from './log-service.js';
+import { logMemory, logDebug, logWarn, logInfo } from './log-service.js';
 import type { MemoryEntry, MemorySearchResult, MemoryExtractionResult, ChatDB, OllamaAPI } from '../types.js';
 
 const TYPE_ICONS: Record<string, string> = {
