@@ -7,12 +7,12 @@ import type { ChatSession, MemoryEntry } from '../types.js';
 
 /** 检查是否在桌面环境 */
 function isDesktop(): boolean {
-  return !!(window as any).metonaDesktop?.isDesktop;
+  return !!window.metonaDesktop?.isDesktop;
 }
 
 /** 桌面端 DB 桥接 */
 function dbBridge() {
-  return (window as any).metonaDesktop?.db;
+  return window.metonaDesktop?.db;
 }
 
 export class ChatDB {
