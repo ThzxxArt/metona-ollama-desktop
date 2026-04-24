@@ -3532,6 +3532,68 @@ html, body {
     font-family: var(--font-mono);
 }
 
+/* 视图切换按钮 */
+.td-view-toggle {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 16px;
+    justify-content: center;
+}
+
+.td-view-btn {
+    padding: 6px 18px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--bg-card);
+    color: var(--text-secondary);
+    font-size: 13px;
+    cursor: pointer;
+    transition: var(--transition);
+    font-weight: 500;
+}
+
+.td-view-btn:hover {
+    background: var(--bg-hover, var(--bg-card));
+    border-color: var(--accent);
+    color: var(--text-primary);
+}
+
+.td-view-btn.active {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+}
+
+/* 概览行布局 */
+.td-stat-row {
+    display: grid;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.td-stat-row-global {
+    grid-template-columns: repeat(4, 1fr);
+}
+
+.td-stat-row-session {
+    grid-template-columns: 1fr;
+}
+
+.td-stat-card-small {
+    padding: 10px 14px;
+}
+
+.td-stat-card-small .td-stat-value {
+    font-size: 18px;
+}
+
+/* 图例备注 */
+.td-legend-note {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    font-style: italic;
+}
+
 /* 区块标题 */
 .td-section {
     margin-bottom: 20px;

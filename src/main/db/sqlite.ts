@@ -580,6 +580,70 @@ export function incrementSkillUsage(id: string, success: boolean, durationMs: nu
   persist();
 }
 
+// ─── Token 全局统计 ───
+
+export interface SessionTokenStat {
+  session_id: string;
+  title: string;
+  model: string;
+  created_at: number;
+  total_input: number;
+  total_output: number;
+  total_duration: number;
+  round_count: number;
+}
+
+export interface GlobalTokenTotals {
+  total_input: number;
+  total_output: number;
+  total_duration: number;
+  total_rounds: number;
+  session_count: number;
+}
+
+export interface AllSessionsTokenStats {
+  sessions: SessionTokenStat[];
+  totals: GlobalTokenTotals;
+}
+
+export function getAllSessionsTokenStats(): AllSessionsTokenStats {
+  const d = getDb();
+  const sessionStats = queryAll(d, `
+    SELECT
+      s.id as session_id,
+      s.title,
+      s.model,
+      s.created_at,
+      COALESCE(SUM(m.prompt_eval_count), 0) as total_input,
+      COALESCE(SUM(m.eval_count), 0) as total_output,
+      COALESCE(SUM(m.total_duration), 0) as total_duration,
+      COUNT(CASE WHEN m.role = 'assistant' AND (m.eval_count > 0 OR m.prompt_eval_count > 0) THEN 1 END) as round_count
+    FROM sessions s
+    LEFT JOIN messages m ON s.id = m.session_id
+    GROUP BY s.id
+    ORDER BY s.updated_at DESC
+  `);
+
+  let totalInput = 0, totalOutput = 0, totalDuration = 0, totalRounds = 0;
+  for (const s of sessionStats) {
+    totalInput += (s.total_input as number) || 0;
+    totalOutput += (s.total_output as number) || 0;
+    totalDuration += (s.total_duration as number) || 0;
+    totalRounds += (s.round_count as number) || 0;
+  }
+
+  return {
+    sessions: sessionStats as unknown as SessionTokenStat[],
+    totals: {
+      total_input: totalInput,
+      total_output: totalOutput,
+      total_duration: totalDuration,
+      total_rounds: totalRounds,
+      session_count: sessionStats.length,
+    }
+  };
+}
+
 // ─── Export/Import ───
 
 export interface ExportData {

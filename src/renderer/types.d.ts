@@ -438,6 +438,25 @@ export interface DBAPI {
   clearAllSkills: () => Promise<{ success: boolean; error?: string }>;
   searchSkills: (query: string, limit?: number) => Promise<unknown[]>;
   incrementSkillUsage: (id: string, success: boolean, durationMs: number) => Promise<{ success: boolean; error?: string }>;
+  getAllTokenStats(): Promise<{
+    sessions: Array<{
+      session_id: string;
+      title: string;
+      model: string;
+      created_at: number;
+      total_input: number;
+      total_output: number;
+      total_duration: number;
+      round_count: number;
+    }>;
+    totals: {
+      total_input: number;
+      total_output: number;
+      total_duration: number;
+      total_rounds: number;
+      session_count: number;
+    };
+  } | null>;
 }
 
 // ── Window global 声明 ──

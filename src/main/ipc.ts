@@ -15,7 +15,8 @@ import {
   saveToolCall, getToolCallsBySession,
   saveTrace, getTracesBySession,
   saveSkill, getAllSkills, deleteSkill, clearAllSkills, searchSkills, incrementSkillUsage,
-  exportAllSessions, importSessions
+  exportAllSessions, importSessions,
+  getAllSessionsTokenStats
 } from './db/sqlite.js';
 import type { ExportData } from './db/sqlite.js';
 
@@ -419,6 +420,12 @@ export async function setupIPC(): Promise<void> {
   ipcMain.handle('db:incrementSkillUsage', (_, id: string, success: boolean, durationMs: number) => {
     try { incrementSkillUsage(id, success, durationMs); return { success: true }; }
     catch (err) { return { success: false, error: (err as Error).message }; }
+  });
+
+  // ── Token 全局统计 ──
+  ipcMain.handle('db:getAllTokenStats', () => {
+    try { return getAllSessionsTokenStats(); }
+    catch (err) { sendLog('error', '获取全局 Token 统计失败', (err as Error).message); return null; }
   });
 
   // ── MCP IPC ──

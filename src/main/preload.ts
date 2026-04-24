@@ -73,6 +73,7 @@ contextBridge.exposeInMainWorld('metonaDesktop', {
     clearAllSkills: () => ipcRenderer.invoke('db:clearAllSkills'),
     searchSkills: (query: string, limit?: number) => ipcRenderer.invoke('db:searchSkills', query, limit),
     incrementSkillUsage: (id: string, success: boolean, durationMs: number) => ipcRenderer.invoke('db:incrementSkillUsage', id, success, durationMs),
+    getAllTokenStats: () => ipcRenderer.invoke('db:getAllTokenStats'),
   },
   workspace: {
     getDir: () => ipcRenderer.invoke('workspace:getDir'),

@@ -599,12 +599,16 @@
         </div>
         <div class="modal-body" style="max-height:75vh;overflow-y:auto;">
             <div class="td-overview" id="tdOverview"></div>
+            <div class="td-view-toggle" id="tdViewToggle">
+                <button class="td-view-btn active" data-view="global">🌍 全局统计</button>
+                <button class="td-view-btn" data-view="session">💬 当前会话</button>
+            </div>
             <div class="td-section">
-                <div class="td-section-title">📈 Token 消耗趋势</div>
+                <div class="td-section-title" id="tdChartTitle">📈 Token 消耗趋势 — 全局</div>
                 <div class="td-chart" id="tdChart"></div>
             </div>
             <div class="td-section">
-                <div class="td-section-title">📋 明细（按时间倒序）</div>
+                <div class="td-section-title" id="tdTableTitle">📋 明细（按时间倒序）</div>
                 <div class="td-table-wrap">
                     <table class="td-table">
                         <thead>
