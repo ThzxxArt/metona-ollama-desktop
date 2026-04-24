@@ -239,43 +239,47 @@ function renderGlobalOverview(stats: AllSessionsTokenStats): void {
   `;
 }
 
-/** 渲染全局柱状图（按会话） */
-function renderGlobalChart(stats: AllSessionsTokenStats): void {
-  const chartTitleEl = dashboardModalEl.querySelector('#tdChartTitle');
-  if (chartTitleEl) chartTitleEl.textContent = '📈 Token 消耗趋势 — 按会话';
-
-  const chartEl = dashboardModalEl.querySelector('#tdChart')!;
-  const sessions = stats.sessions.filter(s => s.total_input > 0 || s.total_output > 0);
-
-  if (sessions.length === 0) {
-    chartEl.innerHTML = '<div class="td-empty">暂无会话数据</div>';
+/** 渲染柱状图（通用，全局/会话复用） */
+function renderBarChart(
+  chartEl: HTMLElement,
+  data: Array<{ label: string; input: number; output: number; tooltip: string }>,
+  title: string,
+  note?: string,
+  savedScrollLeft?: number
+): void {
+  if (data.length === 0) {
+    chartEl.innerHTML = '<div class="td-empty">暂无数据</div>';
     return;
   }
 
-  // 最多显示 20 个会话
-  const displaySessions = sessions.slice(0, 20);
-  const maxTokens = Math.max(...displaySessions.map(s => s.total_input + s.total_output), 1);
+  const maxTokens = Math.max(...data.map(d => d.input + d.output), 1);
 
-  const barsHtml = displaySessions.map(s => {
-    const total = s.total_input + s.total_output;
-    const heightPct = Math.max((total / maxTokens) * 100, 2);
-    const inputPct = total > 0 ? (s.total_input / total) * 100 : 0;
-    const title = s.title.length > 8 ? s.title.slice(0, 8) + '…' : s.title;
-    const tooltip = `${s.title}\n输入 ${formatTokenCount(s.total_input)} + 输出 ${formatTokenCount(s.total_output)} = ${formatTokenCount(total)} tokens\n${s.round_count} 轮 · ${formatDuration(s.total_duration)}`;
+  // 网格线：5 条水平线（0%, 25%, 50%, 75%, 100%）
+  const gridLines = [0, 0.25, 0.5, 0.75, 1].map(ratio => {
+    const val = Math.round(maxTokens * ratio);
+    return `<div class="td-gridline" style="bottom:${ratio * 100}%">
+      <span class="td-gridline-label">${formatTokenCount(val)}</span>
+    </div>`;
+  }).join('');
+
+  const barsHtml = data.map(d => {
+    const total = d.input + d.output;
+    const heightPct = Math.max((total / maxTokens) * 100, 1.5);
+    const inputPct = total > 0 ? (d.input / total) * 100 : 0;
+    const outputPct = 100 - inputPct;
     return `
-      <div class="td-bar-col" title="${tooltip}">
-        <div class="td-bar-values">
-          <span class="td-val-output">${formatTokenCount(s.total_output)}</span>
-          <span class="td-val-input">${formatTokenCount(s.total_input)}</span>
-        </div>
-        <div class="td-bar-wrapper">
-          <div class="td-bar" style="height:${heightPct}%;">
-            <div class="td-bar-fill">
-              <div class="td-bar-input" style="height:${inputPct}%;"></div>
-            </div>
+      <div class="td-bar-col" title="${d.tooltip}">
+        <div class="td-bar-area">
+          <div class="td-bar-stack" style="height:${heightPct}%;">
+            <div class="td-bar-segment td-bar-output" style="height:${outputPct}%;"></div>
+            <div class="td-bar-segment td-bar-input-seg" style="height:${inputPct}%;"></div>
           </div>
         </div>
-        <div class="td-bar-label">${title}</div>
+        <div class="td-bar-labels">
+          <span class="td-val-output">${formatTokenCount(d.output)}</span>
+          <span class="td-val-input">${formatTokenCount(d.input)}</span>
+        </div>
+        <div class="td-bar-label">${d.label}</div>
       </div>
     `;
   }).join('');
@@ -284,17 +288,19 @@ function renderGlobalChart(stats: AllSessionsTokenStats): void {
     <div class="td-chart-legend">
       <span class="td-legend-item"><span class="td-legend-dot td-legend-output"></span>输出 Token</span>
       <span class="td-legend-item"><span class="td-legend-dot td-legend-input"></span>输入 Token</span>
-      ${sessions.length > 20 ? `<span class="td-legend-item td-legend-note">（仅显示最近 20 个会话）</span>` : ''}
+      ${note ? `<span class="td-legend-item td-legend-note">${note}</span>` : ''}
     </div>
-    <div class="td-chart-container">
-      <div class="td-chart-y-axis">
-        <span>${formatTokenCount(maxTokens)}</span>
-        <span>${formatTokenCount(Math.round(maxTokens / 2))}</span>
-        <span>0</span>
-      </div>
+    <div class="td-chart-grid">
+      ${gridLines}
       <div class="td-chart-bars">${barsHtml}</div>
     </div>
   `;
+
+  // 恢复滚动位置
+  if (savedScrollLeft && savedScrollLeft > 0) {
+    const newBarsEl = chartEl.querySelector('.td-chart-bars') as HTMLElement | null;
+    if (newBarsEl) newBarsEl.scrollLeft = savedScrollLeft;
+  }
 }
 
 /** 渲染全局明细表格 */
@@ -379,62 +385,22 @@ function renderSessionView(): void {
     </div>
   `;
 
-  // 柱状图标题
-  const chartTitleEl = dashboardModalEl.querySelector('#tdChartTitle');
-  if (chartTitleEl) chartTitleEl.textContent = '📈 Token 消耗趋势 — 按轮次';
-
   // 柱状图
   const chartEl = dashboardModalEl.querySelector('#tdChart')!;
   const barsEl = chartEl.querySelector('.td-chart-bars') as HTMLElement | null;
   const savedScrollLeft = barsEl?.scrollLeft ?? 0;
-  if (rounds.length === 0) {
-    chartEl.innerHTML = '<div class="td-empty">暂无数据，发送消息后开始统计</div>';
-  } else {
-    const maxTokens = Math.max(...rounds.map(r => r.eval_count + r.prompt_eval_count), 1);
-    const barsHtml = rounds.map(r => {
-      const total = r.eval_count + r.prompt_eval_count;
-      const heightPct = Math.max((total / maxTokens) * 100, 2);
-      const inputPct = total > 0 ? (r.prompt_eval_count / total) * 100 : 0;
-      const tooltip = `第${r.round}轮 · 输入 ${formatTokenCount(r.prompt_eval_count)} + 输出 ${formatTokenCount(r.eval_count)} = ${formatTokenCount(total)} tokens · ${formatDuration(r.total_duration)}`;
-      return `
-        <div class="td-bar-col" title="${tooltip}">
-          <div class="td-bar-values">
-            <span class="td-val-output">${formatTokenCount(r.eval_count)}</span>
-            <span class="td-val-input">${formatTokenCount(r.prompt_eval_count)}</span>
-          </div>
-          <div class="td-bar-wrapper">
-            <div class="td-bar" style="height:${heightPct}%;">
-              <div class="td-bar-fill">
-                <div class="td-bar-input" style="height:${inputPct}%;"></div>
-              </div>
-            </div>
-          </div>
-          <div class="td-bar-label">R${r.round}</div>
-        </div>
-      `;
-    }).join('');
 
-    chartEl.innerHTML = `
-      <div class="td-chart-legend">
-        <span class="td-legend-item"><span class="td-legend-dot td-legend-output"></span>输出 Token</span>
-        <span class="td-legend-item"><span class="td-legend-dot td-legend-input"></span>输入 Token</span>
-      </div>
-      <div class="td-chart-container">
-        <div class="td-chart-y-axis">
-          <span>${formatTokenCount(maxTokens)}</span>
-          <span>${formatTokenCount(Math.round(maxTokens / 2))}</span>
-          <span>0</span>
-        </div>
-        <div class="td-chart-bars">${barsHtml}</div>
-      </div>
-    `;
-  }
+  const chartData = rounds.map(r => ({
+    label: `R${r.round}`,
+    input: r.prompt_eval_count,
+    output: r.eval_count,
+    tooltip: `第${r.round}轮 · 输入 ${formatTokenCount(r.prompt_eval_count)} + 输出 ${formatTokenCount(r.eval_count)} = ${formatTokenCount(r.eval_count + r.prompt_eval_count)} tokens · ${formatDuration(r.total_duration)}`,
+  }));
 
-  // 恢复滚动位置
-  if (savedScrollLeft > 0) {
-    const newBarsEl = chartEl.querySelector('.td-chart-bars') as HTMLElement | null;
-    if (newBarsEl) newBarsEl.scrollLeft = savedScrollLeft;
-  }
+  const chartTitleEl = dashboardModalEl.querySelector('#tdChartTitle');
+  if (chartTitleEl) chartTitleEl.textContent = '📈 Token 消耗趋势 — 按轮次';
+
+  renderBarChart(chartEl, chartData, '按轮次', undefined, savedScrollLeft);
 
   // 表格标题
   const tableTitleEl = dashboardModalEl.querySelector('#tdTableTitle');
