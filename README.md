@@ -1,177 +1,505 @@
-# Metona Ollama Desktop
+<p align="center">
+  <img src="assets/icons/icon-new.png" alt="Metona Ollama Desktop" width="128">
+</p>
 
-> 本地 Ollama AI 桌面客户端 — TypeScript + Electron
+<h1 align="center">Metona Ollama Desktop</h1>
 
-## 简介
+<p align="center">
+  <strong>本地 AI 桌面客户端</strong> — 基于 TypeScript + Electron，为 Ollama 而生
+</p>
 
-Metona Ollama Desktop 是一个基于 Ollama 的本地 AI 桌面客户端，支持 Tool Calling、记忆系统、浏览器控制、MCP 协议等能力。数据不离开本机，零配置启动。
+<p align="center">
+  <img src="https://img.shields.io/badge/version-v1--stable--release-E8734A?style=flat-square" alt="version">
+  <img src="https://img.shields.io/badge/electron-33+-47848F?style=flat-square&logo=electron" alt="electron">
+  <img src="https://img.shields.io/badge/typescript-5.7+-3178C6?style=flat-square&logo=typescript" alt="typescript">
+  <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="license">
+  <img src="https://img.shields.io/badge/platform-Windows%20x64-blue?style=flat-square" alt="platform">
+</p>
 
-## 特性
+<p align="center">
+  所有 AI 推理均在本地完成，数据不离开本机。<br>
+  零配置启动 · 全离线运行 · 暖色调 UI · 系统级集成
+</p>
 
-- 🤖 **ReAct Agent Loop** — Thought → Action → Observation → Reflection 循环，默认最大 85 轮
-- 🔧 **38 个内置工具** — 文件系统/命令执行/联网搜索/浏览器/Git/记忆/技能/会话/子代理
-- 🧠 **智能记忆系统** — 三类记忆（fact/preference/rule）+ FTS5 全文搜索 + 向量语义搜索 + 安全扫描
-- 🌐 **MCP 协议** — JSON-RPC 2.0 over stdio，动态工具发现与执行，Shadowing 防护
-- 🔍 **三引擎联网搜索** — Bing + 百度 + Google
-- 🖥️ **工作空间面板** — 终端（实时流式输出）+ 文件浏览器一体化
-- 🎨 **暖色调 UI** — 奶白 #FAF7F2 + 珊瑚橙 #E8734A，长时间使用不疲劳
+---
 
-## 工具列表
+## ✨ 特性一览
 
-| 分类 | 数量 | 工具 |
-|------|------|------|
-| 文件系统 | 17 | read_file, write_file, list_directory, search_files, create_directory, delete_file, move_file, copy_file, append_file, edit_file, get_file_info, tree, download_file, diff_files, replace_in_files, read_multiple_files, compress |
-| 命令执行 | 1 | run_command（实时流式输出，工作空间终端集成） |
-| 联网搜索 | 2 | web_search（Bing + 百度 + Google 三引擎）, web_fetch |
-| 浏览器控制 | 8 | browser_open, browser_screenshot, browser_evaluate, browser_extract, browser_click, browser_type, browser_scroll, browser_close |
-| Git | 1 | git（init/clone/add/commit/push/pull/diff/log/status/branch/checkout/merge/stash/reset/tag/remote） |
-| 记忆管理 | 4 | memory_search, memory_add, memory_replace, memory_remove |
-| 技能系统 | 2 | skill_list, skill_view（渐进式加载） |
-| 会话管理 | 2 | session_list, session_read |
-| 子代理 | 1 | spawn_task（独立上下文 + 超时保护） |
+<table>
+<tr>
+<td width="50%">
 
-## 架构
+### 🤖 ReAct Agent Loop
+Thought → Action → Observation → Reflection 完整循环，最大 85 轮迭代（可配置），支持自动重试、工具调用去重、并行/链式执行。
 
-```
-用户消息 → Agent Loop（ReAct）
-              ↓
-         记忆检索（FTS5 + 向量搜索）→ 上下文注入
-              ↓
-         Ollama API（流式响应）
-              ↓
-         工具调用（38 内置 + MCP 动态）
-              ↓
-         观察结果 → 反思 → 循环/最终回答
-```
+### 🔧 38 个内置工具
+文件系统 · 命令执行 · 联网搜索 · 浏览器控制 · Git · 记忆 · 技能 · 会话 · 子代理
 
-### 数据层
+### 🧠 智能记忆系统
+三类记忆（fact / preference / rule）+ FTS5 全文搜索 + 向量语义搜索，写入前自动安全扫描，容量管理 + 过期衰减。
 
-- **SQLite (sql.js WASM)**：7 张表（sessions, messages, tool_calls, memories, settings, traces, skills）
-- **FTS5 全文搜索**：memories 表支持全文检索
-- **WAL 模式 + NORMAL 同步**：零原生依赖，无需 electron-rebuild
+</td>
+<td width="50%">
 
-### 记忆系统
+### 🌐 MCP 协议扩展
+JSON-RPC 2.0 over stdio，动态工具发现与执行，Shadowing 防护，30 秒超时保护。
 
-- **三类记忆**：fact（事实）、preference（偏好）、rule（规则，始终注入）
-- **安全扫描**：写入前检测 prompt injection、敏感信息泄露、不可见 Unicode 字符
-- **容量管理**：上限 500 条，超限自动清理低价值条目（rule 类型受保护）
-- **过期衰减**：90 天未使用的记忆自动降低 importance
+### 🔍 三引擎联网搜索
+Bing + 百度 + Google 聚合搜索，web_search → web_fetch 链式抓取，SPA 页面智能跳过。
 
-## 技术栈
+### 🖥️ 工作空间面板
+终端（实时流式输出）+ 文件浏览器一体化，命令安全检查，三种执行模式。
 
-| 层级 | 技术 |
+</td>
+</tr>
+</table>
+
+---
+
+## 🎨 界面预览
+
+<p align="center">
+  <img src="assets/icons/icon-new.svg" alt="Metona Logo" width="64">
+</p>
+
+| 设计元素 | 规范 |
+|:---:|:---:|
+| 背景色 | 奶白 `#FAF7F2` |
+| 主色调 | 珊瑚橙 `#E8734A` |
+| Think 标识 | 紫色 `#9B7ED8` |
+| Token 标识 | 金色 `#D4A03C` |
+| 终端区域 | 暖棕深色 `#2D2016` |
+| 正文字体 | Inter |
+| 代码字体 | JetBrains Mono |
+
+---
+
+## 📦 工具清单
+
+<details>
+<summary><strong>文件系统（17 个）</strong></summary>
+
+| 工具 | 功能 |
 |------|------|
-| 语言 | TypeScript (strict mode) |
-| 桌面框架 | Electron 33+ |
-| 构建 | Vite（渲染进程）+ tsc（主进程） |
-| 数据库 | sql.js (WASM) + FTS5 |
-| 第三方库 | marked（Markdown）, DOMPurify（HTML 净化） |
-| 打包 | electron-builder (NSIS) |
+| `read_file` | 读取文件内容 |
+| `write_file` | 写入文件 |
+| `list_directory` | 列出目录内容 |
+| `search_files` | 搜索文件（正则/通配符） |
+| `create_directory` | 创建目录 |
+| `delete_file` | 删除文件 |
+| `move_file` | 移动/重命名文件 |
+| `copy_file` | 复制文件 |
+| `append_file` | 追加内容到文件 |
+| `edit_file` | 编辑文件（查找替换） |
+| `get_file_info` | 获取文件元信息 |
+| `tree` | 目录树结构 |
+| `download_file` | 下载文件 |
+| `diff_files` | 文件差异对比 |
+| `replace_in_files` | 批量替换 |
+| `read_multiple_files` | 批量读取 |
+| `compress` | 压缩文件/目录 |
 
-## 快速开始
+</details>
 
-```bash
-git clone https://gitee.com/thzxx/metona-ollama-desktop.git
-cd metona-ollama-desktop
-git checkout desktop-v1-stable-release
-npm config set registry https://registry.npmmirror.com
-npm install
-npm start
+<details>
+<summary><strong>命令执行（1 个）</strong></summary>
+
+| 工具 | 功能 |
+|------|------|
+| `run_command` | 执行 shell 命令，实时流式输出到工作空间终端，支持自动/需确认/禁用三种模式 |
+
+</details>
+
+<details>
+<summary><strong>联网搜索（2 个）</strong></summary>
+
+| 工具 | 功能 |
+|------|------|
+| `web_search` | 三引擎聚合搜索（Bing + 百度 + Google），返回标题、URL、摘要，默认 15 条 |
+| `web_fetch` | 网页内容抓取，默认不截断 |
+
+</details>
+
+<details>
+<summary><strong>浏览器控制（8 个）</strong></summary>
+
+| 工具 | 功能 |
+|------|------|
+| `browser_open` | 打开网页 |
+| `browser_screenshot` | 页面截图 |
+| `browser_evaluate` | 执行 JavaScript |
+| `browser_extract` | 提取页面内容 |
+| `browser_click` | 点击元素 |
+| `browser_type` | 输入文本 |
+| `browser_scroll` | 页面滚动 |
+| `browser_close` | 关闭浏览器 |
+
+</details>
+
+<details>
+<summary><strong>Git（1 个，17 个子命令）</strong></summary>
+
+| 子命令 | 功能 |
+|--------|------|
+| `init` `clone` `add` `commit` `push` `pull` | 基础操作 |
+| `diff` `log` `status` `branch` `checkout` | 查看与切换 |
+| `merge` `stash` `reset` `tag` `remote` | 高级操作 |
+
+</details>
+
+<details>
+<summary><strong>记忆管理（4 个）</strong></summary>
+
+| 工具 | 功能 |
+|------|------|
+| `memory_search` | 搜索记忆（FTS5 + 向量语义） |
+| `memory_add` | 添加记忆（自动安全扫描） |
+| `memory_replace` | 修改记忆 |
+| `memory_remove` | 删除记忆 |
+
+</details>
+
+<details>
+<summary><strong>技能 / 会话 / 子代理（5 个）</strong></summary>
+
+| 工具 | 功能 |
+|------|------|
+| `skill_list` | 列出已生成的技能 |
+| `skill_view` | 查看技能详情（渐进式加载） |
+| `session_list` | 列出历史会话 |
+| `session_read` | 读取会话内容 |
+| `spawn_task` | 委派子代理（独立上下文 + 超时保护） |
+
+</details>
+
+---
+
+## 🏗️ 架构
+
+```
+用户消息
+  │
+  ▼
+┌─────────────────────────────────────────────────────────┐
+│  Agent Engine (ReAct Loop)                              │
+│  Thought → Action → Observation → Reflection → 循环     │
+│  最大 85 轮 · 自动重试 2 次 · 工具去重 · 并行执行       │
+└─────────────────┬───────────────────────────────────────┘
+                  │
+    ┌─────────────┼─────────────────┐
+    ▼             ▼                 ▼
+┌────────┐  ┌──────────┐  ┌──────────────┐
+│ 记忆   │  │ 技能     │  │ 上下文管理   │
+│ FTS5 + │  │ 自动提取 │  │ 滑动窗口 +   │
+│ 向量   │  │ Level 0  │  │ LLM 摘要压缩 │
+└────────┘  └──────────┘  └──────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────────────────────────┐
+│  Ollama API（流式响应）                                  │
+└─────────────────┬───────────────────────────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────────────────────────┐
+│  Tool Registry                                          │
+│  38 内置工具 + MCP 动态工具                              │
+│  ┌─────┐ ┌─────┐ ┌─────┐ ┌─────┐ ┌─────┐ ┌─────┐     │
+│  │ FS  │ │ CMD │ │ Web │ │ Git │ │ Mem │ │ MCP │ ... │
+│  └─────┘ └─────┘ └─────┘ └─────┘ └─────┘ └─────┘     │
+└─────────────────┬───────────────────────────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────────────────────────────┐
+│  SQLite (sql.js WASM)                                   │
+│  sessions · messages · tool_calls · memories (FTS5)     │
+│  settings · traces · skills                             │
+│  WAL 模式 · 零原生依赖                                  │
+└─────────────────────────────────────────────────────────┘
 ```
 
-## 构建 Windows 安装包
+---
 
-```bash
-# 环境：Ubuntu 24.04 + Node.js v22 + Wine 9.0+
-ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm run dist
-```
-
-产出：`release/Metona Ollama Setup v1-stable-release.exe`（82MB）
-
-## 项目结构
+## 📂 项目结构
 
 ```
 src/
-├── main/                         # Electron 主进程
-│   ├── main.ts                   # 入口、窗口管理
-│   ├── preload.ts                # contextBridge API（53 个 invoke + 2 个 send）
-│   ├── ipc.ts                    # IPC 处理器
-│   ├── browser.ts                # 浏览器控制（8 个工具）
-│   ├── mcp-manager.ts            # MCP 协议管理（JSON-RPC 2.0 over stdio）
-│   ├── tool-handlers-fs.ts       # 文件系统工具（15 个）
-│   ├── tool-handlers-system.ts   # 系统网络工具（6 个）
-│   ├── tool-handlers-git.ts      # Git 工具
-│   ├── tool-handlers-shared.ts   # 共享工具函数
-│   ├── tool-security.ts          # 路径/命令安全检查
-│   └── db/sqlite.ts              # SQLite 数据库层（7 张表 + FTS5）
-├── renderer/                     # 渲染进程
-│   ├── main.ts                   # 入口、全局初始化
+├── main/                              # Electron 主进程
+│   ├── main.ts                        #   入口、窗口管理
+│   ├── preload.ts                     #   contextBridge API（53 invoke + 2 send）
+│   ├── ipc.ts                         #   IPC 处理器（70+ 通道）
+│   ├── workspace.ts                   #   子进程管理、流式输出
+│   ├── tool-handlers.ts               #   Tool Calling re-export
+│   ├── tool-handlers-fs.ts            #   17 个文件系统工具
+│   ├── tool-handlers-system.ts        #   6 个系统网络工具
+│   ├── tool-handlers-git.ts           #   Git 工具
+│   ├── tool-handlers-shared.ts        #   共享工具函数和类型
+│   ├── tool-security.ts               #   路径/命令安全检查
+│   ├── browser.ts                     #   浏览器控制（8 个工具）
+│   ├── mcp-manager.ts                 #   MCP 协议管理（JSON-RPC 2.0 over stdio）
+│   ├── menu.ts                        #   原生菜单
+│   ├── tray.ts                        #   系统托盘
+│   ├── utils.ts                       #   工具函数
+│   └── db/
+│       └── sqlite.ts                  #   SQLite 数据库层（7 张表 + FTS5）
+│
+├── renderer/                          # 渲染进程
+│   ├── main.ts                        #   入口、全局初始化
+│   ├── index.html                     #   入口 HTML
+│   ├── types.d.ts                     #   完整类型定义
+│   ├── api/
+│   │   └── ollama.ts                  #   Ollama REST API 客户端
 │   ├── services/
-│   │   ├── agent-engine.ts       # ReAct Agent Loop 引擎
-│   │   ├── tool-registry.ts      # 工具注册与调度（38 个内置 + MCP 动态）
-│   │   ├── memory-manager.ts     # 记忆管理核心
-│   │   ├── vector-memory.ts      # 记忆向量索引（IVF）
-│   │   ├── vector-store.ts       # 向量存储
-│   │   ├── context-manager.ts    # 上下文窗口管理
-│   │   ├── skill-manager.ts      # 技能自动生成
-│   │   ├── sub-agent.ts          # 子代理委派
-│   │   ├── mcp-client.ts         # MCP 渲染端客户端
-│   │   ├── log-service.ts        # 结构化日志
-│   │   └── crypto.ts             # AES-256-GCM 加密
-│   ├── components/               # UI 组件（14 个）
+│   │   ├── agent-engine.ts            #   ReAct Agent Loop 引擎
+│   │   ├── tool-registry.ts           #   工具注册与调度（38 + MCP 动态）
+│   │   ├── memory-manager.ts          #   记忆管理核心
+│   │   ├── vector-memory.ts           #   记忆向量索引（IVF）
+│   │   ├── vector-store.ts            #   向量存储 + IVF 索引
+│   │   ├── context-manager.ts         #   上下文窗口管理（自动/手动压缩）
+│   │   ├── skill-manager.ts           #   技能自动生成（Level 0）
+│   │   ├── sub-agent.ts               #   子代理委派
+│   │   ├── cron-manager.ts            #   定时任务
+│   │   ├── mcp-client.ts              #   MCP 渲染端客户端
+│   │   ├── document-processor.ts      #   文档分块
+│   │   ├── log-service.ts             #   结构化日志
+│   │   └── crypto.ts                  #   AES-256-GCM 加密
+│   ├── components/                    #   14 个 UI 组件
 │   ├── utils/
-│   │   ├── utils.ts              # 工具函数
-│   │   ├── sanitizer.ts          # HTML 净化器
-│   │   └── marked-config.ts      # Markdown 渲染
-│   ├── state/state.ts            # 响应式状态管理
-│   ├── db/chat-db.ts             # SQLite 渲染端接口
-│   ├── styles/style.css          # 暖色调亮色主题
-│   └── index.html                # 入口 HTML
-└── vendor/                       # 第三方库（marked, DOMPurify）
+│   │   ├── utils.ts                   #   工具函数
+│   │   ├── sanitizer.ts               #   HTML 净化器
+│   │   └── marked-config.ts           #   Markdown 渲染配置
+│   ├── state/
+│   │   └── state.ts                   #   响应式状态管理
+│   ├── db/
+│   │   └── chat-db.ts                 #   SQLite 渲染端接口
+│   └── styles/
+│       └── style.css                  #   暖色调亮色主题
+│
+├── vendor/                            # 第三方库本地化
+│   ├── marked.js                      #   Markdown 解析
+│   ├── marked.d.ts
+│   ├── dompurify.js                   #   HTML 净化
+│   └── dompurify.d.ts
+│
+├── tsconfig.json                      # 渲染进程 TS 配置
+├── tsconfig.main.json                 # 主进程 TS 配置
+├── vite.config.ts                     # Vite 构建配置
+└── package.json
 ```
 
-## 推荐记忆规则
+---
 
-以下是使用 Metona Ollama Desktop 时推荐预先写入记忆系统的规则（rule 类型），可帮助 Agent 更高效、更安全地工作：
+## 🚀 快速开始
 
-### 🔧 开发类规则
+### 环境要求
 
-| 规则 | 说明 |
+| 依赖 | 版本 |
 |------|------|
-| `所有日志必须通过 log-service.ts 输出，禁止使用 console.log/error/warn` | 项目铁律，保持日志面板统一 |
-| `新增第三方依赖优先 vendor 到 src/vendor/，避免 npm 运行时依赖` | 项目依赖管理策略，sql.js 除外 |
-| `所有文件写入和命令执行必须经过 tool-security.ts 安全检查` | 安全底线，防止越权操作 |
-| `TypeScript 严格模式，禁止滥用 any，类型定义集中在 types.d.ts` | 代码质量保障 |
-| `文件名 kebab-case，类型 PascalCase，变量 camelCase，常量 UPPER_SNAKE_CASE` | 命名规范统一 |
+| Node.js | ≥ 22 |
+| npm | ≥ 10 |
+| Ollama | 本地运行中（默认 `http://localhost:11434`） |
 
-### 🧠 效率类规则
+### 开发运行
 
-| 规则 | 说明 |
+```bash
+# 克隆项目
+git clone https://gitee.com/thzxx/metona-ollama-desktop.git
+cd metona-ollama-desktop
+git checkout desktop-v1-stable-release
+
+# 设置 npm 镜像
+npm config set registry https://registry.npmmirror.com
+
+# 安装依赖
+npm install
+
+# 开发运行
+npm start
+```
+
+### 构建 Windows 安装包
+
+```bash
+# 环境：Ubuntu 24.04 + Wine 9.0+
+# 1. 恢复构建缓存（首次 ~145MB）
+bash restore-build-cache.sh
+
+# 2. 构建
+ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm run dist
+```
+
+产出文件：`release/Metona Ollama Setup v1-stable-release.exe`
+
+---
+
+## 🗄️ 数据库设计
+
+项目使用 **sql.js (WASM)** 实现零原生依赖的 SQLite 存储，WAL 模式 + NORMAL 同步。
+
+### 表结构
+
+| 表 | 用途 | 关键特性 |
+|:---|:---|:---|
+| `sessions` | 会话 | `parent_id` 父子关系 |
+| `messages` | 消息 | 外键级联删除，`thinking` / `tool_calls` 字段 |
+| `tool_calls` | 工具调用记录 | 按会话 + 工具名索引 |
+| `memories` | Agent 记忆 | FTS5 全文搜索 + 向量嵌入，容量上限 500 |
+| `settings` | 设置 | JSON 序列化 |
+| `traces` | ReAct 执行轨迹 | Agent 可观测性 |
+| `skills` | 自动生成的技能 | 成功/失败次数、平均时长、summary 字段 |
+
+### FTS5 全文搜索
+
+```sql
+CREATE VIRTUAL TABLE memories_fts USING fts5(
+  content, tags, source,
+  content='memories',
+  content_rowid='rowid'
+);
+```
+
+---
+
+## 🧠 记忆系统
+
+### 三种记忆类型
+
+| 类型 | 图标 | 注入策略 | 适用场景 |
+|:---:|:---:|:---|:---|
+| `fact` | 📌 | 按需检索 | 项目信息、个人背景、技术栈 |
+| `preference` | ⚙️ | 按需检索 | 语言偏好、输出风格、格式习惯 |
+| `rule` | 📏 | **始终注入** | 行为准则、安全红线、铁律 |
+
+### 记忆生命周期
+
+```
+用户对话 → 自动提取 → 安全扫描 → 存储（FTS5 + 向量）
+                                      │
+用户提问 → 语义检索 → 相关记忆注入上下文 → Agent 使用
+                                      │
+                              90 天未使用 → 自动衰减 importance
+                              超过 500 条 → 自动清理低价值条目
+```
+
+### 安全扫描
+
+写入前自动检测：
+- Prompt Injection 攻击模式
+- 敏感信息泄露（密钥、Token、密码）
+- 不可见 Unicode 字符
+
+---
+
+## ⚡ 上下文管理
+
+### 三层策略
+
+```
+┌─────────────────────────────────────┐
+│  滑动窗口  │  保留首尾各 N 条消息    │
+├─────────────────────────────────────┤
+│  LLM 压缩  │  中间轮次摘要为 1-2 条  │
+├─────────────────────────────────────┤
+│  记忆注入  │  FTS5 + 向量检索注入    │
+└─────────────────────────────────────┘
+```
+
+- **自动压缩阈值**：消息 token 占 context window 50% 时触发
+- **手动压缩**：`/compress` 命令
+- **Token 估算**：中文 1.5 字/token，英文 4 字符/token
+
+---
+
+## 🔒 安全机制
+
+| 层级 | 措施 |
 |------|------|
-| `联网搜索后必须用 web_fetch 抓取相关 URL 详情，不要只看摘要` | 搜索结果摘要信息有限，抓取原文才能给出准确回答 |
-| `执行多步任务时优先使用子代理 spawn_task 分担，避免主会话上下文膨胀` | 保持主会话响应速度 |
-| `复杂文件操作前先 list_directory 确认路径结构，再执行具体操作` | 防止路径错误导致意外 |
-| `长对话中主动使用 session_list/session_read 回顾历史，避免重复工作` | 利用会话管理工具保持连贯性 |
+| 文件系统 | `checkPathAllowed()` — 路径黑名单（`/etc`, `/sys`, `/proc`, `~/.ssh` 等） |
+| 命令执行 | `checkCommandAllowed()` — 命令黑名单 + 三种模式（自动/需确认/禁用） |
+| 前端渲染 | HTML 净化器（白名单标签 + 属性过滤 + URI 协议检查） |
+| Electron | `contextIsolation: true` + IPC 白名单 |
+| 数据加密 | AES-256-GCM |
+| 记忆安全 | 写入前 Prompt Injection / 敏感信息 / 不可见字符检测 |
+| MCP 安全 | Shadowing 防护（MCP 工具不能覆盖内置工具名） |
 
-### 🛡️ 安全类规则
+---
 
-| 规则 | 说明 |
+## 🛠️ 常用命令
+
+```bash
+npm start              # 构建并运行（开发）
+npm run dev:renderer   # Vite watch 模式（渲染进程）
+npm run dev:main       # tsc watch 模式（主进程）
+npm run build          # 完整构建
+npm run build:renderer # 仅渲染进程
+npm run build:main     # 仅主进程
+npm run pack           # 构建目录（不打包）
+npm run dist           # 构建 Windows NSIS 安装包
+npm run dist:nsis      # 同上
+```
+
+---
+
+## 📋 版本号更新清单
+
+更新版本号时需同步修改以下 **7 个文件**：
+
+| 文件 | 修改内容 |
+|------|----------|
+| `package.json` | `"version": "X.Y.Z"` |
+| `package-lock.json` | 顶层 version 字段（2 处） |
+| `src/renderer/index.html` | `<span class="app-version">vX.Y.Z</span>` |
+| `README.md` | 版本徽章、下载文件名 |
+| `docs/BUILD.md` | 构建分支引用 |
+| `docs/CHANGELOG.md` | 新增版本条目 |
+| `docs/DEVELOPMENT.md` | 文件头部版本号 |
+
+---
+
+## 🌿 Git 规范
+
+### 分支模型
+
+```
+master                          ← 稳定发布
+develop                         ← 开发主分支
+metona-ollama-desktop-vX.Y.Z   ← 版本发布分支
+feature/*                       ← 功能开发
+fix/*                           ← Bug 修复
+```
+
+### Commit 规范
+
+| 前缀 | 用途 |
 |------|------|
-| `禁止执行 rm -rf /、mkfs、dd、shutdown 等破坏性命令` | 硬性安全红线 |
-| `写操作仅允许在用户工作目录下进行，系统目录只读` | 路径安全策略 |
-| `记忆写入前自动扫描 prompt injection 和敏感信息，发现异常立即拒绝` | 记忆系统安全机制 |
-| `MCP 工具注册时自动检测与内置工具重名，防止 Shadowing 攻击` | MCP 安全防护 |
+| `feat:` | 新功能 |
+| `fix:` | Bug 修复 |
+| `refactor:` | 重构 |
+| `style:` | 样式调整 |
+| `docs:` | 文档更新 |
+| `chore:` | 构建/工具变更 |
+| `perf:` | 性能优化 |
 
-### 💡 使用技巧
+---
 
-| 规则 | 说明 |
+## 📖 技术文档
+
+项目详细技术文档位于 `docs/` 目录：
+
+| 文档 | 内容 |
 |------|------|
-| `记忆系统上限 500 条，优先写入高价值信息，低价值内容会自动清理` | 合理利用记忆容量 |
-| `rule 类型记忆始终注入上下文，适合放铁律和偏好；fact/preference 按需检索` | 区分记忆类型，提高注入效率 |
-| `技能系统会从成功任务中自动学习，遇到重复任务时优先查看已有技能` | 利用技能系统减少重复推理 |
+| [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) | 开发规范、代码规范、架构设计 |
+| [`docs/BUILD.md`](docs/BUILD.md) | Windows 安装包构建指南、故障排查 |
+| [`docs/OPENCLAW-HERMES-ANALYSIS.md`](docs/OPENCLAW-HERMES-ANALYSIS.md) | 与 OpenClaw / Hermes 的对比分析 |
+| [`docs/HERMES-AGENT-DEEP-STUDY.md`](docs/HERMES-AGENT-DEEP-STUDY.md) | Hermes Agent 深度研究 |
 
-> 💡 **提示**：以上规则可通过 `memory_add` 工具写入，类型设为 `rule`，即可在每次对话中自动注入上下文。
+---
 
-## 许可证
+## 📄 许可证
 
-MIT
+[MIT](LICENSE)
+
+---
+
+<p align="center">
+  <sub>Made with ❤️ by <a href="https://gitee.com/thzxx">thzxx</a></sub>
+</p>
