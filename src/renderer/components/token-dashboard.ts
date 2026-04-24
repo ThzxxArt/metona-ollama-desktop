@@ -206,7 +206,6 @@ function renderGlobalOverview(stats: AllSessionsTokenStats): void {
 
   const overviewEl = dashboardModalEl.querySelector('#tdOverview')!;
   overviewEl.innerHTML = `
-    <div class="td-stat-row td-stat-row-global">
       <div class="td-stat-card">
         <div class="td-stat-icon">🌍</div>
         <div class="td-stat-value">${formatTokenCount(totalTokens)}</div>
@@ -228,14 +227,11 @@ function renderGlobalOverview(stats: AllSessionsTokenStats): void {
         <div class="td-stat-value">${formatDuration(totals.total_duration)}</div>
         <div class="td-stat-label">总推理耗时</div>
       </div>
-    </div>
-    <div class="td-stat-row td-stat-row-session">
       <div class="td-stat-card td-stat-card-small">
         <div class="td-stat-icon">📊</div>
         <div class="td-stat-value">${formatTokenCount(avgPerRound)}</div>
         <div class="td-stat-label">平均 Token/轮</div>
       </div>
-    </div>
   `;
 }
 
@@ -303,6 +299,34 @@ function renderBarChart(
   }
 }
 
+/** 渲染全局柱状图（按会话） */
+function renderGlobalChart(stats: AllSessionsTokenStats): void {
+  const chartEl = dashboardModalEl.querySelector('#tdChart')!;
+  const barsEl = chartEl.querySelector('.td-chart-bars') as HTMLElement | null;
+  const savedScrollLeft = barsEl?.scrollLeft ?? 0;
+
+  const chartTitleEl = dashboardModalEl.querySelector('#tdChartTitle');
+  if (chartTitleEl) chartTitleEl.textContent = '📈 Token 消耗趋势 — 按会话';
+
+  const sessions = stats.sessions;
+  if (sessions.length === 0) {
+    chartEl.innerHTML = '<div class="td-empty">暂无数据</div>';
+    return;
+  }
+
+  // 按创建时间正序排列，取最近 30 个会话
+  const sorted = [...sessions].sort((a, b) => a.created_at - b.created_at).slice(-30);
+
+  const chartData = sorted.map(s => ({
+    label: s.title.length > 10 ? s.title.slice(0, 10) + '…' : s.title,
+    input: s.total_input,
+    output: s.total_output,
+    tooltip: `${s.title} · 模型 ${s.model} · 输入 ${formatTokenCount(s.total_input)} + 输出 ${formatTokenCount(s.total_output)} = ${formatTokenCount(s.total_input + s.total_output)} tokens · ${s.round_count} 轮`,
+  }));
+
+  renderBarChart(chartEl, chartData, '按会话', `最近 ${sorted.length} 个会话`, savedScrollLeft);
+}
+
 /** 渲染全局明细表格 */
 function renderGlobalTable(stats: AllSessionsTokenStats): void {
   const tableTitleEl = dashboardModalEl.querySelector('#tdTableTitle');
@@ -353,7 +377,6 @@ function renderSessionView(): void {
   // 概览区域
   const overviewEl = dashboardModalEl.querySelector('#tdOverview')!;
   overviewEl.innerHTML = `
-    <div class="td-stat-row td-stat-row-global">
       <div class="td-stat-card">
         <div class="td-stat-icon">🔥</div>
         <div class="td-stat-value">${formatTokenCount(totalTokens)}</div>
@@ -375,14 +398,11 @@ function renderSessionView(): void {
         <div class="td-stat-value">${formatDuration(totalDurationNs)}</div>
         <div class="td-stat-label">总推理耗时</div>
       </div>
-    </div>
-    <div class="td-stat-row td-stat-row-session">
       <div class="td-stat-card td-stat-card-small">
         <div class="td-stat-icon">🤖</div>
         <div class="td-stat-value">${session?.model || '-'}</div>
         <div class="td-stat-label">当前模型</div>
       </div>
-    </div>
   `;
 
   // 柱状图
