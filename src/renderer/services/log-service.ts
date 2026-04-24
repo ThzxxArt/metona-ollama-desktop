@@ -212,7 +212,7 @@ async function exportLog(): Promise<void> {
   const content = header + lines.join('\n');
 
   try {
-    const bridge = (window as any).metonaDesktop;
+    const bridge = window.metonaDesktop;
     if (bridge) {
       const ts = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
       const filePath = await bridge.dialog.saveFile({

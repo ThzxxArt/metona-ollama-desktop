@@ -47,7 +47,7 @@ export async function extractSkillsFromToolRecords(
   userMessage: string,
   sessionTitle: string
 ): Promise<number> {
-  const bridge = (window as any).metonaDesktop;
+  const bridge = window.metonaDesktop;
   if (!bridge?.db?.saveSkill) return 0;
 
   // 只看成功的工具调用
@@ -117,7 +117,7 @@ export async function extractSkillsFromToolRecords(
  * 返回匹配度最高的技能列表
  */
 export async function matchSkills(userMessage: string, limit = 3): Promise<Skill[]> {
-  const bridge = (window as any).metonaDesktop;
+  const bridge = window.metonaDesktop;
   if (!bridge?.db?.getAllSkills) return [];
 
   try {
@@ -284,7 +284,7 @@ export async function listSkills(): Promise<Array<{
   success_rate: string;
   chain_preview: string;
 }>> {
-  const bridge = (window as any).metonaDesktop;
+  const bridge = window.metonaDesktop;
   if (!bridge?.db?.getAllSkills) return [];
   const allSkills: Skill[] = await bridge.db.getAllSkills();
   return allSkills.map(skill => {
@@ -311,7 +311,7 @@ export async function viewSkill(skillName: string): Promise<{
   skill?: Skill & { chain: ToolChainStep[]; success_rate: string };
   error?: string;
 }> {
-  const bridge = (window as any).metonaDesktop;
+  const bridge = window.metonaDesktop;
   if (!bridge?.db?.getAllSkills) return { success: false, error: '数据库不可用' };
   const allSkills: Skill[] = await bridge.db.getAllSkills();
   const skill = allSkills.find(s =>

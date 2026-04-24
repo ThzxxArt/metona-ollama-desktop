@@ -170,7 +170,7 @@ function parseToolCallsFromText(content: string): ToolCall[] {
 
 /** v4.2: 从对话中自动推断用户画像 */
 async function inferUserProfile(userMsg: string, assistantMsg: string): Promise<void> {
-  const bridge = (window as any).metonaDesktop;
+  const bridge = window.metonaDesktop;
   if (!bridge?.db?.getSetting) return;
 
   const profile: Record<string, unknown> = await bridge.db.getSetting('user_profile', {}) || {};
@@ -365,7 +365,7 @@ export interface AgentCallbacks {
 /** 保存执行轨迹到 SQLite */
 async function saveTrace(trace: Omit<TraceEntry, 'id' | 'createdAt'>): Promise<void> {
   try {
-    const bridge = (window as any).metonaDesktop;
+    const bridge = window.metonaDesktop;
     if (!bridge?.db) return;
     const entry = {
       id: `trace_${generateId()}`,

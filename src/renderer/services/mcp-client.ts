@@ -45,7 +45,7 @@ export async function addMCPServer(config: MCPServerConfig): Promise<void> {
 }
 
 export async function removeMCPServer(name: string): Promise<void> {
-  const bridge = (window as any).metonaDesktop;
+  const bridge = window.metonaDesktop;
   if (bridge?.mcp) await bridge.mcp.stopServer(name);
   const servers = await getMCPServers();
   await saveMCPServers(servers.filter(s => s.name !== name));
@@ -71,7 +71,7 @@ export async function getEnabledMCPServers(): Promise<MCPServerConfig[]> {
 
 /** 启动所有已启用的 MCP 服务器 */
 export async function startAllMCPServers(): Promise<void> {
-  const bridge = (window as any).metonaDesktop;
+  const bridge = window.metonaDesktop;
   if (!bridge?.mcp) return;
 
   const configs = await getEnabledMCPServers();
@@ -91,13 +91,13 @@ export async function startAllMCPServers(): Promise<void> {
 
 /** 停止所有 MCP 服务器 */
 export async function stopAllMCPServers(): Promise<void> {
-  const bridge = (window as any).metonaDesktop;
+  const bridge = window.metonaDesktop;
   if (bridge?.mcp) await bridge.mcp.stopAll();
 }
 
 /** 获取 MCP 服务器状态 */
 export async function getMCPServerStatuses(): Promise<Array<{ name: string; running: boolean; toolCount: number }>> {
-  const bridge = (window as any).metonaDesktop;
+  const bridge = window.metonaDesktop;
   if (!bridge?.mcp) return [];
   try {
     return await bridge.mcp.getStatuses();
@@ -110,7 +110,7 @@ export async function getMCPServerStatuses(): Promise<Array<{ name: string; runn
 
 /** 从主进程获取所有 MCP 工具并转换为 ToolDefinition 格式 */
 export async function getMCPToolDefinitions(): Promise<ToolDefinition[]> {
-  const bridge = (window as any).metonaDesktop;
+  const bridge = window.metonaDesktop;
   if (!bridge?.mcp) return [];
 
   try {
@@ -146,7 +146,7 @@ export async function getMCPToolDefinitions(): Promise<ToolDefinition[]> {
 
 /** 执行 MCP 工具调用 */
 export async function executeMCPTool(toolName: string, args: Record<string, unknown>): Promise<ToolResult> {
-  const bridge = (window as any).metonaDesktop;
+  const bridge = window.metonaDesktop;
   if (!bridge?.mcp) {
     return { success: false, error: 'MCP API 不可用' };
   }
