@@ -14,7 +14,7 @@ import {
 import { searchMemories, buildMemoryContext, markMemoryUsed, isMemoryEnabled } from './memory-manager.js';
 import { extractSkillsFromToolRecords, matchSkills, buildSkillContext } from './skill-manager.js';
 import { showToast } from '../components/toast.js';
-import { logInfo, logWarn, logError, logToolStart, logToolResult, logAgentLoop, logModelResponse } from './log-service.js';
+import { logInfo, logWarn, logSuccess, logError, logToolStart, logToolResult, logAgentLoop, logModelResponse } from './log-service.js';
 import { getWorkspaceDirPath } from '../components/workspace-panel.js';
 import { generateId } from '../utils/utils.js';
 import { buildContext, estimateTokens, shouldAutoCompress, compressWithLLM, AUTO_COMPRESS_THRESHOLD } from './context-manager.js';
