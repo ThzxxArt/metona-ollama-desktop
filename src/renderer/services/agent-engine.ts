@@ -5,6 +5,7 @@
  */
 
 import { OllamaAPI } from '../api/ollama.js';
+import { ChatDB } from '../db/chat-db.js';
 import { state, KEYS } from '../state/state.js';
 import {
   executeTool,
@@ -443,7 +444,7 @@ export async function runAgentLoop(
   }
 
   // v4.2 注入用户画像
-  const db = state.get<any>(KEYS.DB);
+  const db = state.get<ChatDB | null>(KEYS.DB);
   if (db) {
     try {
       const userProfile = await db.getSetting('user_profile', null);
