@@ -14,7 +14,7 @@
 # 1. 克隆并安装依赖
 git clone https://gitee.com/thzxx/metona-ollama-desktop.git
 cd metona-ollama-desktop
-git checkout metona-ollama-desktop-v5.1.6
+git checkout desktop-v1-stable-release
 npm config set registry https://registry.npmmirror.com
 npm install
 
@@ -92,7 +92,7 @@ npm run dist           # NSIS 安装包
 
 | 文件 | 说明 |
 |------|------|
-| `release/Metona Ollama Setup X.X.X.exe` | NSIS 安装包（可选目录、创建快捷方式） |
+| `release/Metona Ollama Setup 1.0.0.exe` | NSIS 安装包（可选目录、创建快捷方式） |
 
 > v3.2.0 起不再提供绿色便携版，仅保留 NSIS 安装包。
 
@@ -173,202 +173,6 @@ rm -f /tmp/winCodeSign-2.6.0.7z /tmp/nsis-3.0.4.1.7z /tmp/nsis-resources-3.4.1.7
 ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm run dist
 ```
 electron-builder 会自动处理所有依赖下载（Electron、NSIS、winCodeSign），虽然首次较慢（~5分钟），但无需手动管理缓存。
-
-## 构建日志
-
-### v5.1.6（2026-04-20） — metona-ollama-desktop 仓库
-
-- 🔧 移除所有工具执行超时：tool-registry.ts 移除 25s/60s IPC 硬超时，browser.ts 移除 executeJsWithTimeout
-- 🔧 browser 工具状态检查：所有 browser 函数入口检查 isBrowserOpen()，关闭后返回明确错误
-- 📝 版本号更新至 5.1.6
-- ✅ `Metona Ollama Setup 5.1.6.exe`（81MB）
-- ✅ Gitee Release v5.1.6-desktop
-- ⚠️ 构建问题及处理：
-  1. apt 源 `mirrors.cloud.aliyuncs.com` 不可达 → 切换 `archive.ubuntu.com`
-  2. `restore-build-cache.sh` npmmirror NoSuchKey → 跳过，electron-builder 自动下载
-  3. winCodeSign 从 GitHub 下载 EOF → 使用 ghfast.top 代理手动下载缓存
-  4. NSIS 从 GitHub 下载 EOF → 使用 ghfast.top 代理手动下载缓存
-  5. 无编译错误，手动缓存后构建一次通过
-
-### v5.1.5（2026-04-20） — metona-ollama-desktop 仓库
-
-- ♻️ Markdown 解析器替换：内联实现 → `marked` 库（完整 GFM 支持）
-- ♻️ HTML 净化器替换：内联实现 → `DOMPurify`（业界标准）
-- 🧹 精简 crypto.ts：删除 SHA-256/XOR 死代码（~70 行）
-- 🧹 消除重复代码：escapeHtml / formatSize 统一导入
-- ✨ 联网搜索强制注入真实系统日期（system prompt + 工具层双保险）
-- ✨ 新建会话重置工作空间到空闲状态并切回终端页签
-- ✨ 推荐规则记忆新增规则 #13（联网前确认当前日期）
-- 📝 版本号更新至 5.1.5
-- ✅ `Metona Ollama Setup 5.1.5.exe`（82MB）
-- ✅ Gitee Release v5.1.5-desktop（ID: 624102）
-- ⚠️ 构建问题及处理：
-  1. 模板字符串中反引号未转义（`[当前日期: ...]`）→ 转义为 \` 构建通过
-  2. 无其他编译错误
-
-### v5.1.3（2026-04-19） — metona-ollama-desktop 仓库
-
-- 🔧 修复 any 滥用：78 处 → 38 处（减少 51%），保留 API 参数构造等合理场景
-- ♻️ 拆分 tool-handlers.ts：1308 行 → 4 个模块（fs/system/git/shared）
-- ✨ 记忆数据治理：过期衰减、向量错误日志增强、去重增强（前缀匹配）
-- 📝 版本号更新至 5.1.3
-
-### v5.1.2（2026-04-19） — metona-ollama-desktop 仓库
-
-- ✨ 预算警告临时层：Agent Loop 接近迭代上限时注入临时提示，≤5 轮时 warning，≤2 轮时 critical
-- ✨ Shadowing 防护：MCP 工具注册时检测与内置工具重名，自动跳过并日志警告
-- ✨ 记忆容量限制：上限 500 条，超限时自动清理低价值条目（按 importance + useCount + 近期使用综合评分，rule 类型受保护）
-- 📝 版本号更新至 5.1.2
-
-### v5.1.1（2026-04-19） — metona-ollama-desktop 仓库
-
-- 🔧 搜索引擎：DuckDuckGo → Bing + 百度 + Google（三引擎），解决国内不可达问题
-- 🔧 移除全部超时限制：Agent Loop、流式响应、工具执行、web_fetch、download_file
-- 🔧 Agent 最大轮数默认 85 轮，设置面板可配置
-- ✨ 执行日志导出功能（日志面板新增导出按钮）
-- 🔧 TOOL_USAGE_GUIDE 新增禁止猜 URL 和中文搜索结果利用规则
-- 📝 版本号更新至 5.1.1
-
-### v5.1.0（2026-04-18） — metona-ollama-desktop 仓库
-
-- ✨ 新增 4 个工具：memory_replace、memory_remove、skill_list、skill_view（总数 38 个）
-- ✨ 记忆安全扫描（prompt injection / 敏感信息 / 不可见字符检测）
-- 🔧 Agent Loop 迭代预算可配置化（maxTurns）
-- 🔧 工具结果截断按工具独立配置
-- 📝 版本号更新至 5.1.0
-
-### v5.0.1（2026-04-18） — metona-ollama-desktop 仓库
-
-- 🔧 修复 DuckDuckGo 搜索超时过长（15s → 8s），添加 Google 作为第三搜索引擎兜底
-- 🔧 修复 web_fetch User-Agent（MetonaOllama/1.0 → Chrome UA），增加超时至 30 秒
-- 🔧 修复 Agent Loop 跨轮去重误杀失败工具的重试（仅对成功的调用去重，失败的允许重试）
-- 🔧 优化 TOOL_USAGE_GUIDE：新增搜索 fallback 规则（fetch 失败时直接用搜索结果回答）、禁止抓取 SPA 页面、搜索查询进化指导
-- 🔧 更新 AGENT_SYSTEM_PROMPT：工具数 25 → 34，新增 fetch 失败 fallback 规则
-- 📝 版本号更新至 5.0.1（package.json / package-lock.json / index.html / README.md / CHANGELOG.md / BUILD.md / DEVELOPMENT.md）
-- ✅ `Metona Ollama Setup 5.0.1.exe`（82MB）
-- ✅ Gitee Release v5.0.1-desktop（ID: 620560）
-- Wine 9.0 已安装，npm 编译无错误，构建一次通过
-
-### v5.0.0（2026-04-18） — metona-ollama-desktop 仓库
-
-- ✨ 新增 8 个浏览器控制工具（browser_open/screenshot/evaluate/extract/click/type/scroll/close）
-- ✨ 新增 Cron 定时任务系统（cron-manager.ts）
-- ✨ 新增技能自动生成系统（skills 表 + 自动提取 + 关键词搜索）
-- ✨ 新增用户画像自动推断（技术栈检测 + system prompt 注入）
-- ✨ 新增人格模式（多预设模板）
-- ✨ 新增 Heartbeat 主动检查机制
-- ✨ 新增子代理委派工具（spawn_task）
-- 🔧 工具并行执行优化（批次调度 + 依赖检测）
-- 🔧 记忆系统增强（rule/preference 始终注入）
-- 📝 版本号更新至 5.0.0（package.json / package-lock.json / index.html / README.md / CHANGELOG.md / BUILD.md / DEVELOPMENT.md）
-
-### v4.0.0（2026-04-17） — metona-ollama-desktop 仓库
-
-- 📦 SQLite (sql.js WASM) 替代 IndexedDB，6 张表 + FTS5 全文搜索（零原生依赖）
-- 🔧 Agent Loop 升级为 ReAct 模式（15 轮，10 分钟超时，执行轨迹记录）
-- 🧠 新增 4 个记忆/会话管理工具（memory_search, memory_add, session_list, session_read）
-- 🎨 UI 主题改版：暗色 Fluent → 暖色调亮色（奶白 + 珊瑚橙）
-- ✨ 新增 context-manager.ts 上下文管理服务
-- 📝 版本号更新至 4.0.0（package.json / package-lock.json / index.html / README.md / CHANGELOG.md / BUILD.md / DEVELOPMENT.md）
-
-### v3.3.4（2026-04-17） — metona-ollama-desktop 仓库
-
-- 🔧 修复 Agent Loop 工具调用重复问题（缓存 + 同轮/跨轮去重 + 自动终止）
-- 🔧 修复 web_fetch 默认截断 10000 字符（改为默认不截断）
-- 🔧 修复记忆系统 rule/preference 类型不生效（改为始终注入，不依赖关键词匹配）
-- 🔧 修复 buildMemoryContext 三类记忆措辞无区分（规则→强制、偏好→建议、事实→参考）
-- 🔧 移除 tool-registry.ts executeTool 中重复的 logToolStart 调用
-- 📝 版本号更新至 3.3.4
-
-### v3.3.3（2026-04-17） — metona-ollama-desktop 仓库
-
-- 🔧 修复工具面板中除 run_command 外所有工具错误显示为"需确认"
-- 🔧 修复 run_command 执行模式下拉框未选中项白字白底不可见
-- 🎨 加宽工具面板、历史记录、设置面板、帮助面板
-- ✨ 增强联网搜索与网页抓取联动（TOOL_USAGE_GUIDE 新增规则）
-- ✨ 增强 AI 主动调用工具的 prompt 指导（新增第 7 条规则）
-- ✨ web_search 默认结果数 5 → 15
-- 📝 版本号更新至 3.3.3
-
-### v3.3.2（2026-04-16） — metona-ollama-desktop 仓库
-
-- ✨ 新增 web_search 联网搜索工具（DuckDuckGo + Bing 双引擎，21 个工具）
-- 🔧 除 run_command 外所有工具改为自动执行无需确认
-- 🔧 run_command 改为下拉框设置：自动/需确认/禁用三种模式
-- 📝 版本号更新至 3.3.2（package.json / index.html / README.md / CHANGELOG.md / BUILD.md）
-- 📝 同步更新 README.md 安全说明、DEVELOPMENT.md 开发规范、index.html 帮助面板
-
-### v3.3.1（2026-04-16） — metona-ollama-desktop 仓库
-
-- 🔧 修复开启工具调用后图片无法传给 AI（agent-engine.ts + input-area.ts）
-- 🔧 修复记忆系统弹框自动记忆开关点击无响应（memory-modal.ts CSS 类名修正）
-- 🎨 统一应用图标为科技感羊驼（llama.png / llama.ico）
-- 📝 版本号更新至 3.3.1（package.json / index.html / README.md / CHANGELOG.md / BUILD.md）
-
-### v3.2.6（2026-04-15） — metona-ollama-desktop 仓库
-
-- ✅ `Metona Ollama Setup 3.2.6.exe`（78MB）
-- ✅ Gitee Release v3.2.6-desktop（ID: 604992）
-- 🔧 工作空间面板从 position:fixed 改为 flex 子元素，修复与主内容区错位
-- 🎨 Token 统计颜色优化（琥珀色图标+数值，消息内 token 高亮）
-- ⚠️ 构建问题及处理：
-  1. `restore-build-cache.sh` npmmirror NoSuchKey → 跳过，electron-builder 自动下载
-  2. nsis-resources-3.4.1 GitHub 下载 EOF → 使用 ghfast.top 代理手动下载缓存
-  3. 无编译错误，手动缓存后构建一次通过
-
-### v3.2.5（2026-04-14） — metona-ollama-desktop 仓库
-
-- ✅ `Metona Ollama Setup 3.2.5.exe`（78MB）
-- ✅ Gitee Release v3.2.5-desktop（ID: 601311）
-- 🔧 工具相对路径修复、工作空间单一终端重构、token SVG 图标、base64 编码修复
-- ⚠️ 构建问题及处理：
-  1. apt 源 `mirrors.cloud.aliyuncs.com` 不可达 → 切换 `archive.ubuntu.com`
-  2. `restore-build-cache.sh` npmmirror NoSuchKey → 跳过，electron-builder 自动下载
-  3. 无编译错误，构建一次通过
-
-### v3.2.4（2026-04-08） — metona-ollama-desktop 仓库
-
-- 🔧 AI 命令执行走工作空间终端，实时流式显示
-- 🔧 设置面板修改地址后同步更新顶部导航连接状态
-- ✅ 分支 `metona-ollama-desktop-v3.2.4` 已创建并推送
-
-### v3.2.3（2026-04-08） — metona-ollama-desktop 仓库
-
-- ✅ 工作空间面板改为常驻显示，固定宽度 480px
-- ✅ 修复 tool-registry.ts 缺少 logInfo 导入导致 run_command 异常
-- ✅ Gitee Release v3.2.3-desktop（仓库 thzxx/metona-ollama-desktop）
-- ✅ 分支 `metona-ollama-desktop-v3.2.3` 已创建并推送
-
-### v3.2.2（2026-04-08） — metona-ollama-desktop 仓库
-
-- ✅ `Metona Ollama Setup 3.2.2.exe`（78MB）
-- ✅ Gitee Release v3.2.2-desktop（ID: 600992，仓库 thzxx/metona-ollama-desktop）
-- ✅ 分支 `metona-ollama-desktop-v3.2.2` 已创建并推送
-- ⚠️ 构建问题及处理：
-  1. apt 源 `mirrors.cloud.aliyuncs.com` 不可达 → 切换 `archive.ubuntu.com`
-  2. npm install 时 Electron socket hang up → 设 `ELECTRON_MIRROR` 重试成功
-  3. restore-build-cache.sh 第一步失败（npmmirror NoSuchKey）→ 跳过脚本
-  4. electron-builder 直接构建时 winCodeSign 从 GitHub 下载 EOF → 使用 ghfast.top 代理手动下载缓存
-  5. 手动缓存 NSIS 和 NSIS Resources 后重新构建成功
-
-### v3.2.1（2026-04-07） — metona-ollama-desktop 仓库
-
-- ✅ `Metona Ollama Setup 3.2.1.exe`（78MB）
-- ✅ Gitee Release v3.2.1-desktop（ID: 600984，仓库 thzxx/metona-ollama-desktop）
-- ♻️ 移除便携版构建，仅保留 NSIS 安装包
-
-### v3.2.0（2026-04-07） — metona-ollama-desktop 仓库
-
-- ✅ `Metona Ollama Setup 3.2.0.exe`（78MB）
-- ✅ `MetonaOllama-Portable-3.2.0.exe`（78MB）
-- ✅ Gitee Release v3.2.0-desktop（ID: 600739，仓库 thzxx/metona-ollama-desktop）
-- ⚠️ 构建中遇到问题：npmmirror 缺 electron zip、npm install 卡顿、需安装 Wine。详见上方故障排查。
-
-### v3.0.0（2026-04-06）
-
-- ✅ `Metona Ollama Setup 3.0.0.exe`（78MB）
-- ✅ `MetonaOllama-Portable-3.0.0.exe`（78MB）
-- ✅ Gitee Release v3.0.0（ID: 600370）
 
 ## 提速清单
 
