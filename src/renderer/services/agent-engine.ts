@@ -500,8 +500,9 @@ export async function runAgentLoop(
   // 自动压缩：当上下文 token 超过 context window 的 50% 时，调用 LLM 摘要压缩
   if (shouldAutoCompress(messages, numCtx)) {
     logInfo(`自动上下文压缩触发: tokens≈${estimateTokens(messages.map(m => m.content || '').join(''))} > ${Math.floor(numCtx * AUTO_COMPRESS_THRESHOLD)} (50% of ${numCtx})`);
+    const compressAC = state.get<AbortController | null>(KEYS.ABORT_CONTROLLER) || new AbortController();
     try {
-      const compressed = await compressWithLLM(messages, api, model, { abortController });
+      const compressed = await compressWithLLM(messages, api, model, { abortController: compressAC });
       if (compressed.length < messages.length || estimateTokens(compressed.map(m => m.content || '').join('')) < estimateTokens(messages.map(m => m.content || '').join(''))) {
         messages.length = 0;
         messages.push(...compressed);
