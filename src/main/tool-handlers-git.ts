@@ -12,6 +12,10 @@ export async function handleGit(params: { action: string; path?: string; files?:
   try {
     const cwd = params.path ? path.resolve(params.path) : getWorkspaceDir();
 
+    // 安全检查：验证工作目录路径
+    const dirCheck = checkPathAllowed(cwd, 'read');
+    if (!dirCheck.ok) return { success: false, error: dirCheck.reason };
+
     async function runGit(args: string[]): Promise<{ stdout: string; stderr: string; code: number }> {
       return new Promise((resolve) => {
         const git = spawn('git', args, { cwd, stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, LANG: 'en_US.UTF-8' } });
@@ -180,6 +184,8 @@ export async function handleGit(params: { action: string; path?: string; files?:
       case 'clone': {
         if (!params.url) return { success: false, error: '请提供仓库 URL' };
         const destDir = params.path ? path.resolve(params.path) : getWorkspaceDir();
+        const cloneDirCheck = checkPathAllowed(destDir, 'write');
+        if (!cloneDirCheck.ok) return { success: false, error: cloneDirCheck.reason };
         const r = await runGit(['clone', params.url, destDir]);
         if (r.code !== 0) return { success: false, error: r.stderr };
         return { success: true, action: 'clone', url: params.url, destination: destDir };
