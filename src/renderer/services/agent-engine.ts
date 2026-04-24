@@ -328,7 +328,7 @@ function formatToolResultForModel(toolName: string, result: ToolResult): string 
         query: result.query,
         total_matches: result.total_matches,
         total_files: result.total_files,
-        matches: result.matches
+        results: result.results
       });
     }
 
