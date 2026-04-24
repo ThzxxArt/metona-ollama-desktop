@@ -17,7 +17,7 @@ import { showToast } from '../components/toast.js';
 import { logInfo, logWarn, logError, logToolStart, logToolResult, logAgentLoop, logModelResponse } from './log-service.js';
 import { getWorkspaceDirPath } from '../components/workspace-panel.js';
 import { generateId } from '../utils/utils.js';
-import { buildContext, estimateTokens } from './context-manager.js';
+import { buildContext, estimateTokens, shouldAutoCompress, compressWithLLM, AUTO_COMPRESS_THRESHOLD } from './context-manager.js';
 import type {
   OllamaMessage,
   OllamaStreamChunk,
@@ -496,6 +496,22 @@ export async function runAgentLoop(
   const contextResult = buildContext(messages, { maxTokens: numCtx, windowSize: 20 });
   messages.length = 0;
   messages.push(...contextResult);
+
+  // 自动压缩：当上下文 token 超过 context window 的 50% 时，调用 LLM 摘要压缩
+  if (shouldAutoCompress(messages, numCtx)) {
+    logInfo(`自动上下文压缩触发: tokens≈${estimateTokens(messages.map(m => m.content || '').join(''))} > ${Math.floor(numCtx * AUTO_COMPRESS_THRESHOLD)} (50% of ${numCtx})`);
+    try {
+      const compressed = await compressWithLLM(messages, api, model, { abortController });
+      if (compressed.length < messages.length || estimateTokens(compressed.map(m => m.content || '').join('')) < estimateTokens(messages.map(m => m.content || '').join(''))) {
+        messages.length = 0;
+        messages.push(...compressed);
+        logSuccess(`自动上下文压缩完成: 剩余 ${messages.length} 条消息`);
+      }
+    } catch (err) {
+      if ((err as Error).name === 'AbortError') throw err;
+      logWarn('自动上下文压缩失败，继续使用当前上下文', (err as Error).message);
+    }
+  }
 
   logInfo(`ReAct Agent Loop 启动: ${model}`, `工具: ${useTools ? '开启' : '关闭'}, 记忆: ${isMemoryEnabled() ? '开启' : '关闭'}, tokens≈${estimateTokens(messages.map(m => m.content || '').join(''))}`);
 

@@ -13,6 +13,8 @@ export interface Skill {
   id: string;
   name: string;
   description: string;
+  /** Level 0 简短摘要（~100 tokens），用于索引展示 */
+  summary: string;
   trigger_keywords: string | null;
   tool_chain: string; // JSON: ToolChainStep[]
   success_count: number;
@@ -83,10 +85,13 @@ export async function extractSkillsFromToolRecords(
   const name = generateSkillName(chain, userMessage);
   const description = generateSkillDescription(chain, sessionTitle);
 
+  const summary = generateSkillSummary(chain, userMessage);
+
   const skill: Skill = {
     id: `skill_${generateId()}`,
     name,
     description,
+    summary,
     trigger_keywords: keywords,
     tool_chain: JSON.stringify(chain),
     success_count: 1,
@@ -157,28 +162,21 @@ export async function matchSkills(userMessage: string, limit = 3): Promise<Skill
 }
 
 /**
- * 从匹配的技能构建 system prompt 上下文
+ * 从匹配的技能构建 system prompt 上下文（Level 0：仅名称 + 描述索引）
+ * 完整工具链通过 skill_view 工具按需加载（Level 1）
  */
 export function buildSkillContext(skills: Skill[]): string {
   if (skills.length === 0) return '';
 
   const parts = skills.map(skill => {
-    let chain: ToolChainStep[] = [];
-    try { chain = JSON.parse(skill.tool_chain); } catch { return ''; }
-
-    const steps = chain.map((s, i) =>
-      `  ${i + 1}. ${s.name}（${s.description}）${s.args_hint ? ` — 参数: ${s.args_hint}` : ''}`
-    ).join('\n');
-
     const total = skill.success_count + skill.fail_count;
     const rate = total > 0 ? Math.round(skill.success_count / total * 100) : 100;
-
-    return `【技能】${skill.name}\n${skill.description}\n成功执行 ${skill.success_count} 次（成功率 ${rate}%）\n工具链：\n${steps}`;
+    return `• ${skill.name} — ${skill.description}（成功率 ${rate}%）`;
   }).filter(Boolean);
 
   if (parts.length === 0) return '';
 
-  return `【可用技能提示 — 以下技能曾成功完成过类似任务，可作为参考】\n\n${parts.join('\n\n')}\n\n提示：如果当前任务与某个技能匹配，可以参考其工具链步骤，但根据实际情况调整参数。`;
+  return `【可用技能 — 以下技能曾成功完成过类似任务】\n${parts.join('\n')}\n\n提示：使用 skill_view 工具查看某个技能的完整工具链和参数提示。`;
 }
 
 // ── 辅助函数 ──
@@ -269,12 +267,20 @@ function generateSkillDescription(chain: ToolChainStep[], sessionTitle: string):
   return `从会话「${sessionTitle}」中提取。步骤：${steps}`;
 }
 
+/** 生成技能简短摘要（Level 0，~100 tokens） */
+function generateSkillSummary(chain: ToolChainStep[], userMessage: string): string {
+  const toolNames = chain.map(s => s.name).join(' → ');
+  const msgPreview = userMessage.slice(0, 30).replace(/[\r\n]/g, ' ');
+  return `工具链: ${toolNames}。场景: ${msgPreview}`;
+}
+
 // ── 渐进式技能加载 ──
 
-/** 列出所有技能（渐进式 Level 0：只返回名称、描述、成功率） */
+/** 列出所有技能（渐进式 Level 0：只返回名称、描述摘要、成功率） */
 export async function listSkills(): Promise<Array<{
   name: string;
   description: string;
+  summary: string;
   success_rate: string;
   chain_preview: string;
 }>> {
@@ -292,6 +298,7 @@ export async function listSkills(): Promise<Array<{
     return {
       name: skill.name,
       description: skill.description,
+      summary: skill.summary || skill.description,
       success_rate: `${rate}%`,
       chain_preview: chainPreview
     };

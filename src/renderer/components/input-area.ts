@@ -16,6 +16,7 @@ import { addToolCard, updateToolCard, clearToolCardsExternal, clearTerminalExter
 import { ChatDB } from '../db/chat-db.js';
 import { OllamaAPI } from '../api/ollama.js';
 import { runAgentLoop } from '../services/agent-engine.js';
+import { estimateTokens } from '../services/context-manager.js';
 import { searchMemories, buildMemoryContext, markMemoryUsed, extractMemoriesFromConversation, isMemoryEnabled } from '../services/memory-manager.js';
 import { showToolConfirm } from './tool-confirm-modal.js';
 import { logInfo, logStream, logError, logSuccess, logWarn } from '../services/log-service.js';
@@ -448,7 +449,7 @@ async function handleCompress(): Promise<void> {
 
   logInfo('上下文压缩: 开始');
 
-  // 取中间的消息做摘要（保留首尾各 2 条）
+  // 取中间的消息做摘要（保留首尾各 2 条，跳过已压缩的）
   const messages = currentSession.messages;
   const keepStart = 2;
   const keepEnd = 2;
@@ -456,10 +457,16 @@ async function handleCompress(): Promise<void> {
   const tail = messages.slice(-keepEnd);
   const middle = messages.slice(keepStart, messages.length - keepEnd);
 
-  const conversationText = middle.map(m => {
+  // 过滤掉已压缩的消息，避免重复压缩
+  const uncompressedMiddle = middle.filter(m => !m.compressed);
+  if (uncompressedMiddle.length === 0) {
+    showToast('中间消息已全部压缩，无需再次压缩', 'info');
+    return;
+  }
+
+  const conversationText = uncompressedMiddle.map(m => {
     const role = m.role === 'user' ? '用户' : 'AI';
     let content = m.content || '';
-    // 截断过长内容
     if (content.length > 500) content = content.slice(0, 500) + '...';
     if (m.toolCalls?.length) content += ` [工具调用: ${m.toolCalls.map(t => t.name).join(', ')}]`;
     return `${role}: ${content}`;
@@ -473,7 +480,7 @@ async function handleCompress(): Promise<void> {
       model,
       messages: [{
         role: 'user',
-        content: `请将以下对话摘要为一段简洁的上下文总结。保留关键信息：讨论的主题、得出的结论、用户的偏好、未完成的任务。用中文输出，不超过 500 字。\n\n对话记录：\n${conversationText}`
+        content: `请将以下对话摘要为一段简洁的上下文总结。保留关键信息：讨论的主题、得出的结论、用户的偏好、未完成的任务、关键工具调用结果。用中文输出，不超过 500 字。\n\n对话记录：\n${conversationText}`
       }],
       stream: true,
       think: false,
@@ -489,14 +496,17 @@ async function handleCompress(): Promise<void> {
       return;
     }
 
-    // 构建压缩后的消息列表
+    // 构建压缩后的摘要消息（标记 compressed）
     const summaryMsg: ChatMessage = {
       role: 'system',
-      content: `📋 以下是对之前对话的摘要（已压缩 ${middle.length} 条消息）：\n\n${summary}`,
-      timestamp: Date.now()
+      content: `📋 以下是对之前对话的摘要（已压缩 ${uncompressedMiddle.length} 条消息）：\n\n${summary}`,
+      timestamp: Date.now(),
+      compressed: true
     };
 
-    currentSession.messages = [...head, summaryMsg, ...tail];
+    // 保留已压缩的中间消息 + 新摘要
+    const alreadyCompressed = middle.filter(m => m.compressed);
+    currentSession.messages = [...head, ...alreadyCompressed, summaryMsg, ...tail];
 
     const db = state.get<ChatDB | null>(KEYS.DB);
     if (db) await db.saveSession(currentSession);
@@ -504,8 +514,8 @@ async function handleCompress(): Promise<void> {
     clearMessagesDOM();
     renderMessages();
 
-    logInfo(`上下文压缩完成: ${middle.length} 条 → 1 条摘要`);
-    showToast(`已压缩 ${middle.length} 条消息为摘要`, 'success');
+    logInfo(`上下文压缩完成: ${uncompressedMiddle.length} 条 → 1 条摘要`);
+    showToast(`已压缩 ${uncompressedMiddle.length} 条消息为摘要`, 'success');
   } catch (err) {
     logError('上下文压缩失败', (err as Error).message);
     showToast(`压缩失败: ${(err as Error).message}`, 'error');

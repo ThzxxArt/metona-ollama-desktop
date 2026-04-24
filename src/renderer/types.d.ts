@@ -8,6 +8,8 @@ export interface OllamaMessage {
   reasoning_content?: string;
   tool_calls?: ToolCall[];
   tool_name?: string;
+  /** 标记此消息为 LLM 压缩摘要生成 */
+  compressed?: boolean;
 }
 
 export interface OllamaChatParams {
@@ -94,7 +96,7 @@ export interface FileContent {
 }
 
 export interface ChatMessage {
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'system';
   content: string;
   timestamp: number;
   model?: string;
@@ -107,6 +109,8 @@ export interface ChatMessage {
   _fileContents?: FileContent[];
   stopped?: boolean;
   toolCalls?: ToolCallRecord[];
+  /** 标记此消息为 LLM 压缩摘要生成 */
+  compressed?: boolean;
 }
 
 export interface ChatSession {
