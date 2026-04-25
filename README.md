@@ -489,8 +489,6 @@ fix/*                           ← Bug 修复
 |------|------|
 | [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) | 开发规范、代码规范、架构设计 |
 | [`docs/BUILD.md`](docs/BUILD.md) | Windows 安装包构建指南、故障排查 |
-| [`docs/OPENCLAW-HERMES-ANALYSIS.md`](docs/OPENCLAW-HERMES-ANALYSIS.md) | 与 OpenClaw / Hermes 的对比分析 |
-| [`docs/HERMES-AGENT-DEEP-STUDY.md`](docs/HERMES-AGENT-DEEP-STUDY.md) | Hermes Agent 深度研究 |
 
 ---
 
