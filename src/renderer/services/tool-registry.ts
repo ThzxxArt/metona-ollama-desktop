@@ -4,7 +4,7 @@
  */
 
 import type { ToolDefinition, ToolResult } from '../types.js';
-import { logToolStart, logToolResult, logError, logInfo } from './log-service.js';
+import { logToolStart, logToolResult, logError, logInfo, logWarn } from './log-service.js';
 import { getMCPToolDefinitions } from './mcp-client.js';
 
 export const TOOL_DEFINITIONS: ToolDefinition[] = [

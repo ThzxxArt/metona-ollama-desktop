@@ -118,6 +118,69 @@ export function killToolProcess(): boolean {
 
 
 
+/** HTTP 请求超时（毫秒） */
+const HTTP_TIMEOUT = 15_000;
+
+/** 完整 HTML 实体映射（常见实体） */
+const HTML_ENTITIES: Record<string, string> = {
+  '&nbsp;': ' ', '&lt;': '<', '&gt;': '>', '&amp;': '&', '&quot;': '"',
+  '&#39;': "'", '&apos;': "'", '&ensp;': ' ', '&emsp;': ' ',
+  '&copy;': '\u00A9', '&reg;': '\u00AE', '&trade;': '\u2122', '&euro;': '\u20AC',
+  '&pound;': '\u00A3', '&yen;': '\u00A5', '&deg;': '\u00B0', '&middot;': '\u00B7',
+  '&hellip;': '\u2026', '&mdash;': '\u2014', '&ndash;': '\u2013',
+  '&lsquo;': '\u2018', '&rsquo;': '\u2019', '&ldquo;': '\u201C', '&rdquo;': '\u201D',
+  '&bull;': '\u2022',
+  '&times;': '\u00D7', '&divide;': '\u00F7', '&plusmn;': '\u00B1', '&micro;': '\u00B5',
+  '&para;': '\u00B6', '&sect;': '\u00A7', '&laquo;': '\u00AB', '&raquo;': '\u00BB',
+  '&iexcl;': '\u00A1', '&iquest;': '\u00BF', '&not;': '\u00AC', '&shy;': '\u00AD',
+  '&macr;': '\u00AF', '&acute;': '\u00B4', '&cedil;': '\u00B8',
+  '&OElig;': '\u0152', '&oelig;': '\u0153', '&Scaron;': '\u0160', '&scaron;': '\u0161',
+  '&Yuml;': '\u0178', '&circ;': '\u02C6', '&tilde;': '\u02DC',
+};
+
+/** 解码 HTML 实体 */
+function decodeHTMLEntities(text: string): string {
+  let result = text;
+  for (const [entity, char] of Object.entries(HTML_ENTITIES)) {
+    result = result.replaceAll(entity, char);
+  }
+  // 数字实体: &#123; 和 &#x1F;
+  result = result.replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+  result = result.replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(parseInt(dec, 10)));
+  return result;
+}
+
+/** 将 HTML 转换为可读文本（保留结构） */
+function htmlToText(html: string): string {
+  let text = html;
+  // 移除 script/style/nav/header/footer 等噪音标签及其内容
+  text = text.replace(/<script[\s\S]*?<\/script>/gi, '');
+  text = text.replace(/<style[\s\S]*?<\/style>/gi, '');
+  text = text.replace(/<noscript[\s\S]*?<\/noscript>/gi, '');
+  text = text.replace(/<nav[\s\S]*?<\/nav>/gi, '');
+  text = text.replace(/<header[\s\S]*?<\/header>/gi, '');
+  text = text.replace(/<footer[\s\S]*?<\/footer>/gi, '');
+  text = text.replace(/<aside[\s\S]*?<\/aside>/gi, '');
+  text = text.replace(/<iframe[\s\S]*?<\/iframe>/gi, '');
+  text = text.replace(/<svg[\s\S]*?<\/svg>/gi, '');
+  // 移除 HTML 注释
+  text = text.replace(/<!--[\s\S]*?-->/g, '');
+  // 块级标签转为换行
+  text = text.replace(/<\/(p|div|h[1-6]|li|tr|blockquote|section|article|pre|br|hr)[^>]*>/gi, '\n');
+  text = text.replace(/<(br|hr)[^>]*\/?>/gi, '\n');
+  // 表格单元用制表符分隔
+  text = text.replace(/<\/(td|th)[^>]*>/gi, '\t');
+  // 移除剩余标签
+  text = text.replace(/<[^>]+>/g, '');
+  // 解码 HTML 实体
+  text = decodeHTMLEntities(text);
+  // 清理多余空白（保留换行结构）
+  text = text.replace(/[ \t]+/g, ' ');
+  text = text.replace(/\n\s*\n\s*\n+/g, '\n\n');
+  text = text.split('\n').map(l => l.trim()).join('\n');
+  return text.trim();
+}
+
 export async function handleWebFetch(params: { url: string; max_chars?: number; extract_mode?: string }): Promise<ToolResult> {
   try {
     const url = params.url;
@@ -128,13 +191,24 @@ export async function handleWebFetch(params: { url: string; max_chars?: number; 
     const maxChars = params.max_chars || 0; // 0 = 不截断，返回全部内容
 
     sendLog('info', `🌐 web_fetch`, `${url} (${maxChars > 0 ? maxChars + ' chars' : '完整内容'})`);
-    const resp = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'
-      }
-    });
+
+    // 带超时的 fetch
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), HTTP_TIMEOUT);
+    let resp: Response;
+    try {
+      resp = await fetch(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'
+        },
+        signal: controller.signal,
+        redirect: 'follow',
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     if (!resp.ok) {
       return { success: false, error: `HTTP ${resp.status}: ${resp.statusText}` };
@@ -145,20 +219,17 @@ export async function handleWebFetch(params: { url: string; max_chars?: number; 
       return { success: false, error: `不支持的内容类型: ${contentType}` };
     }
 
+    // 预检查内容长度，避免下载过大的页面
+    const contentLength = resp.headers.get('content-length');
+    if (contentLength && parseInt(contentLength, 10) > 10 * 1024 * 1024) {
+      return { success: false, error: `页面过大 (${(parseInt(contentLength, 10) / 1024 / 1024).toFixed(1)}MB)，超过 10MB 限制` };
+    }
+
     let text = await resp.text();
 
-    // 简单 HTML → 文本提取
+    // HTML → 可读文本提取
     if (contentType.includes('html')) {
-      text = text
-        .replace(/<script[\s\S]*?<\/script>/gi, '')
-        .replace(/<style[\s\S]*?<\/style>/gi, '')
-        .replace(/<[^>]+>/g, ' ')
-        .replace(/&nbsp;/g, ' ')
-        .replace(/&lt;/g, '<')
-        .replace(/&gt;/g, '>')
-        .replace(/&amp;/g, '&')
-        .replace(/\s+/g, ' ')
-        .trim();
+      text = htmlToText(text);
     }
 
     const truncated = maxChars > 0 && text.length > maxChars;
@@ -175,7 +246,11 @@ export async function handleWebFetch(params: { url: string; max_chars?: number; 
       length: text.length
     };
   } catch (err) {
-    return { success: false, error: (err as Error).message };
+    const errMsg = (err as Error).message;
+    if (errMsg.includes('abort')) {
+      return { success: false, error: `请求超时 (${HTTP_TIMEOUT / 1000}s)` };
+    }
+    return { success: false, error: errMsg };
   }
 }
 
@@ -200,16 +275,27 @@ export async function handleWebSearch(params: { query: string; max_results?: num
       'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'
     };
 
+    /** 带超时的搜索请求 */
+    async function fetchWithTimeout(url: string): Promise<Response | null> {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), HTTP_TIMEOUT);
+      try {
+        const resp = await fetch(url, { headers: searchHeaders, signal: controller.signal });
+        clearTimeout(timeoutId);
+        return resp;
+      } catch {
+        clearTimeout(timeoutId);
+        return null;
+      }
+    }
+
     // 1. Bing 搜索（首选）
     let results: Array<{ title: string; url: string; snippet: string }> = [];
 
     try {
       const bingUrl = `https://www.bing.com/search?q=${encodeURIComponent(query)}&count=${maxResults}`;
-      const resp = await fetch(bingUrl, {
-        headers: searchHeaders,
-      });
-
-      if (resp.ok) {
+      const resp = await fetchWithTimeout(bingUrl);
+      if (resp?.ok) {
         const html = await resp.text();
         results = parseBingResults(html, maxResults);
       }
@@ -221,11 +307,8 @@ export async function handleWebSearch(params: { query: string; max_results?: num
     if (results.length === 0) {
       try {
         const baiduUrl = `https://www.baidu.com/s?wd=${encodeURIComponent(query)}&rn=${maxResults}`;
-        const resp = await fetch(baiduUrl, {
-          headers: searchHeaders,
-        });
-
-        if (resp.ok) {
+        const resp = await fetchWithTimeout(baiduUrl);
+        if (resp?.ok) {
           const html = await resp.text();
           results = parseBaiduResults(html, maxResults);
         }
@@ -238,11 +321,8 @@ export async function handleWebSearch(params: { query: string; max_results?: num
     if (results.length === 0) {
       try {
         const googleUrl = `https://www.google.com/search?q=${encodeURIComponent(query)}&num=${maxResults}`;
-        const resp = await fetch(googleUrl, {
-          headers: searchHeaders,
-        });
-
-        if (resp.ok) {
+        const resp = await fetchWithTimeout(googleUrl);
+        if (resp?.ok) {
           const html = await resp.text();
           results = parseGoogleResults(html, maxResults);
         }
@@ -255,20 +335,37 @@ export async function handleWebSearch(params: { query: string; max_results?: num
       return { success: false, error: '未找到搜索结果，请尝试其他关键词' };
     }
 
+    // URL 去重：同一 URL 只保留第一个结果
+    const seenUrls = new Set<string>();
+    const deduped: typeof results = [];
+    for (const r of results) {
+      const normalizedUrl = r.url.replace(/\/+$/, '').toLowerCase();
+      if (!seenUrls.has(normalizedUrl)) {
+        seenUrls.add(normalizedUrl);
+        deduped.push(r);
+      }
+    }
+
+    // 清理摘要中的残留 HTML 标签和多余空白
+    for (const r of deduped) {
+      r.title = r.title.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+      r.snippet = r.snippet.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+    }
+
     // 构建格式化的搜索结果（附带当前日期）
     const now = new Date();
     const dateStr = `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日`;
-    const formatted = `[当前日期: ${dateStr}（搜索时的实时日期）]\n\n` + results.map((r, i) =>
+    const formatted = `[当前日期: ${dateStr}（搜索时的实时日期）]\n\n` + deduped.map((r, i) =>
       `[${i + 1}] ${r.title}\n    URL: ${r.url}\n    ${r.snippet}`
     ).join('\n\n');
 
-    sendLog('success', `🔍 web_search 完成`, `"${query}" → ${results.length} 条结果`);
+    sendLog('success', `🔍 web_search 完成`, `"${query}" → ${deduped.length} 条结果`);
 
     return {
       success: true,
       query,
-      results,
-      total: results.length,
+      results: deduped,
+      total: deduped.length,
       formatted
     };
   } catch (err) {
@@ -375,17 +472,9 @@ function parseGoogleResults(html: string, maxResults: number): Array<{ title: st
   return results;
 }
 
-/** 简单 HTML 实体解码 */
+/** 简单 HTML 实体解码（用于搜索结果解析） */
 function decodeHTML(text: string): string {
-  return text
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
-    .replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(parseInt(dec, 10)));
+  return decodeHTMLEntities(text);
 }
 
 export async function handleDownloadFile(params: { url: string; destination: string }): Promise<ToolResult> {
@@ -399,7 +488,17 @@ export async function handleDownloadFile(params: { url: string; destination: str
     }
 
     sendLog('info', `⬇️ download_file`, `${params.url} → ${destPath}`);
-    const resp = await fetch(params.url);
+
+    // 带超时的下载（大文件给更长超时）
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 60_000);
+    let resp: Response;
+    try {
+      resp = await fetch(params.url, { signal: controller.signal });
+    } finally {
+      clearTimeout(timeoutId);
+    }
+
     if (!resp.ok) return { success: false, error: `HTTP ${resp.status}: ${resp.statusText}` };
 
     const buf = Buffer.from(await resp.arrayBuffer());
@@ -420,8 +519,11 @@ export async function handleDownloadFile(params: { url: string; destination: str
       content_type: resp.headers.get('content-type') || 'unknown'
     };
   } catch (err) {
-    sendLog('error', `⬇️ download_file 失败`, (err as Error).message);
-    return { success: false, error: (err as Error).message };
+    const errMsg = (err as Error).message;
+    if (errMsg.includes('abort')) {
+      return { success: false, error: '下载超时 (60s)' };
+    }
+    return { success: false, error: errMsg };
   }
 }
 

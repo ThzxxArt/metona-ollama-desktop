@@ -37,13 +37,35 @@ function getAgentBrowser(): BrowserWindow {
   return agentBrowser;
 }
 
+/** 页面加载超时（毫秒） */
+const PAGE_LOAD_TIMEOUT = 30_000;
+
 /** 打开 URL */
 export async function browserOpen(url: string): Promise<{ success: boolean; title?: string; url?: string; error?: string }> {
   try {
     const win = getAgentBrowser();
     sendLog('info', `🌐 browser 打开`, url.slice(0, 100));
-    await win.loadURL(url);
-    await new Promise(r => setTimeout(r, 1000));
+
+    // 等待页面实际加载完成，而非固定延时
+    const loadPromise = new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        win.webContents.removeListener('did-finish-load', onFinish);
+        reject(new Error(`页面加载超时 (${PAGE_LOAD_TIMEOUT / 1000}s)`));
+      }, PAGE_LOAD_TIMEOUT);
+
+      const onFinish = () => {
+        clearTimeout(timeout);
+        resolve();
+      };
+      win.webContents.once('did-finish-load', onFinish);
+      win.loadURL(url).catch((err) => {
+        clearTimeout(timeout);
+        win.webContents.removeListener('did-finish-load', onFinish);
+        reject(err);
+      });
+    });
+
+    await loadPromise;
     const title = win.webContents.getTitle();
     sendLog('success', `🌐 browser 已加载`, title);
     return { success: true, title, url: win.webContents.getURL() };
@@ -144,7 +166,15 @@ export async function browserClick(selector: string): Promise<{ success: boolean
     }
     const win = agentBrowser!;
     sendLog('info', `🌐 browser 点击`, selector);
-    await win.webContents.executeJavaScript(`document.querySelector('${selector.replace(/'/g, "\\'")}').click()`, true);
+    // 安全注入：通过 JSON.stringify 防止选择器中的 JS 注入
+    await win.webContents.executeJavaScript(`
+      (() => {
+        const sel = ${JSON.stringify(selector)};
+        const el = document.querySelector(sel);
+        if (!el) throw new Error('元素未找到: ' + sel);
+        el.click();
+      })()
+    `, true);
     await new Promise(r => setTimeout(r, 500));
     sendLog('success', `🌐 browser 点击完成`, selector);
     return { success: true };
@@ -161,15 +191,16 @@ export async function browserType(selector: string, text: string): Promise<{ suc
       return { success: false, error: '浏览器未打开，请先使用 browser_open 加载页面' };
     }
     const win = agentBrowser!;
-    const escapedSelector = selector.replace(/'/g, "\\'");
-    const escapedText = text.replace(/'/g, "\\'").replace(/\n/g, "\\n");
     sendLog('info', `🌐 browser 输入`, `${selector}: ${text.slice(0, 50)}`);
+    // 安全注入：通过 JSON.stringify 防止选择器和文本中的 JS 注入
     await win.webContents.executeJavaScript(`
       (() => {
-        const el = document.querySelector('${escapedSelector}');
-        if (!el) throw new Error('元素未找到: ${escapedSelector}');
+        const sel = ${JSON.stringify(selector)};
+        const val = ${JSON.stringify(text)};
+        const el = document.querySelector(sel);
+        if (!el) throw new Error('元素未找到: ' + sel);
         el.focus();
-        el.value = '${escapedText}';
+        el.value = val;
         el.dispatchEvent(new Event('input', { bubbles: true }));
         el.dispatchEvent(new Event('change', { bubbles: true }));
       })()
