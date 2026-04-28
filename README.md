@@ -44,7 +44,6 @@
 | 📊 | **技能自动生成** | 从成功的工具调用链自动提取可复用技能（≥2 步），Level 0 摘要 |
 | 🗜️ | **上下文管理** | 滑动窗口 + LLM 摘要压缩（50% 自动触发）+ /compress 手动触发 |
 | 👥 | **子代理委派** | spawn_task 工具，独立上下文 + 超时保护 |
-| ⏰ | **定时任务** | cron-manager，支持一次性/周期性调度 |
 | 📈 | **Token 仪表盘** | 全局 + 会话统计，消耗趋势图，2 秒刷新 |
 | 🎨 | **暖色调 UI** | 奶白 `#FAF7F2` + 珊瑚橙 `#E8734A`，长时间使用不疲劳 |
 | 🔔 | **系统托盘** | 原生托盘集成 |
@@ -266,7 +265,6 @@ npm run dist           # 构建 Windows 安装包
 | 📊 | **Auto Skill Generation** | Extracts reusable skills from successful tool call chains (≥2 steps), Level 0 summaries |
 | 🗜️ | **Context Management** | Sliding window + LLM summary compression (auto at 50%) + /compress manual trigger |
 | 👥 | **Sub-agent Delegation** | spawn_task tool, isolated context + timeout protection |
-| ⏰ | **Cron Tasks** | cron-manager, one-time and periodic scheduling |
 | 📈 | **Token Dashboard** | Global + session stats, consumption trend chart, 2s refresh |
 | 🎨 | **Warm-tone UI** | Cream `#FAF7F2` + coral `#E8734A`, fatigue-free for extended use |
 | 🔔 | **System Tray** | Native tray integration |
