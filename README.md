@@ -37,14 +37,17 @@
 | 🤖 | **ReAct Agent Loop** | Thought → Action → Observation → Reflection 完整循环，最大 85 轮（可配置），自动重试 2 次，工具去重，并行/链式执行 |
 | 🔧 | **38 个内置工具** | 文件系统 · 命令执行 · 联网搜索 · 浏览器控制 · Git · 记忆 · 技能 · 会话 · 子代理 |
 | 🧠 | **智能记忆系统** | 三类记忆（fact / preference / rule），FTS5 全文搜索 + 向量语义搜索，写入前安全扫描，容量 500 条，90 天衰减 |
+| 📋 | **SOUL.md 自定义人格** | 工作空间下创建 SOUL.md 定义 AI 身份与行为准则，每次发送自动注入为最高优先级系统提示词，永远不可压缩 |
+| 🎯 | **技能自动生成 v1.1** | 工具调用链自动提取 → 语义匹配 → 参数自优化 → 未使用衰减 → 技能链合并，越用越精准 |
 | 🌐 | **MCP 协议扩展** | JSON-RPC 2.0 over stdio，动态工具发现，Shadowing 防护 |
 | 🔍 | **三引擎联网搜索** | Bing + 百度 + Google 聚合，web_search → web_fetch 链式抓取 |
 | 🌏 | **浏览器控制** | 打开网页 · 截图 · 执行 JS · 提取内容 · 点击 · 输入 · 滚动 · 关闭 |
 | 🖥️ | **工作空间面板** | 终端（实时流式输出）+ 文件浏览器，命令安全检查 |
-| 📊 | **技能自动生成** | 从成功的工具调用链自动提取可复用技能（≥2 步），Level 0 摘要 |
-| 🗜️ | **上下文管理** | 滑动窗口 + LLM 摘要压缩（50% 自动触发）+ /compress 手动触发 |
+| 🔢 | **上下文长度自动检测** | 切换模型时自动从 model_info 获取实际支持的上下文长度，无需手动配置 |
+| 🗜️ | **智能上下文管理** | 滑动窗口 + Token 自动校准 + 消息重要性评分 + LLM 结构化 JSON 压缩 |
 | 👥 | **子代理委派** | spawn_task 工具，独立上下文 + 超时保护 |
-| 📈 | **Token 仪表盘** | 全局 + 会话统计，消耗趋势图，2 秒刷新 |
+| 📈 | **Token 仪表盘** | 全局 + 会话统计，消耗趋势柱状图，2 秒刷新，输入/输出分色 |
+| 📋 | **系统提示词卡片** | 每条 AI 回复顶部折叠卡片，点击查看实际发送给模型的完整上下文 |
 | 🎨 | **暖色调 UI** | 奶白 `#FAF7F2` + 珊瑚橙 `#E8734A`，长时间使用不疲劳 |
 | 🔔 | **系统托盘** | 原生托盘集成 |
 | 🔐 | **AES-256-GCM** | 数据加密支持 |
@@ -150,11 +153,15 @@
 ## 🏗️ 架构
 
 ```
-用户消息 → Agent Engine (ReAct Loop, ≤85轮)
+用户消息 → 扫描工作空间 SOUL.md（不可压缩层）
+              ↓
+         Agent Engine (ReAct Loop, ≤85轮)
               ↓
          记忆检索 (FTS5 + 向量语义搜索) → 上下文注入
               ↓
-         Ollama API (流式响应)
+         技能匹配 (语义匹配 + 参数自优化 + 衰减 + 链合并)
+              ↓
+         Ollama API (流式响应，num_ctx 自动检测)
               ↓
          Tool Registry (38 内置 + MCP 动态)
               ↓
@@ -258,14 +265,17 @@ npm run dist           # 构建 Windows 安装包
 | 🤖 | **ReAct Agent Loop** | Full Thought → Action → Observation → Reflection cycle, up to 85 iterations (configurable), auto-retry 2 times, tool dedup, parallel/chain execution |
 | 🔧 | **38 Built-in Tools** | File system · Command · Web search · Browser · Git · Memory · Skills · Sessions · Sub-agent |
 | 🧠 | **Smart Memory System** | Three types (fact / preference / rule), FTS5 + vector semantic search, pre-write security scan, 500 capacity, 90-day decay |
+| 📋 | **SOUL.md Custom Persona** | Define AI identity & rules in workspace SOUL.md, auto-injected as highest-priority system prompt, never compressed |
+| 🎯 | **Auto Skill Generation v1.1** | Tool chain extraction → semantic matching → parameter self-optimization → decay → chain merging |
 | 🌐 | **MCP Protocol Extension** | JSON-RPC 2.0 over stdio, dynamic tool discovery, Shadowing protection |
 | 🔍 | **Triple-engine Web Search** | Bing + Baidu + Google aggregation, web_search → web_fetch chain |
 | 🌏 | **Browser Control** | Open pages · Screenshot · JS execution · Content extraction · Click · Type · Scroll · Close |
 | 🖥️ | **Workspace Panel** | Terminal (real-time streaming) + file browser, command security checks |
-| 📊 | **Auto Skill Generation** | Extracts reusable skills from successful tool call chains (≥2 steps), Level 0 summaries |
-| 🗜️ | **Context Management** | Sliding window + LLM summary compression (auto at 50%) + /compress manual trigger |
+| 🔢 | **Auto Context Length Detection** | Reads actual context_length from model metadata on model switch — no manual config needed |
+| 🗜️ | **Smart Context Manager** | Sliding window + Token auto-calibration + message importance scoring + LLM structured JSON compression |
 | 👥 | **Sub-agent Delegation** | spawn_task tool, isolated context + timeout protection |
-| 📈 | **Token Dashboard** | Global + session stats, consumption trend chart, 2s refresh |
+| 📈 | **Token Dashboard** | Global + session stats, consumption trend bar chart, 2s refresh, input/output color-coded |
+| 📋 | **System Prompt Card** | Collapsible card atop each AI reply — click to inspect the full context sent to the model |
 | 🎨 | **Warm-tone UI** | Cream `#FAF7F2` + coral `#E8734A`, fatigue-free for extended use |
 | 🔔 | **System Tray** | Native tray integration |
 | 🔐 | **AES-256-GCM** | Data encryption support |
