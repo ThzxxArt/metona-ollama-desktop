@@ -6,7 +6,8 @@
 import { state, KEYS } from '../state/state.js';
 import { VectorStore } from './vector-store.js';
 import { logMemory, logDebug, logError } from './log-service.js';
-import type { MemoryEntry, OllamaAPI, VectorItem, SearchResult } from '../types.js';
+import type { MemoryEntry, VectorItem, SearchResult } from '../types.js';
+import type { OllamaAPI } from '../api/ollama.js';
 
 const MEMORY_COLLECTION_NAME = '记忆向量索引';
 

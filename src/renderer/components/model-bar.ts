@@ -122,11 +122,22 @@ async function filterEmbedModels(models: Array<{ name: string }>): Promise<void>
       const info = await api.showModel(m.name);
       const caps = info.capabilities || [];
       const isCompletion = caps.includes('completion');
+
+      // 从 model_info 提取上下文长度
+      let contextLength = 2048;
+      for (const key of Object.keys(info.model_info || {})) {
+        if (key.endsWith('.context_length')) {
+          contextLength = Number(info.model_info![key]) || 2048;
+          break;
+        }
+      }
+
       modelCapabilityCache.set(m.name, {
         think: caps.includes('thinking'),
         vision: caps.includes('vision'),
         tools: caps.includes('tools'),
         completion: isCompletion,
+        contextLength,
       });
       if (!isCompletion) {
         const opt = modelSelectEl.querySelector(`option[value="${CSS.escape(m.name)}"]`);
@@ -149,7 +160,11 @@ async function filterEmbedModels(models: Array<{ name: string }>): Promise<void>
 
 async function checkModelCapability(modelName: string): Promise<void> {
   if (modelCapabilityCache.has(modelName)) {
-    applyCapability(modelName, modelCapabilityCache.get(modelName)!);
+    const cached = modelCapabilityCache.get(modelName)!;
+    state.set(KEYS.NUM_CTX, cached.contextLength);
+    const displayEl = document.querySelector('#displayNumCtx');
+    if (displayEl) displayEl.textContent = `${cached.contextLength.toLocaleString()} tokens`;
+    applyCapability(modelName, cached);
     return;
   }
 
@@ -159,18 +174,40 @@ async function checkModelCapability(modelName: string): Promise<void> {
   try {
     const info = await api.showModel(modelName);
     const capabilities = info.capabilities || [];
-    const caps = {
+
+    // 从 model_info 中提取模型实际上下文长度
+    let contextLength = 2048; // 默认保守值
+    const modelInfo = info.model_info || {};
+    for (const key of Object.keys(modelInfo)) {
+      if (key.endsWith('.context_length')) {
+        contextLength = Number(modelInfo[key]) || 2048;
+        break;
+      }
+    }
+
+    const caps: ModelCaps = {
       think: capabilities.includes('thinking'),
       vision: capabilities.includes('vision'),
       tools: capabilities.includes('tools'),
       completion: capabilities.includes('completion'),
+      contextLength,
     };
     modelCapabilityCache.set(modelName, caps);
-    logDebug(`能力检测: ${modelName}`, capabilities.join(', '));
+    logDebug(`能力检测: ${modelName}`, `ctx: ${contextLength}, ` + capabilities.join(', '));
+
+    // 自动设置上下文长度为模型实际支持的值
+    state.set(KEYS.NUM_CTX, contextLength);
+    const db = state.get<any>(KEYS.DB);
+    if (db) await db.saveSetting('numCtx', contextLength);
+
+    // 更新设置面板显示
+    const displayEl = document.querySelector('#displayNumCtx');
+    if (displayEl) displayEl.textContent = `${contextLength.toLocaleString()} tokens`;
+
     applyCapability(modelName, caps);
   } catch (err) {
     logWarn(`能力检测失败: ${modelName}`, (err as Error).message);
-    const fallback = { think: false, vision: false, tools: false, completion: true };
+    const fallback: ModelCaps = { think: false, vision: false, tools: false, completion: true, contextLength: 2048 };
     modelCapabilityCache.set(modelName, fallback);
     applyCapability(modelName, fallback);
   }

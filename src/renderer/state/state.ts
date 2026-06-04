@@ -2,7 +2,9 @@
  * State - 轻量级响应式状态管理
  */
 
-import type { StateKey, ChatSession, ChatDB, OllamaAPI } from '../types.js';
+import type { StateKey, ChatSession } from '../types.js';
+import type { ChatDB } from '../db/chat-db.js';
+import type { OllamaAPI } from '../api/ollama.js';
 
 function shallowEqual(a: unknown, b: unknown): boolean {
   if (a === b) return true;
@@ -45,7 +47,7 @@ class AppState {
     }
   }
 
-  update(key: string, updater: (old: unknown) => unknown): void {
+  update(key: string, updater: (old: any) => any): void {
     const old = this._state[key];
     const value = updater(old);
     this._state[key] = value;

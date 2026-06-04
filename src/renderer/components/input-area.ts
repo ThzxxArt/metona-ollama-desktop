@@ -12,7 +12,7 @@ import {
   appendToolCallCardToPlaceholder, updateToolCallCardInPlaceholder, resetCurrentPlaceholder
 } from './chat-area.js';
 import { showToast } from './toast.js';
-import { addToolCard, updateToolCard, clearToolCardsExternal, clearTerminalExternal } from './workspace-panel.js';
+import { addToolCard, updateToolCard, clearToolCardsExternal, clearTerminalExternal, getWorkspaceDirPath } from './workspace-panel.js';
 import { ChatDB } from '../db/chat-db.js';
 import { OllamaAPI } from '../api/ollama.js';
 import { runAgentLoop } from '../services/agent-engine.js';
@@ -94,9 +94,7 @@ export function initInputArea(): void {
     const bridge = getBridge();
     if (!bridge) return;
     const paths = await bridge.dialog.openFile({
-      filters: [{ name: '图片', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'] }],
-      properties: ['openFile'],
-      multiple: false
+      filters: [{ name: '图片', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'] }]
     });
     if (!paths || paths.length === 0) return;
     await handleImagePaths(paths);
@@ -141,7 +139,7 @@ async function handleImagePaths(paths: string[]): Promise<void> {
   for (const filePath of paths) {
     const name = filePath.split(/[/\\]/).pop() || filePath;
     try {
-      const result = await bridge.fs.readFileBase64(filePath);
+      const result = await bridge!.fs.readFileBase64(filePath);
       if (!result.success) {
         appendSystemMessage(`❌ 读取 ${name} 失败: ${result.error}`);
         continue;
@@ -186,7 +184,7 @@ async function handleTextFilePaths(paths: string[]): Promise<void> {
       continue;
     }
     try {
-      const result = await bridge.fs.readFile(filePath);
+      const result = await bridge!.fs.readFile(filePath);
       if (!result.success) {
         appendSystemMessage(`❌ 读取 ${name} 失败: ${result.error}`);
         continue;
@@ -308,7 +306,7 @@ async function handleRetry(): Promise<void> {
               ...(retryThinkContent && { think: retryThinkContent }),
               ...(toolCallRecords?.length && { toolCalls: toolCallRecords }),
             };
-            state.update(KEYS.CURRENT_SESSION, (s: ChatSession | null) => ({
+            state.update(KEYS.CURRENT_SESSION, (s: any) => ({
               ...s, messages: [...s.messages, prevMsg], updatedAt: Date.now()
             }));
             renderMessages();
@@ -353,7 +351,7 @@ async function handleRetry(): Promise<void> {
                 ...(loopStats?.prompt_eval_count && { prompt_eval_count: loopStats.prompt_eval_count }),
                 ...(loopStats?.total_duration && { total_duration: loopStats.total_duration }),
               };
-              state.update(KEYS.CURRENT_SESSION, (s: ChatSession | null) => ({
+              state.update(KEYS.CURRENT_SESSION, (s: any) => ({
                 ...s, messages: [...s.messages, lastMsg], updatedAt: Date.now()
               }));
             }
@@ -367,7 +365,7 @@ async function handleRetry(): Promise<void> {
               ...(loopStats?.prompt_eval_count && { prompt_eval_count: loopStats.prompt_eval_count }),
               ...(loopStats?.total_duration && { total_duration: loopStats.total_duration }),
             };
-            state.update(KEYS.CURRENT_SESSION, (s: ChatSession | null) => ({
+            state.update(KEYS.CURRENT_SESSION, (s: any) => ({
               ...s, messages: [...s.messages, assistantMsg], updatedAt: Date.now()
             }));
             updateLastAssistantMessage(finalContent, retryThinkContent || null, loopStats || null, undefined, Date.now(), toolRecords?.length ? toolRecords : undefined);
@@ -644,7 +642,7 @@ export async function sendMessage(): Promise<void> {
   }
 
   const isFirstMsg = currentSession.messages.length === 0;
-  state.update(KEYS.CURRENT_SESSION, (session: ChatSession | null) => ({
+  state.update(KEYS.CURRENT_SESSION, (session: any) => ({
     ...session,
     ...(isFirstMsg && {
       title: truncate(text || (pendingFiles.length > 0 ? `[文件: ${pendingFiles.map(f => f.name).join(', ')}]` : '[图片消息]'), 30),
@@ -682,7 +680,7 @@ export async function sendMessage(): Promise<void> {
 
   let assistantContent = '';
   let thinkContent = '';
-  let finalStats: { eval_count?: number; prompt_eval_count?: number; total_duration?: number } | null = null;
+  let finalStats: any = null;
   let modelName = '';
 
   try {
@@ -697,6 +695,20 @@ export async function sendMessage(): Promise<void> {
     };
     if (numCtx) chatParams.options = { num_ctx: numCtx, temperature };
 
+    // ── 扫描工作空间 SOUL.md ──
+    let soulContent = '';
+    const workspaceDir = getWorkspaceDirPath();
+    if (workspaceDir) {
+      try {
+        const soulResult = await window.metonaDesktop?.workspace.readFile(
+          workspaceDir.replace(/\/+$/, '') + '/SOUL.md'
+        );
+        if (soulResult?.success && soulResult.content) {
+          soulContent = `[SOUL.md] ${soulResult.content}`;
+        }
+      } catch { /* SOUL.md 不存在，静默跳过 */ }
+    }
+
     // ── Agent 记忆注入 ──
     if (isMemoryEnabled()) {
       const userMessage = text || (msgsToAdd.find(m => m.role === 'user')?.content || '');
@@ -704,7 +716,7 @@ export async function sendMessage(): Promise<void> {
         const relevantMemories = searchMemories(userMessage, 6);
         if (relevantMemories.length > 0) {
           const memoryContext = buildMemoryContext(relevantMemories);
-          chatParams.system = memoryContext;
+          chatParams.system = (soulContent ? soulContent + '\n\n' : '') + memoryContext;
           for (const m of relevantMemories) {
             await markMemoryUsed(m.id);
           }
@@ -712,6 +724,12 @@ export async function sendMessage(): Promise<void> {
         }
       }
     }
+    if (soulContent && !chatParams.system) {
+      chatParams.system = soulContent;
+    }
+
+    // 存入 state 供 chat-area 渲染系统提示词卡片
+    state.set('_lastSystemPrompt', chatParams.system || '');
 
     await api.chatStream(chatParams as any, (chunk: OllamaStreamChunk) => {
       if (chunk.message) {
@@ -752,9 +770,9 @@ export async function sendMessage(): Promise<void> {
       timestamp: Date.now(),
       ...(modelName && { model: modelName }),
       ...(thinkContent && { think: thinkContent }),
-      ...(finalStats && { eval_count: finalStats.eval_count, prompt_eval_count: finalStats.prompt_eval_count, total_duration: finalStats.total_duration })
+      ...((finalStats || {}) as any)
     };
-    state.update(KEYS.CURRENT_SESSION, (session: ChatSession | null) => ({
+    state.update(KEYS.CURRENT_SESSION, (session: any) => ({
       ...session,
       messages: [...session.messages, assistantMsg],
       updatedAt: Date.now()
@@ -800,7 +818,7 @@ export async function sendMessage(): Promise<void> {
         ...(thinkContent && { think: thinkContent }),
         stopped: true
       };
-      state.update(KEYS.CURRENT_SESSION, (session: ChatSession | null) => ({
+      state.update(KEYS.CURRENT_SESSION, (session: any) => ({
         ...session,
         messages: [...session.messages, partialMsg],
         updatedAt: Date.now()
@@ -829,7 +847,7 @@ export async function sendMessage(): Promise<void> {
     const contentDiv = placeholder?.querySelector('.msg-content');
 
     if (assistantContent && contentDiv) {
-      state.update(KEYS.CURRENT_SESSION, (session: ChatSession | null) => ({
+      state.update(KEYS.CURRENT_SESSION, (session: any) => ({
         ...session,
         messages: [...session.messages, { role: 'assistant', content: assistantContent + '\n\n`[已中断]`', timestamp: Date.now() } as ChatMessage],
         updatedAt: Date.now()
@@ -864,14 +882,14 @@ export async function sendMessage(): Promise<void> {
 /** 更新当前会话消息中最近一个 'running' 状态的同名工具记录 */
 function updateMessageToolRecord(toolName: string, status: 'success' | 'error', result: Record<string, unknown>): void {
   let updated = false;
-  state.update(KEYS.CURRENT_SESSION, (session: ChatSession | null) => {
+  state.update(KEYS.CURRENT_SESSION, (session: any) => {
     if (!session) return session;
     const messages = [...session.messages];
     // 从后往前找最近一条包含该工具 running 状态记录的消息
     for (let i = messages.length - 1; i >= 0; i--) {
       const msg = messages[i];
       if (!msg.toolCalls) continue;
-      const idx = msg.toolCalls.findIndex(tc => tc.name === toolName && tc.status === 'running');
+      const idx = msg.toolCalls.findIndex((tc: any) => tc.name === toolName && tc.status === 'running');
       if (idx !== -1) {
         const updatedRecords = [...msg.toolCalls];
         updatedRecords[idx] = { ...updatedRecords[idx], status, result };
@@ -919,7 +937,7 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
   }
 
   const isFirstMsg = currentSession.messages.length === 0;
-  state.update(KEYS.CURRENT_SESSION, (session: ChatSession | null) => ({
+  state.update(KEYS.CURRENT_SESSION, (session: any) => ({
     ...session,
     ...(isFirstMsg && {
       title: truncate(text || (pendingFiles.length > 0 ? `[文件: ${pendingFiles.map(f => f.name).join(', ')}]` : '[图片消息]'), 30),
@@ -1009,7 +1027,7 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
             ...(iterationEvalCount > 0 && { eval_count: iterationEvalCount }),
             ...(iterationDuration > 0 && { total_duration: iterationDuration }),
           };
-          state.update(KEYS.CURRENT_SESSION, (session: ChatSession | null) => ({
+          state.update(KEYS.CURRENT_SESSION, (session: any) => ({
             ...session,
             messages: [...session.messages, prevMsg],
             updatedAt: Date.now()
@@ -1075,7 +1093,7 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
               ...(loopStats?.prompt_eval_count && { prompt_eval_count: loopStats.prompt_eval_count }),
               ...(loopStats?.total_duration && { total_duration: loopStats.total_duration }),
             };
-            state.update(KEYS.CURRENT_SESSION, (session: ChatSession | null) => ({
+            state.update(KEYS.CURRENT_SESSION, (session: any) => ({
               ...session,
               messages: [...session.messages, lastMsg],
               updatedAt: Date.now()
@@ -1094,7 +1112,7 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
             ...(loopStats?.prompt_eval_count && { prompt_eval_count: loopStats.prompt_eval_count }),
             ...(loopStats?.total_duration && { total_duration: loopStats.total_duration }),
           };
-          state.update(KEYS.CURRENT_SESSION, (session: ChatSession | null) => ({
+          state.update(KEYS.CURRENT_SESSION, (session: any) => ({
             ...session,
             messages: [...session.messages, assistantMsg],
             updatedAt: Date.now()
@@ -1133,7 +1151,7 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
         ...(abortToolRecords?.length && { toolCalls: abortToolRecords }),
         stopped: true
       };
-      state.update(KEYS.CURRENT_SESSION, (session: ChatSession | null) => ({
+      state.update(KEYS.CURRENT_SESSION, (session: any) => ({
         ...session,
         messages: [...session.messages, partialMsg],
         updatedAt: Date.now()

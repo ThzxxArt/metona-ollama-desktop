@@ -51,6 +51,7 @@ export interface OllamaModelInfo {
 
 export interface OllamaModelDetail {
   capabilities?: string[];
+  model_info?: Record<string, any>;
   [key: string]: unknown;
 }
 
@@ -59,6 +60,7 @@ export interface ModelCaps {
   vision: boolean;
   tools: boolean;
   completion: boolean;
+  contextLength: number;
 }
 
 export interface OllamaVersionResponse {
@@ -111,6 +113,8 @@ export interface ChatMessage {
   toolCalls?: ToolCallRecord[];
   /** 标记此消息为 LLM 压缩摘要生成 */
   compressed?: boolean;
+  /** 实际发送给模型的完整系统提示词（调试用） */
+  _systemPrompt?: string;
 }
 
 export interface ChatSession {

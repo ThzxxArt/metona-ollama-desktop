@@ -1,4 +1,4 @@
-# Metona Ollama Desktop v1-stable-release
+# Metona Ollama Desktop v1.1.0
 
 > 本地 Ollama AI 桌面客户端 — 首个稳定版本
 
@@ -135,7 +135,7 @@ Metona Ollama Desktop 是一个基于 **Ollama** 的本地 AI 桌面客户端，
 
 ## 安装说明
 
-1. 下载 `Metona Ollama Setup v1-stable-release.exe`
+1. 下载 `Metona Ollama Setup v1.1.0.exe`
 2. 运行安装程序，可自定义安装目录
 3. 确保本地已安装并运行 [Ollama](https://ollama.com)
 4. 启动 Metona Ollama，在设置中配置 Ollama 服务地址

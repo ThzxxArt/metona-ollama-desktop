@@ -14,7 +14,7 @@
 # 1. 克隆并安装依赖
 git clone https://gitee.com/thzxx/metona-ollama-desktop.git
 cd metona-ollama-desktop
-git checkout desktop-v1-stable-release
+git checkout desktop-v1.1.0
 npm config set registry https://registry.npmmirror.com
 npm install
 
@@ -92,7 +92,7 @@ npm run dist           # NSIS 安装包
 
 | 文件 | 说明 |
 |------|------|
-| `release/Metona Ollama Setup v1-stable-release.exe` | NSIS 安装包（可选目录、创建快捷方式） |
+| `release/Metona Ollama Setup v1.1.0.exe` | NSIS 安装包（可选目录、创建快捷方式） |
 
 > v3.2.0 起不再提供绿色便携版，仅保留 NSIS 安装包。
 

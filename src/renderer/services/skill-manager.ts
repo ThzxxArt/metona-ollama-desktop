@@ -64,7 +64,7 @@ export async function extractSkillsFromToolRecords(
   const chainNames = chain.map(s => s.name).join(' → ');
 
   // 检查是否已有完全相同的技能链
-  const existingSkills: Skill[] = await bridge.db.getAllSkills();
+  const existingSkills = await bridge.db.getAllSkills() as Skill[];
   const duplicate = existingSkills.find(s => {
     try {
       const existingChain: ToolChainStep[] = JSON.parse(s.tool_chain);
@@ -73,7 +73,29 @@ export async function extractSkillsFromToolRecords(
   });
 
   if (duplicate) {
-    // 已有相同技能，不重复创建
+    // v1.1: 重复链 → 更新参数提示（合并新知）+ 增加计数
+    try {
+      const existingChain: ToolChainStep[] = JSON.parse(duplicate.tool_chain);
+      let updated = false;
+      for (let i = 0; i < Math.min(chain.length, existingChain.length); i++) {
+        const newArgs = chain[i].args_hint.split(',').map(a => a.trim()).filter(Boolean);
+        const oldArgs = existingChain[i].args_hint.split(',').map(a => a.trim()).filter(Boolean);
+        const merged = [...new Set([...oldArgs, ...newArgs])];
+        const mergedHint = merged.join(', ');
+        if (mergedHint !== existingChain[i].args_hint) {
+          existingChain[i].args_hint = mergedHint;
+          updated = true;
+        }
+      }
+      if (updated) {
+        duplicate.tool_chain = JSON.stringify(existingChain);
+        duplicate.success_count++;
+        duplicate.updated_at = Date.now();
+        await bridge.db.saveSkill(duplicate);
+        logInfo(`技能参数优化: ${duplicate.name}`, `合并了新的参数提示`);
+        return 1;
+      }
+    } catch { /* 更新失败不阻塞 */ }
     logInfo(`技能已存在，跳过提取: ${duplicate.name}`);
     return 0;
   }
@@ -113,19 +135,36 @@ export async function extractSkillsFromToolRecords(
 }
 
 /**
- * 匹配用户消息与已有技能
- * 返回匹配度最高的技能列表
+ * 匹配用户消息与已有技能。
+ * v1.1: 关键词 + 语义匹配融合，未使用技能衰减。
  */
 export async function matchSkills(userMessage: string, limit = 3): Promise<Skill[]> {
   const bridge = window.metonaDesktop;
   if (!bridge?.db?.getAllSkills) return [];
 
   try {
-    const allSkills: Skill[] = await bridge.db.getAllSkills();
+    const allSkills = await bridge.db.getAllSkills() as any as Skill[];
     if (allSkills.length === 0) return [];
 
     const messageLower = userMessage.toLowerCase();
     const messageWords = new Set(messageLower.split(/[\s,，。！？、；：""''（）\[\]【】]+/).filter(w => w.length > 1));
+
+    // ── 语义匹配（如果 embedding 模型可用）──
+    let userEmbedding: number[] | null = null;
+    try {
+      const memEnabled = state.get<boolean>('memoryEnabled', false);
+      const embedModel = state.get<string>('embeddingModel', '');
+      if (memEnabled && embedModel) {
+        const api = state.get<any>(KEYS.API);
+        if (api?.embed) {
+          const result = await api.embed(embedModel, userMessage);
+          userEmbedding = result.embedding || result.embeddings?.[0] || null;
+        }
+      }
+    } catch { /* 语义匹配失败回退关键词 */ }
+
+    const now = Date.now();
+    const THIRTY_DAYS = 30 * 24 * 3600 * 1000;
 
     const scored = allSkills.map(skill => {
       let score = 0;
@@ -134,30 +173,141 @@ export async function matchSkills(userMessage: string, limit = 3): Promise<Skill
       if (skill.trigger_keywords) {
         const kwSet = new Set(skill.trigger_keywords.toLowerCase().split(',').map(k => k.trim()));
         for (const kw of kwSet) {
-          if (kw && messageLower.includes(kw)) score += 0.4;
+          if (kw && messageLower.includes(kw)) score += 0.3;
         }
       }
 
       // 名称和描述匹配
       const nameWords = skill.name.toLowerCase().split(/[\s→\-]+/);
       for (const w of nameWords) {
-        if (w.length > 1 && messageWords.has(w)) score += 0.2;
+        if (w.length > 1 && messageWords.has(w)) score += 0.15;
       }
 
-      // 成功率加成
+      // 语义匹配：余弦相似度加权（主导分数）
+      if (userEmbedding && skill.summary) {
+        const skillEmbed = getCachedSkillEmbedding(skill.id);
+        if (skillEmbed) {
+          const sim = cosineSimilarity(userEmbedding, skillEmbed);
+          score += sim * 0.4; // 语义匹配主导
+        }
+      }
+
+      // 成功率加权
       const total = skill.success_count + skill.fail_count;
       if (total > 0) score *= (0.5 + 0.5 * (skill.success_count / total));
+
+      // ── v1.1 未使用技能衰减 ──
+      if (skill.last_used_at) {
+        const daysSinceUse = (now - skill.last_used_at) / (24 * 3600 * 1000);
+        if (daysSinceUse > 30) score *= 0.5;  // 30天未用降权50%
+        if (daysSinceUse > 90) score *= 0.3;  // 90天未用几乎忽略
+      }
 
       return { skill, score };
     });
 
-    return scored
+    // ── v1.1 技能链合并：相同前缀的链抽象为一个技能 ──
+    const merged = mergeSimilarSkills(scored);
+
+    return merged
       .filter(s => s.score >= MATCH_THRESHOLD)
       .sort((a, b) => b.score - a.score)
       .slice(0, limit)
       .map(s => s.skill);
   } catch {
     return [];
+  }
+}
+
+// ── 向量计算工具 ──
+
+/** 技能 embedding 缓存（LRU 简单实现） */
+const _skillEmbedCache = new Map<string, { embedding: number[]; time: number }>();
+
+function getCachedSkillEmbedding(skillId: string): number[] | null {
+  const cached = _skillEmbedCache.get(skillId);
+  if (cached && Date.now() - cached.time < 300_000) return cached.embedding; // 5分钟有效
+  return null;
+}
+
+export function cacheSkillEmbedding(skillId: string, embedding: number[]): void {
+  _skillEmbedCache.set(skillId, { embedding, time: Date.now() });
+  // 限制缓存大小
+  if (_skillEmbedCache.size > 200) {
+    const oldest = [..._skillEmbedCache.entries()].sort((a, b) => a[1].time - b[1].time)[0];
+    if (oldest) _skillEmbedCache.delete(oldest[0]);
+  }
+}
+
+function cosineSimilarity(a: number[], b: number[]): number {
+  if (!a || !b || a.length !== b.length) return 0;
+  let dot = 0, normA = 0, normB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    normA += a[i] * a[i];
+    normB += b[i] * b[i];
+  }
+  const denom = Math.sqrt(normA) * Math.sqrt(normB);
+  return denom === 0 ? 0 : dot / denom;
+}
+
+// ── 技能链合并 ──
+
+interface ScoredSkill { skill: Skill; score: number; }
+
+/**
+ * v1.1 技能链合并：两个以上技能有相同前缀（前 2 步相同），
+ * 合并为一个抽象技能，分数取最高。
+ */
+function mergeSimilarSkills(scored: ScoredSkill[]): ScoredSkill[] {
+  if (scored.length < 2) return scored;
+
+  const result: ScoredSkill[] = [];
+  const used = new Set<number>();
+
+  for (let i = 0; i < scored.length; i++) {
+    if (used.has(i)) continue;
+    const group: ScoredSkill[] = [scored[i]];
+
+    // 找同前缀的
+    for (let j = i + 1; j < scored.length; j++) {
+      if (used.has(j)) continue;
+      if (getChainPrefix(scored[i].skill) === getChainPrefix(scored[j].skill)) {
+        group.push(scored[j]);
+        used.add(j);
+      }
+    }
+
+    if (group.length >= 2) {
+      // 合并为一个抽象技能
+      const best = group.reduce((a, b) => a.score > b.score ? a : b);
+      const chainNames = group.map(g => {
+        try { return (JSON.parse(g.skill.tool_chain) as ToolChainStep[]).map(s => s.name).join('→'); }
+        catch { return g.skill.name; }
+      });
+      const mergedSkill: Skill = {
+        ...best.skill,
+        name: `${getChainPrefix(best.skill)} → ...`,
+        description: `合并了 ${group.length} 个相似技能: ${chainNames.join(' | ')}`,
+        summary: best.skill.summary,
+      };
+      result.push({ skill: mergedSkill, score: best.score * 1.1 }); // 合并后略加分
+      used.add(i);
+    } else {
+      result.push(scored[i]);
+    }
+  }
+
+  return result;
+}
+
+/** 获取技能链的前 2 步前缀（用于相似度判断） */
+function getChainPrefix(skill: Skill): string {
+  try {
+    const chain: ToolChainStep[] = JSON.parse(skill.tool_chain);
+    return chain.slice(0, 2).map(s => s.name).join('→');
+  } catch {
+    return skill.name;
   }
 }
 
@@ -286,8 +436,8 @@ export async function listSkills(): Promise<Array<{
 }>> {
   const bridge = window.metonaDesktop;
   if (!bridge?.db?.getAllSkills) return [];
-  const allSkills: Skill[] = await bridge.db.getAllSkills();
-  return allSkills.map(skill => {
+  const allSkills: Skill[] = await bridge.db.getAllSkills() as any;
+  return (allSkills as any[]).map((skill: any) => {
     const total = skill.success_count + skill.fail_count;
     const rate = total > 0 ? Math.round(skill.success_count / total * 100) : 100;
     let chainPreview = '';
@@ -313,7 +463,7 @@ export async function viewSkill(skillName: string): Promise<{
 }> {
   const bridge = window.metonaDesktop;
   if (!bridge?.db?.getAllSkills) return { success: false, error: '数据库不可用' };
-  const allSkills: Skill[] = await bridge.db.getAllSkills();
+  const allSkills: Skill[] = await bridge.db.getAllSkills() as any;
   const skill = allSkills.find(s =>
     s.name.toLowerCase() === skillName.toLowerCase() ||
     s.name.toLowerCase().includes(skillName.toLowerCase())

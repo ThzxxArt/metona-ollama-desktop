@@ -10,9 +10,9 @@ function isDesktop(): boolean {
   return !!window.metonaDesktop?.isDesktop;
 }
 
-/** 桌面端 DB 桥接 */
+/** 桌面端 DB 桥接（isDesktop 已检查，安全断言非空） */
 function dbBridge() {
-  return window.metonaDesktop?.db;
+  return window.metonaDesktop!.db!;
 }
 
 export class ChatDB {
@@ -201,7 +201,7 @@ export class ChatDB {
 
   async getSetting<T = unknown>(key: string, defaultValue: T | null = null): Promise<T> {
     if (isDesktop()) {
-      return dbBridge().getSetting(key, defaultValue);
+      return dbBridge().getSetting(key, defaultValue) as Promise<T>;
     }
     return this._idbGetSetting(key, defaultValue);
   }

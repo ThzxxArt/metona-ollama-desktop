@@ -6,6 +6,7 @@ import { state, KEYS } from '../state/state.js';
 import { logError, logSession } from '../services/log-service.js';
 import { marked } from '../utils/marked-config.js';
 import { escapeHtml, formatTime } from '../utils/utils.js';
+import { estimateTokens } from '../services/context-manager.js';
 import type { ChatSession, ChatMessage, ToolCallRecord } from '../types.js';
 
 function getFileIcon(filename: string): string {
@@ -29,6 +30,31 @@ let emptyStateEl: HTMLElement;
 let scrollBtnEl: HTMLElement;
 let autoScroll = true;
 let currentPlaceholder: HTMLElement | null = null;
+
+/** 渲染可折叠系统提示词卡片 */
+let _sysPromptIdCounter = 0;
+function renderSystemPromptCard(sysPrompt: string): string {
+  const id = `sysprompt_${++_sysPromptIdCounter}`;
+  const tokenEstimate = estimateTokens(sysPrompt);
+  const preview = sysPrompt.length > 120 ? sysPrompt.slice(0, 120).replace(/\n/g, ' ') + '…' : sysPrompt.replace(/\n/g, ' ');
+  return `<div class="system-prompt-card">
+    <div class="system-prompt-header" onclick="
+      var el=document.getElementById('${id}');
+      var chev=this.querySelector('.sp-chevron');
+      el.style.display=el.style.display==='none'?'':'none';
+      chev.classList.toggle('sp-expanded');
+    ">
+      <span class="sp-icon">📋</span>
+      <span class="sp-title">系统提示词</span>
+      <span class="sp-tokens">~${tokenEstimate} tokens</span>
+      <span class="sp-preview">${escapeHtml(preview)}</span>
+      <svg class="sp-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+    </div>
+    <div class="system-prompt-body" id="${id}" style="display:none;">
+      <pre>${escapeHtml(sysPrompt)}</pre>
+    </div>
+  </div>`;
+}
 
 export function initChatArea(): void {
   chatAreaEl = document.querySelector('#chatArea')!;
@@ -118,6 +144,12 @@ export function appendMessageDOM(msg: ChatMessage, index: number): void {
   const safeContent = (msg.content != null) ? String(msg.content) : '';
 
   if (msg.role === 'assistant') {
+    // ── 系统提示词折叠卡片（每条助理消息顶部展示）──
+    const sysPrompt = state.get<string>('_lastSystemPrompt', '');
+    if (sysPrompt) {
+      contentHtml += renderSystemPromptCard(sysPrompt);
+    }
+
     if (msg.think) {
       contentHtml += `
         <div class="think-block">
@@ -273,6 +305,21 @@ export function updateLastAssistantMessage(
     const loadingText = lastMsg.querySelector('.loading-text');
     if (loadingDots) loadingDots.remove();
     if (loadingText) loadingText.remove();
+
+    // 流式消息首次转正：注入系统提示词折叠卡片
+    const sysPrompt = state.get<string>('_lastSystemPrompt', '');
+    if (sysPrompt && !lastMsg.querySelector('.system-prompt-card')) {
+      const msgBody = lastMsg.querySelector('.msg-body');
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = renderSystemPromptCard(sysPrompt);
+      const card = tempDiv.firstElementChild!;
+      const thinkBlock = msgBody?.querySelector('.think-block');
+      if (thinkBlock) {
+        msgBody!.insertBefore(card, thinkBlock);
+      } else {
+        msgBody!.insertBefore(card, msgBody!.firstChild);
+      }
+    }
   }
 
   if (model) {

@@ -228,7 +228,7 @@ export class VectorStore {
 
     if (saved && saved.version === this._indexVersion(vectors)) {
       if (!(saved.invertedLists instanceof Map)) {
-        saved.invertedLists = new Map(Object.entries(saved.invertedListsObj || {}));
+        saved.invertedLists = new Map(Object.entries(saved.invertedListsObj || {}).map(([k, v]) => [parseInt(k), v as string[]]));
       }
       this._indexCache.set(colId, saved);
       return saved;

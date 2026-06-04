@@ -7,7 +7,7 @@ import { state, KEYS } from '../state/state.js';
 import { setToolEnabled, setRunCommandMode } from '../services/tool-registry.js';
 import { showToast } from './toast.js';
 import { logInfo, logWarn } from '../services/log-service.js';
-import type { ChatDB } from '../types.js';
+import type { ChatDB } from '../db/chat-db.js';
 
 let modalEl: HTMLElement;
 

@@ -301,7 +301,7 @@ function renderBarChart(
 
 /** 渲染全局柱状图（按会话） */
 function renderGlobalChart(stats: AllSessionsTokenStats): void {
-  const chartEl = dashboardModalEl.querySelector('#tdChart')!;
+  const chartEl = dashboardModalEl.querySelector('#tdChart') as HTMLElement;
   const barsEl = chartEl.querySelector('.td-chart-bars') as HTMLElement | null;
   const savedScrollLeft = barsEl?.scrollLeft ?? 0;
 
@@ -329,7 +329,7 @@ function renderGlobalChart(stats: AllSessionsTokenStats): void {
 
 /** 渲染全局明细表格 */
 function renderGlobalTable(stats: AllSessionsTokenStats): void {
-  const tableTitleEl = dashboardModalEl.querySelector('#tdTableTitle');
+  const tableTitleEl = dashboardModalEl.querySelector('#tdTableTitle') as HTMLElement | null;
   if (tableTitleEl) tableTitleEl.textContent = '📋 会话汇总明细';
 
   // 动态更新表头
@@ -406,7 +406,7 @@ function renderSessionView(): void {
   `;
 
   // 柱状图
-  const chartEl = dashboardModalEl.querySelector('#tdChart')!;
+  const chartEl = dashboardModalEl.querySelector('#tdChart') as HTMLElement;
   const barsEl = chartEl.querySelector('.td-chart-bars') as HTMLElement | null;
   const savedScrollLeft = barsEl?.scrollLeft ?? 0;
 
@@ -423,7 +423,7 @@ function renderSessionView(): void {
   renderBarChart(chartEl, chartData, '按轮次', undefined, savedScrollLeft);
 
   // 表格标题
-  const tableTitleEl = dashboardModalEl.querySelector('#tdTableTitle');
+  const tableTitleEl = dashboardModalEl.querySelector('#tdTableTitle') as HTMLElement | null;
   if (tableTitleEl) tableTitleEl.textContent = '📋 轮次明细（按时间倒序）';
 
   // 动态更新表头

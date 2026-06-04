@@ -100,8 +100,8 @@ async function migrateIndexedDBToSQLite(db: ChatDB): Promise<void> {
         created_at: s.createdAt,
         updated_at: s.updatedAt
       })),
-      messages: sessions.flatMap(s =>
-        s.messages.map((m: Record<string, unknown>, idx: number) => ({
+      messages: (sessions as any[]).flatMap((s: any) =>
+        (s.messages || []).map((m: any, idx: number) => ({
           id: `${s.id}_msg_${idx}_${m.timestamp}`,
           session_id: s.id,
           role: m.role,
@@ -120,7 +120,7 @@ async function migrateIndexedDBToSQLite(db: ChatDB): Promise<void> {
         type: m.type,
         content: m.content,
         importance: m.importance || 5,
-        tags: m.tags?.length ? JSON.stringify(m.tags) : null,
+        tags: (m.tags as any[])?.length ? JSON.stringify(m.tags) : null,
         source: m.source || null,
         session_id: m.sessionId || null,
         use_count: m.useCount || 0,
@@ -354,9 +354,8 @@ async function init(): Promise<void> {
     state.set(KEYS.NUM_CTX, numCtx);
     state.set('temperature', temperature);
 
-    (document.querySelector('#inputNumCtx') as HTMLInputElement).value = String(numCtx);
     (document.querySelector('#inputTemperature') as HTMLInputElement).value = String(temperature);
-    document.querySelector('#tempValue')!.textContent = parseFloat(temperature).toFixed(1);
+    document.querySelector('#tempValue')!.textContent = parseFloat(String(temperature)).toFixed(1);
 
     // ── v5.1.1 Agent 最大轮数 ──
     const maxTurns = await db.getSetting('maxTurns', 85);

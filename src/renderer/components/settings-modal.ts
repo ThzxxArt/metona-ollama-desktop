@@ -39,16 +39,6 @@ export function initSettingsModal(): void {
   }, 500);
   document.querySelector('#inputServerUrl')!.addEventListener('input', saveServerUrl);
 
-  const saveNumCtx = debounce(async () => {
-    const db = state.get<ChatDB | null>(KEYS.DB);
-    const val = (document.querySelector('#inputNumCtx') as HTMLInputElement).value.trim();
-    const numCtx = val ? parseInt(val) : 24576;
-    state.set(KEYS.NUM_CTX, numCtx);
-    if (db) await db.saveSetting('numCtx', numCtx);
-    logSetting('上下文长度', `${numCtx} tokens`);
-  }, 500);
-  document.querySelector('#inputNumCtx')!.addEventListener('input', saveNumCtx);
-
   const tempSlider = document.querySelector('#inputTemperature') as HTMLInputElement;
   const tempDisplay = document.querySelector('#tempValue')!;
   tempSlider.addEventListener('input', () => {
@@ -250,9 +240,9 @@ export function initSettingsModal(): void {
       const result = await bridge.workspace.setDir(newDir);
       if (result.success) {
         showToast('工作空间目录已更新', 'success');
-        logSetting('工作空间目录', result.dir);
+        logSetting('工作空间目录', result.dir!);
       } else {
-        showToast(`设置失败: ${result.error}`, 'error');
+        showToast(`设置失败: ${result.error!}`, 'error');
         // 恢复原值
         const info = await bridge.workspace.getDir();
         inputWorkspaceDir.value = info.dir;
@@ -401,7 +391,7 @@ async function importSessions(filePath: string): Promise<void> {
 
   try {
     const bridge = window.metonaDesktop;
-    const result = await bridge.fs.readFileBase64(filePath);
+    const result = await bridge!.fs.readFileBase64(filePath);
     if (!result.success) {
       showToast(`读取文件失败: ${result.error}`, 'error');
       return;

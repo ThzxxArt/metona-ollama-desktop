@@ -17,7 +17,9 @@ import {
   getMemoryCollectionId
 } from './vector-memory.js';
 import { logMemory, logDebug, logWarn, logInfo } from './log-service.js';
-import type { MemoryEntry, MemorySearchResult, MemoryExtractionResult, ChatDB, OllamaAPI } from '../types.js';
+import type { MemoryEntry, MemorySearchResult, MemoryExtractionResult } from '../types.js';
+import type { ChatDB } from '../db/chat-db.js';
+import type { OllamaAPI } from '../api/ollama.js';
 
 const TYPE_ICONS: Record<string, string> = {
   fact: '📌',
@@ -686,10 +688,9 @@ ${conversationText.slice(0, 4000)}
     const response = await api.chat({
       model,
       messages: [{ role: 'user', content: extractPrompt }],
-      stream: false,
       think: false,
       options: { num_ctx: 8192, temperature: 0.1 }
-    });
+    } as any);
 
     const content = (response as { message?: { content?: string } })?.message?.content || '';
     const jsonMatch = content.match(new RegExp('```json\\s*([\\s\\S]*?)\\s*```')) || content.match(/\{[\s\S]*"entries"[\s\S]*\}/);
@@ -715,7 +716,7 @@ ${conversationText.slice(0, 4000)}
         importance: Math.min(10, Math.max(1, entry.importance || 5)),
         tags: entry.tags || [],
         source: '自动提取',
-        sessionId: currentSession?.id
+        sessionId: (currentSession as any)?.id
       });
       count++;
     }

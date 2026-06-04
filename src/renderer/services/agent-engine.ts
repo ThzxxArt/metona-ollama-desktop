@@ -18,14 +18,15 @@ import { showToast } from '../components/toast.js';
 import { logInfo, logWarn, logSuccess, logError, logToolStart, logToolResult, logAgentLoop, logModelResponse } from './log-service.js';
 import { getWorkspaceDirPath } from '../components/workspace-panel.js';
 import { generateId } from '../utils/utils.js';
-import { buildContext, estimateTokens, shouldAutoCompress, compressWithLLM, AUTO_COMPRESS_THRESHOLD } from './context-manager.js';
+import { buildContext, estimateTokens, shouldAutoCompress, compressWithLLM, AUTO_COMPRESS_THRESHOLD, recordActualTokens } from './context-manager.js';
 import type {
   OllamaMessage,
   OllamaStreamChunk,
   ToolCall,
   ToolResult,
   ToolCallRecord,
-  TraceEntry
+  TraceEntry,
+  ChatSession
 } from '../types.js';
 
 const MAX_RETRIES = 2;              // 工具错误自动重试次数
@@ -173,7 +174,7 @@ async function inferUserProfile(userMsg: string, assistantMsg: string): Promise<
   const bridge = window.metonaDesktop;
   if (!bridge?.db?.getSetting) return;
 
-  const profile: Record<string, unknown> = await bridge.db.getSetting('user_profile', {}) || {};
+  const profile: Record<string, any> = await bridge.db.getSetting('user_profile', {}) || {};
 
   // 技术栈检测
   const techPatterns: Record<string, RegExp> = {
@@ -363,7 +364,7 @@ export interface AgentCallbacks {
 }
 
 /** 保存执行轨迹到 SQLite */
-async function saveTrace(trace: Omit<TraceEntry, 'id' | 'createdAt'>): Promise<void> {
+async function saveTrace(trace: Record<string, any>): Promise<void> {
   try {
     const bridge = window.metonaDesktop;
     if (!bridge?.db) return;
@@ -390,7 +391,7 @@ export async function runAgentLoop(
 ): Promise<void> {
   const api = state.get<OllamaAPI>(KEYS.API);
   const model = state.get<string>('_defaultModel', '');
-  const currentSession = state.get(KEYS.CURRENT_SESSION);
+  const currentSession = state.get<ChatSession | null>(KEYS.CURRENT_SESSION);
   const sessionId = currentSession?.id || 'unknown';
 
   if (!api || !model) {
@@ -411,6 +412,24 @@ export async function runAgentLoop(
   const messages: OllamaMessage[] = [];
   let systemPromptParts: string[] = [];
 
+  // ── 扫描工作空间 SOUL.md ──
+  const workspaceDir = getWorkspaceDirPath();
+  if (workspaceDir) {
+    try {
+      const soulResult = await window.metonaDesktop?.workspace.readFile(
+        workspaceDir.replace(/\/+$/, '') + '/SOUL.md'
+      );
+      if (soulResult?.success && soulResult.content) {
+        // SOUL.md 注入为独立 system 消息，标记为不可压缩
+        messages.push({
+          role: 'system',
+          content: `[SOUL.md] ${soulResult.content}`,
+        });
+        logInfo('SOUL.md 已注入系统提示词', `${soulResult.lines || 0} 行`);
+      }
+    } catch { /* SOUL.md 不存在或读取失败，静默跳过 */ }
+  }
+
   // 注入记忆上下文
   if (isMemoryEnabled() && userContent) {
     const relevantMemories = searchMemories(userContent, 6);
@@ -423,7 +442,6 @@ export async function runAgentLoop(
   }
 
   // 注入工作空间上下文
-  const workspaceDir = getWorkspaceDirPath();
   if (workspaceDir) {
     systemPromptParts.push(`【工作空间】
 当前工作空间目录: ${workspaceDir}
@@ -447,7 +465,7 @@ export async function runAgentLoop(
   const db = state.get<ChatDB | null>(KEYS.DB);
   if (db) {
     try {
-      const userProfile = await db.getSetting('user_profile', null);
+      const userProfile = await db.getSetting('user_profile', null) as Record<string, any> | null;
       if (userProfile && typeof userProfile === 'object') {
         const parts: string[] = [];
         if (userProfile.tech_stack?.length) parts.push(`技术栈: ${userProfile.tech_stack.join(', ')}`);
@@ -474,6 +492,9 @@ export async function runAgentLoop(
   ].join('\n\n');
 
   messages.push({ role: 'system', content: fullSystemPrompt });
+
+  // 将完整系统提示词存入 state，供 input-area 在助理消息上展示
+  state.set('_lastSystemPrompt', fullSystemPrompt);
 
   // 添加历史消息
   for (const msg of historyMessages) {
@@ -503,7 +524,7 @@ export async function runAgentLoop(
     logInfo(`自动上下文压缩触发: tokens≈${estimateTokens(messages.map(m => m.content || '').join(''))} > ${Math.floor(numCtx * AUTO_COMPRESS_THRESHOLD)} (50% of ${numCtx})`);
     const compressAC = state.get<AbortController | null>(KEYS.ABORT_CONTROLLER) || new AbortController();
     try {
-      const compressed = await compressWithLLM(messages, api, model, { abortController: compressAC });
+      const compressed = await compressWithLLM(messages, api as any, model, { abortController: compressAC });
       if (compressed.length < messages.length || estimateTokens(compressed.map(m => m.content || '').join('')) < estimateTokens(messages.map(m => m.content || '').join(''))) {
         messages.length = 0;
         messages.push(...compressed);
@@ -633,10 +654,25 @@ export async function runAgentLoop(
     totalPromptEvalCount += loopPromptEvalCount;
     totalInferenceNs += loopInferenceNs;
     state.set('_currentEvalCount', totalEvalCount);
+
+    // Token 校准：用 Ollama 返回的实际计数修正估算器（在重置前保存本轮值）
+    const thisLoopEval = loopEvalCount;
+    const thisLoopPrompt = loopPromptEvalCount;
     // 重置本轮计数器（下一轮重新从 chunk 收集）
     loopEvalCount = 0;
     loopPromptEvalCount = 0;
     loopInferenceNs = 0;
+
+    // Token 校准：用 Ollama 返回的实际计数自动修正估算器
+    try {
+      if (thisLoopEval > 0 || thisLoopPrompt > 0) {
+        const estimatedThisLoop = estimateTokens(messages.map(m => m.content || '').join(''));
+        if (estimatedThisLoop > 0) {
+          recordActualTokens(thisLoopPrompt, thisLoopEval, estimatedThisLoop);
+        }
+      }
+    } catch { /* 校准失败不阻塞主流程 */ }
+
     } catch (err) {
       if (abortController.signal.aborted) {
         logInfo('流式调用已中止');
@@ -722,7 +758,7 @@ export async function runAgentLoop(
       // v4.2 自动提取技能
       if (allToolRecords.length >= 2) {
         try {
-          await extractSkillsFromToolRecords(allToolRecords, userContent, currentSession?.title || '');
+          await extractSkillsFromToolRecords(allToolRecords, userContent, (currentSession as ChatSession)?.title || '');
         } catch { /* 不阻塞 */ }
       }
 

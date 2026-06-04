@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-v1--stable--release-E8734A?style=flat-square" alt="version">
+  <img src="https://img.shields.io/badge/version-v1.1.0-E8734A?style=flat-square" alt="version">
   <img src="https://img.shields.io/badge/electron-33+-47848F?style=flat-square&logo=electron" alt="electron">
   <img src="https://img.shields.io/badge/typescript-5.7+-3178C6?style=flat-square&logo=typescript" alt="typescript">
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="license">
@@ -212,7 +212,7 @@ SQLite (sql.js WASM)，7 张表，WAL 模式 + FTS5 全文搜索：
 ```bash
 git clone https://gitee.com/thzxx/metona-ollama-desktop.git
 cd metona-ollama-desktop
-git checkout desktop-v1-stable-release
+git checkout desktop-v1.1.0
 npm config set registry https://registry.npmmirror.com
 npm install
 npm start
@@ -225,7 +225,7 @@ npm start
 ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm run dist
 ```
 
-产出：`release/Metona Ollama Setup v1-stable-release.exe`
+产出：`release/Metona Ollama Setup v1.1.0.exe`
 
 ## 🛠️ 常用命令
 
@@ -433,7 +433,7 @@ SQLite (sql.js WASM), 7 tables, WAL mode + FTS5 full-text search:
 ```bash
 git clone https://gitee.com/thzxx/metona-ollama-desktop.git
 cd metona-ollama-desktop
-git checkout desktop-v1-stable-release
+git checkout desktop-v1.1.0
 npm config set registry https://registry.npmmirror.com
 npm install
 npm start
@@ -446,7 +446,7 @@ npm start
 ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm run dist
 ```
 
-Output: `release/Metona Ollama Setup v1-stable-release.exe`
+Output: `release/Metona Ollama Setup v1.1.0.exe`
 
 ## 🛠️ Common Commands
 
