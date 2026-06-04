@@ -493,8 +493,12 @@ export async function runAgentLoop(
 
   messages.push({ role: 'system', content: fullSystemPrompt });
 
-  // 将完整系统提示词存入 state，供 input-area 在助理消息上展示
-  state.set('_lastSystemPrompt', fullSystemPrompt);
+  // 将完整系统提示词存入 state（包含 SOUL.md + fullSystemPrompt）
+  const allSystemContent = messages
+    .filter(m => m.role === 'system')
+    .map(m => m.content)
+    .join('\n\n');
+  state.set('_lastSystemPrompt', allSystemContent || fullSystemPrompt);
 
   // 添加历史消息
   for (const msg of historyMessages) {
