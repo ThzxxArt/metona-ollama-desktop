@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-v1.1.0-E8734A?style=flat-square" alt="version">
+  <img src="https://img.shields.io/badge/version-v0.9.0-E8734A?style=flat-square" alt="version">
   <img src="https://img.shields.io/badge/electron-33+-47848F?style=flat-square&logo=electron" alt="electron">
   <img src="https://img.shields.io/badge/typescript-5.7+-3178C6?style=flat-square&logo=typescript" alt="typescript">
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="license">
@@ -37,7 +37,7 @@
 | 🤖 | **ReAct Agent Loop** | Thought → Action → Observation → Reflection 完整循环，最大 85 轮（可配置），自动重试 2 次，工具去重，并行/链式执行 |
 | 🔧 | **38 个内置工具** | 文件系统 · 命令执行 · 联网搜索 · 浏览器控制 · Git · 记忆 · 技能 · 会话 · 子代理 |
 | 🧠 | **智能记忆系统** | 三类记忆（fact / preference / rule），FTS5 全文搜索 + 向量语义搜索，写入前安全扫描，容量 500 条，90 天衰减 |
-| 📋 | **SOUL.md 自定义人格** | 工作空间下创建 SOUL.md 定义 AI 身份与行为准则，每次发送自动注入为最高优先级系统提示词，永远不可压缩 |
+|| 📋 | **自定义文件** | SOUL.md（人格，不可压缩）+ AGENT.md（行为准则）+ USER.md（用户画像），工作空间优先，内置默认 fallback |
 | 🎯 | **技能自动生成 v1.1** | 工具调用链自动提取 → 语义匹配 → 参数自优化 → 未使用衰减 → 技能链合并，越用越精准 |
 | 🌐 | **MCP 协议扩展** | JSON-RPC 2.0 over stdio，动态工具发现，Shadowing 防护 |
 | 🔍 | **三引擎联网搜索** | Bing + 百度 + Google 聚合，web_search → web_fetch 链式抓取 |
@@ -153,7 +153,7 @@
 ## 🏗️ 架构
 
 ```
-用户消息 → 扫描工作空间 SOUL.md（不可压缩层）
+用户消息 → 扫描工作空间 SOUL.md（不可压缩层）→ AGENT.md → USER.md
               ↓
          Agent Engine (ReAct Loop, ≤85轮)
               ↓
@@ -219,7 +219,6 @@ SQLite (sql.js WASM)，7 张表，WAL 模式 + FTS5 全文搜索：
 ```bash
 git clone https://gitee.com/thzxx/metona-ollama-desktop.git
 cd metona-ollama-desktop
-git checkout desktop-v1.1.0
 npm config set registry https://registry.npmmirror.com
 npm install
 npm start
@@ -232,7 +231,7 @@ npm start
 ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm run dist
 ```
 
-产出：`release/Metona Ollama Setup v1.1.0.exe`
+产出：`release/Metona Ollama Setup v0.9.0.exe`
 
 ## 🛠️ 常用命令
 
@@ -265,7 +264,7 @@ npm run dist           # 构建 Windows 安装包
 | 🤖 | **ReAct Agent Loop** | Full Thought → Action → Observation → Reflection cycle, up to 85 iterations (configurable), auto-retry 2 times, tool dedup, parallel/chain execution |
 | 🔧 | **38 Built-in Tools** | File system · Command · Web search · Browser · Git · Memory · Skills · Sessions · Sub-agent |
 | 🧠 | **Smart Memory System** | Three types (fact / preference / rule), FTS5 + vector semantic search, pre-write security scan, 500 capacity, 90-day decay |
-| 📋 | **SOUL.md Custom Persona** | Define AI identity & rules in workspace SOUL.md, auto-injected as highest-priority system prompt, never compressed |
+|| 📋 | **Custom Files** | SOUL.md (persona, never compressed) + AGENT.md (behavior rules) + USER.md (user profile), workspace-first with built-in defaults |
 | 🎯 | **Auto Skill Generation v1.1** | Tool chain extraction → semantic matching → parameter self-optimization → decay → chain merging |
 | 🌐 | **MCP Protocol Extension** | JSON-RPC 2.0 over stdio, dynamic tool discovery, Shadowing protection |
 | 🔍 | **Triple-engine Web Search** | Bing + Baidu + Google aggregation, web_search → web_fetch chain |
@@ -381,7 +380,7 @@ npm run dist           # 构建 Windows 安装包
 ## 🏗️ Architecture
 
 ```
-User message → Agent Engine (ReAct Loop, ≤85 rounds)
+User message → workspace SOUL.md (never compressed) → AGENT.md → USER.md
               ↓
          Memory Retrieval (FTS5 + Vector Semantic Search) → Context Injection
               ↓
@@ -443,7 +442,6 @@ SQLite (sql.js WASM), 7 tables, WAL mode + FTS5 full-text search:
 ```bash
 git clone https://gitee.com/thzxx/metona-ollama-desktop.git
 cd metona-ollama-desktop
-git checkout desktop-v1.1.0
 npm config set registry https://registry.npmmirror.com
 npm install
 npm start
@@ -456,7 +454,7 @@ npm start
 ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm run dist
 ```
 
-Output: `release/Metona Ollama Setup v1.1.0.exe`
+Output: `release/Metona Ollama Setup v0.9.0.exe`
 
 ## 🛠️ Common Commands
 
