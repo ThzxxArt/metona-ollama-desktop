@@ -768,7 +768,7 @@ export async function executeTool(toolName: string, args: Record<string, unknown
       const { executeSubAgent } = await import('./sub-agent.js');
       const task = args.task as string;
       const context = args.context as string | undefined;
-      const model = args.model as string | undefined;
+      const model = (args.model as string) || state.get<string>('subAgentModel', '') || undefined;
       if (!task) return { success: false, error: '缺少 task 参数' };
       logInfo(`子代理委派: ${task.slice(0, 80)}${model ? ` (模型: ${model})` : ''}`);
       const result = await executeSubAgent(task, context, model ? { model } : {});

@@ -325,6 +325,13 @@
                 <div id="memoryVectorStatus" class="text-muted" style="font-size:11px;margin-top:4px;"></div>
             </div>
             <div class="setting-group">
+                <label class="setting-label">🤖 子代理默认模型</label>
+                <p class="text-muted" style="font-size:11px;margin-bottom:8px;">子代理（spawn_task）使用的默认模型。留空则使用当前选中的模型。可为简单任务选择更快的模型。</p>
+                <select class="setting-input" id="selectSubAgentModel">
+                    <option value="">跟随当前模型</option>
+                </select>
+            </div>
+            <div class="setting-group">
                 <label class="setting-label">显存管理</label>
                 <button class="btn btn-danger" id="btnReleaseVRAM">释放显存（卸载模型）</button>
             </div>

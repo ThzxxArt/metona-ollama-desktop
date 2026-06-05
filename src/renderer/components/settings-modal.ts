@@ -257,6 +257,7 @@ export function openSettingsModal(): void {
   updateConnectionInfo();
   updateRunningModels();
   populateMemoryEmbedModels();
+  populateSubAgentModels();
   updateMemoryVectorStatus();
 }
 
@@ -364,6 +365,47 @@ async function populateMemoryEmbedModels(): Promise<void> {
     logWarn('加载嵌入模型列表失败', (err as Error).message);
   }
 }
+
+async function populateSubAgentModels(): Promise<void> {
+  const select = document.querySelector('#selectSubAgentModel') as HTMLSelectElement;
+  if (!select) return;
+  const api = state.get<OllamaAPI>(KEYS.API);
+  if (!api) return;
+
+  try {
+    const data = await api.listModels();
+    if (!data.models?.length) return;
+
+    // 保留第一个 "跟随当前模型" 选项，追加所有模型
+    while (select.options.length > 1) select.remove(1);
+    data.models
+      .sort((a, b) => (a.name < b.name ? -1 : 1))
+      .forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m.name;
+        opt.textContent = m.name;
+        select.appendChild(opt);
+      });
+
+    // 恢复已保存的选择
+    const db = state.get<ChatDB | null>(KEYS.DB);
+    if (db) {
+      const saved = await db.getSetting('subAgentModel', '');
+      if (saved) select.value = saved;
+    }
+  } catch (err) {
+    logWarn('加载子代理模型列表失败', (err as Error).message);
+  }
+}
+
+// 子代理模型设置保存
+document.querySelector('#selectSubAgentModel')?.addEventListener('change', async () => {
+  const db = state.get<ChatDB | null>(KEYS.DB);
+  if (!db) return;
+  const val = (document.querySelector('#selectSubAgentModel') as HTMLSelectElement).value;
+  await db.saveSetting('subAgentModel', val);
+  logSetting('子代理默认模型', val || '跟随当前模型');
+});
 
 function updateMemoryVectorStatus(): void {
   const statusEl = document.querySelector('#memoryVectorStatus');
