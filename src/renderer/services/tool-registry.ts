@@ -480,13 +480,14 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'spawn_task',
-      description: 'Spawn a sub-agent to independently execute a task. The sub-agent runs in isolation without tool access and returns a result. Use this to parallelize independent sub-tasks or delegate focused work.',
+      description: 'Spawn a sub-agent to independently execute a task using read-only tools (file reading, web search, browser viewing, memory/session/skill queries). Use this to parallelize independent research or analysis sub-tasks.',
       parameters: {
         type: 'object',
         required: ['task'],
         properties: {
           task: { type: 'string', description: 'The task description for the sub-agent to execute.' },
-          context: { type: 'string', description: 'Optional additional context or reference data for the sub-agent.' }
+          context: { type: 'string', description: 'Optional additional context or reference data for the sub-agent.' },
+          model: { type: 'string', description: 'Optional model name for the sub-agent. Use a smaller/faster model for simple tasks. Defaults to current model.' }
         }
       }
     }
@@ -767,9 +768,10 @@ export async function executeTool(toolName: string, args: Record<string, unknown
       const { executeSubAgent } = await import('./sub-agent.js');
       const task = args.task as string;
       const context = args.context as string | undefined;
+      const model = args.model as string | undefined;
       if (!task) return { success: false, error: '缺少 task 参数' };
-      logInfo(`子代理委派: ${task.slice(0, 80)}`);
-      const result = await executeSubAgent(task, context);
+      logInfo(`子代理委派: ${task.slice(0, 80)}${model ? ` (模型: ${model})` : ''}`);
+      const result = await executeSubAgent(task, context, model ? { model } : {});
       logToolResult('spawn_task', result.success, result.success ? `完成, ${(result as any).loops} 轮` : result.error);
       return result;
     }
