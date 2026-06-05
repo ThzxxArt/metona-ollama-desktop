@@ -385,6 +385,35 @@ export async function runAgentLoop(
     systemPromptParts.push(`[AGENT.md] ${agentMdContent}`);
   }
 
+  // ── 扫描工作空间 USER.md ──
+  let userMdContent = '';
+  if (workspaceDir) {
+    try {
+      const userResult = await window.metonaDesktop?.workspace.readFile(
+        workspaceDir.replace(/\/+$/, '') + '/USER.md'
+      );
+      if (userResult?.success && userResult.content) {
+        userMdContent = userResult.content;
+        logInfo('USER.md 已从工作空间加载', `${userResult.lines || 0} 行`);
+      }
+    } catch { /* 工作空间 USER.md 不存在 */ }
+  }
+
+  // fallback：读取内置 USER.md
+  if (!userMdContent) {
+    try {
+      const resp = await fetch('./USER.md');
+      if (resp.ok) {
+        userMdContent = await resp.text();
+        logInfo('USER.md 已从内置加载', `${userMdContent.length} 字符`);
+      }
+    } catch { /* 内置 USER.md 也不可用 */ }
+  }
+
+  if (userMdContent) {
+    systemPromptParts.push(`[USER.md] ${userMdContent}`);
+  }
+
   // 注入记忆上下文
   if (isMemoryEnabled() && userContent) {
     const relevantMemories = searchMemories(userContent, 6);
@@ -414,35 +443,6 @@ export async function runAgentLoop(
         logInfo(`技能匹配: ${matchedSkills.length} 个技能已注入`, matchedSkills.map(s => s.name).join(', '));
       }
     }
-  }
-
-  // ── 扫描工作空间 USER.md ──
-  let userMdContent = '';
-  if (workspaceDir) {
-    try {
-      const userResult = await window.metonaDesktop?.workspace.readFile(
-        workspaceDir.replace(/\/+$/, '') + '/USER.md'
-      );
-      if (userResult?.success && userResult.content) {
-        userMdContent = userResult.content;
-        logInfo('USER.md 已从工作空间加载', `${userResult.lines || 0} 行`);
-      }
-    } catch { /* 工作空间 USER.md 不存在 */ }
-  }
-
-  // fallback：读取内置 USER.md
-  if (!userMdContent) {
-    try {
-      const resp = await fetch('./USER.md');
-      if (resp.ok) {
-        userMdContent = await resp.text();
-        logInfo('USER.md 已从内置加载', `${userMdContent.length} 字符`);
-      }
-    } catch { /* 内置 USER.md 也不可用 */ }
-  }
-
-  if (userMdContent) {
-    systemPromptParts.push(`[USER.md] ${userMdContent}`);
   }
 
   // 组合 system prompt
