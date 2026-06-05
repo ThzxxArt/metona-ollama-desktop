@@ -4,6 +4,7 @@
  */
 
 import type { ToolDefinition, ToolResult } from '../types.js';
+import { state, KEYS } from '../state/state.js';
 import { logToolStart, logToolResult, logError, logInfo, logWarn } from './log-service.js';
 import { getMCPToolDefinitions } from './mcp-client.js';
 
@@ -480,14 +481,14 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'spawn_task',
-      description: 'Spawn a sub-agent to independently execute a task using read-only tools (file reading, web search, browser viewing, memory/session/skill queries). Use this to parallelize independent research or analysis sub-tasks.',
+      description: 'Spawn a sub-agent to independently execute a task using read-only tools (file reading, web search, browser viewing, memory/session/skill queries). Use this to parallelize independent research or analysis sub-tasks. For the model parameter, prefer smaller models (e.g. "qwen3:1.8b", "qwen3:4b") for simple lookups and the current model for complex analysis. Leave blank to use the default configured in Settings.',
       parameters: {
         type: 'object',
         required: ['task'],
         properties: {
           task: { type: 'string', description: 'The task description for the sub-agent to execute.' },
           context: { type: 'string', description: 'Optional additional context or reference data for the sub-agent.' },
-          model: { type: 'string', description: 'Optional model name for the sub-agent. Use a smaller/faster model for simple tasks. Defaults to current model.' }
+          model: { type: 'string', description: 'Optional model name. If the specified model is not installed, the default model will be used automatically. Best practice: only specify a model you know exists (e.g. "qwen3:1.8b"), or leave blank for the Settings default.' }
         }
       }
     }
@@ -768,7 +769,21 @@ export async function executeTool(toolName: string, args: Record<string, unknown
       const { executeSubAgent } = await import('./sub-agent.js');
       const task = args.task as string;
       const context = args.context as string | undefined;
-      const model = (args.model as string) || state.get<string>('subAgentModel', '') || undefined;
+      const specifiedModel = (args.model as string) || state.get<string>('subAgentModel', '');
+      // 校验指定模型是否存在，不存在则回退
+      let model: string | undefined;
+      if (specifiedModel) {
+        try {
+          const api = state.get<any>(KEYS.API);
+          const models = await api.listModels();
+          const names = new Set(models.models?.map((m: any) => m.name) || []);
+          if (names.has(specifiedModel)) {
+            model = specifiedModel;
+          } else {
+            logWarn(`子代理指定模型 "${specifiedModel}" 未安装，回退到默认模型`);
+          }
+        } catch { model = undefined; }
+      }
       if (!task) return { success: false, error: '缺少 task 参数' };
       logInfo(`子代理委派: ${task.slice(0, 80)}${model ? ` (模型: ${model})` : ''}`);
       const result = await executeSubAgent(task, context, model ? { model } : {});
