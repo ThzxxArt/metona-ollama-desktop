@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-v0.9.0-E8734A?style=flat-square" alt="version">
+  <img src="https://img.shields.io/badge/version-v0.9.1-E8734A?style=flat-square" alt="version">
   <img src="https://img.shields.io/badge/electron-33+-47848F?style=flat-square&logo=electron" alt="electron">
   <img src="https://img.shields.io/badge/typescript-5.7+-3178C6?style=flat-square&logo=typescript" alt="typescript">
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="license">
@@ -177,13 +177,13 @@ main.ts (入口)
   ├── chat-area.ts           # 聊天消息区域
   ├── input-area.ts          # 输入框 + 文件上传
   ├── workspace-panel.ts     # 终端 + 文件浏览器
-  ├── log-panel.ts           # 结构化日志面板
   ├── settings-modal.ts      # 设置面板
   ├── history-modal.ts       # 会话历史
   ├── memory-modal.ts        # 记忆管理
   ├── tools-modal.ts         # 工具列表
   ├── token-dashboard.ts     # Token 消耗仪表盘
   ├── tool-confirm-modal.ts  # 工具执行确认
+  ├── prompt-modal.ts        # 系统提示词查看
   ├── toast.ts               # Toast 通知
   └── lightbox.ts            # 图片灯箱
 ```
@@ -231,7 +231,7 @@ npm start
 ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm run dist
 ```
 
-产出：`release/Metona Ollama Setup v0.9.0.exe`
+产出：`release/Metona Ollama Setup v0.9.1.exe`
 
 ## 🛠️ 常用命令
 
@@ -400,13 +400,13 @@ main.ts (Entry)
   ├── chat-area.ts           # Chat message area
   ├── input-area.ts          # Input box + file upload
   ├── workspace-panel.ts     # Terminal + file browser
-  ├── log-panel.ts           # Structured log panel
   ├── settings-modal.ts      # Settings panel
   ├── history-modal.ts       # Session history
   ├── memory-modal.ts        # Memory management
   ├── tools-modal.ts         # Tool list
   ├── token-dashboard.ts     # Token consumption dashboard
   ├── tool-confirm-modal.ts  # Tool execution confirmation
+  ├── prompt-modal.ts        # System prompt viewer
   ├── toast.ts               # Toast notifications
   └── lightbox.ts            # Image lightbox
 ```
@@ -454,7 +454,7 @@ npm start
 ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm run dist
 ```
 
-Output: `release/Metona Ollama Setup v0.9.0.exe`
+Output: `release/Metona Ollama Setup v0.9.1.exe`
 
 ## 🛠️ Common Commands
 

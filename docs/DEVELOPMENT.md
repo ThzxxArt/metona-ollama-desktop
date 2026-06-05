@@ -1,6 +1,6 @@
 # Metona Ollama Desktop — 开发规范
 
-> 版本: v1.1.0 | 更新: 2026-04-24 | 维护: 项目团队
+> 版本: v0.9.1 | 更新: 2026-06-05 | 维护: 项目团队
 
 ---
 
@@ -60,9 +60,7 @@ src/
 │   │   ├── context-manager.ts    # 上下文窗口管理
 │   │   ├── skill-manager.ts      # 技能自动生成（Level 0）
 │   │   ├── sub-agent.ts          # 子代理委派
-│   │   ├── cron-manager.ts       # 定时任务
 │   │   ├── mcp-client.ts         # MCP 渲染端客户端
-│   │   ├── document-processor.ts # 文档分块
 │   │   ├── log-service.ts        # 结构化日志
 │   │   └── crypto.ts             # AES-256-GCM 加密
 │   ├── utils/
@@ -154,10 +152,10 @@ import {
 
 ## 五、架构规范
 
-### 5.1 四大子系统
+### 5.1 五大子系统
 
 ```
-① Agent 系统    → agent-engine.ts + tool-registry.ts（38 工具 + MCP 动态）
+① Agent 系统    → agent-engine.ts + tool-registry.ts（38 内置工具 + MCP 动态）
 ② 记忆系统      → memory-manager.ts + vector-memory.ts
 ③ 向量存储      → vector-store.ts（IVF 索引）
 ④ 工作空间      → workspace.ts (主进程) + workspace-panel.ts (渲染进程)
@@ -194,7 +192,7 @@ import {
 ### 5.4 联网搜索联动
 
 - web_search 返回搜索结果（标题、URL、摘要），默认 15 条
-- TOOL_USAGE_GUIDE 要求模型在 web_search 后必须选择相关 URL 调用 web_fetch 抓取详情
+- 模型在 web_search 后应选择相关 URL 调用 web_fetch 抓取详情
 - web_fetch 默认返回完整内容（`max_chars=0`），不截断
 
 ### 5.5 工作空间与 AI 集成
@@ -258,23 +256,17 @@ npm run dist           # 构建 Windows 安装包
 | `package.json` | `"version": "X.Y.Z"` |
 | `package-lock.json` | 顶层 version 字段（2 处） |
 | `src/renderer/index.html` | `<span class="app-version">vX.Y.Z</span>` |
-| `README.md` | 版本徽章、下载文件名、构建分支引用 |
-| `docs/BUILD.md` | 构建分支引用、新增构建日志条目 |
-| `docs/CHANGELOG.md` | 版本分支结构链、新增版本说明条目 |
+| `README.md` | 版本徽章、下载文件名 |
+| `src/main/menu.ts` | 关于对话框版本号 |
+| `docs/BUILD.md` | 构建产物文件名、Gitee release tag |
 | `docs/DEVELOPMENT.md` | 文件头部版本号 |
-
-### 更新日志
-
-- **所有更新日志只写在 `docs/CHANGELOG.md`**
-- `README.md` 不写历史版本记录，只保留一行链接指向 `docs/CHANGELOG.md`
 
 ### 7.2 发布流程
 
 1. 更新版本号（同步上述文件）
-2. 更新 `docs/CHANGELOG.md`
-3. 构建并测试：`npm start`
-4. 构建安装包：`npm run dist`
-5. 推送到 develop → 合并到 master → 创建版本分支
+2. 构建并测试：`npm start`
+3. 构建安装包：`npm run dist`
+4. 推送到 master
 
 ---
 
@@ -282,11 +274,7 @@ npm run dist           # 构建 Windows 安装包
 
 ### 分支模型
 
-- `master` — 稳定发布版本
-- `develop` — 开发主分支
-- `metona-ollama-desktop-vX.Y.Z` — 版本发布分支
-- `feature/*` — 功能开发
-- `fix/*` — Bug 修复
+- `master` — 主分支
 
 ### Commit 规范
 

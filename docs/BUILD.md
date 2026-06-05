@@ -14,7 +14,6 @@
 # 1. 克隆并安装依赖
 git clone https://gitee.com/thzxx/metona-ollama-desktop.git
 cd metona-ollama-desktop
-git checkout desktop-v1.1.0
 npm config set registry https://registry.npmmirror.com
 npm install
 
@@ -92,9 +91,9 @@ npm run dist           # NSIS 安装包
 
 | 文件 | 说明 |
 |------|------|
-| `release/Metona Ollama Setup v1.1.0.exe` | NSIS 安装包（可选目录、创建快捷方式） |
+| `release/Metona Ollama Setup v0.9.1.exe` | NSIS 安装包（可选目录、创建快捷方式） |
 
-> v3.2.0 起不再提供绿色便携版，仅保留 NSIS 安装包。
+> 仅提供 NSIS 安装包。
 
 ## 发布到 Gitee
 
@@ -102,18 +101,18 @@ npm run dist           # NSIS 安装包
 
 ```bash
 TOKEN="your_access_token"
-curl -X POST "https://gitee.com/api/v5/repos/thzxx/metona-ollama/releases?access_token=$TOKEN" \
+curl -X POST "https://gitee.com/api/v5/repos/thzxx/metona-ollama-desktop/releases?access_token=$TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"tag_name":"v3.2.0","name":"v3.2.0","body":"Release notes","target_commitish":"refactor/modular-architecture"}'
+  -d '{"tag_name":"v0.9.1","name":"v0.9.1","body":"Release notes","target_commitish":"master"}'
 ```
 
 ### 上传附件
 
 ```bash
 TOKEN="your_access_token"
-RELEASE_ID="600564"
-curl -X POST "https://gitee.com/api/v5/repos/thzxx/metona-ollama/releases/$RELEASE_ID/attach_files?access_token=$TOKEN" \
-  -H "Content-Type: multipart/form-data" -F "file=@release/Metona Ollama Setup 3.2.0.exe"
+RELEASE_ID="<release_id>"
+curl -X POST "https://gitee.com/api/v5/repos/thzxx/metona-ollama-desktop/releases/$RELEASE_ID/attach_files?access_token=$TOKEN" \
+  -H "Content-Type: multipart/form-data" -F "file=@release/Metona Ollama Setup v0.9.1.exe"
 ```
 
 ## 故障排查

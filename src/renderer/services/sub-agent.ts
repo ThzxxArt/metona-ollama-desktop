@@ -1,5 +1,5 @@
 /**
- * SubAgent - 子代理委派系统 (v0.9.0 增强版)
+ * SubAgent - 子代理委派系统 (v0.9.1 增强版)
  * 子代理拥有受限工具集（只读），可独立完成调研/搜索/分析类任务
  * 主 Agent 通过 spawn_task 工具并行委派多个子代理
  */
@@ -62,7 +62,7 @@ export async function executeSubAgent(
   const systemPrompt = `你是一个子任务执行 Agent，拥有只读工具权限。请高效完成指定任务，给出结果报告。
 ${context ? `\n附加上下文：\n${context}` : ''}`;
 
-  const messages: Array<{ role: string; content: string; tool_calls?: ToolCall[] }> = [
+  const messages: Array<{ role: string; content: string; tool_calls?: ToolCall[]; tool_name?: string }> = [
     { role: 'system', content: systemPrompt },
     { role: 'user', content: task }
   ];
@@ -147,6 +147,6 @@ function formatResult(name: string, r: ToolResult): string {
     case 'web_search': return JSON.stringify({ success: true, query: r.query, total: r.total, results: (r.results as any[])?.slice(0, 3) });
     case 'web_fetch': return JSON.stringify({ success: true, url: r.url, content: String(r.content || '').slice(0, 3000) });
     case 'read_file': return JSON.stringify({ success: true, path: r.path, content: String(r.content || '').slice(0, 3000) });
-    default: return JSON.stringify({ success: true, ...r });
+    default: return JSON.stringify(r);
   }
 }

@@ -133,28 +133,90 @@ function autoResizeTextarea(): void {
   chatInputEl.style.height = Math.min(chatInputEl.scrollHeight, 120) + 'px';
 }
 
+// ── 图片压缩管线 ──
+const IMG_MAX_WIDTH = 1280;
+const IMG_MAX_HEIGHT = 1280;
+const IMG_QUALITY = 0.8;
+const IMG_MAX_SIZE_BEFORE_COMPRESS = 300 * 1024; // 300KB以下不压缩
+
+/**
+ * Canvas 前端压缩图片：等比缩放 + JPEG 转换
+ * base64 → Image → Canvas 缩放绘制 → toBlob → 压缩后 base64
+ */
+function compressImage(base64: string): Promise<{ compressed: string; origBytes: number; newBytes: number }> {
+  return new Promise((resolve, reject) => {
+    // 先计算原始 base64 的大小（字节数 ≈ base64长度 * 0.75）
+    const origBytes = Math.ceil(base64.length * 0.75);
+    // 小图跳过压缩
+    if (origBytes <= IMG_MAX_SIZE_BEFORE_COMPRESS) {
+      resolve({ compressed: base64, origBytes, newBytes: origBytes });
+      return;
+    }
+
+    const img = new Image();
+    img.onload = () => {
+      let { width, height } = img;
+      // 等比缩放
+      if (width > IMG_MAX_WIDTH || height > IMG_MAX_HEIGHT) {
+        const ratio = Math.min(IMG_MAX_WIDTH / width, IMG_MAX_HEIGHT / height);
+        width = Math.round(width * ratio);
+        height = Math.round(height * ratio);
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d')!;
+      ctx.drawImage(img, 0, 0, width, height);
+      canvas.toBlob((blob) => {
+        if (!blob) { resolve({ compressed: base64, origBytes, newBytes: origBytes }); return; }
+        const reader = new FileReader();
+        let newBytes = 0;
+        reader.onloadend = () => {
+          const compressed = (reader.result as string).split(',')[1] || base64;
+          newBytes = blob.size;
+          resolve({ compressed, origBytes, newBytes });
+        };
+        reader.onerror = () => { resolve({ compressed: base64, origBytes, newBytes: origBytes }); };
+        reader.readAsDataURL(blob);
+      }, 'image/jpeg', IMG_QUALITY);
+    };
+    img.onerror = () => resolve({ compressed: base64, origBytes, newBytes: origBytes });
+    img.src = `data:image/png;base64,${base64}`;
+  });
+}
+
 async function handleImagePaths(paths: string[]): Promise<void> {
   const bridge = getBridge();
   const maxSize = 20 * 1024 * 1024;
-  for (const filePath of paths) {
+
+  // 并行读取所有图片
+  const results = await Promise.all(paths.map(async (filePath) => {
     const name = filePath.split(/[/\\]/).pop() || filePath;
     try {
       const result = await bridge!.fs.readFileBase64(filePath);
-      if (!result.success) {
-        appendSystemMessage(`❌ 读取 ${name} 失败: ${result.error}`);
-        continue;
-      }
+      if (!result.success) return { name, error: result.error };
       const size = result.size ?? 0;
-      if (size > maxSize) {
-        appendSystemMessage(`⚠️ 图片 ${name} 超过 20MB 限制`);
-        continue;
-      }
-      const base64 = result.content!;
-      pendingImages.push({ name, base64 });
-      logInfo(`图片已添加: ${name}`, formatSize(size));
+      if (size > maxSize) return { name, error: `超过 20MB 限制` };
+      return { name, base64: result.content!, size };
     } catch (err) {
-      logError('图片读取失败', (err as Error).message);
-      appendSystemMessage(`❌ 读取 ${name} 失败`);
+      return { name, error: (err as Error).message };
+    }
+  }));
+
+  for (const r of results) {
+    if ('error' in r && r.error) {
+      appendSystemMessage(`❌ 读取 ${r.name} 失败: ${r.error}`);
+      continue;
+    }
+    if ('base64' in r) {
+      const imgResult = r as { name: string; base64: string; size: number };
+      const { compressed, origBytes, newBytes } = await compressImage(imgResult.base64);
+      pendingImages.push({ name: imgResult.name, base64: compressed });
+      if (origBytes !== newBytes) {
+        logInfo(`图片已压缩: ${r.name}`, `${formatSize(origBytes)} → ${formatSize(newBytes)} (${Math.round((1 - newBytes / origBytes) * 100)}%)`);
+      } else {
+        logInfo(`图片已添加: ${r.name}`, formatSize(origBytes));
+      }
     }
   }
   renderImagePreviews();
@@ -177,36 +239,40 @@ function renderImagePreviews(): void {
 
 async function handleTextFilePaths(paths: string[]): Promise<void> {
   const bridge = getBridge();
-  for (const filePath of paths) {
+
+  // 并行读取所有文件
+  const results = await Promise.all(paths.map(async (filePath) => {
     const name = filePath.split(/[/\\]/).pop() || filePath;
-    if (!isTextFile(name)) {
-      appendSystemMessage(`⚠️ ${name} 不是支持的文本/代码文件`);
-      continue;
-    }
+    if (!isTextFile(name)) return { name, error: `不是支持的文本/代码文件` };
     try {
       const result = await bridge!.fs.readFile(filePath);
-      if (!result.success) {
-        appendSystemMessage(`❌ 读取 ${name} 失败: ${result.error}`);
-        continue;
-      }
+      if (!result.success) return { name, error: result.error };
       const content = result.content as string;
       const size = new TextEncoder().encode(content).length;
-      if (size > MAX_FILE_SIZE) {
-        appendSystemMessage(`⚠️ ${name} 超过 500KB 限制（${formatSize(size)}）`);
-        continue;
-      }
-      if (pendingFiles.some(f => f.name === name)) {
-        appendSystemMessage(`ℹ️ ${name} 已添加`);
-        continue;
-      }
-      pendingFiles.push({ name, content, language: detectLanguage(name), size });
-      logInfo(`文件已添加: ${name}`, formatSize(size));
-      renderFilePreviews();
+      if (size > MAX_FILE_SIZE) return { name, error: `超过 500KB 限制（${formatSize(size)}）` };
+      if (pendingFiles.some(f => f.name === name)) return { name, skipped: true };
+      return { name, content, language: detectLanguage(name), size };
     } catch (err) {
-      logError('文件读取失败', (err as Error).message);
-      appendSystemMessage(`❌ 读取 ${name} 失败`);
+      return { name, error: (err as Error).message };
+    }
+  }));
+
+  for (const r of results) {
+    if ('skipped' in r) {
+      appendSystemMessage(`ℹ️ ${r.name} 已添加`);
+      continue;
+    }
+    if ('error' in r && r.error) {
+      appendSystemMessage(`❌ 读取 ${r.name} 失败: ${r.error}`);
+      continue;
+    }
+    if ('content' in r) {
+      const fileResult = r as { name: string; content: string; language: string; size: number };
+      pendingFiles.push({ name: fileResult.name, content: fileResult.content, language: fileResult.language, size: fileResult.size });
+      logInfo(`文件已添加: ${fileResult.name}`, formatSize(fileResult.size));
     }
   }
+  renderFilePreviews();
 }
 
 function renderFilePreviews(): void {
@@ -283,7 +349,7 @@ async function handleRetry(): Promise<void> {
       .map(m => {
         let content = m.content || '';
         if (m._fileContents?.length) {
-          const fileParts = m._fileContents.map(f => `📄 文件：\n\`\`\`${f.language}\n${f.content}\n\`\`\``);
+          const fileParts = buildFileContentParts(m._fileContents);
           content = content ? content + '\n\n---\n' + fileParts.join('\n\n---\n') : fileParts.join('\n\n---\n');
         }
         return { role: m.role, content, ...(m.images?.length && { images: m.images }) };
@@ -539,14 +605,117 @@ function stopGeneration(): void {
   if (abortController) abortController.abort();
 }
 
+/** Token 预算比例：文件内容最多占用上下文窗口的比例 */
+const FILE_TOKEN_BUDGET_RATIO = 0.3;
+
+// ── 注释剥离 ──
+
+interface CommentRule { single: RegExp | null; multi: [RegExp, string] | null }
+
+const COMMENT_RULES: Record<string, CommentRule> = {
+  javascript:  { single: /\/\/.*$/gm, multi: [/\/\*[\s\S]*?\*\//g, ''] },
+  typescript:  { single: /\/\/.*$/gm, multi: [/\/\*[\s\S]*?\*\//g, ''] },
+  tsx:         { single: /\/\/.*$/gm, multi: [/\/\*[\s\S]*?\*\//g, ''] },
+  jsx:         { single: /\/\/.*$/gm, multi: [/\/\*[\s\S]*?\*\//g, ''] },
+  java:        { single: /\/\/.*$/gm, multi: [/\/\*[\s\S]*?\*\//g, ''] },
+  c:           { single: /\/\/.*$/gm, multi: [/\/\*[\s\S]*?\*\//g, ''] },
+  cpp:         { single: /\/\/.*$/gm, multi: [/\/\*[\s\S]*?\*\//g, ''] },
+  csharp:      { single: /\/\/.*$/gm, multi: [/\/\*[\s\S]*?\*\//g, ''] },
+  go:          { single: /\/\/.*$/gm, multi: [/\/\*[\s\S]*?\*\//g, ''] },
+  rust:        { single: /\/\/.*$/gm, multi: [/\/\*[\s\S]*?\*\//g, ''] },
+  swift:       { single: /\/\/.*$/gm, multi: [/\/\*[\s\S]*?\*\//g, ''] },
+  kotlin:      { single: /\/\/.*$/gm, multi: [/\/\*[\s\S]*?\*\//g, ''] },
+  scala:       { single: /\/\/.*$/gm, multi: [/\/\*[\s\S]*?\*\//g, ''] },
+  css:         { single: null,          multi: [/\/\*[\s\S]*?\*\//g, ''] },
+  python:      { single: /#.*$/gm,      multi: [/('''[\s\S]*?'''|\"\"\"[\s\S]*?\"\"\")/g, ''] },
+  ruby:        { single: /#.*$/gm,      multi: null },
+  perl:        { single: /#.*$/gm,      multi: null },
+  shell:       { single: /#.*$/gm,      multi: null },
+  bash:        { single: /#.*$/gm,      multi: null },
+  r:           { single: /#.*$/gm,      multi: null },
+  yaml:        { single: /#.*$/gm,      multi: null },
+  sql:         { single: /--.*$/gm,     multi: [/\/\*[\s\S]*?\*\//g, ''] },
+  lua:         { single: /--.*$/gm,     multi: [/--\[\[[\s\S]*?\]\]/g, ''] },
+  haskell:     { single: /--.*$/gm,     multi: [/\{-[\s\S]*?-\}/g, ''] },
+  html:        { single: null,          multi: [/<!--[\s\S]*?-->/g, ''] },
+  xml:         { single: null,          multi: [/<!--[\s\S]*?-->/g, ''] },
+  markdown:    { single: null,          multi: [/<!--[\s\S]*?-->/g, ''] },
+};
+
+function stripComments(content: string, language: string): string {
+  const rule = COMMENT_RULES[language];
+  if (!rule) return content;
+
+  let result = content;
+  if (rule.single) result = result.replace(rule.single, '');
+  if (rule.multi) result = result.replace(rule.multi[0], rule.multi[1]);
+
+  // 压缩连续空白行：>2个连续换行 → 2个换行
+  result = result.replace(/\n{3,}/g, '\n\n');
+  return result;
+}
+
+/**
+ * 构建文件内容 Parts，带 token 预算感知
+ * - 小文件直接嵌入，大文件按预算截断
+ * - 代码文件自动剥离注释
+ */
+function buildFileContentParts(fileContents: Array<{ language: string; content: string }>): string[] {
+  const numCtx = state.get<number>(KEYS.NUM_CTX, 24576);
+  const fileBudget = Math.floor(numCtx * FILE_TOKEN_BUDGET_RATIO);
+  let usedTokens = 0;
+  const maxSingleFileTokens = Math.floor(fileBudget * 0.5); // 单文件不超过预算的50%
+
+  return fileContents.map((f, i) => {
+    const lang = f.language || '';
+    const rawTokens = estimateTokens(f.content);
+    const total = fileContents.length;
+
+    // 文件足够小，直接全量（不剥离注释，保持完整性）
+    if (rawTokens <= 500 && usedTokens + rawTokens <= fileBudget) {
+      usedTokens += rawTokens;
+      return `📄 文件 ${i + 1}/${total}：\n\n\`\`\`${lang}\n${f.content}\n\`\`\``;
+    }
+
+    // 大文件：剥离注释 + token 预算截断
+    const remaining = fileBudget - usedTokens;
+    if (remaining <= 0) {
+      return `⚠️ 文件 ${i + 1}/${total} 因 token 预算耗尽被跳过 (${f.content.length} 字符)`;
+    }
+
+    let text = stripComments(f.content, lang);
+    let truncated = false;
+
+    // 如果剥离注释后仍然超预算，截断到剩余预算
+    const strippedTokens = estimateTokens(text);
+    if (strippedTokens > maxSingleFileTokens) {
+      // 按比例截取字符：预算 / 估算tokens * 长度
+      const ratio = Math.min(1, maxSingleFileTokens / strippedTokens);
+      const cutAt = Math.floor(text.length * ratio);
+      text = text.slice(0, cutAt);
+      truncated = true;
+    }
+
+    const finalTokens = estimateTokens(text);
+    if (usedTokens + finalTokens > fileBudget) {
+      const ratio = Math.min(1, remaining / finalTokens);
+      const cutAt = Math.floor(text.length * ratio);
+      text = text.slice(0, cutAt);
+      truncated = true;
+    }
+
+    usedTokens += estimateTokens(text);
+    const label = strippedTokens !== rawTokens ? ' (已剥离注释)' : '';
+    const truncLabel = truncated ? ' [已截断]' : '';
+    return `📄 文件 ${i + 1}/${total}${label}${truncLabel}：\n\n\`\`\`${lang}\n${text}\n\`\`\``;
+  });
+}
+
 function buildApiMessages(messages: ChatMessage[]): Array<{ role: string; content: string; images?: string[] }> {
   return messages.map(m => {
     let content = m.content || '';
     if (m._fileContents && m._fileContents.length > 0) {
-      const fileParts = m._fileContents.map(f => {
-        const lang = f.language || '';
-        return `📄 以下是一个文件内容：\n\n\`\`\`${lang}\n${f.content}\n\`\`\``;
-      });
+      const fileParts = buildFileContentParts(m._fileContents);
       if (content) {
         content += '\n\n---\n' + fileParts.join('\n\n---\n');
       } else {
@@ -1015,7 +1184,7 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
     .map(m => {
       let content = m.content || '';
       if (m._fileContents && m._fileContents.length > 0) {
-        const fileParts = m._fileContents.map(f => `📄 文件：\n\`\`\`${f.language}\n${f.content}\n\`\`\``);
+        const fileParts = buildFileContentParts(m._fileContents);
         content = content ? content + '\n\n---\n' + fileParts.join('\n\n---\n') : fileParts.join('\n\n---\n');
       }
       return {
