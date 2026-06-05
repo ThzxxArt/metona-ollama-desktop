@@ -697,6 +697,7 @@ export async function sendMessage(): Promise<void> {
 
     // ── 扫描工作空间 SOUL.md ──
     let soulContent = '';
+    let soulMdContent = '';
     const workspaceDir = getWorkspaceDirPath();
     if (workspaceDir) {
       try {
@@ -704,9 +705,44 @@ export async function sendMessage(): Promise<void> {
           workspaceDir.replace(/\/+$/, '') + '/SOUL.md'
         );
         if (soulResult?.success && soulResult.content) {
-          soulContent = `[SOUL.md] ${soulResult.content}`;
+          soulMdContent = soulResult.content;
         }
-      } catch { /* SOUL.md 不存在，静默跳过 */ }
+      } catch { /* 工作空间 SOUL.md 不存在 */ }
+    }
+
+    // fallback：读取内置 SOUL.md
+    if (!soulMdContent) {
+      try {
+        const resp = await fetch('./SOUL.md');
+        if (resp.ok) {
+          soulMdContent = await resp.text();
+        }
+      } catch { /* 内置 SOUL.md 也不可用 */ }
+    }
+
+    if (soulMdContent) {
+      soulContent = `[SOUL.md] ${soulMdContent}`;
+    }
+
+    // ── 扫描工作空间 USER.md ──
+    let userMdContent = '';
+    if (workspaceDir) {
+      try {
+        const userResult = await window.metonaDesktop?.workspace.readFile(
+          workspaceDir.replace(/\/+$/, '') + '/USER.md'
+        );
+        if (userResult?.success && userResult.content) {
+          userMdContent = userResult.content;
+        }
+      } catch { /* 工作空间 USER.md 不存在 */ }
+    }
+    if (!userMdContent) {
+      try {
+        const resp = await fetch('./USER.md');
+        if (resp.ok) {
+          userMdContent = await resp.text();
+        }
+      } catch { /* 内置 USER.md 也不可用 */ }
     }
 
     // ── Agent 记忆注入 ──
@@ -716,7 +752,8 @@ export async function sendMessage(): Promise<void> {
         const relevantMemories = searchMemories(userMessage, 6);
         if (relevantMemories.length > 0) {
           const memoryContext = buildMemoryContext(relevantMemories);
-          chatParams.system = (soulContent ? soulContent + '\n\n' : '') + memoryContext;
+          const parts = [soulContent, userMdContent ? `[USER.md] ${userMdContent}` : '', memoryContext].filter(Boolean);
+          chatParams.system = parts.join('\n\n');
           for (const m of relevantMemories) {
             await markMemoryUsed(m.id);
           }
@@ -725,7 +762,8 @@ export async function sendMessage(): Promise<void> {
       }
     }
     if (soulContent && !chatParams.system) {
-      chatParams.system = soulContent;
+      const parts = [soulContent, userMdContent ? `[USER.md] ${userMdContent}` : ''].filter(Boolean);
+      chatParams.system = parts.join('\n\n');
     }
 
     // 存入 state 供 chat-area 渲染系统提示词卡片

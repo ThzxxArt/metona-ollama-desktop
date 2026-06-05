@@ -49,50 +49,6 @@ const TOOL_MAX_RESULT_SIZE: Record<string, number> = {
 /** v4.1: 工具并行执行 — 依赖检测用 */
 const TOOLS_WITH_DATA_DEPS = new Set(['web_fetch', 'edit_file', 'append_file', 'move_file', 'delete_file']);
 
-const AGENT_SYSTEM_PROMPT = `你是一个具备工具调用能力的 AI 助手。你有 38 个工具可以调用，包括文件操作、联网搜索、网页抓取、命令执行、浏览器控制、记忆管理、MCP 工具等。
-
-## 核心规则
-
-1. 直接调用工具，不要写"我来帮你搜索"然后结束。有工具就调用，调用完根据结果继续下一步。
-2. 多步任务必须逐步完成：搜到结果 → 给出答案。如果需要详情再抓取，但抓取失败时直接用搜索结果回答，不要卡在抓取上。
-3. 需要最新信息（版本号、新闻、日期等）时，必须先用工具获取，不要凭记忆猜测。【严禁使用知识库日期】你无法确定自己的知识库中的"当前日期"是否准确，绝对不要根据训练数据推断或声明"今天是X年X月X日"。联网搜索结果中会附带真实的当前日期，以该日期为唯一可信来源。如果未搜索就不要提及任何具体日期。
-4. 工具出错时分析原因并换方法重试，最多重试 2 次。同一 URL 连续失败 2 次后不要再尝试，换其他方式。
-5. 不要重复调用相同参数的同一工具。
-6. web_search 结果中的标题、URL、snippet 已经包含关键信息，不要忽视它们。
-
-## 多工具协同
-
-你可以在一轮回复中调用多个工具（并行调用），也可以在一个工具的结果基础上继续调用下一个工具（链式调用）。这是正常且鼓励的工作方式。
-
-常见链式调用模式：
-- web_search → web_fetch（搜索 → 抓取详情，但 web_fetch 失败时直接用搜索结果回答）
-- list_directory → read_file（列出目录 → 读取文件）
-- search_files → edit_file（搜索 → 修改）
-- run_command → read_file（执行命令 → 读取输出文件）
-
-## 重要
-
-永远不要只输出"我将执行xxx"或"让我来搜索"然后结束。如果说了要做什么，就必须真正调用对应的工具。调用 run_command 时命令可能需要很长时间，请耐心等待。`;
-
-const TOOL_USAGE_GUIDE = `【工具链规则（强制执行）】
-
-1. 搜索后优先抓取：web_search 搜到结果后，选择最相关的 URL 用 web_fetch 抓取详情。
-2. 抓取失败时直接用搜索结果：如果 web_fetch 失败（超时、网络错误等），不要反复重试同一个 URL。直接利用 web_search 返回的摘要和标题回答用户问题。搜索结果的 snippet 已经包含了足够的信息。
-3. 不要抓取 SPA 页面：GitHub releases、npm 包页面等是 SPA（单页应用），纯 HTTP 抓取拿不到有效内容。直接从搜索结果中提取版本号等信息即可。
-4. 搜索查询要进化：如果第一次搜索结果不理想，换更精确的关键词再搜，不要重复相同的查询。
-5. 先搜索再回答：需要最新信息（版本号、新闻、日期等）时，先 search → 再回答。不要凭记忆猜测。
-6. 文件路径上下文：用户说"修改这个文件"等模糊指代时，从最近的工具调用结果中提取实际路径。不要猜测。
-7. 不要重复调用：已经成功调用过的工具+参数组合不要再调用。
-8. 记忆工具：可以用 memory_search 搜索过去记忆，用 memory_add 添加重要信息。
-9. 会话工具：可以用 session_list 列出历史会话，用 session_read 读取会话内容。
-10. 并行调用：当多个工具调用互相独立时，可以在同一次回复中同时调用它们。
-11. 管理记忆：可以用 memory_replace 更新已有记忆（子串匹配 old_text），用 memory_remove 删除不再需要的记忆。
-12. 查看技能：可以用 skill_list 列出所有可用技能，用 skill_view 查看特定技能的详细工具链。
-13. 【严禁猜 URL】绝对不要猜测或编造 URL 路径（如 https://example.com/docs/install）。所有 URL 必须从搜索结果中获取。如果你猜了一个 URL 并得到 404 错误，不要继续猜其他路径，应该回到搜索结果中找正确的链接。
-14. 搜索结果来源：搜索结果中每条都带有标题、URL 和摘要。摘要已经包含关键信息，优先从摘要中提取答案。对于技术问题，优先选择官方文档、GitHub 仓库、MDN 等权威来源；中文社区内容（知乎、CSDN、博客园等）可作为补充参考，但需注意甄别信息时效性和准确性。
-15. 【严禁使用知识库日期】你无法确定自己的训练数据截止到哪一天，绝对不要凭记忆推断"今天是X年X月X日"。联网搜索结果的头部会标注真实的当前日期 \`[当前日期: ...]\`，这是你唯一可信赖的日期来源。回答涉及时间、版本、时效性的内容时，必须以该日期为准。如果搜索结果中的日期与你认知不符，以搜索结果为准。
-16. 【上传文件已在对话中】当用户上传文件时，文件的完整内容已经作为代码块包含在用户的消息中。你不需要也不应该调用 read_file 工具去工作空间读取该文件——直接分析消息中已提供的文件内容即可。只有当用户明确要求你从工作空间读取一个新文件时，才使用 read_file 工具。`;
-
 /** 工具名白名单：用于文本解析兜底时过滤非法工具名 */
 const VALID_TOOL_NAMES = new Set([
   'read_file', 'write_file', 'list_directory', 'search_files', 'create_directory',
@@ -169,53 +125,6 @@ function parseToolCallsFromText(content: string): ToolCall[] {
   return calls;
 }
 
-/** v4.2: 从对话中自动推断用户画像 */
-async function inferUserProfile(userMsg: string, assistantMsg: string): Promise<void> {
-  const bridge = window.metonaDesktop;
-  if (!bridge?.db?.getSetting) return;
-
-  const profile: Record<string, any> = await bridge.db.getSetting('user_profile', {}) || {};
-
-  // 技术栈检测
-  const techPatterns: Record<string, RegExp> = {
-    'Python': /\b(python|pip|py|django|flask|fastapi|pandas|numpy)\b/i,
-    'TypeScript': /\b(typescript|ts|tsx|deno)\b/i,
-    'JavaScript': /\b(javascript|js|jsx|node\.?js|npm|yarn|pnpm)\b/i,
-    'Go': /\b(golang|go\s+(run|build|mod)|\.go\b)/i,
-    'Rust': /\b(rust|cargo|rustc|\.rs\b)/i,
-    'Java': /\b(java|maven|gradle|spring|\.java\b)/i,
-    'React': /\b(react|next\.?js|jsx|tsx|vite)\b/i,
-    'Vue': /\b(vue|nuxt|vuex|pinia)\b/i,
-    'Docker': /\b(docker|dockerfile|docker-compose|container)\b/i,
-    'Kubernetes': /\b(k8s|kubernetes|kubectl|helm)\b/i,
-    'Linux': /\b(linux|ubuntu|debian|centos|bash|shell|terminal)\b/i,
-    'Git': /\b(git|github|gitee|gitlab|commit|push|pull|branch|merge)\b/i,
-    'SQL': /\b(sql|sqlite|mysql|postgres|database|查询)\b/i,
-    'AI/ML': /\b(machine learning|深度学习|神经网络|模型训练|ollama|llm|transformer)\b/i,
-  };
-
-  const combinedText = userMsg + ' ' + assistantMsg;
-  const currentStack: string[] = (profile.tech_stack as string[]) || [];
-  let changed = false;
-
-  for (const [tech, pattern] of Object.entries(techPatterns)) {
-    if (pattern.test(combinedText) && !currentStack.includes(tech)) {
-      currentStack.push(tech);
-      changed = true;
-    }
-  }
-
-  // 限制技术栈数量
-  if (currentStack.length > 15) {
-    currentStack.splice(0, currentStack.length - 15);
-    changed = true;
-  }
-
-  if (changed) {
-    profile.tech_stack = currentStack;
-    await bridge.db.saveSetting('user_profile', profile);
-  }
-}
 const toolResultCache = new Map<string, ToolResult>();
 
 /** 生成工具调用缓存 key */
@@ -413,6 +322,7 @@ export async function runAgentLoop(
   let systemPromptParts: string[] = [];
 
   // ── 扫描工作空间 SOUL.md ──
+  let soulMdContent = '';
   const workspaceDir = getWorkspaceDirPath();
   if (workspaceDir) {
     try {
@@ -420,14 +330,59 @@ export async function runAgentLoop(
         workspaceDir.replace(/\/+$/, '') + '/SOUL.md'
       );
       if (soulResult?.success && soulResult.content) {
-        // SOUL.md 注入为独立 system 消息，标记为不可压缩
-        messages.push({
-          role: 'system',
-          content: `[SOUL.md] ${soulResult.content}`,
-        });
-        logInfo('SOUL.md 已注入系统提示词', `${soulResult.lines || 0} 行`);
+        soulMdContent = soulResult.content;
+        logInfo('SOUL.md 已从工作空间加载', `${soulResult.lines || 0} 行`);
       }
-    } catch { /* SOUL.md 不存在或读取失败，静默跳过 */ }
+    } catch { /* 工作空间 SOUL.md 不存在 */ }
+  }
+
+  // fallback：读取内置 SOUL.md（随应用发布，Vite publicDir 自动复制）
+  if (!soulMdContent) {
+    try {
+      const resp = await fetch('./SOUL.md');
+      if (resp.ok) {
+        soulMdContent = await resp.text();
+        logInfo('SOUL.md 已从内置加载', `${soulMdContent.length} 字符`);
+      }
+    } catch { /* 内置 SOUL.md 也不可用 */ }
+  }
+
+  if (soulMdContent) {
+    // SOUL.md 注入为独立 system 消息，标记为不可压缩
+    messages.push({
+      role: 'system',
+      content: `[SOUL.md] ${soulMdContent}`,
+    });
+  }
+
+  // ── 扫描工作空间 AGENT.md ──
+  let agentMdContent = '';
+  if (workspaceDir) {
+    try {
+      const agentResult = await window.metonaDesktop?.workspace.readFile(
+        workspaceDir.replace(/\/+$/, '') + '/AGENT.md'
+      );
+      if (agentResult?.success && agentResult.content) {
+        agentMdContent = agentResult.content;
+        logInfo('AGENT.md 已从工作空间加载', `${agentResult.lines || 0} 行`);
+      }
+    } catch { /* 工作空间 AGENT.md 不存在 */ }
+  }
+
+  // fallback：读取内置 AGENT.md（随应用发布，Vite publicDir 自动复制）
+  if (!agentMdContent) {
+    try {
+      const resp = await fetch('./AGENT.md');
+      if (resp.ok) {
+        agentMdContent = await resp.text();
+        logInfo('AGENT.md 已从内置加载', `${agentMdContent.length} 字符`);
+      }
+    } catch { /* 内置 AGENT.md 也不可用 */ }
+  }
+
+  if (agentMdContent) {
+    // AGENT.md 注入到 systemPromptParts，排在 SOUL.md 之后、其他系统提示词之前
+    systemPromptParts.push(`[AGENT.md] ${agentMdContent}`);
   }
 
   // 注入记忆上下文
@@ -461,21 +416,33 @@ export async function runAgentLoop(
     }
   }
 
-  // v4.2 注入用户画像
-  const db = state.get<ChatDB | null>(KEYS.DB);
-  if (db) {
+  // ── 扫描工作空间 USER.md ──
+  let userMdContent = '';
+  if (workspaceDir) {
     try {
-      const userProfile = await db.getSetting('user_profile', null) as Record<string, any> | null;
-      if (userProfile && typeof userProfile === 'object') {
-        const parts: string[] = [];
-        if (userProfile.tech_stack?.length) parts.push(`技术栈: ${userProfile.tech_stack.join(', ')}`);
-        if (userProfile.role) parts.push(`角色: ${userProfile.role}`);
-        if (userProfile.style) parts.push(`代码风格: ${userProfile.style}`);
-        if (parts.length > 0) {
-          systemPromptParts.push(`【用户画像】\n${parts.join('\n')}`);
-        }
+      const userResult = await window.metonaDesktop?.workspace.readFile(
+        workspaceDir.replace(/\/+$/, '') + '/USER.md'
+      );
+      if (userResult?.success && userResult.content) {
+        userMdContent = userResult.content;
+        logInfo('USER.md 已从工作空间加载', `${userResult.lines || 0} 行`);
       }
-    } catch { /* 不阻塞 */ }
+    } catch { /* 工作空间 USER.md 不存在 */ }
+  }
+
+  // fallback：读取内置 USER.md
+  if (!userMdContent) {
+    try {
+      const resp = await fetch('./USER.md');
+      if (resp.ok) {
+        userMdContent = await resp.text();
+        logInfo('USER.md 已从内置加载', `${userMdContent.length} 字符`);
+      }
+    } catch { /* 内置 USER.md 也不可用 */ }
+  }
+
+  if (userMdContent) {
+    systemPromptParts.push(`[USER.md] ${userMdContent}`);
   }
 
   // 组合 system prompt
@@ -486,9 +453,7 @@ export async function runAgentLoop(
 
   const fullSystemPrompt = [
     ...systemPromptParts,
-    `【当前日期】${realDate}（此日期来自系统时钟，绝对可信。你的训练数据可能已过时，请以此日期为准构造所有搜索查询和时效性回答。绝对不要基于训练数据推断日期。）`,
-    AGENT_SYSTEM_PROMPT,
-    TOOL_USAGE_GUIDE
+    `【当前日期】${realDate}（此日期来自系统时钟，绝对可信。你的训练数据可能已过时，请以此日期为准构造所有搜索查询和时效性回答。绝对不要基于训练数据推断日期。）`
   ].join('\n\n');
 
   messages.push({ role: 'system', content: fullSystemPrompt });
@@ -765,11 +730,6 @@ export async function runAgentLoop(
           await extractSkillsFromToolRecords(allToolRecords, userContent, (currentSession as ChatSession)?.title || '');
         } catch { /* 不阻塞 */ }
       }
-
-      // v4.2 自动推断用户画像
-      try {
-        await inferUserProfile(userContent, content);
-      } catch { /* 不阻塞 */ }
 
       callbacks.onDone(content || '（模型未返回内容）', allToolRecords.length > 0 ? allToolRecords : undefined, makeStats());
       return;
