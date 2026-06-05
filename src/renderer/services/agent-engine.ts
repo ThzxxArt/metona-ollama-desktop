@@ -49,6 +49,14 @@ const TOOL_MAX_RESULT_SIZE: Record<string, number> = {
 /** v4.1: 工具并行执行 — 依赖检测用 */
 const TOOLS_WITH_DATA_DEPS = new Set(['web_fetch', 'edit_file', 'append_file', 'move_file', 'delete_file']);
 
+/** 始终可并行的只读/独立工具（无数据依赖，永远可以同批执行） */
+const ALWAYS_PARALLEL = new Set([
+  'read_file', 'list_directory', 'search_files', 'get_file_info', 'tree',
+  'web_search', 'browser_screenshot', 'browser_extract', 'browser_evaluate',
+  'memory_search', 'session_list', 'session_read', 'skill_list', 'skill_view',
+  'diff_files', 'git',
+]);
+
 /** 工具名白名单：用于文本解析兜底时过滤非法工具名 */
 const VALID_TOOL_NAMES = new Set([
   'read_file', 'write_file', 'list_directory', 'search_files', 'create_directory',
@@ -125,7 +133,27 @@ function parseToolCallsFromText(content: string): ToolCall[] {
   return calls;
 }
 
-const toolResultCache = new Map<string, ToolResult>();
+const toolResultCache = new Map<string, { result: ToolResult; timestamp: number }>();
+
+/** 工具缓存 TTL（毫秒），按工具类型设定 */
+const CACHE_TTL_MAP: Record<string, number> = {
+  web_search: 5 * 60_000,     // 搜索: 5分钟
+  web_fetch: 10 * 60_000,     // 网页: 10分钟
+  read_file: 30 * 60_000,     // 文件: 30分钟
+  list_directory: 60_000,     // 目录: 1分钟
+  search_files: 60_000,       // 文件搜索: 1分钟
+  browser_screenshot: 60_000, // 截图: 1分钟
+  browser_extract: 5 * 60_000,// 浏览器内容: 5分钟
+  // 其他工具默认无限期
+  default: Infinity,
+};
+
+/** 检查缓存是否过期 */
+function isCacheValid(toolName: string, timestamp: number): boolean {
+  const ttl = CACHE_TTL_MAP[toolName] ?? CACHE_TTL_MAP.default;
+  if (!isFinite(ttl)) return true;
+  return Date.now() - timestamp < ttl;
+}
 
 /** 生成工具调用缓存 key */
 function getToolCacheKey(name: string, args: Record<string, unknown>): string {
@@ -482,6 +510,47 @@ export async function runAgentLoop(
   };
   messages.push(userMsg);
 
+  // P2-1: 自动子任务拆解 — 检测用户消息中的并行任务关键词
+  const PARALLEL_PATTERNS = /同时|分别|以及|另外|此外|并且|也|also|and\s+also|separately|in\s+addition|meanwhile/i;
+  const SUBTASK_SEPARATORS = /(?:^|\n)\s*(?:[1-9][.、)]|[-*•]\s+)/;
+  const userText = userContent || '';
+  const hasParallel = PARALLEL_PATTERNS.test(userText) && userText.length > 100;
+
+  if (hasParallel && useTools) {
+    // 尝试按数字列表拆分子任务
+    const parts = userText.split(SUBTASK_SEPARATORS).filter(p => p.trim().length > 20);
+    if (parts.length >= 3) {
+      logInfo(`自动子任务拆解: 检测到 ${parts.length} 个并行子任务`);
+      const subtaskResults: string[] = [];
+      const { executeSubAgent } = await import('./sub-agent.js');
+      const subTasks = parts.slice(0, Math.min(parts.length, 3)); // 最多3个
+      // 并行 spawn
+      const subResults = await Promise.allSettled(
+        subTasks.map((subTask, idx) =>
+          executeSubAgent(subTask.trim(), `这是父任务的第 ${idx + 1}/${subTasks.length} 个子任务`, {
+            maxLoops: 8,
+            timeout: 120_000,
+          })
+        )
+      );
+      for (let i = 0; i < subResults.length; i++) {
+        const r = subResults[i];
+        if (r.status === 'fulfilled' && r.value.success) {
+          const content = (r.value as any).content || JSON.stringify(r.value);
+          subtaskResults.push(`[子任务 ${i + 1}] ${subTasks[i].trim().slice(0, 80)}...\n结果: ${content.slice(0, 1000)}`);
+        }
+      }
+      if (subtaskResults.length > 0) {
+        messages.push({
+          role: 'system',
+          content: `以下是通过并行子代理预先完成的子任务结果，你可以直接引用这些结果来加速回答：\n\n${subtaskResults.join('\n\n')}`,
+          ephemeral: true,
+        });
+        logInfo(`子任务拆解完成: ${subtaskResults.length}/${subTasks.length} 个成功`);
+      }
+    }
+  }
+
   // 上下文窗口管理：滑动窗口 + 摘要压缩 + token 裁剪
   const numCtx = state.get<number>(KEYS.NUM_CTX, 24576);
   const contextResult = buildContext(messages, { maxTokens: numCtx, windowSize: 20 });
@@ -507,8 +576,8 @@ export async function runAgentLoop(
 
   logInfo(`ReAct Agent Loop 启动: ${model}`, `工具: ${useTools ? '开启' : '关闭'}, 记忆: ${isMemoryEnabled() ? '开启' : '关闭'}, tokens≈${estimateTokens(messages.map(m => m.content || '').join(''))}`);
 
-  // 迭代预算：从 state 读取，默认 85
-  const maxLoops = state.get<number>('maxTurns', 85);
+  // 迭代预算：从 state 读取，默认 85（后续可能被 Token 感知策略动态缩减）
+  let maxLoops = state.get<number>('maxTurns', 85);
 
   let loopCount = 0;
   const allToolRecords: ToolCallRecord[] = [];
@@ -545,6 +614,14 @@ export async function runAgentLoop(
       throw new DOMException('Aborted', 'AbortError');
     }
 
+    // P1-4: Token 感知的动态迭代预算 — context window 使用率 > 80% 时强制缩减剩余轮次
+    const usageRatio = estimateTokens(messages.map(m => m.content || '').join('')) / numCtx;
+    if (usageRatio > 0.8 && (maxLoops - loopCount) > 3) {
+      const newMax = loopCount + 3;
+      logWarn(`上下文使用率 ${(usageRatio * 100).toFixed(0)}%, 限制剩余迭代为 ${newMax - loopCount} 轮（原 ${maxLoops - loopCount} 轮）`);
+      maxLoops = newMax;
+    }
+
     // 非首轮迭代：通知 UI 创建新的消息气泡（防止每轮内容互相覆盖）
     if (loopCount > 1 && callbacks.onNewIteration) {
       callbacks.onNewIteration(prevToolCalls.length > 0 ? prevToolCalls : undefined);
@@ -556,22 +633,30 @@ export async function runAgentLoop(
     content = '';
     const toolCalls: ToolCall[] = [];
 
-    // v5.1.2 预算警告：接近迭代上限时注入临时提示
-    let budgetWarningIdx = -1;
+    // v5.1.2 预算警告：接近迭代上限时注入临时提示（ephemeral 标记，上下文裁剪时优先丢弃）
     const remaining = maxLoops - loopCount + 1;
     if (remaining <= 5 && remaining > 0) {
       const warning = remaining <= 2
         ? `\n⚠️ CRITICAL: You have only ${remaining} iteration(s) left. Stop using tools and provide your final answer NOW.`
         : `\n⚠️ WARNING: You have approximately ${remaining} iterations remaining. Start wrapping up and prepare your final answer.`;
-      messages.push({ role: 'system', content: warning });
-      budgetWarningIdx = messages.length - 1;
+      messages.push({ role: 'system', content: warning, ephemeral: true });
     }
 
     const abortController = new AbortController();
     state.set(KEYS.ABORT_CONTROLLER, abortController);
 
+    // 流式调用超时保护（可配置，0 = 禁用超时）
+    const STREAM_TIMEOUT_MS = state.get<number>('streamTimeout', 180_000); // 默认 180s
+    let streamTimer: ReturnType<typeof setTimeout> | null = null;
+    if (STREAM_TIMEOUT_MS > 0) {
+      streamTimer = setTimeout(() => {
+        logWarn(`流式调用超时 (${STREAM_TIMEOUT_MS / 1000}s)，中止本轮`);
+        abortController.abort();
+      }, STREAM_TIMEOUT_MS);
+    }
+
     try {
-      // 流式调用（无超时限制）
+      // 流式调用
       await api.chatStream(
           {
             model,
@@ -642,7 +727,12 @@ export async function runAgentLoop(
       }
     } catch { /* 校准失败不阻塞主流程 */ }
 
+    // 流式调用成功完成，清除超时定时器
+    if (streamTimer) { clearTimeout(streamTimer); streamTimer = null; }
+
     } catch (err) {
+      // 清除超时定时器
+      if (streamTimer) { clearTimeout(streamTimer); streamTimer = null; }
       if (abortController.signal.aborted) {
         logInfo('流式调用已中止');
         // 保存工具记录到 state，供消费方的 catch 处理中止消息
@@ -652,20 +742,11 @@ export async function runAgentLoop(
         throw err; // 抛出 AbortError，由消费方统一处理
       }
       logError('流式调用异常', (err as Error).message);
-      // 清理预算警告临时消息
-      if (budgetWarningIdx >= 0) {
-        messages.splice(budgetWarningIdx, 1);
-      }
       if (content || thinking) {
         messages.push({ role: 'assistant', content: content || '（模型响应异常）', ...(thinking && { thinking }) });
       }
       callbacks.onDone(content || '（模型响应异常，已自动中断）', allToolRecords.length > 0 ? allToolRecords : undefined, makeStats());
       return;
-    }
-
-    // 清理预算警告临时消息
-    if (budgetWarningIdx >= 0) {
-      messages.splice(budgetWarningIdx, 1);
     }
 
     // 提取 ReAct 思考过程
@@ -693,8 +774,17 @@ export async function runAgentLoop(
       }
     }
 
-    // 检查是否是 Final Answer（没有工具调用且包含 Final Answer）
-    const isFinalAnswer = content.includes('Final Answer:') || content.includes('最终答案：');
+    // 检查是否是 Final Answer（多模式匹配 + 内容长度验证）
+    // 只有当无工具调用且有实际内容时才可能是最终回答
+    const FINAL_PATTERNS: RegExp[] = [
+      /Final\s*Answer\s*:/i,
+      /最终答案[：:]/,
+      /最终回答[：:]/,
+      /总结[：:]/,
+    ];
+    const isFinalAnswer = toolCalls.length === 0
+      && content.length > 50
+      && FINAL_PATTERNS.some(p => p.test(content));
 
     // 处理空响应：如果之前有工具调用但模型返回空内容，不立即结束
     if (toolCalls.length === 0 && !content.trim() && loopCount > 1 && allToolRecords.length > 0) {
@@ -774,13 +864,15 @@ export async function runAgentLoop(
     for (const call of toolCalls) {
       if (currentBatch.length === 0) {
         currentBatch.push(call);
+      } else if (ALWAYS_PARALLEL.has(call.function.name)) {
+        // 只读/独立工具 → 永远可以并行
+        currentBatch.push(call);
       } else {
         // 检查当前工具是否依赖当前批次中任何工具的结果
         const needsPrevResult = currentBatch.some(prev =>
           TOOLS_WITH_DATA_DEPS.has(call.function.name) && prev.function.name !== call.function.name
         );
         if (needsPrevResult) {
-          // 有依赖，当前批次结束，开启新批次
           batches.push(currentBatch);
           batchDeps.set(call, currentBatch[currentBatch.length - 1].function.name);
           currentBatch = [call];
@@ -806,19 +898,23 @@ export async function runAgentLoop(
         if (cached) {
           return [{
             name: call.function.name, arguments: call.function.arguments,
-            result: cached, status: 'success' as const, timestamp: Date.now()
+            result: cached.result, status: 'success' as const, timestamp: Date.now()
           }, null];
         }
       }
 
-      // 跨轮次缓存命中
-      const cachedResult = toolResultCache.get(cacheKey);
-      if (cachedResult) {
+      // 跨轮次缓存命中（含 TTL 过期检查）
+      const cachedEntry = toolResultCache.get(cacheKey);
+      if (cachedEntry && isCacheValid(call.function.name, cachedEntry.timestamp)) {
         logInfo(`工具缓存命中: ${call.function.name}`);
         return [{
           name: call.function.name, arguments: call.function.arguments,
-          result: cachedResult, status: 'success' as const, timestamp: Date.now()
+          result: cachedEntry.result, status: 'success' as const, timestamp: Date.now()
         }, null];
+      }
+      if (cachedEntry) {
+        // 过期缓存，删除
+        toolResultCache.delete(cacheKey);
       }
 
       callbacks.onToolCallStart(call);
@@ -885,7 +981,7 @@ export async function runAgentLoop(
           role: 'tool', tool_name: record.name,
           content: formatToolResultForModel(record.name, record.result!)
         });
-        if (cacheKey) toolResultCache.set(cacheKey, record.result!);
+        if (cacheKey) toolResultCache.set(cacheKey, { result: record.result!, timestamp: Date.now() });
         if (record.status === 'success') {
           callbacks.onToolCallResult(record.name, record.result!, batch.find(c => c.function.name === record.name)!);
         } else if (record.status === 'cancelled') {
@@ -907,8 +1003,32 @@ export async function runAgentLoop(
     ).join('; ');
     saveTrace(traceStep);
 
+    // P2-2: 增量记忆提取 — 每 20 轮自动触发轻量级记忆提取
+    if (isMemoryEnabled() && loopCount > 1 && loopCount % 20 === 0 && messages.length >= 10) {
+      try {
+        const { extractMemoriesFromConversation } = await import('./memory-manager.js');
+        const recentMsgs = messages.slice(-30).filter(m => m.role === 'user' || m.role === 'assistant');
+        await extractMemoriesFromConversation(
+          recentMsgs.map(m => ({ role: m.role, content: m.content })),
+          currentSession?.title
+        );
+        logInfo('增量记忆提取完成', `第 ${loopCount} 轮`);
+      } catch { /* 不阻塞 */ }
+    }
+
     // 保存本轮工具调用，供下一轮 onNewIteration 使用
     prevToolCalls = toolCalls;
+
+    // P1-3: 增量工具结果截断 — 超过 10 轮的旧工具结果自动截断到 500 字符
+    if (loopCount > 10 && loopCount % 5 === 0) {
+      const truncateBefore = messages.length - 15;
+      for (let i = 0; i < messages.length && i < truncateBefore; i++) {
+        const m = messages[i];
+        if (m.role === 'tool' && m.content && m.content.length > 500) {
+          messages[i] = { ...m, content: m.content.slice(0, 500) + '\n... (已截断旧工具结果)' };
+        }
+      }
+    }
   }
 
   logWarn('ReAct Agent Loop 达到最大工具调用次数限制');

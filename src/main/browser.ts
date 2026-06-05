@@ -17,6 +17,18 @@ export function isBrowserOpen(): boolean {
   return agentBrowser !== null && !agentBrowser.isDestroyed();
 }
 
+/** 获取浏览器状态：确保浏览器已打开并加载了页面 */
+function ensureBrowserReady(): { ok: boolean; error?: string; win?: BrowserWindow } {
+  if (!isBrowserOpen()) {
+    return { ok: false, error: '浏览器未打开，请先使用 browser_open 加载页面' };
+  }
+  const win = agentBrowser!;
+  if (win.webContents.getURL() === 'about:blank') {
+    return { ok: false, error: '浏览器未加载任何页面，请先使用 browser_open 加载页面' };
+  }
+  return { ok: true, win };
+}
+
 /** 获取或创建 Agent 浏览器窗口 */
 function getAgentBrowser(): BrowserWindow {
   if (agentBrowser && !agentBrowser.isDestroyed()) return agentBrowser;
@@ -43,6 +55,16 @@ const PAGE_LOAD_TIMEOUT = 30_000;
 /** 打开 URL */
 export async function browserOpen(url: string): Promise<{ success: boolean; title?: string; url?: string; error?: string }> {
   try {
+    // 如果已有 BrowserWindow 且加载了不同 URL，先关闭重建，避免状态残留
+    if (agentBrowser && !agentBrowser.isDestroyed()) {
+      const currentUrl = agentBrowser.webContents.getURL();
+      if (currentUrl !== 'about:blank' && currentUrl !== url) {
+        sendLog('info', `🌐 browser 切换页面`, `${currentUrl} → ${url}`);
+        agentBrowser.close();
+        agentBrowser = null;
+      }
+    }
+
     const win = getAgentBrowser();
     sendLog('info', `🌐 browser 打开`, url.slice(0, 100));
 
@@ -78,13 +100,9 @@ export async function browserOpen(url: string): Promise<{ success: boolean; titl
 /** 截图 */
 export async function browserScreenshot(): Promise<{ success: boolean; png?: string; error?: string }> {
   try {
-    if (!isBrowserOpen()) {
-      return { success: false, error: '浏览器未打开，请先使用 browser_open 加载页面' };
-    }
-    const win = agentBrowser!;
-    if (win.webContents.getURL() === 'about:blank') {
-      return { success: false, error: '浏览器未加载任何页面' };
-    }
+    const ready = ensureBrowserReady();
+    if (!ready.ok) return { success: false, error: ready.error };
+    const win = ready.win!;
     const image = await win.webContents.capturePage();
     const buffer = image.toPNG();
     sendLog('info', `🌐 browser 截图`, `${buffer.length} bytes`);
@@ -98,13 +116,9 @@ export async function browserScreenshot(): Promise<{ success: boolean; png?: str
 /** 执行 JavaScript */
 export async function browserEvaluate(js: string): Promise<{ success: boolean; result?: string; error?: string }> {
   try {
-    if (!isBrowserOpen()) {
-      return { success: false, error: '浏览器未打开，请先使用 browser_open 加载页面' };
-    }
-    const win = agentBrowser!; // isBrowserOpen 已确认非 null
-    if (win.webContents.getURL() === 'about:blank') {
-      return { success: false, error: '浏览器未加载任何页面，请先使用 browser_open 加载页面' };
-    }
+    const ready = ensureBrowserReady();
+    if (!ready.ok) return { success: false, error: ready.error };
+    const win = ready.win!;
     sendLog('info', `🌐 browser 执行 JS`, js.slice(0, 100));
     const result = await win.webContents.executeJavaScript(js, true);
     const resultStr = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
@@ -119,13 +133,9 @@ export async function browserEvaluate(js: string): Promise<{ success: boolean; r
 /** 提取页面文本和链接 */
 export async function browserExtract(): Promise<{ success: boolean; title?: string; text?: string; links?: Array<{text: string; href: string}>; error?: string }> {
   try {
-    if (!isBrowserOpen()) {
-      return { success: false, error: '浏览器未打开，请先使用 browser_open 加载页面' };
-    }
-    const win = agentBrowser!;
-    if (win.webContents.getURL() === 'about:blank') {
-      return { success: false, error: '浏览器未加载任何页面' };
-    }
+    const ready = ensureBrowserReady();
+    if (!ready.ok) return { success: false, error: ready.error };
+    const win = ready.win!;
 
     const result = await win.webContents.executeJavaScript(`
       (() => {
@@ -137,7 +147,7 @@ export async function browserExtract(): Promise<{ success: boolean; title?: stri
           return clone.innerText?.trim() || '';
         };
         const body = getText(document.body);
-        const text = body.length > 15000 ? body.slice(0, 15000) + '\\n... (已截断)' : body;
+        const text = body.length > 15000 ? body.slice(0, 15000) + '\\\\n... (已截断)' : body;
         const links = [];
         document.querySelectorAll('a[href]').forEach(a => {
           const href = a.href;
@@ -161,12 +171,10 @@ export async function browserExtract(): Promise<{ success: boolean; title?: stri
 /** 点击元素 */
 export async function browserClick(selector: string): Promise<{ success: boolean; error?: string }> {
   try {
-    if (!isBrowserOpen()) {
-      return { success: false, error: '浏览器未打开，请先使用 browser_open 加载页面' };
-    }
-    const win = agentBrowser!;
+    const ready = ensureBrowserReady();
+    if (!ready.ok) return { success: false, error: ready.error };
+    const win = ready.win!;
     sendLog('info', `🌐 browser 点击`, selector);
-    // 安全注入：通过 JSON.stringify 防止选择器中的 JS 注入
     await win.webContents.executeJavaScript(`
       (() => {
         const sel = ${JSON.stringify(selector)};
@@ -187,12 +195,10 @@ export async function browserClick(selector: string): Promise<{ success: boolean
 /** 输入文本 */
 export async function browserType(selector: string, text: string): Promise<{ success: boolean; error?: string }> {
   try {
-    if (!isBrowserOpen()) {
-      return { success: false, error: '浏览器未打开，请先使用 browser_open 加载页面' };
-    }
-    const win = agentBrowser!;
+    const ready = ensureBrowserReady();
+    if (!ready.ok) return { success: false, error: ready.error };
+    const win = ready.win!;
     sendLog('info', `🌐 browser 输入`, `${selector}: ${text.slice(0, 50)}`);
-    // 安全注入：通过 JSON.stringify 防止选择器和文本中的 JS 注入
     await win.webContents.executeJavaScript(`
       (() => {
         const sel = ${JSON.stringify(selector)};
@@ -216,10 +222,9 @@ export async function browserType(selector: string, text: string): Promise<{ suc
 /** 滚动页面 */
 export async function browserScroll(direction: 'down' | 'up' | 'top' | 'bottom'): Promise<{ success: boolean; error?: string }> {
   try {
-    if (!isBrowserOpen()) {
-      return { success: false, error: '浏览器未打开，请先使用 browser_open 加载页面' };
-    }
-    const win = agentBrowser!;
+    const ready = ensureBrowserReady();
+    if (!ready.ok) return { success: false, error: ready.error };
+    const win = ready.win!;
     const js = direction === 'down' ? 'window.scrollBy(0, 500)'
       : direction === 'up' ? 'window.scrollBy(0, -500)'
       : direction === 'top' ? 'window.scrollTo(0, 0)'

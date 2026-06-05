@@ -4,6 +4,7 @@
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { spawn } from 'child_process';
 import { checkPathAllowed } from './tool-security.js';
 import { sendLog, resolvePath, type ToolResult } from './tool-handlers-shared.js';
 
@@ -86,15 +87,17 @@ export async function handleWriteFile(params: { path: string; content: string; e
   }
 }
 
-export async function handleListDir(params: { path: string; recursive?: boolean; max_depth?: number; include_hidden?: boolean; filter_extension?: string }): Promise<ToolResult> {
+export async function handleListDir(params: { path: string; recursive?: boolean; max_depth?: number; include_hidden?: boolean; filter_extension?: string; offset?: number }): Promise<ToolResult> {
   try {
     const dirPath = resolvePath(params.path);
     const allowed = checkPathAllowed(dirPath, 'read');
     if (!allowed.ok) return { success: false, error: allowed.reason };
 
     const maxEntries = 500;
+    const startOffset = params.offset || 0;
     const entries: Array<{ name: string; type: string; size: number | null; modified: string }> = [];
     let truncated = false;
+    let skipped = 0;
 
     async function scanDir(dir: string, depth: number): Promise<void> {
       if (entries.length >= maxEntries) { truncated = true; return; }
@@ -105,6 +108,9 @@ export async function handleListDir(params: { path: string; recursive?: boolean;
         if (entries.length >= maxEntries) { truncated = true; return; }
         if (!params.include_hidden && item.name.startsWith('.')) continue;
         if (params.filter_extension && item.isFile() && !item.name.endsWith(params.filter_extension)) continue;
+
+        // 分页：跳过前 offset 个条目
+        if (skipped < startOffset) { skipped++; continue; }
 
         const fullPath = path.join(dir, item.name);
         const stat = await fs.stat(fullPath);
@@ -122,13 +128,16 @@ export async function handleListDir(params: { path: string; recursive?: boolean;
     }
 
     await scanDir(dirPath, 1);
-    return { success: true, path: dirPath, entries, total: entries.length, truncated };
+    return {
+      success: true, path: dirPath, entries, total: entries.length,
+      truncated, offset: startOffset
+    };
   } catch (err) {
     return { success: false, error: (err as Error).message };
   }
 }
 
-export async function handleSearchFiles(params: { path: string; query: string; search_type?: string; case_sensitive?: boolean; max_results?: number; file_extensions?: string[] }): Promise<ToolResult> {
+export async function handleSearchFiles(params: { path: string; query: string; search_type?: string; case_sensitive?: boolean; max_results?: number; file_extensions?: string[]; use_regex?: boolean }): Promise<ToolResult> {
   try {
     const rootPath = resolvePath(params.path);
     const allowed = checkPathAllowed(rootPath, 'read');
@@ -136,8 +145,24 @@ export async function handleSearchFiles(params: { path: string; query: string; s
 
     const searchType = params.search_type || 'both';
     const caseSensitive = params.case_sensitive || false;
+    const useRegex = params.use_regex || false;
     const maxResults = params.max_results || 50;
-    const query = caseSensitive ? params.query : params.query.toLowerCase();
+    const query = params.query; // 保持原始，正则用 flags 控制大小写
+
+    // 构建搜索匹配器
+    let contentMatcher: (line: string) => boolean;
+    if (useRegex) {
+      try {
+        const flags = caseSensitive ? '' : 'i';
+        const regex = new RegExp(query, flags);
+        contentMatcher = (line: string) => regex.test(line);
+      } catch {
+        return { success: false, error: '无效的正则表达式: ' + query };
+      }
+    } else {
+      const q = caseSensitive ? query : query.toLowerCase();
+      contentMatcher = (line: string) => (caseSensitive ? line : line.toLowerCase()).includes(q);
+    }
 
     const results: Array<{ path: string; matches: Array<{ line: number; text: string; column?: number }> }> = [];
     let totalMatches = 0;
@@ -191,10 +216,9 @@ export async function handleSearchFiles(params: { path: string; query: string; s
           const fileMatches: Array<{ line: number; text: string; column: number }> = [];
 
           for (let i = 0; i < lines.length && fileMatches.length < 10; i++) {
-            const lineToCheck = caseSensitive ? lines[i] : lines[i].toLowerCase();
-            const col = lineToCheck.indexOf(query);
-            if (col !== -1) {
-              fileMatches.push({ line: i + 1, text: lines[i].trim(), column: col + 1 });
+            if (contentMatcher(lines[i])) {
+              const col = useRegex ? 1 : (caseSensitive ? lines[i] : lines[i].toLowerCase()).indexOf(caseSensitive ? query : query.toLowerCase());
+              fileMatches.push({ line: i + 1, text: lines[i].trim(), column: Math.max(1, col + 1) });
               totalMatches++;
             }
           }
@@ -391,6 +415,18 @@ export async function handleTree(params: { path: string; max_depth?: number; inc
 }
 
 
+/** 运行 shell 命令并返回 stdout/stderr */
+function runShell(cmd: string, args: string[]): Promise<{ stdout: string; stderr: string; code: number }> {
+  return new Promise((resolve) => {
+    const proc = spawn(cmd, args, { stdio: ['pipe', 'pipe', 'pipe'] });
+    let stdout = '', stderr = '';
+    proc.stdout.on('data', (d: Buffer) => { stdout += d.toString(); });
+    proc.stderr.on('data', (d: Buffer) => { stderr += d.toString(); });
+    proc.on('close', (code) => resolve({ stdout, stderr, code: code ?? 1 }));
+    proc.on('error', (err) => resolve({ stdout, stderr: err.message, code: 1 }));
+  });
+}
+
 export async function handleDiffFiles(params: { file1: string; file2: string; context_lines?: number }): Promise<ToolResult> {
   try {
     const path1 = resolvePath(params.file1);
@@ -400,64 +436,87 @@ export async function handleDiffFiles(params: { file1: string; file2: string; co
     const check2 = checkPathAllowed(path2, 'read');
     if (!check2.ok) return { success: false, error: check2.reason };
 
-    const content1 = await fs.readFile(path1, 'utf-8');
-    const content2 = await fs.readFile(path2, 'utf-8');
-    const lines1 = content1.split('\n');
-    const lines2 = content2.split('\n');
-
-    // 简单的统一 diff 实现
-    const diffLines: string[] = [];
     const contextSize = params.context_lines || 3;
-    let i = 0, j = 0;
+    let diffOutput = '';
+    let usedCommand = '';
 
-    while (i < lines1.length || j < lines2.length) {
-      if (i < lines1.length && j < lines2.length && lines1[i] === lines2[j]) {
-        if (diffLines.length === 0 || diffLines[diffLines.length - 1].startsWith('-') || diffLines[diffLines.length - 1].startsWith('+')) {
-          // 添加上下文
-          const ctxStart = Math.max(0, i - contextSize);
-          for (let k = ctxStart; k < i; k++) {
-            diffLines.push(` ${lines1[k]}`);
-          }
-        }
-        diffLines.push(` ${lines1[i]}`);
-        i++; j++;
-      } else {
-        // 尝试找匹配
-        let found = false;
-        for (let look = 1; look <= 5 && i + look < lines1.length; look++) {
-          if (lines1[i + look] === lines2[j]) {
-            for (let k = 0; k < look; k++) diffLines.push(`-${lines1[i + k]}`);
-            i += look; found = true; break;
-          }
-        }
-        if (!found) {
-          for (let look = 1; look <= 5 && j + look < lines2.length; look++) {
-            if (lines1[i] === lines2[j + look]) {
-              for (let k = 0; k < look; k++) diffLines.push(`+${lines2[j + k]}`);
-              j += look; found = true; break;
-            }
-          }
-        }
-        if (!found) {
-          if (i < lines1.length) { diffLines.push(`-${lines1[i]}`); i++; }
-          if (j < lines2.length) { diffLines.push(`+${lines2[j]}`); j++; }
-        }
+    // 1) 优先使用系统 diff 命令
+    const diffResult = await runShell('diff', ['-u', `-U${contextSize}`, path1, path2]);
+    if (diffResult.code <= 1) { // diff exits 0=identical, 1=different
+      diffOutput = diffResult.stdout;
+      usedCommand = 'diff -u';
+    }
+
+    // 2) diff 不可用，尝试 git diff
+    if (!usedCommand) {
+      const gitResult = await runShell('git', ['diff', `--unified=${contextSize}`, '--no-index', path1, path2]);
+      if (gitResult.code <= 1) {
+        diffOutput = gitResult.stdout;
+        usedCommand = 'git diff';
       }
     }
 
-    const hasChanges = diffLines.some(l => l.startsWith('-') || l.startsWith('+'));
+    // 3) 回退到内置简易 diff
+    if (!usedCommand) {
+      diffOutput = builtinDiff(path1, path2, contextSize);
+      usedCommand = 'builtin';
+    }
+
+    const hasChanges = diffOutput.trim().length > 0;
     return {
       success: true,
       file1: path1,
       file2: path2,
-      diff: diffLines.join('\n'),
+      diff: diffOutput,
       hasChanges,
-      lines1: lines1.length,
-      lines2: lines2.length
+      method: usedCommand
     };
   } catch (err) {
     return { success: false, error: (err as Error).message };
   }
+}
+
+/** 内置简易 diff（回退方案） */
+function builtinDiff(path1: string, path2: string, contextSize: number): string {
+  const fsSync = require('fs');
+  const content1 = fsSync.readFileSync(path1, 'utf-8');
+  const content2 = fsSync.readFileSync(path2, 'utf-8');
+  const lines1 = content1.split('\n');
+  const lines2 = content2.split('\n');
+
+  const diffLines: string[] = [];
+  let i = 0, j = 0;
+  while (i < lines1.length || j < lines2.length) {
+    if (i < lines1.length && j < lines2.length && lines1[i] === lines2[j]) {
+      if (diffLines.length === 0 || diffLines[diffLines.length - 1].startsWith('-') || diffLines[diffLines.length - 1].startsWith('+')) {
+        const ctxStart = Math.max(0, i - contextSize);
+        for (let k = ctxStart; k < i; k++) diffLines.push(` ${lines1[k]}`);
+      }
+      diffLines.push(` ${lines1[i]}`);
+      i++; j++;
+    } else {
+      let found = false;
+      for (let look = 1; look <= 10 && i + look < lines1.length; look++) {
+        if (lines1[i + look] === lines2[j]) {
+          for (let k = 0; k < look; k++) diffLines.push(`-${lines1[i + k]}`);
+          i += look; found = true; break;
+        }
+      }
+      if (!found) {
+        for (let look = 1; look <= 10 && j + look < lines2.length; look++) {
+          if (lines1[i] === lines2[j + look]) {
+            for (let k = 0; k < look; k++) diffLines.push(`+${lines2[j + k]}`);
+            j += look; found = true; break;
+          }
+        }
+      }
+      if (!found) {
+        if (i < lines1.length) { diffLines.push(`-${lines1[i]}`); i++; }
+        if (j < lines2.length) { diffLines.push(`+${lines2[j]}`); j++; }
+      }
+    }
+  }
+  return diffLines.join('\n');
 }
 
 export async function handleReplaceInFiles(params: { path: string; glob: string; old_text: string; new_text: string }): Promise<ToolResult> {
@@ -522,29 +581,29 @@ export async function handleReplaceInFiles(params: { path: string; glob: string;
 export async function handleReadMultipleFiles(params: { paths: string[]; max_chars_per_file?: number }): Promise<ToolResult> {
   try {
     const maxChars = params.max_chars_per_file || 2000;
-    const results: Array<{ path: string; success: boolean; content?: string; error?: string; lines?: number }> = [];
 
-    for (const p of params.paths.slice(0, 20)) {
+    // 并行读取所有文件（最多20个）
+    const filesToRead = params.paths.slice(0, 20).map(async (p) => {
       const filePath = resolvePath(p);
       const allowed = checkPathAllowed(filePath, 'read');
       if (!allowed.ok) {
-        results.push({ path: p, success: false, error: allowed.reason });
-        continue;
+        return { path: p, success: false, error: allowed.reason };
       }
       try {
         const stat = await fs.stat(filePath);
         if (stat.size > 1024 * 1024) {
-          results.push({ path: p, success: false, error: '文件超过 1MB' });
-          continue;
+          return { path: p, success: false, error: '文件超过 1MB' };
         }
         let content = await fs.readFile(filePath, 'utf-8');
         const lines = content.split('\n').length;
         if (content.length > maxChars) content = content.slice(0, maxChars) + '\n... (已截断)';
-        results.push({ path: p, success: true, content, lines });
+        return { path: p, success: true, content, lines };
       } catch (err) {
-        results.push({ path: p, success: false, error: (err as Error).message });
+        return { path: p, success: false, error: (err as Error).message };
       }
-    }
+    });
+
+    const results = await Promise.all(filesToRead);
 
     return { success: true, files: results, total: results.length };
   } catch (err) {

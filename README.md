@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-v0.9.1-E8734A?style=flat-square" alt="version">
+  <img src="https://img.shields.io/badge/version-v0.10.0-E8734A?style=flat-square" alt="version">
   <img src="https://img.shields.io/badge/electron-33+-47848F?style=flat-square&logo=electron" alt="electron">
   <img src="https://img.shields.io/badge/typescript-5.7+-3178C6?style=flat-square&logo=typescript" alt="typescript">
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="license">
@@ -40,7 +40,7 @@
 | 📋 | **自定义文件** | SOUL.md（人格，不可压缩）+ AGENT.md（行为准则）+ USER.md（用户画像），工作空间优先，内置默认 fallback |
 | 🎯 | **技能自动生成 v1.1** | 工具调用链自动提取 → 语义匹配 → 参数自优化 → 未使用衰减 → 技能链合并，越用越精准 |
 | 🌐 | **MCP 协议扩展** | JSON-RPC 2.0 over stdio，动态工具发现，Shadowing 防护 |
-| 🔍 | **三引擎联网搜索** | Bing + 百度 + Google 聚合，web_search → web_fetch 链式抓取 |
+|| 🔍 | **四引擎联网搜索** | Bing + 百度 + DuckDuckGo + Google 并行聚合，5分钟缓存，URL可达性预检，web_fetch支持自动重试+移动端UA+SPA浏览器渲染回退 |
 | 🌏 | **浏览器控制** | 打开网页 · 截图 · 执行 JS · 提取内容 · 点击 · 输入 · 滚动 · 关闭 |
 | 🖥️ | **工作空间面板** | 终端（实时流式输出）+ 文件浏览器，命令安全检查 |
 | 🔢 | **上下文长度自动检测** | 切换模型时自动从 model_info 获取实际支持的上下文长度，无需手动配置 |
@@ -93,8 +93,8 @@
 
 | 工具 | 功能 |
 |------|------|
-| `web_search` | 三引擎聚合搜索（Bing + 百度 + Google），返回标题、URL、摘要，默认 15 条 |
-| `web_fetch` | 网页内容抓取，默认不截断 |
+|| `web_search` | 四引擎并行搜索（Bing + 百度 + DuckDuckGo + Google），结果缓存 5 分钟，URL 可达性预检，返回结构化 JSON |
+| `web_fetch` | 网页内容抓取，自动重试（指数退避），移动端UA切换，SPA页面自动升级到浏览器渲染 |
 
 </details>
 
@@ -231,7 +231,7 @@ npm start
 ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm run dist
 ```
 
-产出：`release/Metona Ollama Setup v0.9.1.exe`
+产出：`release/Metona Ollama Setup v0.10.0.exe`
 
 ## 🛠️ 常用命令
 
@@ -267,7 +267,7 @@ npm run dist           # 构建 Windows 安装包
 | 📋 | **Custom Files** | SOUL.md (persona, never compressed) + AGENT.md (behavior rules) + USER.md (user profile), workspace-first with built-in defaults |
 | 🎯 | **Auto Skill Generation v1.1** | Tool chain extraction → semantic matching → parameter self-optimization → decay → chain merging |
 | 🌐 | **MCP Protocol Extension** | JSON-RPC 2.0 over stdio, dynamic tool discovery, Shadowing protection |
-| 🔍 | **Triple-engine Web Search** | Bing + Baidu + Google aggregation, web_search → web_fetch chain |
+| 🔍 | **Quad-engine Web Search** | Bing + Baidu + DuckDuckGo + Google parallel, 5min cache, URL reachability check, web_fetch with auto-retry+mobile UA+SPA browser fallback |
 | 🌏 | **Browser Control** | Open pages · Screenshot · JS execution · Content extraction · Click · Type · Scroll · Close |
 | 🖥️ | **Workspace Panel** | Terminal (real-time streaming) + file browser, command security checks |
 | 🔢 | **Auto Context Length Detection** | Reads actual context_length from model metadata on model switch — no manual config needed |
@@ -320,8 +320,8 @@ npm run dist           # 构建 Windows 安装包
 
 | Tool | Function |
 |------|------|
-| `web_search` | Triple-engine search (Bing + Baidu + Google), returns title, URL, snippet, 15 results |
-| `web_fetch` | Fetch web page content, no truncation |
+| `web_search` | Quad-engine parallel search (Bing + Baidu + DuckDuckGo + Google), 5min cache, URL reachability check, structured JSON output |
+| `web_fetch` | Fetch web page content, auto-retry with backoff, mobile UA toggle, SPA auto-upgrade to browser rendering |
 
 </details>
 
@@ -454,7 +454,7 @@ npm start
 ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm run dist
 ```
 
-Output: `release/Metona Ollama Setup v0.9.1.exe`
+Output: `release/Metona Ollama Setup v0.10.0.exe`
 
 ## 🛠️ Common Commands
 

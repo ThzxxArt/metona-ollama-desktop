@@ -74,6 +74,9 @@ export function scoreMessageImportance(msg: OllamaMessage): number {
   if (msg.role === 'user') score += 2;      // 用户消息最重要
   if (msg.role === 'system') score -= 2;    // 系统消息通常可压缩
 
+  // ephemeral 临时消息 → 最低权重，优先丢弃
+  if (msg.ephemeral) return 0;
+
   // 已压缩标记 → 低权重（避免压缩产物堆积）
   if (msg.compressed) score = 1;
 

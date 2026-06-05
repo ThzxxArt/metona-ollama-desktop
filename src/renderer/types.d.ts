@@ -10,6 +10,8 @@ export interface OllamaMessage {
   tool_name?: string;
   /** 标记此消息为 LLM 压缩摘要生成 */
   compressed?: boolean;
+  /** 标记此消息为临时性消息（预算警告等），上下文裁剪时优先丢弃 */
+  ephemeral?: boolean;
 }
 
 export interface OllamaChatParams {

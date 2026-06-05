@@ -121,6 +121,52 @@ export function killToolProcess(): boolean {
 /** HTTP 请求超时（毫秒） */
 const HTTP_TIMEOUT = 15_000;
 
+// ── LRU 搜索缓存 ──────────────────────────────────
+interface CacheEntry { results: Array<{ title: string; url: string; snippet: string; engine: string; reachable?: boolean }>; time: number; }
+const _searchCache = new Map<string, CacheEntry>();
+const CACHE_MAX = 200;
+const CACHE_TTL = 5 * 60 * 1000; // 5 分钟
+
+function cacheGet(query: string): CacheEntry | null {
+  const entry = _searchCache.get(query);
+  if (!entry) return null;
+  if (Date.now() - entry.time > CACHE_TTL) { _searchCache.delete(query); return null; }
+  return entry;
+}
+function cacheSet(query: string, entry: CacheEntry): void {
+  if (_searchCache.size >= CACHE_MAX) {
+    const firstKey = _searchCache.keys().next().value;
+    if (firstKey !== undefined) _searchCache.delete(firstKey);
+  }
+  _searchCache.set(query, entry);
+}
+
+// ── 反爬请求头 ────────────────────────────────────
+const DESKTOP_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+const MOBILE_UA = 'Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36';
+const FETCH_HEADERS = {
+  'User-Agent': DESKTOP_UA,
+  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+  'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+  'Accept-Encoding': 'gzip, deflate, br',
+  'Cache-Control': 'no-cache',
+  'DNT': '1',
+};
+
+/** 带超时的 fetch 封装 */
+async function fetchWithTimeout(url: string, timeout = HTTP_TIMEOUT, headers: Record<string,string> = FETCH_HEADERS): Promise<Response | null> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+  try {
+    const resp = await fetch(url, { headers, signal: controller.signal, redirect: 'follow' });
+    clearTimeout(timeoutId);
+    return resp;
+  } catch {
+    clearTimeout(timeoutId);
+    return null;
+  }
+}
+
 /** 完整 HTML 实体映射（常见实体） */
 const HTML_ENTITIES: Record<string, string> = {
   '&nbsp;': ' ', '&lt;': '<', '&gt;': '>', '&amp;': '&', '&quot;': '"',
@@ -181,82 +227,141 @@ function htmlToText(html: string): string {
   return text.trim();
 }
 
-export async function handleWebFetch(params: { url: string; max_chars?: number; extract_mode?: string }): Promise<ToolResult> {
-  try {
-    const url = params.url;
-    if (!url.startsWith('http://') && !url.startsWith('https://')) {
-      return { success: false, error: '仅支持 http/https 协议' };
-    }
+import { browserOpen, browserExtract, browserClose } from './browser.js';
 
-    const maxChars = params.max_chars || 0; // 0 = 不截断，返回全部内容
+// ──────────────────────────────────────────────────
+// web_fetch 重试配置
+// ──────────────────────────────────────────────────
+const FETCH_MAX_RETRIES = 2;
+const FETCH_RETRY_DELAYS = [1000, 2000]; // 指数退避 (ms)
+/** 内容过短阈值：小于此字符数且是 HTML 时，自动升级到浏览器渲染 */
+const SHORT_CONTENT_THRESHOLD = 200;
 
-    sendLog('info', `🌐 web_fetch`, `${url} (${maxChars > 0 ? maxChars + ' chars' : '完整内容'})`);
-
-    // 带超时的 fetch
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), HTTP_TIMEOUT);
-    let resp: Response;
-    try {
-      resp = await fetch(url, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'
-        },
-        signal: controller.signal,
-        redirect: 'follow',
-      });
-    } finally {
-      clearTimeout(timeoutId);
-    }
-
-    if (!resp.ok) {
-      return { success: false, error: `HTTP ${resp.status}: ${resp.statusText}` };
-    }
-
-    const contentType = resp.headers.get('content-type') || '';
-    if (!contentType.includes('text') && !contentType.includes('html') && !contentType.includes('json') && !contentType.includes('xml')) {
-      return { success: false, error: `不支持的内容类型: ${contentType}` };
-    }
-
-    // 预检查内容长度，避免下载过大的页面
-    const contentLength = resp.headers.get('content-length');
-    if (contentLength && parseInt(contentLength, 10) > 10 * 1024 * 1024) {
-      return { success: false, error: `页面过大 (${(parseInt(contentLength, 10) / 1024 / 1024).toFixed(1)}MB)，超过 10MB 限制` };
-    }
-
-    let text = await resp.text();
-
-    // HTML → 可读文本提取
-    if (contentType.includes('html')) {
-      text = htmlToText(text);
-    }
-
-    const truncated = maxChars > 0 && text.length > maxChars;
-    if (truncated) text = text.slice(0, maxChars);
-
-    sendLog('success', `🌐 web_fetch 完成`, `${resp.status} | ${text.length} chars${truncated ? ' (已截断)' : ''}`);
-    return {
-      success: true,
-      url,
-      content: text,
-      content_type: contentType,
-      status: resp.status,
-      truncated,
-      length: text.length
-    };
-  } catch (err) {
-    const errMsg = (err as Error).message;
-    if (errMsg.includes('abort')) {
-      return { success: false, error: `请求超时 (${HTTP_TIMEOUT / 1000}s)` };
-    }
-    return { success: false, error: errMsg };
+export async function handleWebFetch(params: { url: string; max_chars?: number; extract_mode?: string; mobile_ua?: boolean; retry?: boolean }): Promise<ToolResult> {
+  const url = params.url;
+  if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    return { success: false, error: '仅支持 http/https 协议' };
   }
+
+  const maxChars = params.max_chars || 0; // 0 = 不截断
+  const useMobileUA = params.mobile_ua === true;
+  const shouldRetry = params.retry !== false; // 默认开启重试
+
+  const headers = {
+    ...FETCH_HEADERS,
+    'User-Agent': useMobileUA ? MOBILE_UA : DESKTOP_UA,
+  };
+
+  sendLog('info', `🌐 web_fetch`, `${url} (${maxChars > 0 ? maxChars + ' chars' : '完整内容'}${useMobileUA ? ', 移动端UA' : ''})`);
+
+  // ── 重试循环 ──
+  let lastError = '';
+  const maxAttempts = shouldRetry ? FETCH_MAX_RETRIES + 1 : 1;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    if (attempt > 0) {
+      const delay = FETCH_RETRY_DELAYS[attempt - 1] || 2000;
+      sendLog('warn', `🌐 web_fetch 重试`, `第 ${attempt + 1}/${maxAttempts} 次, 等待 ${delay}ms`);
+      await new Promise(r => setTimeout(r, delay));
+    }
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), HTTP_TIMEOUT);
+      let resp: Response;
+      try {
+        resp = await fetch(url, { headers, signal: controller.signal, redirect: 'follow' });
+      } finally {
+        clearTimeout(timeoutId);
+      }
+
+      if (!resp.ok) {
+        // 5xx 服务器错误可重试，4xx 客户端错误不重试
+        if (resp.status >= 500 && attempt < maxAttempts - 1) {
+          lastError = `HTTP ${resp.status}: ${resp.statusText}（将重试）`;
+          continue;
+        }
+        return { success: false, error: `HTTP ${resp.status}: ${resp.statusText}` };
+      }
+
+      const contentType = resp.headers.get('content-type') || '';
+      if (!contentType.includes('text') && !contentType.includes('html') && !contentType.includes('json') && !contentType.includes('xml')) {
+        return { success: false, error: `不支持的内容类型: ${contentType}` };
+      }
+
+      // 预检查内容长度
+      const contentLength = resp.headers.get('content-length');
+      if (contentLength && parseInt(contentLength, 10) > 10 * 1024 * 1024) {
+        return { success: false, error: `页面过大 (${(parseInt(contentLength, 10) / 1024 / 1024).toFixed(1)}MB)，超过 10MB 限制` };
+      }
+
+      let text = await resp.text();
+
+      // HTML → 可读文本
+      const isHTML = contentType.includes('html');
+      if (isHTML) {
+        text = htmlToText(text);
+      }
+
+      // ── 自动升级到浏览器渲染（内容过短的 HTML 页面） ──
+      if (isHTML && text.length < SHORT_CONTENT_THRESHOLD) {
+        sendLog('info', `🌐 web_fetch 内容过短(${text.length}字符)`, `自动升级到浏览器渲染: ${url}`);
+        try {
+          const openResult = await browserOpen(url);
+          if (openResult.success) {
+            // 等待页面 JS 渲染完成
+            await new Promise(r => setTimeout(r, 2000));
+            const extractResult = await browserExtract();
+            if (extractResult.success && extractResult.text) {
+              text = extractResult.text;
+              sendLog('success', `🌐 web_fetch 浏览器渲染完成`, `${text.length} 字符`);
+            }
+            browserClose();
+          }
+        } catch (browserErr) {
+          sendLog('warn', `🌐 web_fetch 浏览器渲染失败`, (browserErr as Error).message);
+          // 浏览器失败不阻塞，使用原始短内容
+        }
+      }
+
+      const truncated = maxChars > 0 && text.length > maxChars;
+      if (truncated) text = text.slice(0, maxChars);
+
+      sendLog('success', `🌐 web_fetch 完成`, `HTTP ${resp.status} | ${text.length} chars${truncated ? ' (已截断)' : ''}${attempt > 0 ? ` | 重试${attempt}次后成功` : ''}`);
+      return {
+        success: true,
+        url,
+        content: text,
+        content_type: contentType,
+        status: resp.status,
+        truncated,
+        length: text.length,
+        retries: attempt,
+      };
+    } catch (err) {
+      const errMsg = (err as Error).message;
+      if (errMsg.includes('abort') && attempt < maxAttempts - 1) {
+        lastError = `请求超时 (${HTTP_TIMEOUT / 1000}s)（将重试）`;
+        continue;
+      }
+      if (errMsg.includes('abort')) {
+        return { success: false, error: `请求超时 (${HTTP_TIMEOUT / 1000}s)` };
+      }
+      // 网络错误可重试
+      if (attempt < maxAttempts - 1) {
+        lastError = errMsg + '（将重试）';
+        continue;
+      }
+      return { success: false, error: errMsg };
+    }
+  }
+
+  return { success: false, error: lastError || '所有重试均失败' };
 }
 
 /**
- * Web Search — 联网搜索
- * 使用 Bing 搜索（首选）+ 百度作为备用
+ * Web Search — 联网搜索（并行多引擎 + LRU 缓存 + 质量评分）
+ * 同时请求 Bing / 百度 / DuckDuckGo / Google，取最快结果合并去重
  */
 export async function handleWebSearch(params: { query: string; max_results?: number }): Promise<ToolResult> {
   try {
@@ -265,112 +370,178 @@ export async function handleWebSearch(params: { query: string; max_results?: num
       return { success: false, error: '搜索关键词不能为空' };
     }
 
-    const maxResults = Math.min(params.max_results || 15, 15);
+    const maxResults = Math.min(params.max_results || 15, 20);
+    const cacheKey = `${query}|${maxResults}`;
 
-    sendLog('info', `🔍 web_search`, `"${query}" (${maxResults} 条)`);
-
-    const searchHeaders = {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-      'Accept': 'text/html',
-      'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'
-    };
-
-    /** 带超时的搜索请求 */
-    async function fetchWithTimeout(url: string): Promise<Response | null> {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), HTTP_TIMEOUT);
-      try {
-        const resp = await fetch(url, { headers: searchHeaders, signal: controller.signal });
-        clearTimeout(timeoutId);
-        return resp;
-      } catch {
-        clearTimeout(timeoutId);
-        return null;
-      }
+    // ── 1. 检查缓存 ──
+    const cached = cacheGet(cacheKey);
+    if (cached) {
+      sendLog('success', `🔍 web_search 缓存命中`, `"${query}" → ${cached.results.length} 条`);
+      return buildSearchResponse(cached.results, maxResults, true);
     }
 
-    // 1. Bing 搜索（首选）
-    let results: Array<{ title: string; url: string; snippet: string }> = [];
+    sendLog('info', `🔍 web_search`, `"${query}" (${maxResults} 条) [并行]`);
 
-    try {
-      const bingUrl = `https://www.bing.com/search?q=${encodeURIComponent(query)}&count=${maxResults}`;
-      const resp = await fetchWithTimeout(bingUrl);
-      if (resp?.ok) {
-        const html = await resp.text();
-        results = parseBingResults(html, maxResults);
-      }
-    } catch (e) {
-      sendLog('warn', `🔍 Bing 搜索失败`, (e as Error).message);
-    }
-
-    // 2. Bing 无结果，尝试百度
-    if (results.length === 0) {
-      try {
-        const baiduUrl = `https://www.baidu.com/s?wd=${encodeURIComponent(query)}&rn=${maxResults}`;
-        const resp = await fetchWithTimeout(baiduUrl);
-        if (resp?.ok) {
-          const html = await resp.text();
-          results = parseBaiduResults(html, maxResults);
+    // ── 2. 并行请求所有搜索引擎 ──
+    const engines: Array<{ name: string; fetcher: () => Promise<Array<{title:string;url:string;snippet:string}>> }> = [
+      {
+        name: 'bing',
+        fetcher: async () => {
+          const resp = await fetchWithTimeout(
+            `https://www.bing.com/search?q=${encodeURIComponent(query)}&count=${maxResults}`
+          );
+          if (!resp?.ok) throw new Error(`Bing ${resp?.status}`);
+          return parseBingResults(await resp.text(), maxResults);
         }
-      } catch (e) {
-        sendLog('warn', `🔍 百度搜索失败`, (e as Error).message);
-      }
-    }
-
-    // 3. 百度也失败，尝试 Google
-    if (results.length === 0) {
-      try {
-        const googleUrl = `https://www.google.com/search?q=${encodeURIComponent(query)}&num=${maxResults}`;
-        const resp = await fetchWithTimeout(googleUrl);
-        if (resp?.ok) {
-          const html = await resp.text();
-          results = parseGoogleResults(html, maxResults);
+      },
+      {
+        name: 'baidu',
+        fetcher: async () => {
+          const resp = await fetchWithTimeout(
+            `https://www.baidu.com/s?wd=${encodeURIComponent(query)}&rn=${maxResults}`
+          );
+          if (!resp?.ok) throw new Error(`百度 ${resp?.status}`);
+          return parseBaiduResults(await resp.text(), maxResults);
         }
-      } catch (e) {
-        sendLog('warn', `🔍 Google 搜索失败`, (e as Error).message);
-      }
-    }
+      },
+      {
+        name: 'ddg',
+        fetcher: async () => {
+          const resp = await fetchWithTimeout(
+            `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}`
+          );
+          if (!resp?.ok) throw new Error(`DDG ${resp?.status}`);
+          return parseDDGResults(await resp.text(), maxResults);
+        }
+      },
+      {
+        name: 'google',
+        fetcher: async () => {
+          const resp = await fetchWithTimeout(
+            `https://www.google.com/search?q=${encodeURIComponent(query)}&num=${maxResults}`
+          );
+          if (!resp?.ok) throw new Error(`Google ${resp?.status}`);
+          return parseGoogleResults(await resp.text(), maxResults);
+        }
+      },
+    ];
 
-    if (results.length === 0) {
-      return { success: false, error: '未找到搜索结果，请尝试其他关键词' };
-    }
+    // 所有引擎并行执行，收集结果
+    const settled = await Promise.allSettled(engines.map(e =>
+      e.fetcher().then(results => ({ engine: e.name, results }))
+    ));
 
-    // URL 去重：同一 URL 只保留第一个结果
+    // 汇总各引擎结果，按引擎优先级合并去重
+    const engineOrder = ['bing', 'baidu', 'ddg', 'google'];
+    const allResults: Array<{ title: string; url: string; snippet: string; engine: string; reachable?: boolean }> = [];
     const seenUrls = new Set<string>();
-    const deduped: typeof results = [];
-    for (const r of results) {
-      const normalizedUrl = r.url.replace(/\/+$/, '').toLowerCase();
-      if (!seenUrls.has(normalizedUrl)) {
-        seenUrls.add(normalizedUrl);
-        deduped.push(r);
+
+    // 记录各引擎状态
+    const engineStats: Record<string, string> = {};
+
+    for (let i = 0; i < settled.length; i++) {
+      const s = settled[i];
+      const engineName = engineOrder[i];
+      if (s.status === 'fulfilled') {
+        const r = s.value;
+        engineStats[engineName] = `${r.results.length} 条`;
+        for (const item of r.results) {
+          const normalized = item.url.replace(/\/+$/, '').toLowerCase();
+          if (!seenUrls.has(normalized)) {
+            seenUrls.add(normalized);
+            allResults.push({ ...item, engine: engineName });
+          }
+        }
+      } else {
+        engineStats[engineName] = `失败: ${(s.reason as Error)?.message || 'timeout'}`;
+        sendLog('warn', `🔍 ${engineName} 搜索失败`, (s.reason as Error)?.message || '未知');
       }
     }
 
-    // 清理摘要中的残留 HTML 标签和多余空白
-    for (const r of deduped) {
+    if (allResults.length === 0) {
+      return { success: false, error: '所有搜索引擎均未返回结果，请尝试其他关键词' };
+    }
+
+    // ── 3. 清理摘要 ──
+    for (const r of allResults) {
       r.title = r.title.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
       r.snippet = r.snippet.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
     }
 
-    // 构建格式化的搜索结果（附带当前日期）
-    const now = new Date();
-    const dateStr = `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日`;
-    const formatted = `[当前日期: ${dateStr}（搜索时的实时日期）]\n\n` + deduped.map((r, i) =>
-      `[${i + 1}] ${r.title}\n    URL: ${r.url}\n    ${r.snippet}`
-    ).join('\n\n');
+    // ── 4. URL 可达性预检（并行但限制并发 5 个，3 秒超时） ──
+    const topResults = allResults.slice(0, maxResults);
+    const CONCURRENCY = 5;
+    for (let i = 0; i < topResults.length; i += CONCURRENCY) {
+      const batch = topResults.slice(i, i + CONCURRENCY);
+      const checks = batch.map(async r => {
+        try {
+          const resp = await fetchWithTimeout(r.url, 3000, {
+            'User-Agent': DESKTOP_UA,
+            'Accept': 'text/html,*/*',
+          });
+          r.reachable = resp?.ok === true;
+        } catch {
+          r.reachable = false;
+        }
+      });
+      await Promise.allSettled(checks);
+    }
 
-    sendLog('success', `🔍 web_search 完成`, `"${query}" → ${deduped.length} 条结果`);
+    // ── 5. 缓存结果 ──
+    cacheSet(cacheKey, { results: topResults, time: Date.now() });
 
-    return {
-      success: true,
-      query,
-      results: deduped,
-      total: deduped.length,
-      formatted
-    };
+    return buildSearchResponse(topResults, maxResults, false, engineStats);
   } catch (err) {
     return { success: false, error: (err as Error).message };
   }
+}
+
+/** 构建搜索响应（格式化文本 + 结构化 JSON） */
+function buildSearchResponse(
+  results: Array<{ title: string; url: string; snippet: string; engine: string; reachable?: boolean }>,
+  maxResults: number,
+  fromCache: boolean,
+  engineStats?: Record<string, string>,
+): ToolResult {
+  const sliced = results.slice(0, maxResults);
+
+  // 格式化文本（保持向后兼容）
+  const now = new Date();
+  const dateStr = `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日`;
+  let formatted = `[当前日期: ${dateStr}（搜索时的实时日期）]`;
+  if (fromCache) formatted += ` [缓存]`;
+  formatted += `\n\n`;
+
+  if (engineStats) {
+    const statsStr = Object.entries(engineStats).map(([k, v]) => `${k}: ${v}`).join(' | ');
+    formatted += `[引擎状态: ${statsStr}]\n\n`;
+  }
+
+  formatted += sliced.map((r, i) => {
+    const reachableMark = r.reachable === false ? ' ⚠️可能不可达' : '';
+    return `[${i + 1}] ${r.title}${reachableMark}\n    URL: ${r.url}\n    ${r.snippet}`;
+  }).join('\n\n');
+
+  // 结构化 JSON（新增）
+  const structured = sliced.map(r => ({
+    index: sliced.indexOf(r) + 1,
+    title: r.title,
+    url: r.url,
+    snippet: r.snippet,
+    engine: r.engine,
+    reachable: r.reachable,
+  }));
+
+  return {
+    success: true,
+    query: '',
+    results: sliced,
+    total: sliced.length,
+    formatted,
+    structured,
+    from_cache: fromCache,
+    engine_stats: engineStats || {},
+  };
 }
 
 /** 解析百度 HTML 搜索结果 */
@@ -406,6 +577,55 @@ function parseBaiduResults(html: string, maxResults: number): Array<{ title: str
 
     if (title) {
       results.push({ title, url: url.startsWith('http') ? url : `https://www.baidu.com${url}`, snippet });
+    }
+  }
+
+  return results;
+}
+
+/** 解析 DuckDuckGo Lite HTML 搜索结果 */
+function parseDDGResults(html: string, maxResults: number): Array<{ title: string; url: string; snippet: string }> {
+  const results: Array<{ title: string; url: string; snippet: string }> = [];
+
+  // DDG Lite 结果：<tr class="result-snippet"> 内的 <a> + <td class="result-snippet">
+  // 尝试匹配：<a rel="nofollow" href="...">title</a> 后跟 <span class="link-text"> 显示URL
+  // 以及 <td class="result-snippet">snippet</td>
+  const blockRegex = /<tr[^>]*class="[^"]*result-snippet[^"]*"[^>]*>([\s\S]*?)<\/tr>/gi;
+  let blockMatch;
+
+  while ((blockMatch = blockRegex.exec(html)) !== null && results.length < maxResults) {
+    const block = blockMatch[1];
+
+    // 提取 URL
+    const linkMatch = block.match(/<a[^>]*href="(https?:\/\/[^"]*)"[^>]*>([\s\S]*?)<\/a>/);
+    if (!linkMatch) continue;
+
+    const url = decodeHTML(linkMatch[1].trim());
+    const title = decodeHTML(linkMatch[2].replace(/<[^>]+>/g, '').trim());
+
+    // 跳过 DuckDuckGo 自身链接
+    if (url.includes('duckduckgo.com')) continue;
+
+    // 提取摘要
+    const snippetMatch = block.match(/<td[^>]*class="[^"]*result-snippet[^"]*"[^>]*>([\s\S]*?)<\/td>/);
+    const snippet = snippetMatch ? decodeHTML(snippetMatch[1].replace(/<[^>]+>/g, '').trim()) : '';
+
+    if (title && url.startsWith('http')) {
+      results.push({ title, url, snippet });
+    }
+  }
+
+  // 回退：尝试匹配更通用的 DDG 结果格式
+  if (results.length === 0) {
+    const altRegex = /<a[^>]*href="(https?:\/\/[^"]*)"[^>]*class="[^"]*result-link[^"]*"[^>]*>([\s\S]*?)<\/a>/gi;
+    let altMatch;
+    while ((altMatch = altRegex.exec(html)) !== null && results.length < maxResults) {
+      const url = decodeHTML(altMatch[1].trim());
+      const title = decodeHTML(altMatch[2].replace(/<[^>]+>/g, '').trim());
+      if (url.includes('duckduckgo.com')) continue;
+      if (title && url.startsWith('http')) {
+        results.push({ title, url, snippet: '' });
+      }
     }
   }
 

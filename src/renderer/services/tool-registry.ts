@@ -45,7 +45,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'list_directory',
-      description: 'List directory contents. Returns file names, types, sizes, and modification times.',
+      description: 'List directory contents. Returns file names, types, sizes, and modification times. Supports offset-based pagination for directories with many entries.',
       parameters: {
         type: 'object',
         required: ['path'],
@@ -53,7 +53,8 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
           path: { type: 'string', description: 'Directory path.' },
           recursive: { type: 'boolean', description: 'List recursively. Default: false.' },
           max_depth: { type: 'integer', description: 'Max recursion depth. Default: 3.' },
-          include_hidden: { type: 'boolean', description: 'Include hidden files. Default: false.' }
+          include_hidden: { type: 'boolean', description: 'Include hidden files. Default: false.' },
+          offset: { type: 'integer', description: 'Skip first N entries for pagination. Default: 0.' }
         }
       }
     }
@@ -62,17 +63,18 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'search_files',
-      description: 'Search files by name pattern or text content within files.',
+      description: 'Search files by name pattern or text content within files. Supports regular expressions with use_regex=true.',
       parameters: {
         type: 'object',
         required: ['path', 'query'],
         properties: {
           path: { type: 'string', description: 'Root directory to search.' },
-          query: { type: 'string', description: 'Search query (glob or text).' },
+          query: { type: 'string', description: 'Search query (glob, text, or regex).' },
           search_type: { type: 'string', enum: ['filename', 'content', 'both'], description: 'Search target. Default: both.' },
           case_sensitive: { type: 'boolean', description: 'Case sensitive. Default: false.' },
           max_results: { type: 'integer', description: 'Max results. Default: 50.' },
-          file_extensions: { type: 'array', items: { type: 'string' }, description: 'Filter extensions, e.g. [".ts", ".js"]' }
+          file_extensions: { type: 'array', items: { type: 'string' }, description: 'Filter extensions, e.g. [".ts", ".js"]' },
+          use_regex: { type: 'boolean', description: 'Treat query as regular expression. Default: false.' }
         }
       }
     }
@@ -156,14 +158,16 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'web_fetch',
-      description: 'Fetch content from a URL. Returns the page text content (HTML stripped). Supports HTTP/HTTPS.',
+      description: 'Fetch content from a URL. Returns the page text content (HTML stripped). Supports HTTP/HTTPS. Automatically retries on failure (up to 2 times with exponential backoff). Will auto-upgrade to browser rendering for JavaScript-heavy pages that return empty shells.',
       parameters: {
         type: 'object',
         required: ['url'],
         properties: {
           url: { type: 'string', description: 'URL to fetch (http/https).' },
           max_chars: { type: 'integer', description: 'Max characters to return. Default: 0 (no limit, return full content).' },
-          extract_mode: { type: 'string', enum: ['text', 'markdown'], description: 'Extraction mode. Default: text.' }
+          extract_mode: { type: 'string', enum: ['text', 'markdown'], description: 'Extraction mode. Default: text.' },
+          mobile_ua: { type: 'boolean', description: 'Use mobile User-Agent. Some sites return simpler content for mobile. Default: false.' },
+          retry: { type: 'boolean', description: 'Enable auto-retry on failure (5xx/network errors, up to 2 times). Default: true.' }
         }
       }
     }
@@ -342,13 +346,13 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'web_search',
-      description: 'Search the web and return relevant results. Use this when you need to find current information, news, facts, or answer questions that require up-to-date knowledge beyond your training data.',
+      description: 'Search the web using multiple engines in parallel (Bing + Baidu + DuckDuckGo + Google) and return merged, deduplicated results. Results are cached for 5 minutes. Includes reachability checks for top results. Returns both formatted text and structured JSON. Use this when you need current information, news, facts, or answers requiring up-to-date knowledge beyond your training data.',
       parameters: {
         type: 'object',
         required: ['query'],
         properties: {
           query: { type: 'string', description: 'The search query. Be specific and concise for best results.' },
-          max_results: { type: 'integer', description: 'Maximum number of results to return. Default: 15, max: 15.' }
+          max_results: { type: 'integer', description: 'Maximum number of results to return. Default: 15, max: 20.' }
         }
       }
     }

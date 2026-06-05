@@ -16,15 +16,30 @@ export async function handleGit(params: { action: string; path?: string; files?:
     const dirCheck = checkPathAllowed(cwd, 'read');
     if (!dirCheck.ok) return { success: false, error: dirCheck.reason };
 
-    async function runGit(args: string[]): Promise<{ stdout: string; stderr: string; code: number }> {
+    async function runGit(args: string[], timeoutMs = 0): Promise<{ stdout: string; stderr: string; code: number }> {
       return new Promise((resolve) => {
         const git = spawn('git', args, { cwd, stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, LANG: 'en_US.UTF-8' } });
         let stdout = '';
         let stderr = '';
+        let timer: ReturnType<typeof setTimeout> | null = null;
+
+        if (timeoutMs > 0) {
+          timer = setTimeout(() => {
+            git.kill('SIGTERM');
+            resolve({ stdout, stderr: `操作超时 (${timeoutMs / 1000}s)`, code: 1 });
+          }, timeoutMs);
+        }
+
         git.stdout.on('data', (d: Buffer) => { stdout += d.toString(); });
         git.stderr.on('data', (d: Buffer) => { stderr += d.toString(); });
-        git.on('close', (code) => resolve({ stdout, stderr, code: code ?? 1 }));
-        git.on('error', (err) => resolve({ stdout, stderr: err.message, code: 1 }));
+        git.on('close', (code) => {
+          if (timer) clearTimeout(timer);
+          resolve({ stdout, stderr, code: code ?? 1 });
+        });
+        git.on('error', (err) => {
+          if (timer) clearTimeout(timer);
+          resolve({ stdout, stderr: err.message, code: 1 });
+        });
       });
     }
 
@@ -105,7 +120,7 @@ export async function handleGit(params: { action: string; path?: string; files?:
         if (params.remote) args.push(params.remote);
         if (params.branch) args.push(params.branch);
         if (params.force) args.push('--force');
-        const r = await runGit(args);
+        const r = await runGit(args, 60_000); // 60s 超时
         if (r.code !== 0) return { success: false, error: r.stderr };
         return { success: true, action: 'push', output: r.stderr.trim() || r.stdout.trim() };
       }
@@ -114,7 +129,7 @@ export async function handleGit(params: { action: string; path?: string; files?:
         const args = ['pull'];
         if (params.remote) args.push(params.remote);
         if (params.branch) args.push(params.branch);
-        const r = await runGit(args);
+        const r = await runGit(args, 60_000); // 60s 超时
         if (r.code !== 0) return { success: false, error: r.stderr };
         return { success: true, action: 'pull', output: r.stdout.trim() };
       }
@@ -157,9 +172,11 @@ export async function handleGit(params: { action: string; path?: string; files?:
       }
 
       case 'stash': {
-        const subAction = params.message || 'push';
+        // stash 子命令（push/pop/apply/list/drop/show）
+        // message 仅作为 stash push 的提交信息
+        const subAction = 'push'; // 默认 push
         const args = ['stash', subAction];
-        if (subAction === 'push' && params.message) args.push('-m', params.message);
+        if (params.message) args.push('-m', params.message);
         const r = await runGit(args);
         if (r.code !== 0) return { success: false, error: r.stderr };
         return { success: true, action: 'stash', subAction, output: r.stdout.trim() };
@@ -186,7 +203,7 @@ export async function handleGit(params: { action: string; path?: string; files?:
         const destDir = params.path ? path.resolve(params.path) : getWorkspaceDir();
         const cloneDirCheck = checkPathAllowed(destDir, 'write');
         if (!cloneDirCheck.ok) return { success: false, error: cloneDirCheck.reason };
-        const r = await runGit(['clone', params.url, destDir]);
+        const r = await runGit(['clone', params.url, destDir], 120_000); // 120s 超时（clone 可能较大）
         if (r.code !== 0) return { success: false, error: r.stderr };
         return { success: true, action: 'clone', url: params.url, destination: destDir };
       }
