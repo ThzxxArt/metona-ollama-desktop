@@ -73,6 +73,7 @@ export class OllamaAPI {
       model: params.model,
       messages: params.messages,
       stream: true,
+      keep_alive: '1h',
     };
     if (params.think !== undefined) body.think = params.think;
     if (params.system) body.system = params.system;
