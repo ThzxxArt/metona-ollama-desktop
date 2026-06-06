@@ -312,7 +312,7 @@ async function init(): Promise<void> {
     state.set(KEYS.NUM_CTX, 24576);
 
     // ── 防御性重置：确保首次启动不会遗留脏状态 ──
-    state.set('toolCallingEnabled', false);
+    state.set('toolCallingEnabled', true);
     state.set('runCommandMode', 'confirm');  // 默认需确认
     state.set('memoryEnabled', true);
     state.set('thinkEnabled', false);
@@ -363,7 +363,7 @@ async function init(): Promise<void> {
     (document.querySelector('#inputMaxTurns') as HTMLInputElement).value = String(maxTurns);
 
     // ── Tool Calling 设置 ──
-    const toolCallingEnabled = await db.getSetting('toolCallingEnabled', false);
+    const toolCallingEnabled = await db.getSetting('toolCallingEnabled', true);
     const runCommandMode = await db.getSetting('runCommandMode', 'confirm') as 'auto' | 'confirm' | 'disabled';
     state.set('toolCallingEnabled', toolCallingEnabled);
     state.set('runCommandMode', runCommandMode);

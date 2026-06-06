@@ -56,6 +56,7 @@ export class OllamaAPI {
       model: params.model,
       messages: params.messages,
       stream: false,
+      keep_alive: '1h',
     };
     if (params.think !== undefined) body.think = params.think;
     if (params.system) body.system = params.system;
@@ -117,7 +118,7 @@ export class OllamaAPI {
           const chunk: OllamaStreamChunk = JSON.parse(line);
           if (onChunk) onChunk(chunk);
           if (chunk.done) {
-            reader.cancel();
+            // 不调用 reader.cancel() — TCP RST 可能导致 Ollama 不执行 keep_alive
             return;
           }
         } catch {

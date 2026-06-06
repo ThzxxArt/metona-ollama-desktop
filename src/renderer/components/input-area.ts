@@ -327,22 +327,19 @@ async function handleRetry(): Promise<void> {
   clearMessagesDOM();
   renderMessages();
 
-  // 重新触发 Agent Loop / 普通聊天
-  const toolCallingEnabled = state.get<boolean>('toolCallingEnabled', false);
+  // 重新触发 Agent Loop
   const model = getSelectedModel() || currentSession.model;
 
   // 新一轮开始：清理上一轮的工作空间状态
-  if (toolCallingEnabled) {
-    clearToolCardsExternal();
-    clearTerminalExternal();
-  }
+  clearToolCardsExternal();
+  clearTerminalExternal();
 
   appendAssistantPlaceholder();
   state.set(KEYS.IS_STREAMING, true);
   updateSendButton(true);
 
-  if (toolCallingEnabled) {
-    const historyMessages = currentSession.messages
+  // 始终走 Agent Loop
+  const historyMessages = currentSession.messages
       .filter(m => m.role === 'user' || m.role === 'assistant')
       .slice(0, -1) // 不包含刚保留的最后一条 user 消息
       .slice(-20)
@@ -441,16 +438,8 @@ async function handleRetry(): Promise<void> {
         }
       });
     } catch (err) {
-      logError('重试失败', (err as Error).message);
-      appendSystemMessage(`❌ 重试失败: ${(err as Error).message}`);
-    }
-  } else {
-    // 普通聊天模式重试 - 直接调用 sendMessage
-    chatInputEl.value = userMsg.content || '';
-    state.set(KEYS.IS_STREAMING, false);
-    updateSendButton(false);
-    await sendMessage();
-    return;
+    logError('重试失败', (err as Error).message);
+    appendSystemMessage(`❌ 重试失败: ${(err as Error).message}`);
   }
 
   state.set(KEYS.IS_STREAMING, false);
@@ -770,320 +759,9 @@ export async function sendMessage(): Promise<void> {
   const currentSession = state.get<ChatSession | null>(KEYS.CURRENT_SESSION);
   if (!currentSession) return;
 
-  // ── Tool Calling Agent Loop 分支 ──
-  const toolCallingEnabled = state.get<boolean>('toolCallingEnabled', false);
-  if (toolCallingEnabled) {
-    // 检查模型是否支持 Tool Calling
-    if (!isToolCallingSupported()) {
-      appendSystemMessage('⚠️ 当前模型未声明支持 Tool Calling，Agent Loop 可能不稳定。建议使用 Qwen3、Llama 3.1+ 或 Mistral 等支持工具调用的模型。');
-    }
-    await sendMessageWithAgentLoop(text, currentSession, model);
-    return;
-  }
-
-  // ── 原有普通聊天流程 ──
-
-  const now = Date.now();
-  const msgsToAdd: ChatMessage[] = [];
-
-  const userFiles: ChatFile[] = pendingFiles.map(f => ({ name: f.name, language: f.language, size: f.size }));
-
-  if (pendingImages.length > 0) {
-    msgsToAdd.push({
-      role: 'user',
-      content: pendingImages.length === 1 ? `[上传了图片: ${pendingImages[0].name}]` : `[上传了 ${pendingImages.length} 张图片]`,
-      images: pendingImages.map(img => img.base64),
-      timestamp: now
-    });
-  }
-
-  if (text || pendingFiles.length > 0) {
-    const msg: ChatMessage = {
-      role: 'user',
-      content: text || '',
-      timestamp: now
-    };
-    if (userFiles.length > 0) {
-      msg.files = userFiles;
-      msg._fileContents = pendingFiles.map(f => ({ language: f.language, content: f.content }));
-    }
-    msgsToAdd.push(msg);
-  }
-
-  const isFirstMsg = currentSession.messages.length === 0;
-  state.update(KEYS.CURRENT_SESSION, (session: any) => ({
-    ...session,
-    ...(isFirstMsg && {
-      title: truncate(text || (pendingFiles.length > 0 ? `[文件: ${pendingFiles.map(f => f.name).join(', ')}]` : '[图片消息]'), 30),
-      model
-    }),
-    messages: [...session.messages, ...msgsToAdd],
-    updatedAt: Date.now()
-  }));
-
-  const freshSession = state.get<ChatSession>(KEYS.CURRENT_SESSION);
-
-  enableAutoScroll();
-  renderMessages();
-  await saveCurrentSession();
-
-  chatInputEl.value = '';
-  pendingImages = [];
-  pendingFiles = [];
-  imagePreviewEl.style.display = 'none';
-  imagePreviewEl.innerHTML = '';
-  filePreviewEl.style.display = 'none';
-  filePreviewEl.innerHTML = '';
-  autoResizeTextarea();
-
-  appendAssistantPlaceholder();
-
-  state.set(KEYS.IS_STREAMING, true);
-  updateSendButton(true);
-
-  const api = state.get<OllamaAPI>(KEYS.API)!;
-  const abortController = new AbortController();
-  state.set(KEYS.ABORT_CONTROLLER, abortController);
-  const thinkMode = isThinkEnabled();
-  const numCtx = state.get<number>(KEYS.NUM_CTX, 24576);
-
-  let assistantContent = '';
-  let thinkContent = '';
-  let finalStats: any = null;
-  let modelName = '';
-
-  try {
-    const apiMessages = buildApiMessages(freshSession.messages);
-    const temperature = state.get<number>('temperature', 0.7);
-
-    const chatParams: Record<string, unknown> = {
-      model,
-      messages: apiMessages,
-      stream: true,
-      think: thinkMode,
-    };
-    if (numCtx) chatParams.options = { num_ctx: numCtx, temperature };
-
-    // ── 扫描工作空间 SOUL.md ──
-    let soulContent = '';
-    let soulMdContent = '';
-    const workspaceDir = getWorkspaceDirPath();
-    if (workspaceDir) {
-      try {
-        const soulResult = await window.metonaDesktop?.workspace.readFile(
-          workspaceDir.replace(/\/+$/, '') + '/SOUL.md'
-        );
-        if (soulResult?.success && soulResult.content) {
-          soulMdContent = soulResult.content;
-        }
-      } catch { /* 工作空间 SOUL.md 不存在 */ }
-    }
-
-    // fallback：读取内置 SOUL.md
-    if (!soulMdContent) {
-      try {
-        const resp = await fetch('./SOUL.md');
-        if (resp.ok) {
-          soulMdContent = await resp.text();
-        }
-      } catch { /* 内置 SOUL.md 也不可用 */ }
-    }
-
-    if (soulMdContent) {
-      soulContent = `[SOUL.md] ${soulMdContent}`;
-    }
-
-    // ── 扫描工作空间 USER.md ──
-    let userMdContent = '';
-    if (workspaceDir) {
-      try {
-        const userResult = await window.metonaDesktop?.workspace.readFile(
-          workspaceDir.replace(/\/+$/, '') + '/USER.md'
-        );
-        if (userResult?.success && userResult.content) {
-          userMdContent = userResult.content;
-        }
-      } catch { /* 工作空间 USER.md 不存在 */ }
-    }
-    if (!userMdContent) {
-      try {
-        const resp = await fetch('./USER.md');
-        if (resp.ok) {
-          userMdContent = await resp.text();
-        }
-      } catch { /* 内置 USER.md 也不可用 */ }
-    }
-
-    // ── Agent 记忆注入 ──
-    if (isMemoryEnabled()) {
-      const userMessage = text || (msgsToAdd.find(m => m.role === 'user')?.content || '');
-      if (userMessage) {
-        const relevantMemories = searchMemories(userMessage, 6);
-        if (relevantMemories.length > 0) {
-          const memoryContext = buildMemoryContext(relevantMemories);
-          const parts = [soulContent, userMdContent ? `[USER.md] ${userMdContent}` : '', memoryContext].filter(Boolean);
-          chatParams.system = parts.join('\n\n');
-          for (const m of relevantMemories) {
-            await markMemoryUsed(m.id);
-          }
-          appendSystemMessage(`🧠 已注入 ${relevantMemories.length} 条相关记忆`, 'memory-status');
-        }
-      }
-    }
-    if (soulContent && !chatParams.system) {
-      const parts = [soulContent, userMdContent ? `[USER.md] ${userMdContent}` : ''].filter(Boolean);
-      chatParams.system = parts.join('\n\n');
-    }
-
-    // 存入 state 供 chat-area 渲染系统提示词卡片
-    state.set('_lastSystemPrompt', chatParams.system || '');
-
-    await api.chatStream(chatParams as any, (chunk: OllamaStreamChunk) => {
-      if (chunk.message) {
-        if (chunk.message.content) assistantContent += chunk.message.content;
-        const think = chunk.message.thinking || chunk.message.reasoning_content;
-        if (think && typeof think === 'string') thinkContent += think;
-      }
-      if (chunk.model) modelName = chunk.model;
-      // 捕获任何包含统计的 chunk（不限于 done）
-      if (chunk.eval_count || chunk.prompt_eval_count || chunk.total_duration) {
-        finalStats = {
-          eval_count: chunk.eval_count ?? finalStats?.eval_count,
-          prompt_eval_count: chunk.prompt_eval_count ?? finalStats?.prompt_eval_count,
-          total_duration: chunk.total_duration ?? finalStats?.total_duration,
-        };
-      }
-      updateLastAssistantMessage(assistantContent, thinkContent || null, null, modelName || undefined);
-      if (chunk.done) {
-        // done chunk 优先使用其统计，保留之前的兜底
-        finalStats = {
-          eval_count: chunk.eval_count ?? finalStats?.eval_count,
-          prompt_eval_count: chunk.prompt_eval_count ?? finalStats?.prompt_eval_count,
-          total_duration: chunk.total_duration ?? finalStats?.total_duration,
-        };
-      }
-    }, abortController);
-
-    if (!assistantContent && !thinkContent) {
-      appendSystemMessage('⚠️ 模型未返回任何内容，可能是上下文过长或模型不支持当前请求');
-      logWarn('模型未返回任何内容');
-    }
-
-    logStream(`流式完成: ${assistantContent.length} 字符${finalStats?.eval_count ? `, ${finalStats.eval_count} tokens` : ''}`);
-
-    const assistantMsg: ChatMessage = {
-      role: 'assistant',
-      content: assistantContent || '',
-      timestamp: Date.now(),
-      ...(modelName && { model: modelName }),
-      ...(thinkContent && { think: thinkContent }),
-      ...((finalStats || {}) as any)
-    };
-    state.update(KEYS.CURRENT_SESSION, (session: any) => ({
-      ...session,
-      messages: [...session.messages, assistantMsg],
-      updatedAt: Date.now()
-    }));
-
-    if (finalStats) {
-      updateLastAssistantMessage(assistantContent, thinkContent || null, finalStats, modelName || undefined, Date.now());
-    } else {
-      updateLastAssistantMessage(assistantContent, thinkContent || null, null, modelName || undefined, Date.now());
-    }
-
-    await saveCurrentSession();
-
-    // ── 自动提取记忆（非阻塞）──
-    if (isMemoryEnabled() && freshSession.messages.length >= 10) {
-      const currentSession2 = state.get<ChatSession | null>(KEYS.CURRENT_SESSION);
-      if (currentSession2) {
-        extractMemoriesFromConversation(
-          currentSession2.messages.map(m => ({ role: m.role, content: m.content })),
-          currentSession2.title
-        ).then(count => {
-          if (count > 0) {
-            logInfo(`自动提取了 ${count} 条记忆`);
-          }
-        }).catch(err => logError('记忆提取失败', (err as Error).message));
-      }
-    }
-  } catch (err) {
-    if ((err as Error).name === 'AbortError') {
-      const placeholder = document.querySelector('#messagesContainer .message.assistant.loading') as HTMLElement;
-      const loadingDots = placeholder?.querySelector('.loading-dots');
-      const loadingText = placeholder?.querySelector('.loading-text');
-      if (loadingDots) loadingDots.remove();
-      if (loadingText) loadingText.remove();
-      placeholder?.classList.remove('loading');
-
-      const contentDiv = placeholder?.querySelector('.msg-content');
-      const partialMsg: ChatMessage = {
-        role: 'assistant',
-        content: assistantContent,
-        timestamp: Date.now(),
-        ...(modelName && { model: modelName }),
-        ...(thinkContent && { think: thinkContent }),
-        stopped: true
-      };
-      state.update(KEYS.CURRENT_SESSION, (session: any) => ({
-        ...session,
-        messages: [...session.messages, partialMsg],
-        updatedAt: Date.now()
-      }));
-
-      if (contentDiv) {
-        let html = assistantContent ? safeMarkdown(assistantContent) : '';
-        html += '<p><code>[已停止]</code></p>';
-        contentDiv.innerHTML = html;
-      }
-      appendSystemMessage('⏹ 已停止生成');
-      await saveCurrentSession();
-      state.set(KEYS.IS_STREAMING, false);
-      updateSendButton(false);
-      state.set(KEYS.ABORT_CONTROLLER, null);
-      return;
-    }
-
-    const placeholder = document.querySelector('#messagesContainer .message.assistant.loading') as HTMLElement;
-    const loadingDots = placeholder?.querySelector('.loading-dots');
-    const loadingText = placeholder?.querySelector('.loading-text');
-    if (loadingDots) loadingDots.remove();
-    if (loadingText) loadingText.remove();
-    placeholder?.classList.remove('loading');
-
-    const contentDiv = placeholder?.querySelector('.msg-content');
-
-    if (assistantContent && contentDiv) {
-      state.update(KEYS.CURRENT_SESSION, (session: any) => ({
-        ...session,
-        messages: [...session.messages, { role: 'assistant', content: assistantContent + '\n\n`[已中断]`', timestamp: Date.now() } as ChatMessage],
-        updatedAt: Date.now()
-      }));
-      contentDiv.innerHTML = safeMarkdown(assistantContent) + '<p><code>[已中断]</code></p>';
-      await saveCurrentSession();
-    } else {
-      if (placeholder) placeholder.remove();
-    }
-
-    let errMsg = `❌ 错误: ${(err as Error).message}`;
-    if ((err as Error).message.includes('Failed to fetch') || (err as Error).message.includes('NetworkError')) {
-      errMsg = '❌ 连接失败。请检查：\n1. Ollama 是否正在运行\n2. 地址是否正确\n3. 是否设置了 OLLAMA_ORIGINS="*"';
-      logError('连接失败', 'Ollama 服务不可达');
-    } else if ((err as Error).message.includes('400')) {
-      errMsg = '❌ 请求参数错误，可能是上下文过长';
-      logError('请求参数错误 (400)', (err as Error).message);
-    } else if ((err as Error).message.includes('500')) {
-      errMsg = '❌ Ollama 服务器错误，请检查 Ollama 日志';
-      logError('Ollama 服务器错误 (500)', (err as Error).message);
-    } else {
-      logError('对话错误', (err as Error).message);
-    }
-    appendSystemMessage(errMsg);
-  } finally {
-    state.set(KEYS.IS_STREAMING, false);
-    updateSendButton(false);
-    state.set(KEYS.ABORT_CONTROLLER, null);
-  }
+  // 所有消息统一走 Agent Loop
+  await sendMessageWithAgentLoop(text, currentSession, model);
+  return;
 }
 
 /** 更新当前会话消息中最近一个 'running' 状态的同名工具记录 */

@@ -1,6 +1,6 @@
 /**
  * ToolsModal - 工具面板模态框
- * 展示所有可用工具的详细信息，管理 Tool Calling 开关
+ * 展示所有可用工具的详细信息。Tool Calling 始终开启，不可关闭。
  */
 
 import { state, KEYS } from '../state/state.js';
@@ -21,27 +21,14 @@ export function initToolsModal(): void {
     if (e.target === modalEl) closeToolsModal();
   });
 
-  // Tool Calling 主开关
+  // Tool Calling 始终开启，不可关闭
   const toggleToolCalling = modalEl.querySelector('#toggleToolCalling') as HTMLInputElement;
   if (toggleToolCalling) {
-    toggleToolCalling.addEventListener('change', async () => {
-      const db = state.get<ChatDB | null>(KEYS.DB);
-      state.set('toolCallingEnabled', toggleToolCalling.checked);
-      if (db) await db.saveSetting('toolCallingEnabled', toggleToolCalling.checked);
-      if (toggleToolCalling.checked) {
-        const modelSupportsTools = state.get<boolean>('modelSupportsTools', false);
-        if (!modelSupportsTools) {
-          showToast('⚠️ 当前模型可能不支持 Tool Calling，建议使用 Qwen3、Llama 3.1+ 等模型', 'warning', 5000);
-          logWarn('Tool Calling 已开启（模型不支持）');
-        } else {
-          showToast('工具调用已开启', 'info');
-          logInfo('Tool Calling 已开启');
-        }
-      } else {
-        showToast('工具调用已关闭', 'info');
-        logInfo('Tool Calling 已关闭');
-      }
-    });
+    toggleToolCalling.checked = true;
+    toggleToolCalling.disabled = true;
+    state.set('toolCallingEnabled', true);
+    const db = state.get<ChatDB | null>(KEYS.DB);
+    if (db) db.saveSetting('toolCallingEnabled', true);
   }
 
   // run_command 模式下拉框
@@ -76,10 +63,12 @@ function updateRunCommandBadge(mode: string): void {
 }
 
 export function openToolsModal(): void {
-  // 同步开关状态
-  const toolCallingEnabled = state.get<boolean>('toolCallingEnabled', false);
+  // 同步开关状态 — 始终开启
   const toggleTC = modalEl.querySelector('#toggleToolCalling') as HTMLInputElement;
-  if (toggleTC) toggleTC.checked = toolCallingEnabled;
+  if (toggleTC) {
+    toggleTC.checked = true;
+    toggleTC.disabled = true;
+  }
 
   const runCommandMode = state.get<string>('runCommandMode', 'confirm');
   const selectMode = modalEl.querySelector('#selectRunCommandMode') as HTMLSelectElement;
