@@ -508,16 +508,19 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   // ══════════════════════════════════════════════
   // v5.0 新增工具：浏览器控制
   // ══════════════════════════════════════════════
+  // v5.1 Browser 控制工具（增强版）
+  // ══════════════════════════════════════════════
   {
     type: 'function',
     function: {
       name: 'browser_open',
-      description: 'Open a URL in the agent browser. Loads the page and waits for rendering. Returns the page title and final URL.',
+      description: 'Open a URL in the agent browser. Waits for page load. Use wait_selector to wait for a specific element (useful for SPA pages). Returns page title and URL.',
       parameters: {
         type: 'object',
         required: ['url'],
         properties: {
-          url: { type: 'string', description: 'The URL to open (http/https).' }
+          url: { type: 'string', description: 'The URL to open (http/https).' },
+          wait_selector: { type: 'string', description: 'CSS selector to wait for after page load. Useful for SPA/dynamic pages. Default: none.' }
         }
       }
     }
@@ -526,15 +529,21 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'browser_screenshot',
-      description: 'Take a screenshot of the current browser page. Returns the image as base64 PNG. Use this to see what the page looks like.',
-      parameters: { type: 'object', properties: {} }
+      description: 'Take a screenshot of the current page. Supports viewport (default), full_page (entire scrollable page), or selector (specific element only). Returns base64 PNG.',
+      parameters: {
+        type: 'object',
+        properties: {
+          full_page: { type: 'boolean', description: 'Capture the entire scrollable page. Default: false.' },
+          selector: { type: 'string', description: 'CSS selector of element to capture. Overrides full_page.' }
+        }
+      }
     }
   },
   {
     type: 'function',
     function: {
       name: 'browser_evaluate',
-      description: 'Execute JavaScript code in the browser page context. Use to interact with the page, read DOM elements, fill forms, click buttons, etc. Returns the result of the last expression.',
+      description: 'Execute JavaScript in the browser page. Returns the result as JSON string. Use to read DOM, extract data, or interact programmatically.',
       parameters: {
         type: 'object',
         required: ['js'],
@@ -548,20 +557,27 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'browser_extract',
-      description: 'Extract all text content and links from the current browser page. Returns title, full text, and up to 50 links.',
-      parameters: { type: 'object', properties: {} }
+      description: 'Extract text and links from the current page. Use selector to extract only from a specific element (e.g. "main", "#content", "article"). Without selector, extracts full page. Returns title, text, and up to 50 links.',
+      parameters: {
+        type: 'object',
+        properties: {
+          selector: { type: 'string', description: 'CSS selector to extract from. Default: entire body.' },
+          max_chars: { type: 'integer', description: 'Max characters to return. Default: 15000.' }
+        }
+      }
     }
   },
   {
     type: 'function',
     function: {
       name: 'browser_click',
-      description: 'Click an element on the page using a CSS selector.',
+      description: 'Click an element by CSS selector. Use wait=true to wait up to 10s for the element to appear first (useful after page navigation). Scrolls element into view before clicking.',
       parameters: {
         type: 'object',
         required: ['selector'],
         properties: {
-          selector: { type: 'string', description: 'CSS selector for the element to click.' }
+          selector: { type: 'string', description: 'CSS selector for the element to click.' },
+          wait: { type: 'boolean', description: 'Wait for element to appear before clicking (max 10s). Default: false.' }
         }
       }
     }
@@ -570,13 +586,15 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'browser_type',
-      description: 'Type text into an input field on the page using a CSS selector.',
+      description: 'Type text into an input field. Use clear=false to append instead of replacing. Use submit=true to press Enter or submit the parent form after typing.',
       parameters: {
         type: 'object',
         required: ['selector', 'text'],
         properties: {
           selector: { type: 'string', description: 'CSS selector for the input element.' },
-          text: { type: 'string', description: 'Text to type into the input.' }
+          text: { type: 'string', description: 'Text to type into the input.' },
+          clear: { type: 'boolean', description: 'Clear existing text first. Default: true.' },
+          submit: { type: 'boolean', description: 'Submit the form or press Enter after typing. Default: false.' }
         }
       }
     }
@@ -585,11 +603,26 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'browser_scroll',
-      description: 'Scroll the browser page.',
+      description: 'Scroll the page. Use direction for up/down/top/bottom, or selector to scroll a specific element into view.',
       parameters: {
         type: 'object',
         properties: {
-          direction: { type: 'string', enum: ['down', 'up', 'top', 'bottom'], description: 'Scroll direction. Default: down.' }
+          direction: { type: 'string', enum: ['down', 'up', 'top', 'bottom'], description: 'Scroll direction. Default: down.' },
+          selector: { type: 'string', description: 'CSS selector to scroll into view (overrides direction).' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_wait',
+      description: 'Wait for a condition. Use selector to wait for an element to appear, or time_ms for a fixed delay. Default: 1 second.',
+      parameters: {
+        type: 'object',
+        properties: {
+          selector: { type: 'string', description: 'CSS selector to wait for. Returns found: true/false.' },
+          time_ms: { type: 'integer', description: 'Fixed wait time in milliseconds. Default: 1000.' }
         }
       }
     }
@@ -598,7 +631,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'browser_close',
-      description: 'Close the agent browser and release resources.',
+      description: 'Close the agent browser and free resources.',
       parameters: { type: 'object', properties: {} }
     }
   }

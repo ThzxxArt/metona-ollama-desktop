@@ -48,7 +48,7 @@ import {
   handleGit,
   handleCompress
 } from './tool-handlers.js';
-import { browserOpen, browserScreenshot, browserEvaluate, browserExtract, browserClick, browserType, browserScroll, browserClose } from './browser.js';
+import { browserOpen, browserScreenshot, browserEvaluate, browserExtract, browserClick, browserType, browserScroll, browserClose, browserWait } from './browser.js';
 import { startServer, stopServer, stopAllServers, callTool, getAllTools, getServerStatuses, refreshTools, setMCPTimeout } from './mcp-manager.js';
 import { getAllowedDirs, getBlockedDirs, setAllowedDirs } from './tool-security.js';
 import { startProcess, killProcess, getWorkspaceDir, setWorkspaceDir, listWorkspaceDir } from './workspace.js';
@@ -190,14 +190,15 @@ export async function setupIPC(): Promise<void> {
         case 'read_multiple_files':result = await handleReadMultipleFiles(args as { paths: string[]; max_chars_per_file?: number }); break;
         case 'git':                result = await handleGit(args as { action: string; path?: string; files?: string[]; message?: string; branch?: string; remote?: string; remote_url?: string; count?: number; all?: boolean; staged?: boolean; new_branch?: boolean; delete_branch?: boolean; force?: boolean; url?: string }); break;
         case 'compress':           result = await handleCompress(args as { action: string; path: string; destination?: string; format?: string }); break;
-        // v5.0 Browser 控制
-        case 'browser_open':       result = await browserOpen(args.url as string); break;
-        case 'browser_screenshot': result = await browserScreenshot(); break;
+        // v5.1 Browser 控制（增强版）
+        case 'browser_open':       result = await browserOpen(args.url as string, args.wait_selector as string | undefined); break;
+        case 'browser_screenshot': result = await browserScreenshot({ full_page: args.full_page as boolean, selector: args.selector as string }); break;
         case 'browser_evaluate':   result = await browserEvaluate(args.js as string); break;
-        case 'browser_extract':    result = await browserExtract(); break;
-        case 'browser_click':      result = await browserClick(args.selector as string); break;
-        case 'browser_type':       result = await browserType(args.selector as string, args.text as string); break;
-        case 'browser_scroll':     result = await browserScroll((args.direction as 'down' | 'up' | 'top' | 'bottom') || 'down'); break;
+        case 'browser_extract':    result = await browserExtract({ selector: args.selector as string, max_chars: args.max_chars as number }); break;
+        case 'browser_click':      result = await browserClick(args.selector as string, (args.wait as boolean) || false); break;
+        case 'browser_type':       result = await browserType(args.selector as string, args.text as string, args.clear !== false, args.submit as boolean || false); break;
+        case 'browser_scroll':     result = await browserScroll({ direction: args.direction as string, selector: args.selector as string }); break;
+        case 'browser_wait':       result = await browserWait({ selector: args.selector as string, time_ms: args.time_ms as number }); break;
         case 'browser_close':      browserClose(); result = { success: true }; break;
         default:                   return { success: false, error: `未知工具: ${toolName}` };
       }

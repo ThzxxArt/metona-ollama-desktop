@@ -1,5 +1,5 @@
 /**
- * Browser - Agent 浏览器控制 (v5.0)
+ * Browser - Agent 浏览器控制 (v5.1 增强版)
  * 通过隐藏 BrowserWindow 实现网页加载、截图、JS 执行
  */
 
@@ -52,10 +52,25 @@ function getAgentBrowser(): BrowserWindow {
 /** 页面加载超时（毫秒） */
 const PAGE_LOAD_TIMEOUT = 30_000;
 
+/** 等待 CSS 选择器出现在页面中（最多 waitMs 毫秒） */
+async function waitForSelector(win: BrowserWindow, selector: string, waitMs = 10_000): Promise<boolean> {
+  const start = Date.now();
+  while (Date.now() - start < waitMs) {
+    try {
+      const found = await win.webContents.executeJavaScript(`
+        (() => { const el = document.querySelector(${JSON.stringify(selector)}); return el !== null; })()
+      `, true);
+      if (found) return true;
+    } catch { /* retry */ }
+    await new Promise(r => setTimeout(r, 300));
+  }
+  return false;
+}
+
 /** 打开 URL */
-export async function browserOpen(url: string): Promise<{ success: boolean; title?: string; url?: string; error?: string }> {
+export async function browserOpen(url: string, waitSelector?: string): Promise<{ success: boolean; title?: string; url?: string; waited?: boolean; error?: string }> {
   try {
-    // 如果已有 BrowserWindow 且加载了不同 URL，先关闭重建，避免状态残留
+    // 如果已有 BrowserWindow 且加载了不同 URL，先关闭重建
     if (agentBrowser && !agentBrowser.isDestroyed()) {
       const currentUrl = agentBrowser.webContents.getURL();
       if (currentUrl !== 'about:blank' && currentUrl !== url) {
@@ -68,7 +83,6 @@ export async function browserOpen(url: string): Promise<{ success: boolean; titl
     const win = getAgentBrowser();
     sendLog('info', `🌐 browser 打开`, url.slice(0, 100));
 
-    // 等待页面实际加载完成，而非固定延时
     const loadPromise = new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(() => {
         win.webContents.removeListener('did-finish-load', onFinish);
@@ -88,9 +102,18 @@ export async function browserOpen(url: string): Promise<{ success: boolean; titl
     });
 
     await loadPromise;
+
+    let waited = false;
+    // 等待特定元素出现（用于 SPA 页面）
+    if (waitSelector) {
+      sendLog('info', `🌐 browser 等待元素`, waitSelector);
+      waited = await waitForSelector(win, waitSelector);
+      if (!waited) sendLog('warn', `🌐 browser 等待超时`, `未找到: ${waitSelector}`);
+    }
+
     const title = win.webContents.getTitle();
-    sendLog('success', `🌐 browser 已加载`, title);
-    return { success: true, title, url: win.webContents.getURL() };
+    sendLog('success', `🌐 browser 已加载`, title + (waited ? ' [等待元素完成]' : ''));
+    return { success: true, title, url: win.webContents.getURL(), waited };
   } catch (err) {
     sendLog('error', `🌐 browser 打开失败`, (err as Error).message);
     return { success: false, error: (err as Error).message };
@@ -98,15 +121,73 @@ export async function browserOpen(url: string): Promise<{ success: boolean; titl
 }
 
 /** 截图 */
-export async function browserScreenshot(): Promise<{ success: boolean; png?: string; error?: string }> {
+export async function browserScreenshot(params: { full_page?: boolean; selector?: string } = {}): Promise<{ success: boolean; png?: string; width?: number; height?: number; error?: string }> {
   try {
     const ready = ensureBrowserReady();
     if (!ready.ok) return { success: false, error: ready.error };
     const win = ready.win!;
+
+    if (params.selector) {
+      // 截取特定元素的截图
+      const rect = await win.webContents.executeJavaScript(`
+        (() => {
+          const el = document.querySelector(${JSON.stringify(params.selector)});
+          if (!el) return null;
+          const r = el.getBoundingClientRect();
+          return { x: r.x, y: r.y, width: r.width, height: r.height };
+        })()
+      `, true) as { x: number; y: number; width: number; height: number } | null;
+
+      if (!rect || rect.width === 0 || rect.height === 0) {
+        return { success: false, error: `未找到元素或元素不可见: ${params.selector}` };
+      }
+
+      const image = await win.webContents.capturePage({ x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) });
+      const buffer = image.toPNG();
+      sendLog('info', `🌐 browser 截图(元素)`, `${params.selector} → ${buffer.length} bytes, ${rect.width}x${rect.height}`);
+      return { success: true, png: buffer.toString('base64'), width: Math.round(rect.width), height: Math.round(rect.height) };
+    }
+
+    if (params.full_page) {
+      // 全页面截图：先滚动获取完整高度，截完恢复
+      const pageSize = await win.webContents.executeJavaScript(`
+        (() => {
+          const w = Math.max(document.documentElement.scrollWidth, document.body.scrollWidth, window.innerWidth);
+          const h = Math.max(document.documentElement.scrollHeight, document.body.scrollHeight, window.innerHeight);
+          const origScroll = { x: window.scrollX, y: window.scrollY };
+          window.scrollTo(0, 0);
+          return { width: w, height: h, origScroll };
+        })()
+      `, true) as { width: number; height: number; origScroll: { x: number; y: number } };
+
+      // 分块截图拼接（超过窗口高度的页面）
+      const viewHeight = 800;
+      const chunks: Buffer[] = [];
+      for (let y = 0; y < pageSize.height; y += viewHeight) {
+        await win.webContents.executeJavaScript(`window.scrollTo(0, ${y})`, true);
+        await new Promise(r => setTimeout(r, 200));
+        const image = await win.webContents.capturePage({
+          x: 0, y: 0,
+          width: pageSize.width,
+          height: Math.min(viewHeight, pageSize.height - y)
+        });
+        chunks.push(image.toPNG());
+      }
+      // 恢复滚动位置
+      await win.webContents.executeJavaScript(`window.scrollTo(${pageSize.origScroll.x}, ${pageSize.origScroll.y})`, true);
+
+      // 拼接所有截图（简单合并 base64）
+      const fullPng = Buffer.concat(chunks).toString('base64');
+      sendLog('success', `🌐 browser 截图(全页)`, `${pageSize.width}x${pageSize.height}, ${fullPng.length} chars`);
+      return { success: true, png: fullPng, width: pageSize.width, height: pageSize.height };
+    }
+
+    // 视口截图（默认）
     const image = await win.webContents.capturePage();
     const buffer = image.toPNG();
-    sendLog('info', `🌐 browser 截图`, `${buffer.length} bytes`);
-    return { success: true, png: buffer.toString('base64') };
+    const size = image.getSize();
+    sendLog('info', `🌐 browser 截图(视口)`, `${buffer.length} bytes, ${size.width}x${size.height}`);
+    return { success: true, png: buffer.toString('base64'), width: size.width, height: size.height };
   } catch (err) {
     sendLog('error', `🌐 browser 截图失败`, (err as Error).message);
     return { success: false, error: (err as Error).message };
@@ -130,12 +211,13 @@ export async function browserEvaluate(js: string): Promise<{ success: boolean; r
   }
 }
 
-/** 提取页面文本和链接 */
-export async function browserExtract(): Promise<{ success: boolean; title?: string; text?: string; links?: Array<{text: string; href: string}>; error?: string }> {
+/** 提取页面内容 */
+export async function browserExtract(params: { selector?: string; max_chars?: number } = {}): Promise<{ success: boolean; title?: string; text?: string; links?: Array<{text: string; href: string}>; error?: string }> {
   try {
     const ready = ensureBrowserReady();
     if (!ready.ok) return { success: false, error: ready.error };
     const win = ready.win!;
+    const maxChars = params.max_chars || 15000;
 
     const result = await win.webContents.executeJavaScript(`
       (() => {
@@ -143,24 +225,35 @@ export async function browserExtract(): Promise<{ success: boolean; title?: stri
         const getText = (el) => {
           if (!el) return '';
           const clone = el.cloneNode(true);
-          clone.querySelectorAll('script,style,noscript,iframe').forEach(e => e.remove());
+          clone.querySelectorAll('script,style,noscript,iframe,svg').forEach(e => e.remove());
           return clone.innerText?.trim() || '';
         };
-        const body = getText(document.body);
-        const text = body.length > 15000 ? body.slice(0, 15000) + '\\\\n... (已截断)' : body;
+
+        let root = document.body;
+        ${params.selector ? `
+        const selEl = document.querySelector(${JSON.stringify(params.selector)});
+        if (selEl) root = selEl;
+        ` : ''}
+
+        const body = getText(root);
+        const maxC = ${maxChars};
+        const text = body.length > maxC ? body.slice(0, maxC) + '\\\\n... (已截断)' : body;
+
         const links = [];
-        document.querySelectorAll('a[href]').forEach(a => {
+        root.querySelectorAll('a[href]').forEach(a => {
           const href = a.href;
-          const text = a.textContent?.trim();
-          if (href && text && href.startsWith('http')) {
-            links.push({ text: text.slice(0, 100), href });
+          const t = a.textContent?.trim();
+          if (href && t && href.startsWith('http')) {
+            links.push({ text: t.slice(0, 100), href });
           }
         });
+
         return { title, text, links: links.slice(0, 50) };
       })()
     `, true);
 
-    sendLog('success', `🌐 browser 提取完成`, `标题: ${result.title}, 文本: ${result.text?.length || 0}字, 链接: ${result.links?.length || 0}个`);
+    const extractType = params.selector ? `selector:${params.selector}` : '全文';
+    sendLog('success', `🌐 browser 提取完成(${extractType})`, `标题: ${result.title}, 文本: ${result.text?.length || 0}字, 链接: ${result.links?.length || 0}个`);
     return { success: true, ...result };
   } catch (err) {
     sendLog('error', `🌐 browser 提取失败`, (err as Error).message);
@@ -169,17 +262,25 @@ export async function browserExtract(): Promise<{ success: boolean; title?: stri
 }
 
 /** 点击元素 */
-export async function browserClick(selector: string): Promise<{ success: boolean; error?: string }> {
+export async function browserClick(selector: string, wait = false): Promise<{ success: boolean; error?: string }> {
   try {
     const ready = ensureBrowserReady();
     if (!ready.ok) return { success: false, error: ready.error };
     const win = ready.win!;
+
+    if (wait) {
+      const found = await waitForSelector(win, selector);
+      if (!found) return { success: false, error: `等待超时: 未找到元素 ${selector}` };
+      sendLog('info', `🌐 browser 等待完成`, selector);
+    }
+
     sendLog('info', `🌐 browser 点击`, selector);
     await win.webContents.executeJavaScript(`
       (() => {
         const sel = ${JSON.stringify(selector)};
         const el = document.querySelector(sel);
         if (!el) throw new Error('元素未找到: ' + sel);
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
         el.click();
       })()
     `, true);
@@ -193,7 +294,7 @@ export async function browserClick(selector: string): Promise<{ success: boolean
 }
 
 /** 输入文本 */
-export async function browserType(selector: string, text: string): Promise<{ success: boolean; error?: string }> {
+export async function browserType(selector: string, text: string, clear = true, submit = false): Promise<{ success: boolean; error?: string }> {
   try {
     const ready = ensureBrowserReady();
     if (!ready.ok) return { success: false, error: ready.error };
@@ -206,12 +307,21 @@ export async function browserType(selector: string, text: string): Promise<{ suc
         const el = document.querySelector(sel);
         if (!el) throw new Error('元素未找到: ' + sel);
         el.focus();
-        el.value = val;
+        ${clear ? `el.value = val;` : `el.value += val;`}
         el.dispatchEvent(new Event('input', { bubbles: true }));
         el.dispatchEvent(new Event('change', { bubbles: true }));
+        ${submit ? `
+        const form = el.closest('form');
+        if (form) {
+          form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+        } else {
+          el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }));
+        }
+        ` : ''}
       })()
     `, true);
-    sendLog('success', `🌐 browser 输入完成`, selector);
+    await new Promise(r => setTimeout(r, submit ? 1000 : 300));
+    sendLog('success', `🌐 browser 输入完成`, selector + (submit ? ' [已提交]' : ''));
     return { success: true };
   } catch (err) {
     sendLog('error', `🌐 browser 输入失败`, `${selector}: ${(err as Error).message}`);
@@ -220,11 +330,29 @@ export async function browserType(selector: string, text: string): Promise<{ suc
 }
 
 /** 滚动页面 */
-export async function browserScroll(direction: 'down' | 'up' | 'top' | 'bottom'): Promise<{ success: boolean; error?: string }> {
+export async function browserScroll(params: { direction?: string; selector?: string } = {}): Promise<{ success: boolean; error?: string }> {
   try {
     const ready = ensureBrowserReady();
     if (!ready.ok) return { success: false, error: ready.error };
     const win = ready.win!;
+    const direction = params.direction || 'down';
+
+    if (params.selector) {
+      // 滚动到特定元素
+      const found = await win.webContents.executeJavaScript(`
+        (() => {
+          const el = document.querySelector(${JSON.stringify(params.selector)});
+          if (!el) return false;
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          return true;
+        })()
+      `, true);
+      if (!found) return { success: false, error: `未找到元素: ${params.selector}` };
+      await new Promise(r => setTimeout(r, 500));
+      sendLog('info', `🌐 browser 滚动到元素`, params.selector);
+      return { success: true };
+    }
+
     const js = direction === 'down' ? 'window.scrollBy(0, 500)'
       : direction === 'up' ? 'window.scrollBy(0, -500)'
       : direction === 'top' ? 'window.scrollTo(0, 0)'
@@ -235,6 +363,38 @@ export async function browserScroll(direction: 'down' | 'up' | 'top' | 'bottom')
     return { success: true };
   } catch (err) {
     sendLog('error', `🌐 browser 滚动失败`, (err as Error).message);
+    return { success: false, error: (err as Error).message };
+  }
+}
+
+/** 等待条件 */
+export async function browserWait(params: { selector?: string; time_ms?: number }): Promise<{ success: boolean; found?: boolean; error?: string }> {
+  try {
+    const ready = ensureBrowserReady();
+    if (!ready.ok) return { success: false, error: ready.error };
+    const win = ready.win!;
+
+    if (params.selector) {
+      sendLog('info', `🌐 browser 等待元素`, params.selector);
+      const found = await waitForSelector(win, params.selector, params.time_ms || 10_000);
+      if (found) {
+        sendLog('success', `🌐 browser 元素已出现`, params.selector);
+      } else {
+        sendLog('warn', `🌐 browser 等待超时`, params.selector);
+      }
+      return { success: true, found };
+    }
+
+    if (params.time_ms) {
+      sendLog('info', `🌐 browser 等待`, `${params.time_ms}ms`);
+      await new Promise(r => setTimeout(r, params.time_ms));
+      return { success: true };
+    }
+
+    // 默认等待 1 秒
+    await new Promise(r => setTimeout(r, 1000));
+    return { success: true };
+  } catch (err) {
     return { success: false, error: (err as Error).message };
   }
 }
