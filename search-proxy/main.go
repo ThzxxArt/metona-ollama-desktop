@@ -138,7 +138,7 @@ var (
 
 	reDDGLink = regexp.MustCompile(`<a[^>]*href="(https?://[^"]*)"[^>]*>([\s\S]*?)</a>`)
 
-	reBaiduBlock = regexp.MustCompile(`<div class="result[^"]*"[^>]*>([\s\S]*?)(?=<div class="result|<div id="content_right|$)`)
+	reBaiduBlock = regexp.MustCompile(`<div class="result[^"]*"[^>]*>([\s\S]*?)</div>\s*(?:<div class="result|$)`)
 	reBaiduTitle = regexp.MustCompile(`<h3[^>]*class="[^"]*t[^"]*"[^>]*>[\s\S]*?<a[^>]*href="([^"]*)"[^>]*>([\s\S]*?)</a>`)
 	reBaiduSnip  = regexp.MustCompile(`<div class="c-abstract"[^>]*>([\s\S]*?)</div>`)
 	reBaiduDURL  = regexp.MustCompile(`data-url="(https?://[^"]*)"`)
