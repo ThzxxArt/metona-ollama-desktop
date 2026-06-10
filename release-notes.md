@@ -4,7 +4,7 @@
 
 ## 项目简介
 
-Metona Ollama Desktop 是一个基于 **Ollama** 的本地 AI 桌面客户端，采用 TypeScript + Electron 构建。所有 AI 推理均在本地完成，数据不离开本机。支持 ReAct Agent Loop、38 个内置工具、智能记忆系统、MCP 协议扩展、四引擎联网搜索、浏览器控制等能力。
+Metona Ollama Desktop 是一个基于 **Ollama** 的本地 AI 桌面客户端，采用 TypeScript + Electron 构建。所有 AI 推理均在本地完成，数据不离开本机。支持 ReAct Agent Loop、39 个内置工具、智能记忆系统、MCP 协议扩展、四引擎联网搜索、浏览器控制等能力。
 
 ---
 
@@ -18,7 +18,7 @@ Metona Ollama Desktop 是一个基于 **Ollama** 的本地 AI 桌面客户端，
 - 链式工具调用：web_search → web_fetch、list_directory → read_file 等模式
 - 文本解析兜底：当模型未通过 tool_calls 返回时，从文本中提取 Action/Input
 
-### 🔧 38 个内置工具
+### 🔧 39 个内置工具
 
 | 分类 | 数量 | 工具 |
 |------|------|------|
@@ -84,7 +84,7 @@ Metona Ollama Desktop 是一个基于 **Ollama** 的本地 AI 桌面客户端，
               ↓
          Ollama API（流式响应）
               ↓
-         工具调用（38 内置 + MCP 动态）
+         工具调用（39 内置 + MCP 动态）
               ↓
          观察结果 → 反思 → 循环/最终回答
 ```

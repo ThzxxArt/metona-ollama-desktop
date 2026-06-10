@@ -35,7 +35,7 @@
 | | 功能 | 说明 |
 |:---:|:---|:---|
 | 🤖 | **ReAct Agent Loop** | 始终开启的唯一对话模式。Thought → Action → Observation → Reflection 完整循环，最大 85 轮（可配置），自动重试 2 次，工具去重，并行/链式执行 |
-| 🔧 | **38 个内置工具** | 文件系统 · 命令执行 · 联网搜索 · 浏览器控制 · Git · 记忆 · 技能 · 会话 · 子代理 |
+| 🔧 | **39 个内置工具** | 文件系统 · 命令执行 · 联网搜索 · 浏览器控制 · Git · 记忆 · 技能 · 会话 · 子代理 |
 | 🧠 | **智能记忆系统** | 三类记忆（fact / preference / rule），FTS5 全文搜索 + 向量语义搜索，写入前安全扫描，容量 500 条，90 天衰减 |
 | 📋 | **自定义文件** | SOUL.md（人格，不可压缩）+ AGENT.md（行为准则）+ USER.md（用户画像），工作空间优先，内置默认 fallback |
 | 🎯 | **技能自动生成 v1.1** | 工具调用链自动提取 → 语义匹配 → 参数自优化 → 未使用衰减 → 技能链合并，越用越精准 |
@@ -99,7 +99,7 @@
 </details>
 
 <details>
-<summary><strong>🌐 浏览器控制（8 个）</strong></summary>
+<summary><strong>🌐 浏览器控制（9 个）</strong></summary>
 
 | 工具 | 功能 |
 |------|------|
@@ -110,6 +110,7 @@
 | `browser_click` | 点击元素 |
 | `browser_type` | 输入文本 |
 | `browser_scroll` | 页面滚动 |
+| `browser_wait` | 等待元素/延时 |
 | `browser_close` | 关闭浏览器 |
 
 </details>
@@ -163,7 +164,7 @@
               ↓
          Ollama API (流式响应，num_ctx 自动检测)
               ↓
-         Tool Registry (38 内置 + MCP 动态)
+         Tool Registry (39 内置 + MCP 动态)
               ↓
          观察结果 → 反思 → 循环 / 最终回答
 ```
@@ -262,7 +263,7 @@ npm run dist           # 构建 Windows 安装包
 | | Feature | Description |
 |:---:|:---|:---|
 | 🤖 | **ReAct Agent Loop** | Always-on, only chat mode. Full Thought → Action → Observation → Reflection cycle, up to 85 iterations (configurable), auto-retry 2 times, tool dedup, parallel/chain execution |
-| 🔧 | **38 Built-in Tools** | File system · Command · Web search · Browser · Git · Memory · Skills · Sessions · Sub-agent |
+| 🔧 | **39 Built-in Tools** | File system · Command · Web search · Browser · Git · Memory · Skills · Sessions · Sub-agent |
 | 🧠 | **Smart Memory System** | Three types (fact / preference / rule), FTS5 + vector semantic search, pre-write security scan, 500 capacity, 90-day decay |
 | 📋 | **Custom Files** | SOUL.md (persona, never compressed) + AGENT.md (behavior rules) + USER.md (user profile), workspace-first with built-in defaults |
 | 🎯 | **Auto Skill Generation v1.1** | Tool chain extraction → semantic matching → parameter self-optimization → decay → chain merging |
@@ -386,7 +387,7 @@ User message → workspace SOUL.md (never compressed) → AGENT.md → USER.md
               ↓
          Ollama API (Streaming Response)
               ↓
-         Tool Registry (38 Built-in + MCP Dynamic)
+         Tool Registry (39 Built-in + MCP Dynamic)
               ↓
          Observation → Reflection → Loop / Final Answer
 ```
