@@ -180,22 +180,6 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     type: 'function',
     function: {
-      name: 'append_file',
-      description: 'Append content to the end of a file. Creates the file if it doesn\'t exist. Requires user confirmation.',
-      parameters: {
-        type: 'object',
-        required: ['path', 'content'],
-        properties: {
-          path: { type: 'string', description: 'File path to append to.' },
-          content: { type: 'string', description: 'Content to append.' },
-          newline: { type: 'boolean', description: 'Add a newline before appending. Default: true.' }
-        }
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
       name: 'edit_file',
       description: 'Find and replace text in a file. Supports literal string matching and regex (use_regex=true). Use all=true to replace all occurrences. More efficient than write_file for small edits.',
       parameters: {
@@ -662,7 +646,7 @@ let enabledTools: Set<string> = new Set([
   'read_file', 'list_directory', 'search_files',
   'write_file', 'create_directory', 'delete_file',
   'run_command',
-  'move_file', 'copy_file', 'web_fetch', 'web_search', 'append_file', 'edit_file',
+  'move_file', 'copy_file', 'web_fetch', 'web_search', 'edit_file',
   'get_file_info', 'tree', 'download_file', 'diff_files', 'replace_in_files',
   'read_multiple_files', 'git', 'compress',
   'memory_search', 'memory_add', 'memory_replace', 'memory_remove',
@@ -882,7 +866,7 @@ export function getToolIcon(name: string): string {
   const icons: Record<string, string> = {
     read_file: '📄', write_file: '✏️', list_directory: '📁',
     search_files: '🔍', create_directory: '📂', delete_file: '🗑️', run_command: '💻',
-    move_file: '📦', copy_file: '📋', web_fetch: '🌐', append_file: '➕',
+    move_file: '📦', copy_file: '📋', web_fetch: '🌐',
     edit_file: '✂️', get_file_info: 'ℹ️', tree: '🌳', download_file: '⬇️',
     diff_files: '🔀', replace_in_files: '🔄', read_multiple_files: '📚',
     git: '🔖', compress: '🗜️', web_search: '🔍',
@@ -899,7 +883,7 @@ export function formatToolName(name: string): string {
     read_file: '读取文件', write_file: '写入文件', list_directory: '列出目录',
     search_files: '搜索文件', create_directory: '创建目录', delete_file: '删除文件',
     run_command: '执行命令', move_file: '移动文件', copy_file: '复制文件',
-    web_fetch: '网页抓取', append_file: '追加文件', edit_file: '编辑文件',
+    web_fetch: '网页抓取', edit_file: '编辑文件',
     get_file_info: '文件信息', tree: '目录树', download_file: '下载文件',
     diff_files: '文件对比', replace_in_files: '批量替换', read_multiple_files: '批量读取',
     git: 'Git 操作', compress: '压缩/解压', web_search: '联网搜索',

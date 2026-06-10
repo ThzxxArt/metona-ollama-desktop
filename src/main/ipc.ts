@@ -37,7 +37,6 @@ import {
   handleCopyFile,
   handleWebFetch,
   handleWebSearch,
-  handleAppendFile,
   handleEditFile,
   handleGetFileInfo,
   handleTree,
@@ -67,7 +66,6 @@ function summarizeResult(toolName: string, result: Record<string, unknown>): str
     case 'copy_file': return `${result.source} → ${result.destination}`;
     case 'web_fetch': return `${result.status} | ${result.length} chars`;
     case 'web_search': return `"${result.query}" → ${result.total} 条结果`;
-    case 'append_file': return `${result.path} (${result.newSize}B)`;
     case 'edit_file': return `${result.path} (${result.replaceCount} 处替换)`;
     case 'get_file_info': return `${result.name} (${result.type}, ${result.size}B)`;
     case 'tree': return `${result.path} (${result.fileCount} 文件 / ${result.dirCount} 目录)`;
@@ -180,8 +178,7 @@ export async function setupIPC(): Promise<void> {
         case 'copy_file':          result = await handleCopyFile(args as { source: string; destination: string; recursive?: boolean }); break;
         case 'web_fetch':          result = await handleWebFetch(args as { url: string; max_chars?: number; extract_mode?: string }); break;
         case 'web_search':         result = await handleWebSearch(args as { query: string; max_results?: number }); break;
-        case 'append_file':        result = await handleAppendFile(args as { path: string; content: string; newline?: boolean }); break;
-        case 'edit_file':          result = await handleEditFile(args as { path: string; old_text: string; new_text: string; all?: boolean }); break;
+        case 'edit_file':          result = await handleEditFile(args as { path: string; old_text: string; new_text: string; all?: boolean; use_regex?: boolean }); break;
         case 'get_file_info':      result = await handleGetFileInfo(args as { path: string }); break;
         case 'tree':               result = await handleTree(args as { path: string; max_depth?: number; include_hidden?: boolean }); break;
         case 'download_file':      result = await handleDownloadFile(args as { url: string; destination: string }); break;

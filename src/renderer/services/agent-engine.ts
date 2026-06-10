@@ -66,7 +66,7 @@ const TOOL_MAX_RESULT_SIZE: Record<string, number> = {
 };
 
 /** v4.1: 工具并行执行 — 依赖检测用 */
-const TOOLS_WITH_DATA_DEPS = new Set(['web_fetch', 'edit_file', 'append_file', 'move_file', 'delete_file']);
+const TOOLS_WITH_DATA_DEPS = new Set(['web_fetch', 'edit_file', 'move_file', 'delete_file']);
 
 /** 始终可并行的只读/独立工具（无数据依赖，永远可以同批执行） */
 const ALWAYS_PARALLEL = new Set([
@@ -80,7 +80,7 @@ const ALWAYS_PARALLEL = new Set([
 const VALID_TOOL_NAMES = new Set([
   'read_file', 'write_file', 'list_directory', 'search_files', 'create_directory',
   'delete_file', 'run_command', 'move_file', 'copy_file', 'web_fetch', 'web_search',
-  'append_file', 'edit_file', 'get_file_info', 'tree', 'download_file', 'diff_files',
+  'edit_file', 'get_file_info', 'tree', 'download_file', 'diff_files',
   'replace_in_files', 'read_multiple_files', 'git', 'compress',
   'memory_search', 'memory_add', 'memory_replace', 'memory_remove', 'session_list', 'session_read',
   'skill_list', 'skill_view'

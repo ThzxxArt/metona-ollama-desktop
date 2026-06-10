@@ -450,27 +450,6 @@ export async function handleDeleteFile(params: { path: string; recursive?: boole
   }
 }
 
-/** 当前工具命令进程（用于用户手动终止） */
-
-export async function handleAppendFile(params: { path: string; content: string; newline?: boolean }): Promise<ToolResult> {
-  try {
-    const filePath = resolvePath(params.path);
-    const allowed = checkPathAllowed(filePath, 'write');
-    if (!allowed.ok) return { success: false, error: allowed.reason };
-
-    const prefix = params.newline !== false ? '\n' : '';
-    sendLog('info', `➕ append_file`, `${filePath} (${params.content.length} chars)`);
-    await fs.appendFile(filePath, prefix + params.content, 'utf-8');
-
-    const stat = await fs.stat(filePath);
-    sendLog('success', `➕ append_file 完成`, `${stat.size}B`);
-    return { success: true, path: filePath, newSize: stat.size };
-  } catch (err) {
-    sendLog('error', `➕ append_file 失败`, (err as Error).message);
-    return { success: false, error: (err as Error).message };
-  }
-}
-
 export async function handleEditFile(params: { path: string; old_text: string; new_text: string; all?: boolean; use_regex?: boolean }): Promise<ToolResult> {
   try {
     const filePath = resolvePath(params.path);

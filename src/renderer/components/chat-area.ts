@@ -235,7 +235,7 @@ function renderToolCallCard(tc: ToolCallRecord): string {
   const icons: Record<string, string> = {
     read_file: '📄', write_file: '✏️', list_directory: '📁',
     search_files: '🔍', create_directory: '📂', delete_file: '🗑️', run_command: '💻',
-    move_file: '📦', copy_file: '📋', web_fetch: '🌐', append_file: '➕',
+    move_file: '📦', copy_file: '📋', web_fetch: '🌐',
     edit_file: '✂️', get_file_info: 'ℹ️', tree: '🌳', download_file: '⬇️',
     diff_files: '🔀', replace_in_files: '🔄', read_multiple_files: '📚',
     git: '🔖', compress: '🗜️', web_search: '🔍',
@@ -246,7 +246,7 @@ function renderToolCallCard(tc: ToolCallRecord): string {
   const names: Record<string, string> = {
     read_file: '读取文件', write_file: '写入文件', list_directory: '列出目录',
     search_files: '搜索文件', create_directory: '创建目录', delete_file: '删除文件', run_command: '执行命令',
-    move_file: '移动文件', copy_file: '复制文件', web_fetch: '网页抓取', append_file: '追加文件',
+    move_file: '移动文件', copy_file: '复制文件', web_fetch: '网页抓取',
     edit_file: '编辑文件', get_file_info: '文件信息', tree: '目录树', download_file: '下载文件',
     diff_files: '文件对比', replace_in_files: '批量替换', read_multiple_files: '批量读取',
     git: 'Git 操作', compress: '压缩/解压', web_search: '联网搜索',
