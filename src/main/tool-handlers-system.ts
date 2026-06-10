@@ -435,10 +435,10 @@ export async function handleWebFetch(params: { url: string; max_chars?: number; 
 }
 
 /**
- * Web Search — 联网搜索（并行多引擎 + LRU 缓存 + 质量评分）
- * 同时请求 Bing / 百度 / DuckDuckGo / Google，取最快结果合并去重
+ * Web Search — 联网搜索（并行多引擎 + LRU 缓存 + 智能排序 + 时间过滤 + 摘要增强）
+ * 同时请求 Bing / 百度 / DuckDuckGo / Google，智能排序后返回
  */
-export async function handleWebSearch(params: { query: string; max_results?: number }): Promise<ToolResult> {
+export async function handleWebSearch(params: { query: string; max_results?: number; time_range?: string; enhance_snippets?: boolean }): Promise<ToolResult> {
   try {
     const query = params.query;
     if (!query || query.trim().length === 0) {
@@ -446,7 +446,20 @@ export async function handleWebSearch(params: { query: string; max_results?: num
     }
 
     const maxResults = Math.min(params.max_results || 15, 20);
-    const cacheKey = `${query}|${maxResults}`;
+    const timeRange = params.time_range || '';
+    const enhanceSnippets = params.enhance_snippets !== false; // 默认开启
+    const cacheKey = `${query}|${maxResults}|${timeRange}`;
+
+    // ── 时间范围 → URL 参数映射 ──
+    let bingFreshness = '';
+    let googleTbs = '';
+    if (timeRange) {
+      const tr = timeRange.toLowerCase();
+      if (tr === 'day' || tr === '1d' || tr === '一天') { bingFreshness = 'Day'; googleTbs = 'qdr:d'; }
+      else if (tr === 'week' || tr === '1w' || tr === '一周') { bingFreshness = 'Week'; googleTbs = 'qdr:w'; }
+      else if (tr === 'month' || tr === '1m' || tr === '一月') { bingFreshness = 'Month'; googleTbs = 'qdr:m'; }
+      else if (tr === 'year' || tr === '1y' || tr === '一年') { googleTbs = 'qdr:y'; }
+    }
 
     // ── 1. 检查缓存 ──
     const cached = cacheGet(cacheKey);
@@ -458,19 +471,18 @@ export async function handleWebSearch(params: { query: string; max_results?: num
     sendLog('info', `🔍 web_search`, `"${query}" (${maxResults} 条) [并行]`);
 
     // ── 2. 并行请求所有搜索引擎 ──
-    const engines: Array<{ name: string; fetcher: () => Promise<Array<{title:string;url:string;snippet:string}>> }> = [
+    const engines: Array<{ name: string; weight: number; fetcher: () => Promise<Array<{title:string;url:string;snippet:string}>> }> = [
       {
-        name: 'bing',
+        name: 'bing', weight: 90,
         fetcher: async () => {
-          const resp = await fetchWithTimeout(
-            `https://www.bing.com/search?q=${encodeURIComponent(query)}&count=${maxResults}`
-          );
+          const bingUrl = `https://www.bing.com/search?q=${encodeURIComponent(query)}&count=${maxResults}${bingFreshness ? '&freshness=' + bingFreshness : ''}`;
+          const resp = await fetchWithTimeout(bingUrl);
           if (!resp?.ok) throw new Error(`Bing ${resp?.status}`);
           return parseBingResults(await resp.text(), maxResults);
         }
       },
       {
-        name: 'baidu',
+        name: 'baidu', weight: 80,
         fetcher: async () => {
           const resp = await fetchWithTimeout(
             `https://www.baidu.com/s?wd=${encodeURIComponent(query)}&rn=${maxResults}`
@@ -480,7 +492,7 @@ export async function handleWebSearch(params: { query: string; max_results?: num
         }
       },
       {
-        name: 'ddg',
+        name: 'ddg', weight: 70,
         fetcher: async () => {
           const resp = await fetchWithTimeout(
             `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}`
@@ -490,11 +502,10 @@ export async function handleWebSearch(params: { query: string; max_results?: num
         }
       },
       {
-        name: 'google',
+        name: 'google', weight: 85,
         fetcher: async () => {
-          const resp = await fetchWithTimeout(
-            `https://www.google.com/search?q=${encodeURIComponent(query)}&num=${maxResults}`
-          );
+          const googleUrl = `https://www.google.com/search?q=${encodeURIComponent(query)}&num=${maxResults}${googleTbs ? '&tbs=' + googleTbs : ''}`;
+          const resp = await fetchWithTimeout(googleUrl);
           if (!resp?.ok) throw new Error(`Google ${resp?.status}`);
           return parseGoogleResults(await resp.text(), maxResults);
         }
@@ -506,17 +517,15 @@ export async function handleWebSearch(params: { query: string; max_results?: num
       e.fetcher().then(results => ({ engine: e.name, results }))
     ));
 
-    // 汇总各引擎结果，按引擎优先级合并去重
-    const engineOrder = ['bing', 'baidu', 'ddg', 'google'];
-    const allResults: Array<{ title: string; url: string; snippet: string; engine: string; reachable?: boolean }> = [];
+    // 汇总各引擎结果，合并去重（保留引擎和权重信息）
+    const engineWeights = new Map(engines.map(e => [e.name, e.weight]));
+    const allResults: Array<{ title: string; url: string; snippet: string; engine: string; weight: number; reachable?: boolean }> = [];
     const seenUrls = new Set<string>();
-
-    // 记录各引擎状态
     const engineStats: Record<string, string> = {};
 
     for (let i = 0; i < settled.length; i++) {
       const s = settled[i];
-      const engineName = engineOrder[i];
+      const engineName = engines[i].name;
       if (s.status === 'fulfilled') {
         const r = s.value;
         engineStats[engineName] = `${r.results.length} 条`;
@@ -524,7 +533,7 @@ export async function handleWebSearch(params: { query: string; max_results?: num
           const normalized = item.url.replace(/\/+$/, '').toLowerCase();
           if (!seenUrls.has(normalized)) {
             seenUrls.add(normalized);
-            allResults.push({ ...item, engine: engineName });
+            allResults.push({ ...item, engine: engineName, weight: engineWeights.get(engineName) || 50 });
           }
         }
       } else {
@@ -543,8 +552,8 @@ export async function handleWebSearch(params: { query: string; max_results?: num
       r.snippet = r.snippet.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
     }
 
-    // ── 4. URL 可达性预检（并行但限制并发 5 个，3 秒超时） ──
-    const topResults = allResults.slice(0, maxResults);
+    // ── 4. URL 可达性预检 + 质量评分 ──
+    const topResults = allResults.slice(0, Math.min(maxResults * 2, allResults.length)); // 多检查一些用于排序
     const CONCURRENCY = 5;
     for (let i = 0; i < topResults.length; i += CONCURRENCY) {
       const batch = topResults.slice(i, i + CONCURRENCY);
@@ -562,10 +571,46 @@ export async function handleWebSearch(params: { query: string; max_results?: num
       await Promise.allSettled(checks);
     }
 
-    // ── 5. 缓存结果 ──
-    cacheSet(cacheKey, { results: topResults, time: Date.now() });
+    // ── 5. 智能排序：可达优先 + 引擎权重 + 摘要质量 ──
+    const scored = topResults.map(r => {
+      let score = (r.weight / 100) * 50; // 引擎权重贡献 50%
+      if (r.reachable === true) score += 30; // 可达 +30
+      else if (r.reachable === false) score -= 20; // 不可达 -20
+      // 摘要质量：越长越好（上限100字符），有内容的加分
+      const snippetLen = Math.min(r.snippet.length, 100);
+      score += (snippetLen / 100) * 20; // 摘要质量贡献 20%
+      return { ...r, _score: Math.round(score * 10) / 10 };
+    });
 
-    return buildSearchResponse(topResults, maxResults, false, engineStats);
+    scored.sort((a, b) => b._score - a._score);
+
+    // ── 5.5 摘要自动增强：snippet 太短/为空时，用 web_fetch 补充 top 3 ──
+    if (enhanceSnippets) {
+      const needEnhance = scored.slice(0, Math.min(5, maxResults)).filter(r => r.snippet.length < 30 && r.reachable !== false);
+      if (needEnhance.length > 0) {
+        sendLog('info', `🔍 自动补充摘要`, `${needEnhance.length} 个结果摘要过短，尝试 web_fetch`);
+        const enhanced = await Promise.allSettled(needEnhance.slice(0, 3).map(async (r) => {
+          try {
+            const fetchResult = await handleWebFetch({ url: r.url, max_chars: 500, retry: false });
+            if (fetchResult.success && fetchResult.content) {
+              const text = String(fetchResult.content).replace(/\s+/g, ' ').trim();
+              r.snippet = text.length > 200 ? text.slice(0, 200) + '…' : text;
+              r._enhanced = true;
+            }
+          } catch { /* enhancement is optional */ }
+        }));
+        const enhancedCount = enhanced.filter(e => e.status === 'fulfilled').length;
+        if (enhancedCount > 0) sendLog('success', `🔍 摘要增强完成`, `${enhancedCount} 个`);
+      }
+    }
+
+    // 截取最终结果
+    const finalResults = scored.slice(0, maxResults);
+
+    // ── 6. 缓存结果 ──
+    cacheSet(cacheKey, { results: finalResults, time: Date.now() });
+
+    return buildSearchResponse(finalResults, maxResults, false, engineStats);
   } catch (err) {
     return { success: false, error: (err as Error).message };
   }
@@ -573,7 +618,7 @@ export async function handleWebSearch(params: { query: string; max_results?: num
 
 /** 构建搜索响应（格式化文本 + 结构化 JSON） */
 function buildSearchResponse(
-  results: Array<{ title: string; url: string; snippet: string; engine: string; reachable?: boolean }>,
+  results: Array<{ title: string; url: string; snippet: string; engine: string; weight?: number; reachable?: boolean; _score?: number; _enhanced?: boolean }>,
   maxResults: number,
   fromCache: boolean,
   engineStats?: Record<string, string>,
@@ -593,18 +638,24 @@ function buildSearchResponse(
   }
 
   formatted += sliced.map((r, i) => {
-    const reachableMark = r.reachable === false ? ' ⚠️可能不可达' : '';
-    return `[${i + 1}] ${r.title}${reachableMark}\n    URL: ${r.url}\n    ${r.snippet}`;
+    const marks: string[] = [];
+    if (r.reachable === false) marks.push('⚠️可能不可达');
+    if (r._score !== undefined) marks.push(`${r._score}分`);
+    if (r._enhanced) marks.push('📝增强摘要');
+    const markStr = marks.length > 0 ? ` [${marks.join(' ')}]` : '';
+    return `[${i + 1}] ${r.title}${markStr}\n    URL: ${r.url}\n    ${r.snippet}`;
   }).join('\n\n');
 
   // 结构化 JSON（新增）
-  const structured = sliced.map(r => ({
-    index: sliced.indexOf(r) + 1,
+  const structured = sliced.map((r, i) => ({
+    index: i + 1,
     title: r.title,
     url: r.url,
     snippet: r.snippet,
     engine: r.engine,
     reachable: r.reachable,
+    ...(r._score !== undefined && { score: r._score }),
+    ...(r._enhanced && { enhanced_snippet: true }),
   }));
 
   return {

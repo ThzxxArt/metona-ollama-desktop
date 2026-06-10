@@ -346,13 +346,15 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'web_search',
-      description: 'Search the web using multiple engines in parallel (Bing + Baidu + DuckDuckGo + Google) and return merged, deduplicated results. Results are cached for 5 minutes. Includes reachability checks for top results. Returns both formatted text and structured JSON. Use this when you need current information, news, facts, or answers requiring up-to-date knowledge beyond your training data.',
+      description: 'Search the web using 4 engines in parallel (Bing + Baidu + DuckDuckGo + Google). Results are intelligently ranked by reachability + engine weight + snippet quality. 5-minute cache. Supports time range filtering (day/week/month/year). Short snippets are auto-enhanced via web_fetch. Use when you need current, time-sensitive, or factual information.',
       parameters: {
         type: 'object',
         required: ['query'],
         properties: {
           query: { type: 'string', description: 'The search query. Be specific and concise for best results.' },
-          max_results: { type: 'integer', description: 'Maximum number of results to return. Default: 15, max: 20.' }
+          max_results: { type: 'integer', description: 'Maximum number of results to return. Default: 15, max: 20.' },
+          time_range: { type: 'string', enum: ['day', 'week', 'month', 'year'], description: 'Filter results by time. Supported by Bing and Google. Use for recent news, latest version, etc.' },
+          enhance_snippets: { type: 'boolean', description: 'Auto-fetch detailed snippet for results with too-short descriptions. Default: true.' }
         }
       }
     }
