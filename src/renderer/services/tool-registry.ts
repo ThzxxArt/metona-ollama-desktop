@@ -21,7 +21,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
           path: { type: 'string', description: 'The file path to read. Absolute or relative to workspace.' },
           encoding: { type: 'string', enum: ['utf-8', 'latin1', 'base64'], description: 'File encoding. Default: utf-8. Use base64 for binary content.' },
           start_line: { type: 'integer', description: 'Start line (1-indexed) for text files. Use with end_line for pagination.' },
-          end_line: { type: 'integer', description: 'End line (inclusive). Default: start_line + 500.' },
+          end_line: { type: 'integer', description: 'End line (inclusive). Default: start_line + 2000.' },
           mode: { type: 'string', enum: ['text', 'binary'], description: 'Read mode. text = decode as string, binary = return base64. Default: text.' },
           offset_bytes: { type: 'integer', description: 'Byte offset to start reading from (0-indexed). Use for binary files or large text.' },
           limit_bytes: { type: 'integer', description: 'Max bytes to read. Default: 50000 (text) or 102400 (binary).' }

@@ -99,7 +99,7 @@ export async function handleReadFile(params: { path: string; encoding?: string; 
     // 按行读取
     const content = await fs.readFile(filePath, encoding);
     const lines = content.split('\n');
-    const defaultLimit = 500;
+    const defaultLimit = 2000;
 
     let resultContent = content;
     let lineRange: [number, number] = [1, lines.length];
