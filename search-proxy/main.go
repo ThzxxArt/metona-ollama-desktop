@@ -23,7 +23,7 @@ import (
 	"time"
 )
 
-const version = "2.1.0"
+const version = "2.2.0"
 
 // ── CLI ──
 var (
@@ -40,6 +40,18 @@ var (
 )
 
 var pidFile = "/tmp/metona-search-proxy.pid"
+
+// ── 统计 ──
+type statsData struct {
+	ReqTotal   atomic.Int64
+	ReqRate    atomic.Int64   // 被限流的
+	CacheHit   atomic.Int64
+	EngineOK   [4]atomic.Int64 // google/bing/baidu/ddg 成功
+	EngineFail [4]atomic.Int64 // google/bing/baidu/ddg 失败
+	StartTime  time.Time
+}
+
+var stats = &statsData{StartTime: time.Now()}
 
 // ── 限流器 ──
 type RateLimiter struct {
@@ -63,12 +75,16 @@ func (rl *RateLimiter) Allow() bool {
 	newTokens := int64(elapsed * float64(rl.rate))
 	if newTokens > 0 {
 		rl.lastFill.Store(now)
-		current := rl.tokens.Load()
-		next := current + newTokens
-		if next > rl.capacity {
-			next = rl.capacity
+		for {
+			current := rl.tokens.Load()
+			next := current + newTokens
+			if next > rl.capacity {
+				next = rl.capacity
+			}
+			if rl.tokens.CompareAndSwap(current, next) {
+				break
+			}
 		}
-		rl.tokens.Store(next)
 	}
 	for {
 		current := rl.tokens.Load()
@@ -89,6 +105,47 @@ type cacheEntry struct {
 	ExpiresAt int64
 }
 
+var cacheSize atomic.Int64
+
+func cleanCacheLoop(interval time.Duration) {
+	for {
+		time.Sleep(interval)
+		now := time.Now().Unix()
+		count := 0
+		cache.Range(func(key, value any) bool {
+			ce := value.(cacheEntry)
+			if now >= ce.ExpiresAt {
+				cache.Delete(key)
+				count++
+			}
+			return true
+		})
+		if count > 0 {
+			log.Printf("cache cleaned: %d entries removed", count)
+		}
+	}
+}
+
+// ── 正则预编译（全局，避免每次搜索重新编译）──
+var (
+	reGoogleBlock = regexp.MustCompile(`<(?:div|li)[^>]*class="[^"]*(?:Gx5Zad|g|kvH3mc)[^"]*"[^>]*>([\s\S]*?)(?=<(?:div|li)[^>]*class="[^"]*(?:Gx5Zad|kvH3mc)[^"]*"|<(?:div|g-section)|\z)`)
+	reGoogleTitle = regexp.MustCompile(`<a[^>]*href="(https?://[^"]*)"[^>]*>[\s\S]*?<h3[^>]*>([\s\S]*?)</h3>`)
+	reGoogleSnip  = regexp.MustCompile(`<(?:div|span)[^>]*(?:data-sncf|class="[^"]*(?:VwiC3b|st|lWMagT)[^"]*")[^>]*>([\s\S]*?)</(?:div|span)>`)
+
+	reBingBlock = regexp.MustCompile(`<li class="b_algo"[^>]*>([\s\S]*?)</li>`)
+	reBingTitle = regexp.MustCompile(`<a[^>]*href="(https?://[^"]*)"[^>]*>([\s\S]*?)</a>`)
+	reBingSnip  = regexp.MustCompile(`<p[^>]*>([\s\S]*?)</p>`)
+
+	reDDGLink = regexp.MustCompile(`<a[^>]*href="(https?://[^"]*)"[^>]*>([\s\S]*?)</a>`)
+
+	reBaiduBlock = regexp.MustCompile(`<div class="result[^"]*"[^>]*>([\s\S]*?)(?=<div class="result|<div id="content_right|$)`)
+	reBaiduTitle = regexp.MustCompile(`<h3[^>]*class="[^"]*t[^"]*"[^>]*>[\s\S]*?<a[^>]*href="([^"]*)"[^>]*>([\s\S]*?)</a>`)
+	reBaiduSnip  = regexp.MustCompile(`<div class="c-abstract"[^>]*>([\s\S]*?)</div>`)
+	reBaiduDURL  = regexp.MustCompile(`data-url="(https?://[^"]*)"`)
+
+	reHTMLTags = regexp.MustCompile(`<[^>]+>`)
+)
+
 type Result struct {
 	Title   string `json:"title"`
 	URL     string `json:"url"`
@@ -106,7 +163,7 @@ type SearchResp struct {
 	FromCache bool     `json:"from_cache,omitempty"`
 }
 
-// ── 全局配置 ──
+// ── 全局 ──
 var (
 	httpClient *http.Client
 	ua         = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
@@ -136,7 +193,6 @@ func readPID() (pid int, port int, ok bool) {
 	if pid < 1 || port < 1 {
 		return 0, 0, false
 	}
-	// 检查进程是否存在
 	proc, err := os.FindProcess(pid)
 	if err != nil {
 		return 0, 0, false
@@ -160,7 +216,6 @@ func stopProcess(pid int) bool {
 	if err != nil {
 		return false
 	}
-	// 等待进程退出
 	for i := 0; i < 50; i++ {
 		if err := proc.Signal(syscall.Signal(0)); err != nil {
 			os.Remove(pidFile)
@@ -168,7 +223,6 @@ func stopProcess(pid int) bool {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	// force kill
 	proc.Signal(syscall.SIGKILL)
 	os.Remove(pidFile)
 	return true
@@ -177,7 +231,7 @@ func stopProcess(pid int) bool {
 func checkPort(port int) bool {
 	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	if err != nil {
-		return true // 端口已被占用 = 服务在运行
+		return true
 	}
 	ln.Close()
 	return false
@@ -192,7 +246,6 @@ func doStart() {
 		fmt.Printf("端口 %d 已被占用\n", *cliPort)
 		os.Exit(1)
 	}
-	// 后台启动自己
 	args := []string{}
 	for _, a := range os.Args[1:] {
 		if a != "-start" && a != "--start" {
@@ -224,6 +277,7 @@ func doStatus() {
 	if pid, port, ok := readPID(); ok && checkPort(port) {
 		fmt.Printf("● 运行中  PID: %d  端口: %d\n", pid, port)
 		fmt.Printf("  健康检查: http://localhost:%d/health\n", port)
+		fmt.Printf("  统计数据: http://localhost:%d/stats\n", port)
 		fmt.Printf("  PID 文件: %s\n", pidFile)
 	} else {
 		fmt.Println("○ 未运行")
@@ -239,7 +293,8 @@ func doRestart() {
 	doStart()
 }
 
-// ── recovery 中间件 ──
+// ── recovery ──
+
 func recoverWrap(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
@@ -254,6 +309,8 @@ func recoverWrap(h http.HandlerFunc) http.HandlerFunc {
 
 // ── 引擎实现 ──
 
+var engineNames = []string{"google", "bing", "baidu", "ddg"}
+
 func doGet(u string) (*http.Response, error) {
 	req, _ := http.NewRequest("GET", u, nil)
 	req.Header.Set("User-Agent", ua)
@@ -264,26 +321,25 @@ func doGet(u string) (*http.Response, error) {
 func searchGoogle(q string, n int) []Result {
 	u := fmt.Sprintf("https://www.google.com/search?q=%s&num=%d&hl=zh-CN", url.QueryEscape(q), n)
 	resp, err := doGet(u)
-	if err != nil {
+	if err != nil || resp.StatusCode != 200 {
+		if resp != nil {
+			resp.Body.Close()
+			codeLog("google", resp.StatusCode)
+		} else {
+			codeLog("google", 0)
+		}
 		return nil
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		return nil
-	}
 	body, _ := io.ReadAll(resp.Body)
 	html := string(body)
 
-	reB := regexp.MustCompile(`<div class="g"[^>]*>([\s\S]*?)(?=<div class="g"|</div>\s*</div>\s*</div>)`)
-	reT := regexp.MustCompile(`<a[^>]*href="(https?://[^"]*)"[^>]*>[\s\S]*?<h3[^>]*>([\s\S]*?)</h3>`)
-	reS := regexp.MustCompile(`<(?:div|span)[^>]*(?:data-sncf|class="[^"]*st[^"]*"|class="[^"]*VwiC3b[^"]*")[^>]*>([\s\S]*?)</(?:div|span)>`)
-
 	var out []Result
-	for _, m := range reB.FindAllStringSubmatch(html, -1) {
+	for _, m := range reGoogleBlock.FindAllStringSubmatch(html, -1) {
 		if len(out) >= n {
 			break
 		}
-		tm := reT.FindStringSubmatch(m[1])
+		tm := reGoogleTitle.FindStringSubmatch(m[1])
 		if tm == nil || strings.Contains(tm[1], "google.com") {
 			continue
 		}
@@ -292,7 +348,7 @@ func searchGoogle(q string, n int) []Result {
 			continue
 		}
 		snip := ""
-		if sm := reS.FindStringSubmatch(m[1]); sm != nil {
+		if sm := reGoogleSnip.FindStringSubmatch(m[1]); sm != nil {
 			snip = clean(sm[1])
 		}
 		out = append(out, Result{Title: title, URL: tm[1], Snippet: snip, Engine: "google"})
@@ -303,23 +359,25 @@ func searchGoogle(q string, n int) []Result {
 func searchBing(q string, n int) []Result {
 	u := fmt.Sprintf("https://www.bing.com/search?q=%s&count=%d", url.QueryEscape(q), n)
 	resp, err := doGet(u)
-	if err != nil {
+	if err != nil || resp.StatusCode != 200 {
+		if resp != nil {
+			resp.Body.Close()
+			codeLog("bing", resp.StatusCode)
+		} else {
+			codeLog("bing", 0)
+		}
 		return nil
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
 	html := string(body)
 
-	reB := regexp.MustCompile(`<li class="b_algo"[^>]*>([\s\S]*?)</li>`)
-	reT := regexp.MustCompile(`<a[^>]*href="(https?://[^"]*)"[^>]*>([\s\S]*?)</a>`)
-	reS := regexp.MustCompile(`<p[^>]*>([\s\S]*?)</p>`)
-
 	var out []Result
-	for _, m := range reB.FindAllStringSubmatch(html, -1) {
+	for _, m := range reBingBlock.FindAllStringSubmatch(html, -1) {
 		if len(out) >= n {
 			break
 		}
-		tm := reT.FindStringSubmatch(m[1])
+		tm := reBingTitle.FindStringSubmatch(m[1])
 		if tm == nil {
 			continue
 		}
@@ -328,7 +386,7 @@ func searchBing(q string, n int) []Result {
 			continue
 		}
 		snip := ""
-		if sm := reS.FindStringSubmatch(m[1]); sm != nil {
+		if sm := reBingSnip.FindStringSubmatch(m[1]); sm != nil {
 			snip = clean(sm[1])
 		}
 		out = append(out, Result{Title: title, URL: tm[1], Snippet: snip, Engine: "bing"})
@@ -339,17 +397,21 @@ func searchBing(q string, n int) []Result {
 func searchDDG(q string, n int) []Result {
 	u := fmt.Sprintf("https://lite.duckduckgo.com/lite/?q=%s", url.QueryEscape(q))
 	resp, err := doGet(u)
-	if err != nil {
+	if err != nil || resp.StatusCode != 200 {
+		if resp != nil {
+			resp.Body.Close()
+			codeLog("ddg", resp.StatusCode)
+		} else {
+			codeLog("ddg", 0)
+		}
 		return nil
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
 	html := string(body)
 
-	reL := regexp.MustCompile(`<a[^>]*href="(https?://[^"]*)"[^>]*>([\s\S]*?)</a>`)
-
 	var out []Result
-	for _, m := range reL.FindAllStringSubmatch(html, -1) {
+	for _, m := range reDDGLink.FindAllStringSubmatch(html, -1) {
 		if len(out) >= n {
 			break
 		}
@@ -366,29 +428,31 @@ func searchDDG(q string, n int) []Result {
 func searchBaidu(q string, n int) []Result {
 	u := fmt.Sprintf("https://www.baidu.com/s?wd=%s&rn=%d", url.QueryEscape(q), n)
 	resp, err := doGet(u)
-	if err != nil {
+	if err != nil || resp.StatusCode != 200 {
+		if resp != nil {
+			resp.Body.Close()
+			codeLog("baidu", resp.StatusCode)
+		} else {
+			codeLog("baidu", 0)
+		}
 		return nil
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
 	html := string(body)
 
-	reB := regexp.MustCompile(`<div class="result[^"]*"[^>]*>([\s\S]*?)(?=<div class="result|<div id="content_right|$)`)
-	reT := regexp.MustCompile(`<h3[^>]*class="[^"]*t[^"]*"[^>]*>[\s\S]*?<a[^>]*href="([^"]*)"[^>]*>([\s\S]*?)</a>`)
-	reS := regexp.MustCompile(`<div class="c-abstract"[^>]*>([\s\S]*?)</div>`)
-
 	var out []Result
-	for _, m := range reB.FindAllStringSubmatch(html, -1) {
+	for _, m := range reBaiduBlock.FindAllStringSubmatch(html, -1) {
 		if len(out) >= n {
 			break
 		}
-		tm := reT.FindStringSubmatch(m[1])
+		tm := reBaiduTitle.FindStringSubmatch(m[1])
 		if tm == nil {
 			continue
 		}
 		link := tm[1]
 		if !strings.HasPrefix(link, "http") {
-			if dm := regexp.MustCompile(`data-url="(https?://[^"]*)"`).FindStringSubmatch(m[1]); dm != nil {
+			if dm := reBaiduDURL.FindStringSubmatch(m[1]); dm != nil {
 				link = dm[1]
 			}
 		}
@@ -397,7 +461,7 @@ func searchBaidu(q string, n int) []Result {
 			continue
 		}
 		snip := ""
-		if sm := reS.FindStringSubmatch(m[1]); sm != nil {
+		if sm := reBaiduSnip.FindStringSubmatch(m[1]); sm != nil {
 			snip = clean(sm[1])
 		}
 		out = append(out, Result{Title: title, URL: link, Snippet: snip, Engine: "baidu"})
@@ -405,10 +469,30 @@ func searchBaidu(q string, n int) []Result {
 	return out
 }
 
+func codeLog(engine string, code int) {
+	if code == 0 {
+		log.Printf("%s: network error", engine)
+		return
+	}
+	switch code {
+	case 429:
+		log.Printf("%s: 429 rate limited", engine)
+	case 503:
+		log.Printf("%s: 503 unavailable", engine)
+	case 403:
+		log.Printf("%s: 403 blocked (可能需要验证码)", engine)
+	default:
+		log.Printf("%s: HTTP %d", engine, code)
+	}
+}
+
+// ── 引擎索引 ──
+var engineIdx = map[string]int{"google": 0, "bing": 1, "baidu": 2, "ddg": 3}
+
 // ── 工具 ──
 
 func clean(s string) string {
-	s = regexp.MustCompile(`<[^>]+>`).ReplaceAllString(s, "")
+	s = reHTMLTags.ReplaceAllString(s, "")
 	s = decodeEntities(s)
 	return strings.TrimSpace(strings.ReplaceAll(s, "\n", " "))
 }
@@ -422,17 +506,28 @@ func decodeEntities(s string) string {
 	return r.Replace(s)
 }
 
+func recordEngine(eng string, ok bool) {
+	if idx, exists := engineIdx[eng]; exists {
+		if ok {
+			stats.EngineOK[idx].Add(1)
+		} else {
+			stats.EngineFail[idx].Add(1)
+		}
+	}
+}
+
 func parallelSearch(q string, n int) []Result {
 	ch := make(chan []Result, 4)
 	engines := []func(string, int) []Result{searchGoogle, searchBing, searchBaidu, searchDDG}
-	for _, fn := range engines {
-		go func(f func(string, int) []Result) {
+	for i, fn := range engines {
+		go func(idx int, f func(string, int) []Result) {
 			r := f(q, n)
 			if r == nil {
 				r = []Result{}
 			}
+			recordEngine(engineNames[idx], len(r) > 0)
 			ch <- r
-		}(fn)
+		}(i, fn)
 	}
 	seen := map[string]bool{}
 	var out []Result
@@ -454,7 +549,9 @@ func parallelSearch(q string, n int) []Result {
 // ── Handler ──
 
 func handleSearch(w http.ResponseWriter, r *http.Request) {
+	stats.ReqTotal.Add(1)
 	if !limiter.Allow() {
+		stats.ReqRate.Add(1)
 		writeJSON(w, http.StatusTooManyRequests, SearchResp{Error: "rate limited"})
 		return
 	}
@@ -483,6 +580,7 @@ func handleSearch(w http.ResponseWriter, r *http.Request) {
 	if v, ok := cache.Load(ck); ok {
 		ce := v.(cacheEntry)
 		if time.Now().Unix() < ce.ExpiresAt {
+			stats.CacheHit.Add(1)
 			writeJSON(w, http.StatusOK, SearchResp{
 				Success: true, Query: q, Engine: engine,
 				Total: len(ce.Results), Results: ce.Results, FromCache: true,
@@ -496,12 +594,16 @@ func handleSearch(w http.ResponseWriter, r *http.Request) {
 	switch engine {
 	case "google":
 		results = searchGoogle(q, n)
+		recordEngine("google", len(results) > 0)
 	case "bing":
 		results = searchBing(q, n)
+		recordEngine("bing", len(results) > 0)
 	case "ddg":
 		results = searchDDG(q, n)
+		recordEngine("ddg", len(results) > 0)
 	case "baidu":
 		results = searchBaidu(q, n)
+		recordEngine("baidu", len(results) > 0)
 	case "all":
 		results = parallelSearch(q, n)
 	default:
@@ -525,6 +627,33 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func handleStats(w http.ResponseWriter, r *http.Request) {
+	uptime := time.Since(stats.StartTime).Round(time.Second).String()
+	total := stats.ReqTotal.Load()
+	cacheHit := stats.CacheHit.Load()
+	rate := stats.ReqRate.Load()
+
+	cacheRate := 0.0
+	if total > 0 {
+		cacheRate = float64(cacheHit) / float64(total) * 100
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"uptime":     uptime,
+		"req_total":  total,
+		"req_rated":  rate,
+		"cache_hit":  cacheHit,
+		"cache_rate": fmt.Sprintf("%.1f%%", cacheRate),
+		"engines": map[string]interface{}{
+			"google": map[string]int64{"ok": stats.EngineOK[0].Load(), "fail": stats.EngineFail[0].Load()},
+			"bing":   map[string]int64{"ok": stats.EngineOK[1].Load(), "fail": stats.EngineFail[1].Load()},
+			"baidu":  map[string]int64{"ok": stats.EngineOK[2].Load(), "fail": stats.EngineFail[2].Load()},
+			"ddg":    map[string]int64{"ok": stats.EngineOK[3].Load(), "fail": stats.EngineFail[3].Load()},
+		},
+		"version": version,
+	})
+}
+
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -532,12 +661,9 @@ func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	json.NewEncoder(w).Encode(v)
 }
 
-// ── main ──
-
 func main() {
 	flag.Parse()
 
-	// 管理命令（不需要启动服务）
 	if *cliVersion {
 		fmt.Printf("metona-search-proxy v%s  go/%s\n", version, runtime.Version())
 		return
@@ -565,9 +691,8 @@ func main() {
 	}
 	portNum, _ := strconv.Atoi(port)
 
-	// 检查端口是否已被占用
 	if checkPort(portNum) {
-		log.Fatalf("端口 %s 已被占用。使用 metona-search-proxy -status 查看状态，或用 -restart 重启。", port)
+		log.Fatalf("端口 %s 已被占用。使用 metona-search-proxy -status 查看。", port)
 	}
 
 	httpClient = &http.Client{
@@ -581,12 +706,16 @@ func main() {
 	limiter = newRateLimiter(int64(*cliRate), int64(*cliBurst))
 	cacheTTL = int64(*cliCache)
 
+	// 后台清理过期缓存
+	go cleanCacheLoop(30 * time.Second)
+
 	writePID(portNum)
 	defer os.Remove(pidFile)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/search", recoverWrap(handleSearch))
 	mux.HandleFunc("/health", recoverWrap(handleHealth))
+	mux.HandleFunc("/stats", recoverWrap(handleStats))
 
 	srv := &http.Server{
 		Addr:         ":" + port,
