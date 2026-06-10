@@ -69,42 +69,41 @@ export function initSettingsModal(): void {
   const inputStreamTimeout = document.querySelector('#inputStreamTimeout') as HTMLInputElement;
   const inputMCPTimeout = document.querySelector('#inputMCPTimeout') as HTMLInputElement;
 
-  const applyTimeouts = async () => {
+  // 辅助：解析输入值，空→-1(默认)，数字→该值(含0=禁用)
+  const parseSec = (val: string): number => (val !== '' ? parseInt(val) : -1);
+
+  const saveHttpTimeout = debounce(async () => {
     const db = state.get<ChatDB | null>(KEYS.DB);
+    const sec = parseSec(inputHttpTimeout.value.trim());
+    const ms = sec >= 0 ? sec * 1000 : 30_000;
+    if (db) await db.saveSetting('httpTimeout', sec);
     const bridge = window.metonaDesktop;
-
-    // 辅助：解析输入值，空→-1(默认)，数字→该值(含0=禁用)
-    const parseSec = (val: string): number => (val !== '' ? parseInt(val) : -1);
-
-    // HTTP 超时（秒→毫秒）
-    const httpSec = parseSec(inputHttpTimeout.value.trim());
-    const httpMs = httpSec >= 0 ? httpSec * 1000 : 30_000;
-    if (db) await db.saveSetting('httpTimeout', httpSec);
     if (bridge?.tool?.setTimeouts) {
-      await bridge.tool.setTimeouts({ http: httpMs });
+      await bridge.tool.setTimeouts({ http: ms });
     }
-    logSetting('HTTP 超时', httpSec >= 0 ? (httpSec === 0 ? '已禁用' : `${httpSec}s`) : '默认(30s)');
+    logSetting('HTTP 超时', sec >= 0 ? (sec === 0 ? '已禁用' : `${sec}s`) : '默认(30s)');
+  }, 500);
 
-    // 流式超时（秒→毫秒）
-    const streamSec = parseSec(inputStreamTimeout.value.trim());
-    const streamMs = streamSec >= 0 ? streamSec * 1000 : 300_000;
-    state.set('streamTimeout', streamMs);
-    if (db) await db.saveSetting('streamTimeout', streamSec);
-    logSetting('流式超时', streamSec >= 0 ? (streamSec === 0 ? '已禁用' : `${streamSec}s`) : '默认(300s)');
+  const saveStreamTimeout = debounce(async () => {
+    const db = state.get<ChatDB | null>(KEYS.DB);
+    const sec = parseSec(inputStreamTimeout.value.trim());
+    const ms = sec >= 0 ? sec * 1000 : 300_000;
+    state.set('streamTimeout', ms);
+    if (db) await db.saveSetting('streamTimeout', sec);
+    logSetting('流式超时', sec >= 0 ? (sec === 0 ? '已禁用' : `${sec}s`) : '默认(300s)');
+  }, 500);
 
-    // MCP 超时（秒→毫秒）
-    const mcpSec = parseSec(inputMCPTimeout.value.trim());
-    const mcpMs = mcpSec >= 0 ? mcpSec * 1000 : 60_000;
-    if (db) await db.saveSetting('mcpTimeout', mcpSec);
+  const saveMCPTimeout = debounce(async () => {
+    const db = state.get<ChatDB | null>(KEYS.DB);
+    const sec = parseSec(inputMCPTimeout.value.trim());
+    const ms = sec >= 0 ? sec * 1000 : 60_000;
+    if (db) await db.saveSetting('mcpTimeout', sec);
+    const bridge = window.metonaDesktop;
     if (bridge?.tool?.setTimeouts) {
-      await bridge.tool.setTimeouts({ mcp: mcpMs });
+      await bridge.tool.setTimeouts({ mcp: ms });
     }
-    logSetting('MCP 超时', mcpSec >= 0 ? (mcpSec === 0 ? '已禁用' : `${mcpSec}s`) : '默认(60s)');
-  };
-
-  const saveHttpTimeout = debounce(applyTimeouts, 500);
-  const saveStreamTimeout = debounce(applyTimeouts, 500);
-  const saveMCPTimeout = debounce(applyTimeouts, 500);
+    logSetting('MCP 超时', sec >= 0 ? (sec === 0 ? '已禁用' : `${sec}s`) : '默认(60s)');
+  }, 500);
 
   inputHttpTimeout.addEventListener('input', saveHttpTimeout);
   inputStreamTimeout.addEventListener('input', saveStreamTimeout);
