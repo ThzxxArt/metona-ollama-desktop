@@ -128,7 +128,7 @@ func cleanCacheLoop(interval time.Duration) {
 
 // ── 正则预编译（全局，避免每次搜索重新编译）──
 var (
-	reGoogleBlock = regexp.MustCompile(`<(?:div|li)[^>]*class="[^"]*(?:Gx5Zad|g|kvH3mc)[^"]*"[^>]*>([\s\S]*?)(?=<(?:div|li)[^>]*class="[^"]*(?:Gx5Zad|kvH3mc)[^"]*"|<(?:div|g-section)|\z)`)
+	reGoogleBlock = regexp.MustCompile(`<(?:div|li)[^>]*class="[^"]*(?:Gx5Zad|g|kvH3mc)[^"]*"[^>]*>([\s\S]*?)</(?:div|li)>`)
 	reGoogleTitle = regexp.MustCompile(`<a[^>]*href="(https?://[^"]*)"[^>]*>[\s\S]*?<h3[^>]*>([\s\S]*?)</h3>`)
 	reGoogleSnip  = regexp.MustCompile(`<(?:div|span)[^>]*(?:data-sncf|class="[^"]*(?:VwiC3b|st|lWMagT)[^"]*")[^>]*>([\s\S]*?)</(?:div|span)>`)
 
