@@ -835,7 +835,25 @@ Shell: ${osInfo.shell}
     }
 
     if (toolCalls.length === 0) {
-      // 真正的最终回答（有内容或首次循环就无工具）
+      // ── 反过早结束：如果之前有工具调用，但模型返回的内容不像最终回答，引导继续 ──
+      if (allToolRecords.length > 0 && !isFinalAnswer && loopCount < maxLoops - 1) {
+        const contentLower = content.toLowerCase();
+        const isThinking = contentLower.includes('让我') || contentLower.includes('看看') ||
+          contentLower.includes('观察') || contentLower.includes('分析') || contentLower.includes('检查');
+        const isContinuation = content.length < 300 && (isThinking || contentLower.includes('接下来') || contentLower.includes('继续'));
+
+        if (isContinuation || content.length < 100) {
+          logWarn('模型可能过早停止，注入继续提示', `${content.length}字`);
+          messages.pop(); // 移除空/过渡性的 assistant 消息
+          messages.push({
+            role: 'user',
+            content: '请继续完成任务。你可以调用工具获取更多信息，或者根据已有结果给出完整的最终回答。如果任务已完成，请明确说出"任务完成"或"最终回答"。'
+          });
+          continue;
+        }
+      }
+
+      // 真正的最终回答
       logInfo('无工具调用，ReAct Agent Loop 结束');
 
       // 自动提取记忆（仅在对话结束后）
