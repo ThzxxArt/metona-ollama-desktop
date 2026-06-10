@@ -92,7 +92,7 @@
 
 | 工具 | 功能 |
 |------|------|
-|| `web_search` | 四引擎并行搜索（Bing + 百度 + DuckDuckGo + Google），结果缓存 5 分钟，URL 可达性预检，返回结构化 JSON |
+| `web_search` | 四引擎并行搜索（Bing+百度+DDG+Google），智能排序+时间过滤+摘要增强，5分钟缓存 |
 | `web_fetch` | 网页内容抓取，自动重试（指数退避），移动端UA切换，SPA页面自动升级到浏览器渲染 |
 
 </details>
@@ -319,7 +319,7 @@ npm run dist           # 构建 Windows 安装包
 
 | Tool | Function |
 |------|------|
-| `web_search` | Quad-engine parallel search (Bing + Baidu + DuckDuckGo + Google), 5min cache, URL reachability check, structured JSON output |
+| `web_search` | Quad-engine parallel search (Bing+Baidu+DDG+Google), smart ranking + time filter, 5min cache |
 | `web_fetch` | Fetch web page content, auto-retry with backoff, mobile UA toggle, SPA auto-upgrade to browser rendering |
 
 </details>
