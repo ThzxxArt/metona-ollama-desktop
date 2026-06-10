@@ -24,38 +24,23 @@ sudo apt update && sudo apt install -y golang-go
 
 # CentOS/RHEL
 sudo yum install -y golang
-
-# 或手动安装最新版
-wget https://go.dev/dl/go1.22.0.linux-amd64.tar.gz
-sudo tar -C /usr/local -xzf go1.22.0.linux-amd64.tar.gz
-echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc && source ~/.bashrc
 ```
 
 ---
 
-## 安装与编译
+## 编译
 
 ```bash
-# 1. 克隆仓库
 cd /opt
 git clone https://gitee.com/thzxx/metona-ollama-desktop.git
 cd metona-ollama-desktop/search-proxy
-
-# 2. 编译
 go build -o metona-search-proxy .
-
-# 3. 验证
-./metona-search-proxy --version
-# metona-search-proxy v2.0.0  go/go1.22.0
 ```
 
-### 本地交叉编译（在本地编译好上传）
+### 本地交叉编译（编译好再上传）
 
 ```bash
-# Windows 上编译 Linux 版本
-GOOS=linux GOARCH=amd64 go build -o metona-search-proxy .
-
-# macOS 上编译 Linux 版本
+# 编译 Linux 版本
 GOOS=linux GOARCH=amd64 go build -o metona-search-proxy .
 
 # 上传到服务器
@@ -64,10 +49,37 @@ scp metona-search-proxy user@your-server:/opt/metona-search-proxy/
 
 ---
 
-## CLI 命令
+## 全局命令
 
 ```bash
-./metona-search-proxy [选项]
+sudo cp metona-search-proxy /usr/local/bin/
+sudo chmod +x /usr/local/bin/metona-search-proxy
+```
+
+之后任何目录都可以直接用：
+
+```bash
+metona-search-proxy --version
+metona-search-proxy -status
+```
+
+---
+
+## CLI 命令
+
+### 服务管理
+
+```bash
+metona-search-proxy -start          # 后台启动
+metona-search-proxy -stop           # 停止
+metona-search-proxy -status         # 查看状态
+metona-search-proxy -restart        # 重启
+```
+
+### 运行参数
+
+```bash
+metona-search-proxy [选项]
 
 选项:
   -port int      监听端口 (默认 7899)
@@ -76,128 +88,111 @@ scp metona-search-proxy user@your-server:/opt/metona-search-proxy/
   -burst int     限流突发容量 (默认 60)
   -timeout int   搜索引擎超时/秒 (默认 12)
   -version       显示版本号
-
-示例:
-  ./metona-search-proxy                                   # 默认配置
-  ./metona-search-proxy -port 7899 -cache 10              # 自定义端口和缓存
-  ./metona-search-proxy -port 7899 -rate 50 -burst 100    # 高并发配置
-  PORT=7899 ./metona-search-proxy                          # 也可用环境变量
+  -start         后台启动
+  -stop          停止后台实例
+  -status        查看运行状态
+  -restart       重启后台实例
 ```
+
+### 示例
+
+```bash
+# 查看状态
+metona-search-proxy -status
+# ● 运行中  PID: 12345  端口: 7899
+#   健康检查: http://localhost:7899/health
+
+# 前台运行（调试用，Ctrl+C 停止）
+metona-search-proxy
+
+# 后台启动
+metona-search-proxy -start
+# 已后台启动 (PID: 12345)
+
+# 停止
+metona-search-proxy -stop
+# 已停止 (PID: 12345)
+```
+
+---
+
+## 部署方式（二选一）
+
+### 方式一：systemd 服务（推荐—生产环境）
+
+```bash
+# 1. 安装二进制
+sudo mkdir -p /opt/metona-search-proxy
+sudo cp metona-search-proxy /opt/metona-search-proxy/
+sudo chmod +x /opt/metona-search-proxy/metona-search-proxy
+
+# 2. 创建服务
+sudo cp metona-search-proxy.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now metona-search-proxy
+
+# 3. 管理
+sudo systemctl status metona-search-proxy   # 状态
+sudo systemctl stop metona-search-proxy     # 停止
+sudo journalctl -u metona-search-proxy -f   # 日志
+```
+
+> ⚠️ 使用 systemd 后不要再用 `-start/-stop` CLI 命令，会冲突。
+
+### 方式二：CLI 管理（轻量—个人开发）
+
+```bash
+# 安装全局命令
+sudo cp metona-search-proxy /usr/local/bin/
+
+# 启动
+metona-search-proxy -start
+
+# 查看状态
+metona-search-proxy -status
+
+# 停止
+metona-search-proxy -stop
+
+# 设置开机自启（加到 crontab）
+(crontab -l 2>/dev/null; echo "@reboot metona-search-proxy -start") | crontab -
+```
+
+> ⚠️ 使用 CLI 管理前确保 systemd 服务已停止：`sudo systemctl stop metona-search-proxy`
 
 ---
 
 ## 测试
 
 ```bash
-# 启动
-./metona-search-proxy &
-
-# 健康检查
 curl http://localhost:7899/health
-
-# 单引擎搜索
-curl "http://localhost:7899/search?q=hello+world&engine=google&n=5"
-
-# 四引擎并行
-curl "http://localhost:7899/search?q=今天天气&engine=all&n=10"
-
-# 百度搜索
-curl "http://localhost:7899/search?q=春节&engine=baidu&n=5"
-```
-
-### 响应格式
-
-```json
-{
-  "success": true,
-  "query": "hello world",
-  "engine": "google",
-  "total": 5,
-  "results": [
-    {
-      "title": "...",
-      "url": "https://...",
-      "snippet": "...",
-      "engine": "google"
-    }
-  ]
-}
+curl "http://localhost:7899/search?q=hello&engine=google&n=5"
+curl "http://localhost:7899/search?q=天气&engine=all&n=10"
 ```
 
 ---
 
-## 安装为系统服务（开机自启）
+## API
 
-### 1. 拷贝二进制文件
-
-```bash
-sudo mkdir -p /opt/metona-search-proxy
-sudo cp metona-search-proxy /opt/metona-search-proxy/
-sudo chmod +x /opt/metona-search-proxy/metona-search-proxy
 ```
+GET /search?q=关键词&engine=all&n=10
 
-### 2. 创建 systemd 服务文件
+engine: google | bing | ddg | baidu | all (默认)
+n: 1-20，默认10
+缓存: 5分钟（可配）
+限流: 30 req/s（可配）
 
-```bash
-sudo tee /etc/systemd/system/metona-search-proxy.service << 'EOF'
-[Unit]
-Description=Metona Search Proxy - Google/Bing/DDG/Baidu API
-After=network.target
-
-[Service]
-Type=simple
-ExecStart=/opt/metona-search-proxy/metona-search-proxy
-Restart=always
-RestartSec=5
-Environment=PORT=7899
-
-[Install]
-WantedBy=multi-user.target
-EOF
-```
-
-### 3. 启动服务
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable metona-search-proxy   # 开机自启
-sudo systemctl start metona-search-proxy    # 立即启动
-
-# 查看状态
-sudo systemctl status metona-search-proxy
-
-# 查看日志
-sudo journalctl -u metona-search-proxy -f
-```
-
-### 4. 验证
-
-```bash
-curl http://localhost:7899/health
-# {"engines":["google","bing","ddg","baidu","all"],"status":"ok","time":"...","version":"2.0.0"}
+GET /health
 ```
 
 ---
 
 ## 本应用配置
 
-Metona Ollama Desktop 设置面板 → 代理设置 → 填入：
+Metona Ollama Desktop → 设置 → 代理 → 填入：
 
 ```
-http://你的服务器IP:7899
+http://服务器IP:7899
 ```
 
-重启应用即可。web_search 的 Google/DDG/Bing/百度 四引擎请求会自动路由到这台服务器。
-
----
-
-## 常用管理命令
-
-```bash
-sudo systemctl start metona-search-proxy     # 启动
-sudo systemctl stop metona-search-proxy      # 停止
-sudo systemctl restart metona-search-proxy   # 重启
-sudo systemctl status metona-search-proxy    # 状态
-sudo journalctl -u metona-search-proxy -f    # 实时日志
-sudo journalctl -u metona-search-proxy --since today  # 今日日志
-```
+重启应用即可。

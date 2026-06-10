@@ -7,12 +7,15 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"os/signal"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -20,7 +23,7 @@ import (
 	"time"
 )
 
-const version = "2.0.0"
+const version = "2.1.0"
 
 // ── CLI ──
 var (
@@ -30,7 +33,13 @@ var (
 	cliBurst   = flag.Int("burst", 60, "限流突发容量")
 	cliTimeout = flag.Int("timeout", 12, "搜索引擎请求超时(秒)")
 	cliVersion = flag.Bool("version", false, "显示版本")
+	cliStop    = flag.Bool("stop", false, "停止后台运行的实例")
+	cliStart   = flag.Bool("start", false, "后台启动（nohup模式）")
+	cliStatus  = flag.Bool("status", false, "查看运行状态")
+	cliRestart = flag.Bool("restart", false, "重启后台实例")
 )
+
+var pidFile = "/tmp/metona-search-proxy.pid"
 
 // ── 限流器 ──
 type RateLimiter struct {
@@ -76,8 +85,8 @@ func (rl *RateLimiter) Allow() bool {
 var cache sync.Map
 
 type cacheEntry struct {
-	Results   []Result `json:"-"`
-	ExpiresAt int64    `json:"-"`
+	Results   []Result
+	ExpiresAt int64
 }
 
 type Result struct {
@@ -106,7 +115,131 @@ var (
 	cacheTTL   int64
 )
 
-// ── recovery middleware ──
+// ── PID 管理 ──
+
+func writePID(port int) {
+	pid := os.Getpid()
+	os.WriteFile(pidFile, []byte(fmt.Sprintf("%d\n%d", pid, port)), 0644)
+}
+
+func readPID() (pid int, port int, ok bool) {
+	data, err := os.ReadFile(pidFile)
+	if err != nil {
+		return 0, 0, false
+	}
+	parts := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(parts) < 2 {
+		return 0, 0, false
+	}
+	pid, _ = strconv.Atoi(parts[0])
+	port, _ = strconv.Atoi(parts[1])
+	if pid < 1 || port < 1 {
+		return 0, 0, false
+	}
+	// 检查进程是否存在
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return 0, 0, false
+	}
+	if runtime.GOOS == "windows" {
+		return pid, port, true
+	}
+	err = proc.Signal(syscall.Signal(0))
+	return pid, port, err == nil
+}
+
+func stopProcess(pid int) bool {
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	if runtime.GOOS == "windows" {
+		return proc.Kill() == nil
+	}
+	err = proc.Signal(syscall.SIGTERM)
+	if err != nil {
+		return false
+	}
+	// 等待进程退出
+	for i := 0; i < 50; i++ {
+		if err := proc.Signal(syscall.Signal(0)); err != nil {
+			os.Remove(pidFile)
+			return true
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	// force kill
+	proc.Signal(syscall.SIGKILL)
+	os.Remove(pidFile)
+	return true
+}
+
+func checkPort(port int) bool {
+	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+	if err != nil {
+		return true // 端口已被占用 = 服务在运行
+	}
+	ln.Close()
+	return false
+}
+
+func doStart() {
+	if pid, _, ok := readPID(); ok {
+		fmt.Printf("已在运行 (PID: %d)\n", pid)
+		os.Exit(1)
+	}
+	if checkPort(*cliPort) {
+		fmt.Printf("端口 %d 已被占用\n", *cliPort)
+		os.Exit(1)
+	}
+	// 后台启动自己
+	args := []string{}
+	for _, a := range os.Args[1:] {
+		if a != "-start" && a != "--start" {
+			args = append(args, a)
+		}
+	}
+	cmd := exec.Command(os.Args[0], args...)
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+	cmd.Start()
+	fmt.Printf("已后台启动 (PID: %d)\n", cmd.Process.Pid)
+}
+
+func doStop() {
+	pid, _, ok := readPID()
+	if !ok {
+		fmt.Println("未找到运行中的实例")
+		os.Exit(1)
+	}
+	if stopProcess(pid) {
+		fmt.Printf("已停止 (PID: %d)\n", pid)
+	} else {
+		fmt.Printf("停止失败 (PID: %d)\n", pid)
+		os.Exit(1)
+	}
+}
+
+func doStatus() {
+	if pid, port, ok := readPID(); ok && checkPort(port) {
+		fmt.Printf("● 运行中  PID: %d  端口: %d\n", pid, port)
+		fmt.Printf("  健康检查: http://localhost:%d/health\n", port)
+		fmt.Printf("  PID 文件: %s\n", pidFile)
+	} else {
+		fmt.Println("○ 未运行")
+		os.Remove(pidFile)
+	}
+}
+
+func doRestart() {
+	if pid, _, ok := readPID(); ok {
+		stopProcess(pid)
+		time.Sleep(500 * time.Millisecond)
+	}
+	doStart()
+}
+
+// ── recovery 中间件 ──
 func recoverWrap(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
@@ -388,7 +521,7 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 		"status":  "ok",
 		"version": version,
 		"engines": []string{"google", "bing", "ddg", "baidu", "all"},
-		"time":    time.Now().UTC().Format(time.RFC3339),
+		"uptime":  time.Now().UTC().Format(time.RFC3339),
 	})
 }
 
@@ -399,11 +532,30 @@ func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	json.NewEncoder(w).Encode(v)
 }
 
+// ── main ──
+
 func main() {
 	flag.Parse()
 
+	// 管理命令（不需要启动服务）
 	if *cliVersion {
 		fmt.Printf("metona-search-proxy v%s  go/%s\n", version, runtime.Version())
+		return
+	}
+	if *cliStop {
+		doStop()
+		return
+	}
+	if *cliStatus {
+		doStatus()
+		return
+	}
+	if *cliStart {
+		doStart()
+		return
+	}
+	if *cliRestart {
+		doRestart()
 		return
 	}
 
@@ -411,8 +563,13 @@ func main() {
 	if port == "" {
 		port = fmt.Sprintf("%d", *cliPort)
 	}
+	portNum, _ := strconv.Atoi(port)
 
-	// 初始化
+	// 检查端口是否已被占用
+	if checkPort(portNum) {
+		log.Fatalf("端口 %s 已被占用。使用 metona-search-proxy -status 查看状态，或用 -restart 重启。", port)
+	}
+
 	httpClient = &http.Client{
 		Timeout: time.Duration(*cliTimeout) * time.Second,
 		Transport: &http.Transport{
@@ -423,6 +580,9 @@ func main() {
 	}
 	limiter = newRateLimiter(int64(*cliRate), int64(*cliBurst))
 	cacheTTL = int64(*cliCache)
+
+	writePID(portNum)
+	defer os.Remove(pidFile)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/search", recoverWrap(handleSearch))
