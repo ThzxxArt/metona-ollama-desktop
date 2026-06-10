@@ -362,30 +362,28 @@ async function init(): Promise<void> {
     state.set('maxTurns', maxTurns);
     (document.querySelector('#inputMaxTurns') as HTMLInputElement).value = String(maxTurns);
 
-    // ── v5.2 超时设置 ──
-    const httpTimeout = await db.getSetting<number>('httpTimeout', 0);
-    const streamTimeout = await db.getSetting<number>('streamTimeout', 0);
-    const mcpTimeout = await db.getSetting<number>('mcpTimeout', 0);
+    // ── v5.2 超时设置：-1=默认, 0=禁用, 正数=自定义 ──
+    const httpTimeout = await db.getSetting<number>('httpTimeout', -1);
+    const streamTimeout = await db.getSetting<number>('streamTimeout', -1);
+    const mcpTimeout = await db.getSetting<number>('mcpTimeout', -1);
 
-    // 应用流式超时到 state（agent-engine 会读取）
-    state.set('streamTimeout', streamTimeout > 0 ? streamTimeout * 1000 : 300_000);
+    // 应用流式超时到 state（agent-engine 读取，0=禁用）
+    state.set('streamTimeout', streamTimeout >= 0 ? streamTimeout * 1000 : 300_000);
 
     // 应用 HTTP 和 MCP 超时到主进程
     const bridge = window.metonaDesktop;
     if (bridge?.tool?.setTimeouts) {
       await bridge.tool.setTimeouts({
-        http: httpTimeout > 0 ? httpTimeout * 1000 : 30_000,
-        mcp: mcpTimeout > 0 ? mcpTimeout * 1000 : 60_000,
+        http: httpTimeout >= 0 ? httpTimeout * 1000 : 30_000,
+        mcp: mcpTimeout >= 0 ? mcpTimeout * 1000 : 60_000,
       });
     }
 
-    // 恢复输入框显示值
-    if (document.querySelector('#inputHttpTimeout')) {
-      (document.querySelector('#inputHttpTimeout') as HTMLInputElement).value = httpTimeout > 0 ? String(httpTimeout) : '';
-      (document.querySelector('#inputStreamTimeout') as HTMLInputElement).value = streamTimeout > 0 ? String(streamTimeout) : '';
-      (document.querySelector('#inputMCPTimeout') as HTMLInputElement).value = mcpTimeout > 0 ? String(mcpTimeout) : '';
-    }
-    logInit(`超时设置: HTTP=${httpTimeout||30}s 流式=${streamTimeout||300}s MCP=${mcpTimeout||60}s`);
+    // 恢复输入框显示（-1显示空, 0显示0, 正数显示数字）
+    (document.querySelector('#inputHttpTimeout') as HTMLInputElement).value = httpTimeout >= 0 ? String(httpTimeout) : '';
+    (document.querySelector('#inputStreamTimeout') as HTMLInputElement).value = streamTimeout >= 0 ? String(streamTimeout) : '';
+    (document.querySelector('#inputMCPTimeout') as HTMLInputElement).value = mcpTimeout >= 0 ? String(mcpTimeout) : '';
+    logInit(`超时设置: HTTP=${httpTimeout>=0?httpTimeout:30}s 流式=${streamTimeout>=0?streamTimeout:300}s MCP=${mcpTimeout>=0?mcpTimeout:60}s`);
 
     // ── Tool Calling 设置 ──
     const toolCallingEnabled = await db.getSetting('toolCallingEnabled', true);

@@ -220,6 +220,7 @@ export interface MetonaDesktopAPI {
     execute: (toolName: string, args: Record<string, unknown>) => Promise<ToolResult>;
     getConfig: () => Promise<{ allowedDirs: string[]; blockedDirs: string[] }>;
     setAllowedDirs: (dirs: string[]) => Promise<void>;
+    setTimeouts: (timeouts: { http?: number; mcp?: number }) => Promise<{ success: boolean }>;
   };
   notify: (title: string, body: string) => void;
   window: {

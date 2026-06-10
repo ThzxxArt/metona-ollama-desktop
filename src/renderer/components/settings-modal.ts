@@ -73,30 +73,33 @@ export function initSettingsModal(): void {
     const db = state.get<ChatDB | null>(KEYS.DB);
     const bridge = window.metonaDesktop;
 
+    // 辅助：解析输入值，空→-1(默认)，数字→该值(含0=禁用)
+    const parseSec = (val: string): number => (val !== '' ? parseInt(val) : -1);
+
     // HTTP 超时（秒→毫秒）
-    const httpVal = inputHttpTimeout.value.trim();
-    const httpSec = httpVal ? parseInt(httpVal) : 0;
-    if (db) await db.saveSetting('httpTimeout', httpSec > 0 ? httpSec : 0);
+    const httpSec = parseSec(inputHttpTimeout.value.trim());
+    const httpMs = httpSec >= 0 ? httpSec * 1000 : 30_000;
+    if (db) await db.saveSetting('httpTimeout', httpSec);
     if (bridge?.tool?.setTimeouts) {
-      await bridge.tool.setTimeouts({ http: httpSec > 0 ? httpSec * 1000 : 30_000 });
+      await bridge.tool.setTimeouts({ http: httpMs });
     }
-    logInfo('HTTP 超时', httpSec > 0 ? `${httpSec}s` : '默认(30s)');
+    logInfo('HTTP 超时', httpSec >= 0 ? (httpSec === 0 ? '已禁用' : `${httpSec}s`) : '默认(30s)');
 
     // 流式超时（秒→毫秒）
-    const streamVal = inputStreamTimeout.value.trim();
-    const streamSec = streamVal ? parseInt(streamVal) : 0;
-    state.set('streamTimeout', streamSec > 0 ? streamSec * 1000 : 300_000);
-    if (db) await db.saveSetting('streamTimeout', streamSec > 0 ? streamSec : 0);
-    logInfo('流式超时', streamSec > 0 ? `${streamSec}s` : '默认(300s)');
+    const streamSec = parseSec(inputStreamTimeout.value.trim());
+    const streamMs = streamSec >= 0 ? streamSec * 1000 : 300_000;
+    state.set('streamTimeout', streamMs);
+    if (db) await db.saveSetting('streamTimeout', streamSec);
+    logInfo('流式超时', streamSec >= 0 ? (streamSec === 0 ? '已禁用' : `${streamSec}s`) : '默认(300s)');
 
     // MCP 超时（秒→毫秒）
-    const mcpVal = inputMCPTimeout.value.trim();
-    const mcpSec = mcpVal ? parseInt(mcpVal) : 0;
-    if (db) await db.saveSetting('mcpTimeout', mcpSec > 0 ? mcpSec : 0);
+    const mcpSec = parseSec(inputMCPTimeout.value.trim());
+    const mcpMs = mcpSec >= 0 ? mcpSec * 1000 : 60_000;
+    if (db) await db.saveSetting('mcpTimeout', mcpSec);
     if (bridge?.tool?.setTimeouts) {
-      await bridge.tool.setTimeouts({ mcp: mcpSec > 0 ? mcpSec * 1000 : 60_000 });
+      await bridge.tool.setTimeouts({ mcp: mcpMs });
     }
-    logInfo('MCP 超时', mcpSec > 0 ? `${mcpSec}s` : '默认(60s)');
+    logInfo('MCP 超时', mcpSec >= 0 ? (mcpSec === 0 ? '已禁用' : `${mcpSec}s`) : '默认(60s)');
   };
 
   const saveHttpTimeout = debounce(applyTimeouts, 500);
@@ -309,22 +312,22 @@ export function closeSettingsModal(): void {
   settingsModalEl.style.display = 'none';
 }
 
-/** 加载已保存的超时设置到输入框 */
+/** 加载已保存的超时设置到输入框：-1=默认(显示空), 0=禁用, 正数=自定义 */
 async function loadTimeoutSettings(): Promise<void> {
   const db = state.get<ChatDB | null>(KEYS.DB);
   if (!db) return;
 
-  const httpTimeout = await db.getSetting<number>('httpTimeout', 0);
-  const streamTimeout = await db.getSetting<number>('streamTimeout', 0);
-  const mcpTimeout = await db.getSetting<number>('mcpTimeout', 0);
+  const httpTimeout = await db.getSetting<number>('httpTimeout', -1);
+  const streamTimeout = await db.getSetting<number>('streamTimeout', -1);
+  const mcpTimeout = await db.getSetting<number>('mcpTimeout', -1);
 
   const inputHttp = document.querySelector('#inputHttpTimeout') as HTMLInputElement;
   const inputStream = document.querySelector('#inputStreamTimeout') as HTMLInputElement;
   const inputMCP = document.querySelector('#inputMCPTimeout') as HTMLInputElement;
 
-  if (inputHttp) inputHttp.value = httpTimeout > 0 ? String(httpTimeout) : '';
-  if (inputStream) inputStream.value = streamTimeout > 0 ? String(streamTimeout) : '';
-  if (inputMCP) inputMCP.value = mcpTimeout > 0 ? String(mcpTimeout) : '';
+  if (inputHttp) inputHttp.value = httpTimeout >= 0 ? String(httpTimeout) : '';
+  if (inputStream) inputStream.value = streamTimeout >= 0 ? String(streamTimeout) : '';
+  if (inputMCP) inputMCP.value = mcpTimeout >= 0 ? String(mcpTimeout) : '';
 }
 
 async function exportAllSessions(): Promise<void> {
