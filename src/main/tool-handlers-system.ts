@@ -10,6 +10,28 @@ import { mainWindow } from './main.js';
 import { sendLog, resolvePath, type ToolResult } from './tool-handlers-shared.js';
 import { getWorkspaceDir } from './workspace.js';
 
+// ── 代理支持 ──
+let _proxyUrl = '';
+let _proxyAgent: any = null;
+
+function getProxyAgent(): any {
+  if (!_proxyUrl) return null;
+  if (_proxyAgent) return _proxyAgent;
+  try {
+    const { ProxyAgent } = require('undici');
+    _proxyAgent = new ProxyAgent(_proxyUrl);
+    return _proxyAgent;
+  } catch {
+    return null;
+  }
+}
+
+/** 设置 HTTP 代理（供 IPC 调用） */
+export function setProxyUrl(url: string): void {
+  _proxyUrl = url;
+  _proxyAgent = null; // 重建 agent
+}
+
 /** 当前工具命令进程（用于用户手动终止） */
 let _toolProc: ReturnType<typeof spawn> | null = null;
 
@@ -186,7 +208,13 @@ async function fetchWithTimeout(url: string, timeout = HTTP_TIMEOUT, headers?: R
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeout);
   try {
-    const resp = await fetch(url, { headers: _headers, signal: controller.signal, redirect: 'follow' });
+    const agent = getProxyAgent();
+    const resp = await fetch(url, {
+      headers: _headers,
+      signal: controller.signal,
+      redirect: 'follow',
+      ...(agent && { dispatcher: agent }),
+    });
     clearTimeout(timeoutId);
     return resp;
   } catch {

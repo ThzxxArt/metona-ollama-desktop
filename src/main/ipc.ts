@@ -51,7 +51,7 @@ import { browserOpen, browserScreenshot, browserEvaluate, browserExtract, browse
 import { startServer, stopServer, stopAllServers, callTool, getAllTools, getServerStatuses, refreshTools, setMCPTimeout } from './mcp-manager.js';
 import { getAllowedDirs, getBlockedDirs, setAllowedDirs } from './tool-security.js';
 import { startProcess, killProcess, getWorkspaceDir, setWorkspaceDir, listWorkspaceDir } from './workspace.js';
-import { setHTTPTimeout } from './tool-handlers-system.js';
+import { setHTTPTimeout, setProxyUrl } from './tool-handlers-system.js';
 
 /** 工具结果摘要（用于日志面板） */
 function summarizeResult(toolName: string, result: Record<string, unknown>): string {
@@ -233,6 +233,7 @@ export async function setupIPC(): Promise<void> {
 
   // ── 代理设置（web_search/web_fetch 走代理）──
   ipcMain.handle('proxy:set', (_, url: string) => {
+    setProxyUrl(url);
     if (url) {
       process.env.HTTP_PROXY = url;
       process.env.HTTPS_PROXY = url;
