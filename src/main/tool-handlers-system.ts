@@ -79,7 +79,9 @@ export async function handleRunCommand(params: { command: string; cwd?: string; 
           stdout,
           stderr,
           exitCode: code,
-          duration
+          duration,
+          cwd,
+          command: params.command,
         });
       });
 
@@ -94,7 +96,9 @@ export async function handleRunCommand(params: { command: string; cwd?: string; 
           stderr: stderr + (stderr ? '\n' : '') + err.message,
           exitCode: 1,
           error: err.message,
-          duration
+          duration,
+          cwd,
+          command: params.command,
         });
       });
     });

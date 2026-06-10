@@ -67,8 +67,10 @@ const COMPRESS_KEEP_TAIL = 2;
 export function scoreMessageImportance(msg: OllamaMessage): number {
   let score = 5; // 默认中等
 
-  // SOUL.md 消息永远不可压缩
+  // SOUL.md / 日期 / 环境 消息永远不可压缩
   if (msg.content?.startsWith('[SOUL.md]')) return 10;
+  if (msg.content?.startsWith('[日期]')) return 10;
+  if (msg.content?.startsWith('[环境]')) return 10;
 
   // 角色权重
   if (msg.role === 'user') score += 2;      // 用户消息最重要

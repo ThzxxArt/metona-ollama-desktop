@@ -31,6 +31,25 @@ import type {
 
 const MAX_RETRIES = 2;              // 工具错误自动重试次数
 
+/** 获取当前操作系统环境信息（用于系统提示词注入） */
+function getOSEnvironment() {
+  const isWin = navigator.platform?.toLowerCase().includes('win') || false;
+  const isMac = navigator.platform?.toLowerCase().includes('mac') || false;
+  const isLinux = !isWin && !isMac;
+  const bridge = (window as any).metonaDesktop;
+  const isDesktop = bridge?.isDesktop || false;
+
+  return {
+    os: isWin ? 'Windows' : isMac ? 'macOS' : 'Linux',
+    platform: isDesktop ? (bridge.info ? 'Electron Desktop' : 'Desktop') : 'Browser',
+    arch: navigator.platform || 'unknown',
+    shell: isWin ? 'cmd.exe / PowerShell' : 'bash',
+    homeDir: isWin ? 'C:\\Users\\<用户名>' : '/home/<用户名>',
+    lineEnding: isWin ? 'CRLF (\\r\\n)' : 'LF (\\n)',
+    pathSep: isWin ? '\\ (反斜杠)' : '/ (正斜杠)',
+  };
+}
+
 /** 每个工具返回给模型的最大字符数 */
 const TOOL_MAX_RESULT_SIZE: Record<string, number> = {
   web_fetch: 20000,       // 网页内容通常较长
@@ -461,6 +480,22 @@ export async function runAgentLoop(
 文件操作工具（read_file、write_file 等）的相对路径基于此目录解析。`);
   }
 
+  // ── 注入操作系统环境信息（不可压缩，确保 AI 使用正确命令）──
+  const osInfo = getOSEnvironment();
+  systemPromptParts.push(`[环境] 运行环境信息
+操作系统: ${osInfo.os}
+平台: ${osInfo.platform}
+架构: ${osInfo.arch}
+Shell: ${osInfo.shell}
+用户目录: ${osInfo.homeDir}
+换行符: ${osInfo.lineEnding}
+路径分隔符: ${osInfo.pathSep}
+
+⚠️ 重要：必须使用与上述操作系统匹配的命令语法。
+- 如果是 Windows，使用 CMD/PowerShell 命令（如 dir、type、findstr，路径用 \\）
+- 如果是 Linux/macOS，使用 Bash 命令（如 ls、cat、grep，路径用 /）
+- 严禁在 Windows 上执行 Linux 命令，严禁在 Linux 上执行 Windows 命令。`);
+
   // v4.2 注入匹配的技能上下文
   if (useTools && userContent) {
     const matchedSkills = await matchSkills(userContent, 3);
@@ -481,7 +516,7 @@ export async function runAgentLoop(
 
   const fullSystemPrompt = [
     ...systemPromptParts,
-    `【当前日期】${realDate}（此日期来自系统时钟，绝对可信。你的训练数据可能已过时，请以此日期为准构造所有搜索查询和时效性回答。绝对不要基于训练数据推断日期。）`
+    `[日期] ${realDate}（此日期来自系统时钟，绝对可信。你的训练数据可能已过时，请以此日期为准构造所有搜索查询和时效性回答。绝对不要基于训练数据推断日期。）`
   ].join('\n\n');
 
   messages.push({ role: 'system', content: fullSystemPrompt });
