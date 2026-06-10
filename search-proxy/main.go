@@ -627,6 +627,43 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func handleDebug(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query().Get("q")
+	if q == "" {
+		q = "hello"
+	}
+	engine := r.URL.Query().Get("engine")
+	if engine == "" {
+		engine = "google"
+	}
+	u := ""
+	switch engine {
+	case "google":
+		u = fmt.Sprintf("https://www.google.com/search?q=%s&num=3&hl=zh-CN", url.QueryEscape(q))
+	case "bing":
+		u = fmt.Sprintf("https://www.bing.com/search?q=%s&count=3", url.QueryEscape(q))
+	case "ddg":
+		u = fmt.Sprintf("https://lite.duckduckgo.com/lite/?q=%s", url.QueryEscape(q))
+	case "baidu":
+		u = fmt.Sprintf("https://www.baidu.com/s?wd=%s&rn=3", url.QueryEscape(q))
+	}
+	resp, err := doGet(u)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]string{"error": err.Error()})
+		return
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	// 只返回前 2000 字符，方便查看结构
+	html := string(body)
+	if len(html) > 2000 {
+		html = html[:2000] + "\n... truncated"
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Write([]byte(fmt.Sprintf("Status: %d\nEngine: %s\nURL: %s\n\n", resp.StatusCode, engine, u)))
+	w.Write([]byte(html))
+}
+
 func handleStats(w http.ResponseWriter, r *http.Request) {
 	uptime := time.Since(stats.StartTime).Round(time.Second).String()
 	total := stats.ReqTotal.Load()
@@ -716,6 +753,7 @@ func main() {
 	mux.HandleFunc("/search", recoverWrap(handleSearch))
 	mux.HandleFunc("/health", recoverWrap(handleHealth))
 	mux.HandleFunc("/stats", recoverWrap(handleStats))
+	mux.HandleFunc("/debug", recoverWrap(handleDebug))
 
 	srv := &http.Server{
 		Addr:         ":" + port,
