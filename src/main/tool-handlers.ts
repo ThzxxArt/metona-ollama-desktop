@@ -16,7 +16,6 @@ export {
   handleDeleteFile,
   handleMoveFile,
   handleCopyFile,
-  handleAppendFile,
   handleEditFile,
   handleGetFileInfo,
   handleTree,

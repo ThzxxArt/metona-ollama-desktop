@@ -599,7 +599,7 @@ export async function handleWebSearch(params: { query: string; max_results?: num
             if (fetchResult.success && fetchResult.content) {
               const text = String(fetchResult.content).replace(/\s+/g, ' ').trim();
               r.snippet = text.length > 200 ? text.slice(0, 200) + '…' : text;
-              r._enhanced = true;
+              (r as any)._enhanced = true;
             }
           } catch { /* enhancement is optional */ }
         }));
