@@ -48,7 +48,7 @@
       "requestedExecutionLevel": "asInvoker"
     },
     "nsis": {
-      "artifactName": "Metona Ollama Setup v0.10.2.${ext}",
+      "artifactName": "Metona Ollama Setup v${version}.${ext}",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
