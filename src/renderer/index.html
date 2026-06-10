@@ -441,15 +441,7 @@
             </button>
         </div>
         <div class="modal-body">
-            <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;padding:8px 12px;background:var(--bg-layer);border-radius:var(--radius-control);border:1px solid var(--border-subtle);">
-                <span style="font-size:13px;font-weight:600;">工具调用（始终开启）</span>
-                <label class="toggle-label" style="margin:0;">
-                    <input type="checkbox" id="toggleToolCalling">
-                    <span class="toggle-slider"></span>
-                </label>
-                <span class="text-muted" style="font-size:11px;margin-left:auto;">始终开启，所有对话均通过 Agent Loop</span>
-            </div>
-            <p class="text-muted" style="font-size:12px;margin-bottom:12px;">启用后，AI 可在对话中自主调用以下工具。高风险操作需用户确认。系统关键路径自动屏蔽。</p>
+            <p class="text-muted" style="font-size:12px;margin-bottom:12px;">AI 始终可在对话中自主调用以下工具（Tool Calling 永久开启）。高风险操作需用户确认。</p>
             <div class="tools-grid">
                 <div class="tool-card">
                     <div class="tool-card-header"><span class="tool-card-icon">📄</span><span class="tool-card-name">read_file</span><span class="tool-card-badge auto">自动</span></div>

@@ -394,14 +394,11 @@ async function init(): Promise<void> {
     (document.querySelector('#inputMCPTimeout') as HTMLInputElement).value = mcpTimeout >= 0 ? String(mcpTimeout) : '';
     logInit(`超时设置: HTTP=${httpTimeout>=0?httpTimeout:30}s 流式=${streamTimeout>=0?streamTimeout:300}s MCP=${mcpTimeout>=0?mcpTimeout:60}s`);
 
-    // ── Tool Calling 设置 ──
-    const toolCallingEnabled = await db.getSetting('toolCallingEnabled', true);
+    // ── Tool Calling 设置（永久开启，不可关闭）──
+    state.set('toolCallingEnabled', true);
     const runCommandMode = await db.getSetting('runCommandMode', 'confirm') as 'auto' | 'confirm' | 'disabled';
-    state.set('toolCallingEnabled', toolCallingEnabled);
     state.set('runCommandMode', runCommandMode);
     setRunCommandMode(runCommandMode);
-    const toggleTC = document.querySelector<HTMLInputElement>('#toggleToolCalling');
-    if (toggleTC) toggleTC.checked = toolCallingEnabled;
 
     // ── MCP 工具注册 ──
     await startAllMCPServers();

@@ -21,16 +21,6 @@ export function initToolsModal(): void {
     if (e.target === modalEl) closeToolsModal();
   });
 
-  // Tool Calling 始终开启，不可关闭
-  const toggleToolCalling = modalEl.querySelector('#toggleToolCalling') as HTMLInputElement;
-  if (toggleToolCalling) {
-    toggleToolCalling.checked = true;
-    toggleToolCalling.disabled = true;
-    state.set('toolCallingEnabled', true);
-    const db = state.get<ChatDB | null>(KEYS.DB);
-    if (db) db.saveSetting('toolCallingEnabled', true);
-  }
-
   // run_command 模式下拉框
   const selectMode = modalEl.querySelector('#selectRunCommandMode') as HTMLSelectElement;
   if (selectMode) {
@@ -63,13 +53,6 @@ function updateRunCommandBadge(mode: string): void {
 }
 
 export function openToolsModal(): void {
-  // 同步开关状态 — 始终开启
-  const toggleTC = modalEl.querySelector('#toggleToolCalling') as HTMLInputElement;
-  if (toggleTC) {
-    toggleTC.checked = true;
-    toggleTC.disabled = true;
-  }
-
   const runCommandMode = state.get<string>('runCommandMode', 'confirm');
   const selectMode = modalEl.querySelector('#selectRunCommandMode') as HTMLSelectElement;
   if (selectMode) selectMode.value = runCommandMode;
