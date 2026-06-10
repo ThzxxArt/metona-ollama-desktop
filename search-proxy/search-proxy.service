@@ -1,0 +1,13 @@
+[Unit]
+Description=Search Proxy - Google/Bing/DDG API
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/opt/search-proxy/search-proxy
+Restart=always
+RestartSec=5
+Environment=PORT=8080
+
+[Install]
+WantedBy=multi-user.target
