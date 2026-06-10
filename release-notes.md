@@ -4,7 +4,7 @@
 
 ## 项目简介
 
-Metona Ollama Desktop 是一个基于 **Ollama** 的本地 AI 桌面客户端，采用 TypeScript + Electron 构建。所有 AI 推理均在本地完成，数据不离开本机。支持 ReAct Agent Loop、38 个内置工具、智能记忆系统、MCP 协议扩展、三引擎联网搜索、浏览器控制等能力。
+Metona Ollama Desktop 是一个基于 **Ollama** 的本地 AI 桌面客户端，采用 TypeScript + Electron 构建。所有 AI 推理均在本地完成，数据不离开本机。支持 ReAct Agent Loop、38 个内置工具、智能记忆系统、MCP 协议扩展、四引擎联网搜索、浏览器控制等能力。
 
 ---
 
@@ -24,7 +24,7 @@ Metona Ollama Desktop 是一个基于 **Ollama** 的本地 AI 桌面客户端，
 |------|------|------|
 | 文件系统 | 17 | read_file, write_file, list_directory, search_files, create_directory, delete_file, move_file, copy_file, append_file, edit_file, get_file_info, tree, download_file, diff_files, replace_in_files, read_multiple_files, compress |
 | 命令执行 | 1 | run_command（实时流式输出，工作空间终端集成） |
-| 联网搜索 | 2 | web_search（Bing + 百度 + Google 三引擎）, web_fetch |
+| 联网搜索 | 2 | web_search（Bing + 百度 + DuckDuckGo + Google 四引擎）, web_fetch |
 | 浏览器控制 | 8 | browser_open, browser_screenshot, browser_evaluate, browser_extract, browser_click, browser_type, browser_scroll, browser_close |
 | Git | 1 | git（init/clone/add/commit/push/pull/diff/log/status/branch/checkout/merge/stash/reset/tag/remote） |
 | 记忆管理 | 4 | memory_search, memory_add, memory_replace, memory_remove |
@@ -43,10 +43,10 @@ Metona Ollama Desktop 是一个基于 **Ollama** 的本地 AI 桌面客户端，
 - JSON-RPC 2.0 over stdio 标准协议
 - 动态工具发现与执行
 - Shadowing 防护（防止 MCP 工具覆盖内置工具名）
-- 30 秒请求超时保护
+- 60 秒请求超时保护
 
-### 🔍 三引擎联网搜索
-- Bing + 百度 + Google 三引擎聚合
+### 🔍 四引擎联网搜索
+- Bing + 百度 + DuckDuckGo + Google 四引擎聚合
 - web_search 返回标题、URL、摘要（默认 15 条）
 - web_fetch 支持网页内容抓取（默认不截断）
 - 工具链规则：搜索后自动引导抓取详情

@@ -52,7 +52,13 @@ interface MCPServerInstance {
 // ─── 状态 ───
 
 const servers = new Map<string, MCPServerInstance>();
-const MCP_TIMEOUT = 30000; // 30 秒超时
+/** MCP 请求超时（毫秒），默认 60s，可通过 IPC 设置 */
+let MCP_TIMEOUT = 60_000;
+
+/** 设置 MCP 请求超时（毫秒） */
+export function setMCPTimeout(ms: number): void {
+  MCP_TIMEOUT = Math.max(10_000, Math.min(300_000, ms)); // 10s ~ 300s
+}
 
 // ─── JSON-RPC 通信 ───
 

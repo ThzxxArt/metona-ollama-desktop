@@ -362,6 +362,30 @@ async function init(): Promise<void> {
     state.set('maxTurns', maxTurns);
     (document.querySelector('#inputMaxTurns') as HTMLInputElement).value = String(maxTurns);
 
+    // ── v5.2 超时设置 ──
+    const httpTimeout = await db.getSetting<number>('httpTimeout', 0);
+    const streamTimeout = await db.getSetting<number>('streamTimeout', 0);
+    const mcpTimeout = await db.getSetting<number>('mcpTimeout', 0);
+
+    // 应用流式超时到 state（agent-engine 会读取）
+    state.set('streamTimeout', streamTimeout > 0 ? streamTimeout * 1000 : 300_000);
+
+    // 应用 HTTP 和 MCP 超时到主进程
+    const bridge = window.metonaDesktop;
+    if (bridge?.tool?.setTimeouts) {
+      await bridge.tool.setTimeouts({
+        http: httpTimeout > 0 ? httpTimeout * 1000 : 30_000,
+        mcp: mcpTimeout > 0 ? mcpTimeout * 1000 : 60_000,
+      });
+    }
+
+    // 恢复输入框显示值
+    if (document.querySelector('#inputHttpTimeout')) {
+      (document.querySelector('#inputHttpTimeout') as HTMLInputElement).value = httpTimeout > 0 ? String(httpTimeout) : '';
+      (document.querySelector('#inputStreamTimeout') as HTMLInputElement).value = streamTimeout > 0 ? String(streamTimeout) : '';
+      (document.querySelector('#inputMCPTimeout') as HTMLInputElement).value = mcpTimeout > 0 ? String(mcpTimeout) : '';
+    }
+
     // ── Tool Calling 设置 ──
     const toolCallingEnabled = await db.getSetting('toolCallingEnabled', true);
     const runCommandMode = await db.getSetting('runCommandMode', 'confirm') as 'auto' | 'confirm' | 'disabled';

@@ -64,6 +64,49 @@ export function initSettingsModal(): void {
   }, 500);
   document.querySelector('#inputMaxTurns')!.addEventListener('input', saveMaxTurns);
 
+  // ── v5.2 超时设置 ──
+  const inputHttpTimeout = document.querySelector('#inputHttpTimeout') as HTMLInputElement;
+  const inputStreamTimeout = document.querySelector('#inputStreamTimeout') as HTMLInputElement;
+  const inputMCPTimeout = document.querySelector('#inputMCPTimeout') as HTMLInputElement;
+
+  const applyTimeouts = async () => {
+    const db = state.get<ChatDB | null>(KEYS.DB);
+    const bridge = window.metonaDesktop;
+
+    // HTTP 超时（秒→毫秒）
+    const httpVal = inputHttpTimeout.value.trim();
+    const httpSec = httpVal ? parseInt(httpVal) : 0;
+    if (db) await db.saveSetting('httpTimeout', httpSec > 0 ? httpSec : 0);
+    if (bridge?.tool?.setTimeouts) {
+      await bridge.tool.setTimeouts({ http: httpSec > 0 ? httpSec * 1000 : 30_000 });
+    }
+    logSetting('HTTP 超时', httpSec > 0 ? `${httpSec}s` : '默认(30s)');
+
+    // 流式超时（秒→毫秒）
+    const streamVal = inputStreamTimeout.value.trim();
+    const streamSec = streamVal ? parseInt(streamVal) : 0;
+    state.set('streamTimeout', streamSec > 0 ? streamSec * 1000 : 300_000);
+    if (db) await db.saveSetting('streamTimeout', streamSec > 0 ? streamSec : 0);
+    logSetting('流式超时', streamSec > 0 ? `${streamSec}s` : '默认(300s)');
+
+    // MCP 超时（秒→毫秒）
+    const mcpVal = inputMCPTimeout.value.trim();
+    const mcpSec = mcpVal ? parseInt(mcpVal) : 0;
+    if (db) await db.saveSetting('mcpTimeout', mcpSec > 0 ? mcpSec : 0);
+    if (bridge?.tool?.setTimeouts) {
+      await bridge.tool.setTimeouts({ mcp: mcpSec > 0 ? mcpSec * 1000 : 60_000 });
+    }
+    logSetting('MCP 超时', mcpSec > 0 ? `${mcpSec}s` : '默认(60s)');
+  };
+
+  const saveHttpTimeout = debounce(applyTimeouts, 500);
+  const saveStreamTimeout = debounce(applyTimeouts, 500);
+  const saveMCPTimeout = debounce(applyTimeouts, 500);
+
+  inputHttpTimeout.addEventListener('input', saveHttpTimeout);
+  inputStreamTimeout.addEventListener('input', saveStreamTimeout);
+  inputMCPTimeout.addEventListener('input', saveMCPTimeout);
+
   // ── v5.0 MCP 服务器管理 ──
   async function renderMCPServerList(): Promise<void> {
     const { getMCPServers, getMCPServerStatuses, toggleMCPServer, removeMCPServer } = await import('../services/mcp-client.js');
@@ -259,10 +302,29 @@ export function openSettingsModal(): void {
   populateMemoryEmbedModels();
   populateSubAgentModels();
   updateMemoryVectorStatus();
+  loadTimeoutSettings();
 }
 
 export function closeSettingsModal(): void {
   settingsModalEl.style.display = 'none';
+}
+
+/** 加载已保存的超时设置到输入框 */
+async function loadTimeoutSettings(): Promise<void> {
+  const db = state.get<ChatDB | null>(KEYS.DB);
+  if (!db) return;
+
+  const httpTimeout = await db.getSetting<number>('httpTimeout', 0);
+  const streamTimeout = await db.getSetting<number>('streamTimeout', 0);
+  const mcpTimeout = await db.getSetting<number>('mcpTimeout', 0);
+
+  const inputHttp = document.querySelector('#inputHttpTimeout') as HTMLInputElement;
+  const inputStream = document.querySelector('#inputStreamTimeout') as HTMLInputElement;
+  const inputMCP = document.querySelector('#inputMCPTimeout') as HTMLInputElement;
+
+  if (inputHttp) inputHttp.value = httpTimeout > 0 ? String(httpTimeout) : '';
+  if (inputStream) inputStream.value = streamTimeout > 0 ? String(streamTimeout) : '';
+  if (inputMCP) inputMCP.value = mcpTimeout > 0 ? String(mcpTimeout) : '';
 }
 
 async function exportAllSessions(): Promise<void> {

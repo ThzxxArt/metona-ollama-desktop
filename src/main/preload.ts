@@ -19,7 +19,8 @@ contextBridge.exposeInMainWorld('metonaDesktop', {
   tool: {
     execute: (toolName: string, args: Record<string, unknown>) => ipcRenderer.invoke('tool:execute', toolName, args),
     getConfig: () => ipcRenderer.invoke('tool:getConfig'),
-    setAllowedDirs: (dirs: string[]) => ipcRenderer.invoke('tool:setAllowedDirs', dirs)
+    setAllowedDirs: (dirs: string[]) => ipcRenderer.invoke('tool:setAllowedDirs', dirs),
+    setTimeouts: (timeouts: { http?: number; mcp?: number }) => ipcRenderer.invoke('tool:setTimeouts', timeouts)
   },
   notify: (title: string, body: string) => ipcRenderer.invoke('notify', title, body),
   window: {

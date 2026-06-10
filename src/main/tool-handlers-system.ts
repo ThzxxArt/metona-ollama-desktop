@@ -118,8 +118,13 @@ export function killToolProcess(): boolean {
 
 
 
-/** HTTP 请求超时（毫秒） */
-const HTTP_TIMEOUT = 15_000;
+/** HTTP 请求超时（毫秒），默认 30s，可通过 IPC 设置 */
+let HTTP_TIMEOUT = 30_000;
+
+/** 设置 HTTP 请求超时（毫秒） */
+export function setHTTPTimeout(ms: number): void {
+  HTTP_TIMEOUT = Math.max(5000, Math.min(300_000, ms)); // 5s ~ 300s
+}
 
 // ── LRU 搜索缓存 ──────────────────────────────────
 interface CacheEntry { results: Array<{ title: string; url: string; snippet: string; engine: string; reachable?: boolean }>; time: number; }

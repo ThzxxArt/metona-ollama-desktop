@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-v0.10.1-E8734A?style=flat-square" alt="version">
+  <img src="https://img.shields.io/badge/version-v0.10.2-E8734A?style=flat-square" alt="version">
   <img src="https://img.shields.io/badge/electron-33+-47848F?style=flat-square&logo=electron" alt="electron">
   <img src="https://img.shields.io/badge/typescript-5.7+-3178C6?style=flat-square&logo=typescript" alt="typescript">
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="license">
@@ -231,7 +231,7 @@ npm start
 ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm run dist
 ```
 
-产出：`release/Metona Ollama Setup v0.10.1.exe`
+产出：`release/Metona Ollama Setup v0.10.2.exe`
 
 ## 🛠️ 常用命令
 
@@ -454,7 +454,7 @@ npm start
 ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm run dist
 ```
 
-Output: `release/Metona Ollama Setup v0.10.1.exe`
+Output: `release/Metona Ollama Setup v0.10.2.exe`
 
 ## 🛠️ Common Commands
 

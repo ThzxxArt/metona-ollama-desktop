@@ -646,7 +646,7 @@ export async function runAgentLoop(
     state.set(KEYS.ABORT_CONTROLLER, abortController);
 
     // 流式调用超时保护（可配置，0 = 禁用超时）
-    const STREAM_TIMEOUT_MS = state.get<number>('streamTimeout', 180_000); // 默认 180s
+    const STREAM_TIMEOUT_MS = state.get<number>('streamTimeout', 300_000); // 默认 300s（可在设置中配置，0=禁用）
     let streamTimer: ReturnType<typeof setTimeout> | null = null;
     if (STREAM_TIMEOUT_MS > 0) {
       streamTimer = setTimeout(() => {

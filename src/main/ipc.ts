@@ -49,9 +49,10 @@ import {
   handleCompress
 } from './tool-handlers.js';
 import { browserOpen, browserScreenshot, browserEvaluate, browserExtract, browserClick, browserType, browserScroll, browserClose } from './browser.js';
-import { startServer, stopServer, stopAllServers, callTool, getAllTools, getServerStatuses, refreshTools } from './mcp-manager.js';
+import { startServer, stopServer, stopAllServers, callTool, getAllTools, getServerStatuses, refreshTools, setMCPTimeout } from './mcp-manager.js';
 import { getAllowedDirs, getBlockedDirs, setAllowedDirs } from './tool-security.js';
 import { startProcess, killProcess, getWorkspaceDir, setWorkspaceDir, listWorkspaceDir } from './workspace.js';
+import { setHTTPTimeout } from './tool-handlers-system.js';
 
 /** 工具结果摘要（用于日志面板） */
 function summarizeResult(toolName: string, result: Record<string, unknown>): string {
@@ -220,6 +221,16 @@ export async function setupIPC(): Promise<void> {
 
   ipcMain.handle('tool:setAllowedDirs', (_, dirs: string[]) => {
     setAllowedDirs(dirs);
+  });
+
+  ipcMain.handle('tool:setTimeouts', (_, timeouts: { http?: number; mcp?: number }) => {
+    if (typeof timeouts.http === 'number' && timeouts.http > 0) {
+      setHTTPTimeout(timeouts.http);
+    }
+    if (typeof timeouts.mcp === 'number' && timeouts.mcp > 0) {
+      setMCPTimeout(timeouts.mcp);
+    }
+    return { success: true };
   });
 
   // ── Workspace IPC ──
