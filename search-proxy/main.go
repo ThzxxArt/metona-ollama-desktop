@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -11,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -18,11 +20,23 @@ import (
 	"time"
 )
 
+const version = "2.0.0"
+
+// ── CLI ──
+var (
+	cliPort    = flag.Int("port", 7899, "监听端口")
+	cliCache   = flag.Int("cache", 5, "缓存时间(分钟)")
+	cliRate    = flag.Int("rate", 30, "限流速率(req/s)")
+	cliBurst   = flag.Int("burst", 60, "限流突发容量")
+	cliTimeout = flag.Int("timeout", 12, "搜索引擎请求超时(秒)")
+	cliVersion = flag.Bool("version", false, "显示版本")
+)
+
 // ── 限流器 ──
 type RateLimiter struct {
 	tokens   atomic.Int64
 	capacity int64
-	rate     int64 // tokens/sec
+	rate     int64
 	lastFill atomic.Int64
 }
 
@@ -74,28 +88,22 @@ type Result struct {
 }
 
 type SearchResp struct {
-	Success bool     `json:"success"`
-	Query   string   `json:"query"`
-	Total   int      `json:"total"`
-	Results []Result `json:"results"`
-	Engine  string   `json:"engine,omitempty"`
-	Error   string   `json:"error,omitempty"`
-	FromCache bool   `json:"from_cache,omitempty"`
+	Success   bool     `json:"success"`
+	Query     string   `json:"query"`
+	Total     int      `json:"total"`
+	Results   []Result `json:"results"`
+	Engine    string   `json:"engine,omitempty"`
+	Error     string   `json:"error,omitempty"`
+	FromCache bool     `json:"from_cache,omitempty"`
 }
 
 // ── 全局配置 ──
 var (
-	httpClient = &http.Client{
-		Timeout: 12 * time.Second,
-		Transport: &http.Transport{
-			MaxIdleConns:        100,
-			MaxIdleConnsPerHost: 20,
-			IdleConnTimeout:     90 * time.Second,
-		},
-	}
-	ua       = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-	acceptLg = "zh-CN,zh;q=0.9,en;q=0.8"
-	limiter  = newRateLimiter(30, 60) // 30 req/s, burst 60
+	httpClient *http.Client
+	ua         = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+	acceptLg   = "zh-CN,zh;q=0.9,en;q=0.8"
+	limiter    *RateLimiter
+	cacheTTL   int64
 )
 
 // ── recovery middleware ──
@@ -282,10 +290,7 @@ func decodeEntities(s string) string {
 }
 
 func parallelSearch(q string, n int) []Result {
-	type engResult struct {
-		results []Result
-	}
-	ch := make(chan engResult, 4)
+	ch := make(chan []Result, 4)
 	engines := []func(string, int) []Result{searchGoogle, searchBing, searchBaidu, searchDDG}
 	for _, fn := range engines {
 		go func(f func(string, int) []Result) {
@@ -293,13 +298,13 @@ func parallelSearch(q string, n int) []Result {
 			if r == nil {
 				r = []Result{}
 			}
-			ch <- engResult{r}
+			ch <- r
 		}(fn)
 	}
 	seen := map[string]bool{}
 	var out []Result
 	for range engines {
-		for _, r := range (<-ch).results {
+		for _, r := range <-ch {
 			key := strings.TrimRight(r.URL, "/")
 			if !seen[key] {
 				seen[key] = true
@@ -341,7 +346,6 @@ func handleSearch(w http.ResponseWriter, r *http.Request) {
 		n = 20
 	}
 
-	// 缓存
 	ck := fmt.Sprintf("%s|%s|%d", q, engine, n)
 	if v, ok := cache.Load(ck); ok {
 		ce := v.(cacheEntry)
@@ -368,11 +372,11 @@ func handleSearch(w http.ResponseWriter, r *http.Request) {
 	case "all":
 		results = parallelSearch(q, n)
 	default:
-		writeJSON(w, http.StatusBadRequest, SearchResp{Error: "unknown engine: " + engine + " (use google/bing/ddg/baidu/all)"})
+		writeJSON(w, http.StatusBadRequest, SearchResp{Error: "unknown engine: " + engine})
 		return
 	}
 
-	cache.Store(ck, cacheEntry{Results: results, ExpiresAt: time.Now().Add(5 * time.Minute).Unix()})
+	cache.Store(ck, cacheEntry{Results: results, ExpiresAt: time.Now().Add(time.Duration(cacheTTL) * time.Minute).Unix()})
 	writeJSON(w, http.StatusOK, SearchResp{
 		Success: true, Query: q, Engine: engine,
 		Total: len(results), Results: results,
@@ -382,6 +386,7 @@ func handleSearch(w http.ResponseWriter, r *http.Request) {
 func handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"status":  "ok",
+		"version": version,
 		"engines": []string{"google", "bing", "ddg", "baidu", "all"},
 		"time":    time.Now().UTC().Format(time.RFC3339),
 	})
@@ -395,10 +400,29 @@ func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 }
 
 func main() {
+	flag.Parse()
+
+	if *cliVersion {
+		fmt.Printf("metona-search-proxy v%s  go/%s\n", version, runtime.Version())
+		return
+	}
+
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = "18080"
+		port = fmt.Sprintf("%d", *cliPort)
 	}
+
+	// 初始化
+	httpClient = &http.Client{
+		Timeout: time.Duration(*cliTimeout) * time.Second,
+		Transport: &http.Transport{
+			MaxIdleConns:        100,
+			MaxIdleConnsPerHost: 20,
+			IdleConnTimeout:     90 * time.Second,
+		},
+	}
+	limiter = newRateLimiter(int64(*cliRate), int64(*cliBurst))
+	cacheTTL = int64(*cliCache)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/search", recoverWrap(handleSearch))
@@ -412,7 +436,6 @@ func main() {
 		IdleTimeout:  60 * time.Second,
 	}
 
-	// 优雅关闭
 	go func() {
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
@@ -423,7 +446,8 @@ func main() {
 		srv.Shutdown(ctx)
 	}()
 
-	log.Printf("search-proxy :%s  engines: google/bing/ddg/baidu/all   cache:5min  rate:%d/s", port, 30)
+	log.Printf("metona-search-proxy v%s  :%s  engines: google/bing/ddg/baidu/all  cache: %dm  rate: %d/s",
+		version, port, *cliCache, *cliRate)
 	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
 		log.Fatal(err)
 	}
