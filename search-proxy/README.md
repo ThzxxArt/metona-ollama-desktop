@@ -105,9 +105,12 @@ metona-search-proxy -status
 # 前台运行（调试用，Ctrl+C 停止）
 metona-search-proxy
 
-# 后台启动
+# 后台启动（默认端口 7899）
 metona-search-proxy -start
 # 已后台启动 (PID: 12345)
+
+# 后台启动（自定义端口和缓存）
+metona-search-proxy -start -port 6789 -cache 10 -rate 50
 
 # 停止
 metona-search-proxy -stop
