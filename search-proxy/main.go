@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -8,112 +9,176 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"syscall"
 	"time"
 )
 
-var cache = sync.Map{}
-
-type cacheEntry struct {
-	Results   []SearchResult `json:"-"`
-	ExpiresAt int64          `json:"-"`
+// ── 限流器 ──
+type RateLimiter struct {
+	tokens   atomic.Int64
+	capacity int64
+	rate     int64 // tokens/sec
+	lastFill atomic.Int64
 }
 
-type SearchResult struct {
+func newRateLimiter(rate, cap int64) *RateLimiter {
+	rl := &RateLimiter{rate: rate, capacity: cap}
+	rl.tokens.Store(cap)
+	rl.lastFill.Store(time.Now().UnixNano())
+	return rl
+}
+
+func (rl *RateLimiter) Allow() bool {
+	now := time.Now().UnixNano()
+	last := rl.lastFill.Load()
+	elapsed := float64(now-last) / 1e9
+	newTokens := int64(elapsed * float64(rl.rate))
+	if newTokens > 0 {
+		rl.lastFill.Store(now)
+		current := rl.tokens.Load()
+		next := current + newTokens
+		if next > rl.capacity {
+			next = rl.capacity
+		}
+		rl.tokens.Store(next)
+	}
+	for {
+		current := rl.tokens.Load()
+		if current <= 0 {
+			return false
+		}
+		if rl.tokens.CompareAndSwap(current, current-1) {
+			return true
+		}
+	}
+}
+
+// ── 缓存 ──
+var cache sync.Map
+
+type cacheEntry struct {
+	Results   []Result `json:"-"`
+	ExpiresAt int64    `json:"-"`
+}
+
+type Result struct {
 	Title   string `json:"title"`
 	URL     string `json:"url"`
 	Snippet string `json:"snippet"`
 	Engine  string `json:"engine"`
 }
 
-type SearchResponse struct {
-	Success bool           `json:"success"`
-	Query   string         `json:"query"`
-	Total   int            `json:"total"`
-	Results []SearchResult `json:"results"`
-	Error   string         `json:"error,omitempty"`
+type SearchResp struct {
+	Success bool     `json:"success"`
+	Query   string   `json:"query"`
+	Total   int      `json:"total"`
+	Results []Result `json:"results"`
+	Engine  string   `json:"engine,omitempty"`
+	Error   string   `json:"error,omitempty"`
+	FromCache bool   `json:"from_cache,omitempty"`
 }
 
-var httpClient = &http.Client{Timeout: 15 * time.Second}
-var ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+// ── 全局配置 ──
+var (
+	httpClient = &http.Client{
+		Timeout: 12 * time.Second,
+		Transport: &http.Transport{
+			MaxIdleConns:        100,
+			MaxIdleConnsPerHost: 20,
+			IdleConnTimeout:     90 * time.Second,
+		},
+	}
+	ua       = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+	acceptLg = "zh-CN,zh;q=0.9,en;q=0.8"
+	limiter  = newRateLimiter(30, 60) // 30 req/s, burst 60
+)
 
-// ── Google ──
-func searchGoogle(q string, n int) []SearchResult {
-	u := fmt.Sprintf("https://www.google.com/search?q=%s&num=%d&hl=zh-CN", url.QueryEscape(q), n)
+// ── recovery middleware ──
+func recoverWrap(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if err := recover(); err != nil {
+				log.Printf("PANIC: %v", err)
+				writeJSON(w, http.StatusInternalServerError, SearchResp{Error: "internal error"})
+			}
+		}()
+		h(w, r)
+	}
+}
+
+// ── 引擎实现 ──
+
+func doGet(u string) (*http.Response, error) {
 	req, _ := http.NewRequest("GET", u, nil)
 	req.Header.Set("User-Agent", ua)
-	req.Header.Set("Accept-Language", "zh-CN,zh;q=0.9")
+	req.Header.Set("Accept-Language", acceptLg)
+	return httpClient.Do(req)
+}
 
-	resp, err := httpClient.Do(req)
+func searchGoogle(q string, n int) []Result {
+	u := fmt.Sprintf("https://www.google.com/search?q=%s&num=%d&hl=zh-CN", url.QueryEscape(q), n)
+	resp, err := doGet(u)
 	if err != nil {
-		log.Printf("Google: %v", err)
 		return nil
 	}
 	defer resp.Body.Close()
-
 	if resp.StatusCode != 200 {
-		log.Printf("Google HTTP %d", resp.StatusCode)
 		return nil
 	}
-
 	body, _ := io.ReadAll(resp.Body)
 	html := string(body)
 
-	reBlock := regexp.MustCompile(`<div class="g"[^>]*>([\s\S]*?)(?=<div class="g"|</div>\s*</div>\s*</div>)`)
-	reTitle := regexp.MustCompile(`<a[^>]*href="(https?://[^"]*)"[^>]*>[\s\S]*?<h3[^>]*>([\s\S]*?)</h3>`)
-	reSn := regexp.MustCompile(`<(?:div|span)[^>]*(?:data-sncf|class="[^"]*st[^"]*"|class="[^"]*VwiC3b[^"]*")[^>]*>([\s\S]*?)</(?:div|span)>`)
+	reB := regexp.MustCompile(`<div class="g"[^>]*>([\s\S]*?)(?=<div class="g"|</div>\s*</div>\s*</div>)`)
+	reT := regexp.MustCompile(`<a[^>]*href="(https?://[^"]*)"[^>]*>[\s\S]*?<h3[^>]*>([\s\S]*?)</h3>`)
+	reS := regexp.MustCompile(`<(?:div|span)[^>]*(?:data-sncf|class="[^"]*st[^"]*"|class="[^"]*VwiC3b[^"]*")[^>]*>([\s\S]*?)</(?:div|span)>`)
 
-	var results []SearchResult
-	for _, m := range reBlock.FindAllStringSubmatch(html, -1) {
-		if len(results) >= n {
+	var out []Result
+	for _, m := range reB.FindAllStringSubmatch(html, -1) {
+		if len(out) >= n {
 			break
 		}
-		tm := reTitle.FindStringSubmatch(m[1])
-		if tm == nil {
+		tm := reT.FindStringSubmatch(m[1])
+		if tm == nil || strings.Contains(tm[1], "google.com") {
 			continue
 		}
 		title := clean(tm[2])
-		link := tm[1]
-		if title == "" || strings.Contains(link, "google.com") {
+		if title == "" {
 			continue
 		}
-		sn := ""
-		if sm := reSn.FindStringSubmatch(m[1]); sm != nil {
-			sn = clean(sm[1])
+		snip := ""
+		if sm := reS.FindStringSubmatch(m[1]); sm != nil {
+			snip = clean(sm[1])
 		}
-		results = append(results, SearchResult{Title: title, URL: link, Snippet: sn, Engine: "google"})
+		out = append(out, Result{Title: title, URL: tm[1], Snippet: snip, Engine: "google"})
 	}
-	return results
+	return out
 }
 
-// ── Bing ──
-func searchBing(q string, n int) []SearchResult {
+func searchBing(q string, n int) []Result {
 	u := fmt.Sprintf("https://www.bing.com/search?q=%s&count=%d", url.QueryEscape(q), n)
-	req, _ := http.NewRequest("GET", u, nil)
-	req.Header.Set("User-Agent", ua)
-	req.Header.Set("Accept-Language", "zh-CN,zh;q=0.9")
-
-	resp, err := httpClient.Do(req)
+	resp, err := doGet(u)
 	if err != nil {
 		return nil
 	}
 	defer resp.Body.Close()
-
 	body, _ := io.ReadAll(resp.Body)
 	html := string(body)
 
-	reBlock := regexp.MustCompile(`<li class="b_algo"[^>]*>([\s\S]*?)</li>`)
-	reTitle := regexp.MustCompile(`<a[^>]*href="(https?://[^"]*)"[^>]*>([\s\S]*?)</a>`)
-	reSn := regexp.MustCompile(`<p[^>]*>([\s\S]*?)</p>`)
+	reB := regexp.MustCompile(`<li class="b_algo"[^>]*>([\s\S]*?)</li>`)
+	reT := regexp.MustCompile(`<a[^>]*href="(https?://[^"]*)"[^>]*>([\s\S]*?)</a>`)
+	reS := regexp.MustCompile(`<p[^>]*>([\s\S]*?)</p>`)
 
-	var results []SearchResult
-	for _, m := range reBlock.FindAllStringSubmatch(html, -1) {
-		if len(results) >= n {
+	var out []Result
+	for _, m := range reB.FindAllStringSubmatch(html, -1) {
+		if len(out) >= n {
 			break
 		}
-		tm := reTitle.FindStringSubmatch(m[1])
+		tm := reT.FindStringSubmatch(m[1])
 		if tm == nil {
 			continue
 		}
@@ -121,35 +186,30 @@ func searchBing(q string, n int) []SearchResult {
 		if title == "" {
 			continue
 		}
-		sn := ""
-		if sm := reSn.FindStringSubmatch(m[1]); sm != nil {
-			sn = clean(sm[1])
+		snip := ""
+		if sm := reS.FindStringSubmatch(m[1]); sm != nil {
+			snip = clean(sm[1])
 		}
-		results = append(results, SearchResult{Title: title, URL: tm[1], Snippet: sn, Engine: "bing"})
+		out = append(out, Result{Title: title, URL: tm[1], Snippet: snip, Engine: "bing"})
 	}
-	return results
+	return out
 }
 
-// ── DuckDuckGo Lite ──
-func searchDDG(q string, n int) []SearchResult {
+func searchDDG(q string, n int) []Result {
 	u := fmt.Sprintf("https://lite.duckduckgo.com/lite/?q=%s", url.QueryEscape(q))
-	req, _ := http.NewRequest("GET", u, nil)
-	req.Header.Set("User-Agent", ua)
-
-	resp, err := httpClient.Do(req)
+	resp, err := doGet(u)
 	if err != nil {
 		return nil
 	}
 	defer resp.Body.Close()
-
 	body, _ := io.ReadAll(resp.Body)
 	html := string(body)
 
-	reLink := regexp.MustCompile(`<a[^>]*href="(https?://[^"]*)"[^>]*>([\s\S]*?)</a>`)
+	reL := regexp.MustCompile(`<a[^>]*href="(https?://[^"]*)"[^>]*>([\s\S]*?)</a>`)
 
-	var results []SearchResult
-	for _, m := range reLink.FindAllStringSubmatch(html, -1) {
-		if len(results) >= n {
+	var out []Result
+	for _, m := range reL.FindAllStringSubmatch(html, -1) {
+		if len(out) >= n {
 			break
 		}
 		link := decodeEntities(m[1])
@@ -157,10 +217,54 @@ func searchDDG(q string, n int) []SearchResult {
 		if title == "" || strings.Contains(link, "duckduckgo.com") {
 			continue
 		}
-		results = append(results, SearchResult{Title: title, URL: link, Snippet: "", Engine: "ddg"})
+		out = append(out, Result{Title: title, URL: link, Snippet: "", Engine: "ddg"})
 	}
-	return results
+	return out
 }
+
+func searchBaidu(q string, n int) []Result {
+	u := fmt.Sprintf("https://www.baidu.com/s?wd=%s&rn=%d", url.QueryEscape(q), n)
+	resp, err := doGet(u)
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	html := string(body)
+
+	reB := regexp.MustCompile(`<div class="result[^"]*"[^>]*>([\s\S]*?)(?=<div class="result|<div id="content_right|$)`)
+	reT := regexp.MustCompile(`<h3[^>]*class="[^"]*t[^"]*"[^>]*>[\s\S]*?<a[^>]*href="([^"]*)"[^>]*>([\s\S]*?)</a>`)
+	reS := regexp.MustCompile(`<div class="c-abstract"[^>]*>([\s\S]*?)</div>`)
+
+	var out []Result
+	for _, m := range reB.FindAllStringSubmatch(html, -1) {
+		if len(out) >= n {
+			break
+		}
+		tm := reT.FindStringSubmatch(m[1])
+		if tm == nil {
+			continue
+		}
+		link := tm[1]
+		if !strings.HasPrefix(link, "http") {
+			if dm := regexp.MustCompile(`data-url="(https?://[^"]*)"`).FindStringSubmatch(m[1]); dm != nil {
+				link = dm[1]
+			}
+		}
+		title := clean(tm[2])
+		if title == "" {
+			continue
+		}
+		snip := ""
+		if sm := reS.FindStringSubmatch(m[1]); sm != nil {
+			snip = clean(sm[1])
+		}
+		out = append(out, Result{Title: title, URL: link, Snippet: snip, Engine: "baidu"})
+	}
+	return out
+}
+
+// ── 工具 ──
 
 func clean(s string) string {
 	s = regexp.MustCompile(`<[^>]+>`).ReplaceAllString(s, "")
@@ -169,44 +273,89 @@ func clean(s string) string {
 }
 
 func decodeEntities(s string) string {
-	repl := strings.NewReplacer(
+	r := strings.NewReplacer(
 		"&nbsp;", " ", "&lt;", "<", "&gt;", ">", "&amp;", "&",
 		"&quot;", `"`, "&#39;", "'", "&apos;", "'",
 		"&hellip;", "…", "&mdash;", "—", "&ndash;", "–",
 	)
-	return repl.Replace(s)
+	return r.Replace(s)
+}
+
+func parallelSearch(q string, n int) []Result {
+	type engResult struct {
+		results []Result
+	}
+	ch := make(chan engResult, 4)
+	engines := []func(string, int) []Result{searchGoogle, searchBing, searchBaidu, searchDDG}
+	for _, fn := range engines {
+		go func(f func(string, int) []Result) {
+			r := f(q, n)
+			if r == nil {
+				r = []Result{}
+			}
+			ch <- engResult{r}
+		}(fn)
+	}
+	seen := map[string]bool{}
+	var out []Result
+	for range engines {
+		for _, r := range (<-ch).results {
+			key := strings.TrimRight(r.URL, "/")
+			if !seen[key] {
+				seen[key] = true
+				out = append(out, r)
+			}
+		}
+	}
+	if len(out) > n {
+		out = out[:n]
+	}
+	return out
 }
 
 // ── Handler ──
+
 func handleSearch(w http.ResponseWriter, r *http.Request) {
+	if !limiter.Allow() {
+		writeJSON(w, http.StatusTooManyRequests, SearchResp{Error: "rate limited"})
+		return
+	}
+
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
 	if q == "" {
-		writeJSON(w, http.StatusBadRequest, SearchResponse{Success: false, Error: "missing q"})
+		writeJSON(w, http.StatusBadRequest, SearchResp{Error: "missing q"})
 		return
 	}
 
 	engine := r.URL.Query().Get("engine")
 	if engine == "" {
-		engine = "google"
+		engine = "all"
 	}
 
 	n := 10
 	fmt.Sscanf(r.URL.Query().Get("n"), "%d", &n)
+	if n < 1 {
+		n = 10
+	}
 	if n > 20 {
 		n = 20
 	}
 
+	// 缓存
 	ck := fmt.Sprintf("%s|%s|%d", q, engine, n)
 	if v, ok := cache.Load(ck); ok {
 		ce := v.(cacheEntry)
 		if time.Now().Unix() < ce.ExpiresAt {
-			writeJSON(w, http.StatusOK, SearchResponse{Success: true, Query: q, Total: len(ce.Results), Results: ce.Results})
+			writeJSON(w, http.StatusOK, SearchResp{
+				Success: true, Query: q, Engine: engine,
+				Total: len(ce.Results), Results: ce.Results, FromCache: true,
+			})
 			return
 		}
 		cache.Delete(ck)
 	}
 
-	var results []SearchResult
+	var results []Result
 	switch engine {
 	case "google":
 		results = searchGoogle(q, n)
@@ -214,41 +363,32 @@ func handleSearch(w http.ResponseWriter, r *http.Request) {
 		results = searchBing(q, n)
 	case "ddg":
 		results = searchDDG(q, n)
+	case "baidu":
+		results = searchBaidu(q, n)
 	case "all":
 		results = parallelSearch(q, n)
 	default:
-		writeJSON(w, http.StatusBadRequest, SearchResponse{Success: false, Error: "unknown engine: " + engine})
+		writeJSON(w, http.StatusBadRequest, SearchResp{Error: "unknown engine: " + engine + " (use google/bing/ddg/baidu/all)"})
 		return
 	}
 
 	cache.Store(ck, cacheEntry{Results: results, ExpiresAt: time.Now().Add(5 * time.Minute).Unix()})
-	writeJSON(w, http.StatusOK, SearchResponse{Success: true, Query: q, Total: len(results), Results: results})
+	writeJSON(w, http.StatusOK, SearchResp{
+		Success: true, Query: q, Engine: engine,
+		Total: len(results), Results: results,
+	})
 }
 
-func parallelSearch(q string, n int) []SearchResult {
-	ch := make(chan []SearchResult, 3)
-	go func() { ch <- searchGoogle(q, n) }()
-	go func() { ch <- searchBing(q, n) }()
-	go func() { ch <- searchDDG(q, n) }()
-	seen := map[string]bool{}
-	var results []SearchResult
-	for i := 0; i < 3; i++ {
-		for _, r := range <-ch {
-			key := strings.TrimRight(r.URL, "/")
-			if !seen[key] {
-				seen[key] = true
-				results = append(results, r)
-			}
-		}
-	}
-	if len(results) > n {
-		results = results[:n]
-	}
-	return results
+func handleHealth(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status":  "ok",
+		"engines": []string{"google", "bing", "ddg", "baidu", "all"},
+		"time":    time.Now().UTC().Format(time.RFC3339),
+	})
 }
 
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(v)
@@ -257,15 +397,35 @@ func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = "8080"
+		port = "18080"
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/search", handleSearch)
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
-	})
+	mux.HandleFunc("/search", recoverWrap(handleSearch))
+	mux.HandleFunc("/health", recoverWrap(handleHealth))
 
-	log.Printf("search-proxy :%s  (google/bing/ddg/all)", port)
-	log.Fatal(http.ListenAndServe(":"+port, mux))
+	srv := &http.Server{
+		Addr:         ":" + port,
+		Handler:      mux,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 15 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
+
+	// 优雅关闭
+	go func() {
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+		<-sigCh
+		log.Println("shutting down...")
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		srv.Shutdown(ctx)
+	}()
+
+	log.Printf("search-proxy :%s  engines: google/bing/ddg/baidu/all   cache:5min  rate:%d/s", port, 30)
+	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
+		log.Fatal(err)
+	}
+	log.Println("stopped")
 }

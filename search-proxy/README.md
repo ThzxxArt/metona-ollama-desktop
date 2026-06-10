@@ -1,25 +1,27 @@
 # search-proxy
 
-香港服务器上的搜索引擎代理。本应用通过 HTTP API 调用，直连 Google/Bing/DDG。
+部署在可直连 Google/Bing/DuckDuckGo 的云服务器上，通过 HTTP API 提供搜索引擎代理。
 
 ## 部署
 
 ```bash
-# 1. 拷贝到服务器
+# 1. 上传到服务器
 scp search-proxy user@your-server:/opt/search-proxy/
 
-# 2. 编译（如果有 Go 环境）
+# 2. 编译
 cd /opt/search-proxy && go build -o search-proxy .
 
-# 或者本地交叉编译后上传：
+# 本地交叉编译：
 # GOOS=linux GOARCH=amd64 go build -o search-proxy .
 
-# 3. 测试
-./search-proxy &
-curl "http://localhost:8080/health"
-curl "http://localhost:8080/search?q=hello&engine=google&n=5"
+# 3. 启动（默认端口 18080）
+PORT=18080 ./search-proxy &
 
-# 4. 安装 systemd 服务（可选，开机自启）
+# 4. 测试
+curl "http://localhost:18080/health"
+curl "http://localhost:18080/search?q=hello&n=5"
+
+# 5. 安装 systemd 服务
 sudo cp search-proxy.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now search-proxy
@@ -30,16 +32,15 @@ sudo systemctl enable --now search-proxy
 ```
 GET /search?q=关键词&engine=google&n=10
 
-engine: google | bing | ddg | all
+engine: google | bing | ddg | baidu | all (默认)
 n: 1-20，默认10
 缓存: 5分钟
+限流: 30 req/s
 
 GET /health
-→ {"status":"ok"}
+→ {"status":"ok","engines":["google","bing","ddg","baidu","all"],"time":"..."}
 ```
 
 ## 本应用配置
 
-在设置面板的代理输入框中填入：`http://你的服务器IP:8080`
-
-或者通过代理设置：在 search-proxy 前挂 nginx 反代加 HTTPS。
+设置面板 → 代理设置 → 填入 `http://服务器IP:18080` → 重启
