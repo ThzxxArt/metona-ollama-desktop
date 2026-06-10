@@ -231,6 +231,21 @@ export async function setupIPC(): Promise<void> {
     return { success: true };
   });
 
+  // ── 代理设置（web_search/web_fetch 走代理）──
+  ipcMain.handle('proxy:set', (_, url: string) => {
+    if (url) {
+      process.env.HTTP_PROXY = url;
+      process.env.HTTPS_PROXY = url;
+      process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+      sendLog('info', `🌐 代理已设置`, url);
+    } else {
+      delete process.env.HTTP_PROXY;
+      delete process.env.HTTPS_PROXY;
+      delete process.env.NODE_TLS_REJECT_UNAUTHORIZED;
+      sendLog('info', `🌐 代理已禁用`);
+    }
+  });
+
   // ── Workspace IPC ──
 
   // 获取工作空间目录

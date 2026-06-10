@@ -221,6 +221,7 @@ export interface MetonaDesktopAPI {
     getConfig: () => Promise<{ allowedDirs: string[]; blockedDirs: string[] }>;
     setAllowedDirs: (dirs: string[]) => Promise<void>;
     setTimeouts: (timeouts: { http?: number; mcp?: number }) => Promise<{ success: boolean }>;
+    setProxy: (url: string) => Promise<void>;
   };
   notify: (title: string, body: string) => void;
   window: {

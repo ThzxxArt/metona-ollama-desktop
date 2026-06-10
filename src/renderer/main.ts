@@ -394,6 +394,21 @@ async function init(): Promise<void> {
     (document.querySelector('#inputMCPTimeout') as HTMLInputElement).value = mcpTimeout >= 0 ? String(mcpTimeout) : '';
     logInit(`超时设置: HTTP=${httpTimeout>=0?httpTimeout:30}s 流式=${streamTimeout>=0?streamTimeout:300}s MCP=${mcpTimeout>=0?mcpTimeout:60}s`);
 
+    // ── 代理设置 ──
+    const proxyUrl = await db.getSetting('proxyUrl', '');
+    if (proxyUrl) {
+      try {
+        await fetch(proxyUrl, { method: 'HEAD', signal: AbortSignal.timeout(2000) });
+        logInit(`代理: ${proxyUrl} ✓`);
+      } catch { logInit(`代理: ${proxyUrl} (无法连接，但已设置)`); }
+      state.set('proxyUrl', proxyUrl);
+      // 通知主进程设置环境变量
+      if (bridge?.tool?.setProxy) {
+        await bridge.tool.setProxy(proxyUrl);
+      }
+    }
+    (document.querySelector('#inputProxyUrl') as HTMLInputElement).value = proxyUrl;
+
     // ── Tool Calling 设置（永久开启，不可关闭）──
     state.set('toolCallingEnabled', true);
     const runCommandMode = await db.getSetting('runCommandMode', 'confirm') as 'auto' | 'confirm' | 'disabled';

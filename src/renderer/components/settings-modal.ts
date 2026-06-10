@@ -39,6 +39,18 @@ export function initSettingsModal(): void {
   }, 500);
   document.querySelector('#inputServerUrl')!.addEventListener('input', saveServerUrl);
 
+  // 代理设置
+  const inputProxyUrl = document.querySelector('#inputProxyUrl') as HTMLInputElement;
+  if (inputProxyUrl) {
+    const saveProxyUrl = debounce(async () => {
+      const db = state.get<ChatDB | null>(KEYS.DB);
+      const url = inputProxyUrl.value.trim();
+      if (db) await db.saveSetting('proxyUrl', url);
+      logSetting('代理', url || '已禁用');
+    }, 500);
+    inputProxyUrl.addEventListener('input', saveProxyUrl);
+  }
+
   const tempSlider = document.querySelector('#inputTemperature') as HTMLInputElement;
   const tempDisplay = document.querySelector('#tempValue')!;
   tempSlider.addEventListener('input', () => {

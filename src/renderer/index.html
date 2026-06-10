@@ -272,6 +272,11 @@
                 </div>
             </div>
             <div class="setting-group">
+                <label class="setting-label">🌐 代理设置（用于 web_search / web_fetch）</label>
+                <input class="setting-input" id="inputProxyUrl" type="text" placeholder="http://127.0.0.1:7890">
+                <p class="text-muted" style="font-size:11px;">留空则不使用代理。支持 HTTP 代理，例如 Clash(http://127.0.0.1:7890)。修改后需重启应用生效。</p>
+            </div>
+            <div class="setting-group">
                 <label class="setting-label">上下文长度（自动检测）</label>
                 <div style="display:flex;gap:8px;align-items:center;">
                     <span class="setting-input" id="displayNumCtx" style="margin-bottom:0;display:flex;align-items:center;background:var(--bg-layer);padding:9px 12px;">24576 tokens</span>
