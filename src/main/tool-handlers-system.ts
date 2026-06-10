@@ -207,30 +207,48 @@ function buildFetchHeaders(url: string, useMobileUA: boolean): Record<string, st
   };
 }
 
-/** 带超时的 fetch 封装 */
+/** 带超时的 fetch 封装。有代理时走 https.request + HttpsProxyAgent */
 async function fetchWithTimeout(url: string, timeout = HTTP_TIMEOUT, headers?: Record<string,string>): Promise<Response | null> {
   const _headers = headers || buildFetchHeaders(url, false);
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeout);
-  try {
-    const agent = getProxyAgent();
-    const fetchOpts: any = {
-      headers: _headers,
-      signal: controller.signal,
-      redirect: 'follow',
-    };
-    if (agent) fetchOpts.dispatcher = agent;
-    const resp = await fetch(url, fetchOpts);
-    clearTimeout(timeoutId);
-    return resp;
-  } catch (err) {
-    clearTimeout(timeoutId);
-    if (_proxyUrl) {
-      const msg = (err as Error).message || '';
-      sendLog('warn', `🌐 fetch 失败`, `${url.slice(0, 80)} | 代理=${_proxyUrl} | ${msg.slice(0, 100)}`);
-    }
-    return null;
+
+  // 有代理时用 https.request（兼容 https-proxy-agent）
+  const proxy = process.env.HTTPS_PROXY || process.env.HTTP_PROXY || '';
+  if (proxy) {
+    try {
+      const { HttpsProxyAgent } = require('https-proxy-agent');
+      return new Promise((resolve) => {
+        const mod = require(url.startsWith('https:') ? 'https' : 'http');
+        const u = new URL(url);
+        const req = mod.request({
+          hostname: u.hostname, port: u.port || (url.startsWith('https:') ? 443 : 80),
+          path: u.pathname + u.search, method: 'GET',
+          headers: { ..._headers, Host: u.hostname },
+          agent: new HttpsProxyAgent(proxy), timeout, rejectUnauthorized: false,
+        }, (res: any) => {
+          let body = '';
+          res.on('data', (d: Buffer) => body += d.toString());
+          res.on('end', () => resolve({
+            ok: res.statusCode >= 200 && res.statusCode < 400,
+            status: res.statusCode, statusText: res.statusMessage,
+            headers: new Headers(res.headers as Record<string,string>),
+            text: () => Promise.resolve(body),
+            arrayBuffer: () => Promise.resolve(Buffer.from(body).buffer),
+          } as unknown as Response));
+        });
+        req.on('timeout', () => req.destroy());
+        req.on('error', (e: Error) => { sendLog('warn', `🌐 代理请求失败`, `${url.slice(0,80)} | ${e.message.slice(0,100)}`); resolve(null); });
+        req.end();
+      });
+    } catch { /* 代理包不可用，回退到原生 fetch */ }
   }
+
+  // 无代理 / 代理包不可用 → 原生 fetch
+  const controller = new AbortController();
+  const tid = setTimeout(() => controller.abort(), timeout);
+  try {
+    const resp = await fetch(url, { headers: _headers, signal: controller.signal, redirect: 'follow' });
+    clearTimeout(tid); return resp;
+  } catch { clearTimeout(tid); return null; }
 }
 
 /** 完整 HTML 实体映射（常见实体） */
