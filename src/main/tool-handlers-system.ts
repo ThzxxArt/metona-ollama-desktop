@@ -15,19 +15,21 @@ let _proxyUrl = '';
 
 function getProxyAgent(): any {
   if (!_proxyUrl) return null;
+
+  // 尝试 https-proxy-agent（需 npm install）
   try {
-    const url = new URL(_proxyUrl);
     const { HttpsProxyAgent } = require('https-proxy-agent');
-    return new HttpsProxyAgent(url);
-  } catch {
-    // https-proxy-agent 不可用，尝试 undici
-    try {
-      const { ProxyAgent } = require('undici');
-      return new ProxyAgent(_proxyUrl);
-    } catch {
-      return null;
-    }
-  }
+    const a = new HttpsProxyAgent(_proxyUrl);
+    return a;
+  } catch { /* 未安装 */ }
+
+  // 尝试 undici（Node.js 内置）
+  try {
+    const { ProxyAgent } = require('undici');
+    return new ProxyAgent({ uri: _proxyUrl });
+  } catch { /* 不可用 */ }
+
+  return null;
 }
 
 /** 设置 HTTP 代理（供 IPC 调用） */
@@ -212,16 +214,21 @@ async function fetchWithTimeout(url: string, timeout = HTTP_TIMEOUT, headers?: R
   const timeoutId = setTimeout(() => controller.abort(), timeout);
   try {
     const agent = getProxyAgent();
-    const resp = await fetch(url, {
+    const fetchOpts: any = {
       headers: _headers,
       signal: controller.signal,
       redirect: 'follow',
-      ...(agent && { dispatcher: agent }),
-    });
+    };
+    if (agent) fetchOpts.dispatcher = agent;
+    const resp = await fetch(url, fetchOpts);
     clearTimeout(timeoutId);
     return resp;
-  } catch {
+  } catch (err) {
     clearTimeout(timeoutId);
+    if (_proxyUrl) {
+      const msg = (err as Error).message || '';
+      sendLog('warn', `🌐 fetch 失败`, `${url.slice(0, 80)} | 代理=${_proxyUrl} | ${msg.slice(0, 100)}`);
+    }
     return null;
   }
 }
