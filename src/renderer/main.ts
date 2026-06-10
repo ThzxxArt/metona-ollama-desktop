@@ -385,6 +385,7 @@ async function init(): Promise<void> {
       (document.querySelector('#inputStreamTimeout') as HTMLInputElement).value = streamTimeout > 0 ? String(streamTimeout) : '';
       (document.querySelector('#inputMCPTimeout') as HTMLInputElement).value = mcpTimeout > 0 ? String(mcpTimeout) : '';
     }
+    logInit(`超时设置: HTTP=${httpTimeout||30}s 流式=${streamTimeout||300}s MCP=${mcpTimeout||60}s`);
 
     // ── Tool Calling 设置 ──
     const toolCallingEnabled = await db.getSetting('toolCallingEnabled', true);

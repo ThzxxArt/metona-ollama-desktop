@@ -80,14 +80,14 @@ export function initSettingsModal(): void {
     if (bridge?.tool?.setTimeouts) {
       await bridge.tool.setTimeouts({ http: httpSec > 0 ? httpSec * 1000 : 30_000 });
     }
-    logSetting('HTTP 超时', httpSec > 0 ? `${httpSec}s` : '默认(30s)');
+    logInfo('HTTP 超时', httpSec > 0 ? `${httpSec}s` : '默认(30s)');
 
     // 流式超时（秒→毫秒）
     const streamVal = inputStreamTimeout.value.trim();
     const streamSec = streamVal ? parseInt(streamVal) : 0;
     state.set('streamTimeout', streamSec > 0 ? streamSec * 1000 : 300_000);
     if (db) await db.saveSetting('streamTimeout', streamSec > 0 ? streamSec : 0);
-    logSetting('流式超时', streamSec > 0 ? `${streamSec}s` : '默认(300s)');
+    logInfo('流式超时', streamSec > 0 ? `${streamSec}s` : '默认(300s)');
 
     // MCP 超时（秒→毫秒）
     const mcpVal = inputMCPTimeout.value.trim();
@@ -96,7 +96,7 @@ export function initSettingsModal(): void {
     if (bridge?.tool?.setTimeouts) {
       await bridge.tool.setTimeouts({ mcp: mcpSec > 0 ? mcpSec * 1000 : 60_000 });
     }
-    logSetting('MCP 超时', mcpSec > 0 ? `${mcpSec}s` : '默认(60s)');
+    logInfo('MCP 超时', mcpSec > 0 ? `${mcpSec}s` : '默认(60s)');
   };
 
   const saveHttpTimeout = debounce(applyTimeouts, 500);
