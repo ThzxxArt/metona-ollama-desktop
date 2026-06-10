@@ -37,14 +37,16 @@ cd metona-ollama-desktop/search-proxy
 go build -o metona-search-proxy .
 ```
 
+> 如果没有 `go.mod`（或报 `go.mod file not found`）：
+> ```bash
+> GO111MODULE=off go build -o metona-search-proxy .
+> ```
+
 ### 本地交叉编译（编译好再上传）
 
 ```bash
-# 编译 Linux 版本
 GOOS=linux GOARCH=amd64 go build -o metona-search-proxy .
-
-# 上传到服务器
-scp metona-search-proxy user@your-server:/opt/metona-search-proxy/
+scp metona-search-proxy user@your-server:/opt/
 ```
 
 ---
