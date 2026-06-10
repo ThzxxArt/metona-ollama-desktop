@@ -149,21 +149,40 @@ function cacheSet(query: string, entry: CacheEntry): void {
 // ── 反爬请求头 ────────────────────────────────────
 const DESKTOP_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 const MOBILE_UA = 'Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36';
-const FETCH_HEADERS = {
-  'User-Agent': DESKTOP_UA,
-  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-  'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-  'Accept-Encoding': 'gzip, deflate, br',
-  'Cache-Control': 'no-cache',
-  'DNT': '1',
-};
+
+/** 构建 fetch 请求头，根据 UA 类型动态设置 */
+function buildFetchHeaders(url: string, useMobileUA: boolean): Record<string, string> {
+  const ua = useMobileUA ? MOBILE_UA : DESKTOP_UA;
+  let referer = 'https://www.google.com/';
+  try {
+    const u = new URL(url);
+    referer = `${u.protocol}//${u.hostname}/`;
+  } catch { /* ignore */ }
+  return {
+    'User-Agent': ua,
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+    'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+    'Accept-Encoding': 'gzip, deflate, br',
+    'Cache-Control': 'no-cache',
+    'DNT': '1',
+    'Connection': 'keep-alive',
+    'Upgrade-Insecure-Requests': '1',
+    'Sec-Fetch-Dest': 'document',
+    'Sec-Fetch-Mode': 'navigate',
+    'Sec-Fetch-Site': 'none',
+    'Sec-Fetch-User': '?1',
+    'Pragma': 'no-cache',
+    'Referer': referer,
+  };
+}
 
 /** 带超时的 fetch 封装 */
-async function fetchWithTimeout(url: string, timeout = HTTP_TIMEOUT, headers: Record<string,string> = FETCH_HEADERS): Promise<Response | null> {
+async function fetchWithTimeout(url: string, timeout = HTTP_TIMEOUT, headers?: Record<string,string>): Promise<Response | null> {
+  const _headers = headers || buildFetchHeaders(url, false);
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeout);
   try {
-    const resp = await fetch(url, { headers, signal: controller.signal, redirect: 'follow' });
+    const resp = await fetch(url, { headers: _headers, signal: controller.signal, redirect: 'follow' });
     clearTimeout(timeoutId);
     return resp;
   } catch {
@@ -237,10 +256,34 @@ import { browserOpen, browserExtract, browserClose } from './browser.js';
 // ──────────────────────────────────────────────────
 // web_fetch 重试配置
 // ──────────────────────────────────────────────────
-const FETCH_MAX_RETRIES = 2;
-const FETCH_RETRY_DELAYS = [1000, 2000]; // 指数退避 (ms)
+const FETCH_MAX_RETRIES = 2;          // fetch 阶段最多重试 2 次
+const FETCH_RETRY_DELAYS = [1500, 3000]; // 指数退避 (ms)
+/** fetch 全部失败后自动回退到浏览器渲染 */
+const BROWSER_FALLBACK_ENABLED = true;
 /** 内容过短阈值：小于此字符数且是 HTML 时，自动升级到浏览器渲染 */
 const SHORT_CONTENT_THRESHOLD = 200;
+/** 需要回退浏览器的 HTTP 状态码（反爬/拦截信号） */
+const BROWSER_FALLBACK_STATUSES = new Set([403, 503, 429, 502]);
+
+/** 浏览器回退：打开 URL → 等待渲染 → 提取内容 */
+async function browserFallback(url: string, maxChars: number): Promise<{ text: string; method: string } | null> {
+  try {
+    const openResult = await browserOpen(url);
+    if (!openResult.success) return null;
+    await new Promise(r => setTimeout(r, 2500)); // 等待 JS 渲染
+    const extractResult = await browserExtract();
+    browserClose();
+    if (extractResult.success && extractResult.text && extractResult.text.length > 0) {
+      let text = extractResult.text;
+      if (maxChars > 0 && text.length > maxChars) text = text.slice(0, maxChars);
+      return { text, method: 'browser' };
+    }
+    return null;
+  } catch {
+    try { browserClose(); } catch { /* */ }
+    return null;
+  }
+}
 
 export async function handleWebFetch(params: { url: string; max_chars?: number; extract_mode?: string; mobile_ua?: boolean; retry?: boolean }): Promise<ToolResult> {
   const url = params.url;
@@ -252,23 +295,22 @@ export async function handleWebFetch(params: { url: string; max_chars?: number; 
   const useMobileUA = params.mobile_ua === true;
   const shouldRetry = params.retry !== false; // 默认开启重试
 
-  const headers = {
-    ...FETCH_HEADERS,
-    'User-Agent': useMobileUA ? MOBILE_UA : DESKTOP_UA,
-  };
-
   sendLog('info', `🌐 web_fetch`, `${url} (${maxChars > 0 ? maxChars + ' chars' : '完整内容'}${useMobileUA ? ', 移动端UA' : ''})`);
 
-  // ── 重试循环 ──
+  // ── Phase 1 & 2: HTTP fetch with UA switching ──
   let lastError = '';
   const maxAttempts = shouldRetry ? FETCH_MAX_RETRIES + 1 : 1;
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     if (attempt > 0) {
-      const delay = FETCH_RETRY_DELAYS[attempt - 1] || 2000;
+      const delay = FETCH_RETRY_DELAYS[attempt - 1] || 3000;
       sendLog('warn', `🌐 web_fetch 重试`, `第 ${attempt + 1}/${maxAttempts} 次, 等待 ${delay}ms`);
       await new Promise(r => setTimeout(r, delay));
     }
+
+    // 重试时切换 UA：首次用指定 UA，第二次换另一种，第三次用移动端
+    const useMobile = attempt >= 2 ? true : (attempt === 1 ? !useMobileUA : useMobileUA);
+    const headers = buildFetchHeaders(url, useMobile);
 
     try {
       const controller = new AbortController();
@@ -281,52 +323,53 @@ export async function handleWebFetch(params: { url: string; max_chars?: number; 
       }
 
       if (!resp.ok) {
-        // 5xx 服务器错误可重试，4xx 客户端错误不重试
+        // 反爬信号（403/503/429）→ 跳过后续 fetch，直接走浏览器回退
+        if (BROWSER_FALLBACK_STATUSES.has(resp.status) && BROWSER_FALLBACK_ENABLED) {
+          sendLog('warn', `🌐 web_fetch HTTP ${resp.status}，触发浏览器回退`, url);
+          break; // 跳出 fetch 循环，走浏览器回退
+        }
+        // 5xx 服务器错误可重试
         if (resp.status >= 500 && attempt < maxAttempts - 1) {
           lastError = `HTTP ${resp.status}: ${resp.statusText}（将重试）`;
           continue;
         }
-        return { success: false, error: `HTTP ${resp.status}: ${resp.statusText}` };
+        return { success: false, error: `HTTP ${resp.status}: ${resp.statusText}。可尝试用 browser_open 直接打开页面。` };
       }
 
       const contentType = resp.headers.get('content-type') || '';
       if (!contentType.includes('text') && !contentType.includes('html') && !contentType.includes('json') && !contentType.includes('xml')) {
-        return { success: false, error: `不支持的内容类型: ${contentType}` };
+        return { success: false, error: `不支持的内容类型: ${contentType}。如果是二进制文件，请用 download_file 工具。` };
       }
 
-      // 预检查内容长度
       const contentLength = resp.headers.get('content-length');
       if (contentLength && parseInt(contentLength, 10) > 10 * 1024 * 1024) {
         return { success: false, error: `页面过大 (${(parseInt(contentLength, 10) / 1024 / 1024).toFixed(1)}MB)，超过 10MB 限制` };
       }
 
       let text = await resp.text();
-
-      // HTML → 可读文本
       const isHTML = contentType.includes('html');
       if (isHTML) {
         text = htmlToText(text);
       }
 
-      // ── 自动升级到浏览器渲染（内容过短的 HTML 页面） ──
-      if (isHTML && text.length < SHORT_CONTENT_THRESHOLD) {
+      // ── SPA/短内容自动升级到浏览器渲染 ──
+      if (isHTML && text.length < SHORT_CONTENT_THRESHOLD && BROWSER_FALLBACK_ENABLED) {
         sendLog('info', `🌐 web_fetch 内容过短(${text.length}字符)`, `自动升级到浏览器渲染: ${url}`);
-        try {
-          const openResult = await browserOpen(url);
-          if (openResult.success) {
-            // 等待页面 JS 渲染完成
-            await new Promise(r => setTimeout(r, 2000));
-            const extractResult = await browserExtract();
-            if (extractResult.success && extractResult.text) {
-              text = extractResult.text;
-              sendLog('success', `🌐 web_fetch 浏览器渲染完成`, `${text.length} 字符`);
-            }
-            browserClose();
-          }
-        } catch (browserErr) {
-          sendLog('warn', `🌐 web_fetch 浏览器渲染失败`, (browserErr as Error).message);
-          // 浏览器失败不阻塞，使用原始短内容
+        const browserResult = await browserFallback(url, maxChars);
+        if (browserResult) {
+          sendLog('success', `🌐 web_fetch 浏览器渲染完成`, `${browserResult.text.length} 字符`);
+          return {
+            success: true, url,
+            content: browserResult.text,
+            content_type: 'text/html (browser)',
+            status: resp.status,
+            truncated: maxChars > 0 && browserResult.text.length >= maxChars,
+            length: browserResult.text.length,
+            retries: attempt,
+            method: 'browser',
+          };
         }
+        sendLog('warn', `🌐 web_fetch 浏览器渲染失败，使用原始内容`);
       }
 
       const truncated = maxChars > 0 && text.length > maxChars;
@@ -334,14 +377,14 @@ export async function handleWebFetch(params: { url: string; max_chars?: number; 
 
       sendLog('success', `🌐 web_fetch 完成`, `HTTP ${resp.status} | ${text.length} chars${truncated ? ' (已截断)' : ''}${attempt > 0 ? ` | 重试${attempt}次后成功` : ''}`);
       return {
-        success: true,
-        url,
+        success: true, url,
         content: text,
         content_type: contentType,
         status: resp.status,
         truncated,
         length: text.length,
         retries: attempt,
+        method: useMobile ? 'fetch(mobile)' : 'fetch(desktop)',
       };
     } catch (err) {
       const errMsg = (err as Error).message;
@@ -350,15 +393,42 @@ export async function handleWebFetch(params: { url: string; max_chars?: number; 
         continue;
       }
       if (errMsg.includes('abort')) {
-        return { success: false, error: `请求超时 (${HTTP_TIMEOUT / 1000}s)` };
+        // 超时 → 浏览器回退
+        sendLog('warn', `🌐 web_fetch 超时，触发浏览器回退`, url);
+        break;
       }
       // 网络错误可重试
       if (attempt < maxAttempts - 1) {
         lastError = errMsg + '（将重试）';
         continue;
       }
-      return { success: false, error: errMsg };
+      // 最后一次也失败了 → 浏览器回退
+      if (BROWSER_FALLBACK_ENABLED) {
+        sendLog('warn', `🌐 web_fetch 所有 fetch 均失败(${errMsg})，触发浏览器回退`, url);
+        break;
+      }
+      return { success: false, error: `fetch 失败: ${errMsg}。可尝试用 browser_open 直接打开页面。` };
     }
+  }
+
+  // ── Phase 3: 浏览器回退（fetch 全部失败后的最后手段）──
+  if (BROWSER_FALLBACK_ENABLED) {
+    sendLog('info', `🌐 web_fetch 回退到浏览器渲染`, url);
+    const browserResult = await browserFallback(url, maxChars);
+    if (browserResult) {
+      sendLog('success', `🌐 web_fetch 浏览器渲染完成`, `${browserResult.text.length} 字符`);
+      return {
+        success: true, url,
+        content: browserResult.text,
+        content_type: 'text/html (browser)',
+        status: 200,
+        truncated: maxChars > 0 && browserResult.text.length >= maxChars,
+        length: browserResult.text.length,
+        retries: maxAttempts,
+        method: 'browser(fallback)',
+      };
+    }
+    return { success: false, error: `fetch 和浏览器渲染均失败。${lastError ? '最后错误: ' + lastError : '请检查 URL 是否可访问。'}` };
   }
 
   return { success: false, error: lastError || '所有重试均失败' };
