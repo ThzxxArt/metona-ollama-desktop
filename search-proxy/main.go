@@ -128,10 +128,6 @@ func cleanCacheLoop(interval time.Duration) {
 
 // ── 正则预编译（全局，避免每次搜索重新编译）──
 var (
-	reGoogleBlock = regexp.MustCompile(`<(?:div|li)[^>]*class="[^"]*(?:Gx5Zad|g|kvH3mc)[^"]*"[^>]*>([\s\S]*?)</(?:div|li)>`)
-	reGoogleTitle = regexp.MustCompile(`<a[^>]*href="(https?://[^"]*)"[^>]*>[\s\S]*?<h3[^>]*>([\s\S]*?)</h3>`)
-	reGoogleSnip  = regexp.MustCompile(`<(?:div|span)[^>]*(?:data-sncf|class="[^"]*(?:VwiC3b|st|lWMagT)[^"]*")[^>]*>([\s\S]*?)</(?:div|span)>`)
-
 	reBingBlock = regexp.MustCompile(`<li class="b_algo"[^>]*>([\s\S]*?)</li>`)
 	reBingTitle = regexp.MustCompile(`<a[^>]*href="(https?://[^"]*)"[^>]*>([\s\S]*?)</a>`)
 	reBingSnip  = regexp.MustCompile(`<p[^>]*>([\s\S]*?)</p>`)
@@ -319,12 +315,13 @@ func doGet(u string) (*http.Response, error) {
 }
 
 func searchGoogle(q string, n int) []Result {
-	u := fmt.Sprintf("https://www.google.com/search?q=%s&num=%d&hl=zh-CN", url.QueryEscape(q), n)
+	// Google 直连被反爬，改为 StartPage（背后是 Google 结果，无需 JS）
+	u := fmt.Sprintf("https://www.startpage.com/sp/search?query=%s&num=%d&lang=zh-CN", url.QueryEscape(q), n)
 	resp, err := doGet(u)
 	if err != nil || resp.StatusCode != 200 {
 		if resp != nil {
-			resp.Body.Close()
 			codeLog("google", resp.StatusCode)
+			resp.Body.Close()
 		} else {
 			codeLog("google", 0)
 		}
@@ -334,13 +331,18 @@ func searchGoogle(q string, n int) []Result {
 	body, _ := io.ReadAll(resp.Body)
 	html := string(body)
 
+	// StartPage 结果解析
+	reBlock := regexp.MustCompile(`<div[^>]*class="[^"]*result[^"]*"[^>]*>([\s\S]*?)</a>\s*</h2>`)
+	reTitle := regexp.MustCompile(`<a[^>]*href="(https?://[^"]*)"[^>]*>([\s\S]*?)</a>`)
+	reSnip  := regexp.MustCompile(`<p[^>]*class="[^"]*description[^"]*"[^>]*>([\s\S]*?)</p>`)
+
 	var out []Result
-	for _, m := range reGoogleBlock.FindAllStringSubmatch(html, -1) {
+	for _, m := range reBlock.FindAllStringSubmatch(html, -1) {
 		if len(out) >= n {
 			break
 		}
-		tm := reGoogleTitle.FindStringSubmatch(m[1])
-		if tm == nil || strings.Contains(tm[1], "google.com") {
+		tm := reTitle.FindStringSubmatch(m[1])
+		if tm == nil || strings.Contains(tm[1], "startpage.com") {
 			continue
 		}
 		title := clean(tm[2])
@@ -348,7 +350,7 @@ func searchGoogle(q string, n int) []Result {
 			continue
 		}
 		snip := ""
-		if sm := reGoogleSnip.FindStringSubmatch(m[1]); sm != nil {
+		if sm := reSnip.FindStringSubmatch(m[1]); sm != nil {
 			snip = clean(sm[1])
 		}
 		out = append(out, Result{Title: title, URL: tm[1], Snippet: snip, Engine: "google"})
