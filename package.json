@@ -67,6 +67,7 @@
     "vite": "^5.4.0"
   },
   "dependencies": {
-    "sql.js": "^1.11.0"
+    "sql.js": "^1.11.0",
+    "https-proxy-agent": "^7.0.0"
   }
 }

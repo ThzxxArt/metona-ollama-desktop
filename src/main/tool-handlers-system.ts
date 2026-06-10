@@ -12,24 +12,27 @@ import { getWorkspaceDir } from './workspace.js';
 
 // ── 代理支持 ──
 let _proxyUrl = '';
-let _proxyAgent: any = null;
 
 function getProxyAgent(): any {
   if (!_proxyUrl) return null;
-  if (_proxyAgent) return _proxyAgent;
   try {
-    const { ProxyAgent } = require('undici');
-    _proxyAgent = new ProxyAgent(_proxyUrl);
-    return _proxyAgent;
+    const url = new URL(_proxyUrl);
+    const { HttpsProxyAgent } = require('https-proxy-agent');
+    return new HttpsProxyAgent(url);
   } catch {
-    return null;
+    // https-proxy-agent 不可用，尝试 undici
+    try {
+      const { ProxyAgent } = require('undici');
+      return new ProxyAgent(_proxyUrl);
+    } catch {
+      return null;
+    }
   }
 }
 
 /** 设置 HTTP 代理（供 IPC 调用） */
 export function setProxyUrl(url: string): void {
   _proxyUrl = url;
-  _proxyAgent = null; // 重建 agent
 }
 
 /** 当前工具命令进程（用于用户手动终止） */
