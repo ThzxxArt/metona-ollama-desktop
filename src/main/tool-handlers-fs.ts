@@ -154,33 +154,77 @@ function extToMime(ext: string): string {
   return map[ext] || 'application/octet-stream';
 }
 
-export async function handleWriteFile(params: { path: string; content: string; encoding?: string }): Promise<ToolResult> {
+export async function handleWriteFile(params: { path: string; content: string; encoding?: string; mode?: string }): Promise<ToolResult> {
   try {
     const filePath = resolvePath(params.path);
     const allowed = checkPathAllowed(filePath, 'write');
     if (!allowed.ok) return { success: false, error: allowed.reason };
 
-    if (params.content.length > 5 * 1024 * 1024) {
-      return { success: false, error: '内容过大，最大支持 5MB' };
+    const writeMode = params.mode || 'overwrite';
+    const encoding = (params.encoding as BufferEncoding) || 'utf-8';
+
+    // ── base64 解码：支持写入二进制文件 ──
+    let writeBuffer: Buffer;
+    let contentLength: number;
+    if (encoding === 'base64') {
+      writeBuffer = Buffer.from(params.content, 'base64');
+      contentLength = writeBuffer.length;
+    } else {
+      writeBuffer = Buffer.from(params.content, encoding);
+      contentLength = Buffer.byteLength(params.content, encoding);
     }
 
-    let created = false;
+    const MAX_SIZE = writeMode === 'append' ? 5 * 1024 * 1024 : 10 * 1024 * 1024;
+    if (contentLength > MAX_SIZE) {
+      return { success: false, error: `内容过大 (${(contentLength / 1024 / 1024).toFixed(1)}MB)，最大支持 ${MAX_SIZE / 1024 / 1024}MB` };
+    }
+
+    // ── 检查目标文件状态 ──
+    let existed = false;
+    let prevSize = 0;
+    let prevLines = 0;
     try {
-      await fs.stat(filePath);
+      const prevStat = await fs.stat(filePath);
+      existed = true;
+      prevSize = prevStat.size;
+      if (writeMode === 'overwrite' && !params.encoding?.startsWith('base64')) {
+        const prevContent = await fs.readFile(filePath, 'utf-8');
+        prevLines = prevContent.split('\n').length;
+      }
     } catch {
-      created = true;
+      // 文件不存在，正常
     }
 
     const dir = path.dirname(filePath);
     await fs.mkdir(dir, { recursive: true });
 
-    await fs.writeFile(filePath, params.content, (params.encoding as BufferEncoding) || 'utf-8');
+    if (writeMode === 'append') {
+      await fs.appendFile(filePath, writeBuffer);
+    } else {
+      await fs.writeFile(filePath, writeBuffer);
+    }
+
+    // ── 读回统计 ──
+    const stat = await fs.stat(filePath);
+    const lines = encoding === 'base64' ? 0 : (await fs.readFile(filePath, 'utf-8')).split('\n').length;
 
     return {
       success: true,
       path: filePath,
-      bytesWritten: Buffer.byteLength(params.content, (params.encoding as BufferEncoding) || 'utf-8'),
-      created
+      bytesWritten: contentLength,
+      totalSize: stat.size,
+      lines,
+      mode: writeMode,
+      created: !existed,
+      ...(existed && writeMode === 'overwrite' && {
+        overwrote: true,
+        prevSize,
+        ...(prevLines > 0 && { prevLines }),
+      }),
+      ...(writeMode === 'append' && {
+        appended: true,
+        prevSize,
+      }),
     };
   } catch (err) {
     return { success: false, error: (err as Error).message };

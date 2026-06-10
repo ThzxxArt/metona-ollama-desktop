@@ -33,13 +33,15 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'write_file',
-      description: 'Write content to a local file. Creates parent directories automatically. Overwrites existing files. Max 5MB content.',
+      description: 'Write content to a local file. Creates parent directories automatically. Supports text (utf-8/latin1) and binary (base64) modes. Use mode="append" to add to existing file instead of overwriting. Max 10MB (overwrite) or 5MB (append). Returns file stats including overwrite info.',
       parameters: {
         type: 'object',
         required: ['path', 'content'],
         properties: {
-          path: { type: 'string', description: 'The file path to write to.' },
-          content: { type: 'string', description: 'The content to write.' }
+          path: { type: 'string', description: 'The file path to write to. Absolute or relative to workspace.' },
+          content: { type: 'string', description: 'The content to write. For binary files, pass base64-encoded string with encoding="base64".' },
+          encoding: { type: 'string', enum: ['utf-8', 'latin1', 'base64'], description: 'File encoding. Use "base64" to write binary content (images, PDFs, etc). Default: utf-8.' },
+          mode: { type: 'string', enum: ['overwrite', 'append'], description: 'Write mode. overwrite = replace file, append = add to end. Default: overwrite.' }
         }
       }
     }
