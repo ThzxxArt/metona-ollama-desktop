@@ -445,19 +445,19 @@
             <div class="tools-grid">
                 <div class="tool-card">
                     <div class="tool-card-header"><span class="tool-card-icon">📄</span><span class="tool-card-name">read_file</span><span class="tool-card-badge auto">自动</span></div>
-                    <div class="tool-card-desc">读取文件内容，支持指定行范围</div>
+                    <div class="tool-card-desc">读取文件(文本/binary/base64)，2000行默认，截断自动提示续读</div>
                 </div>
                 <div class="tool-card">
                     <div class="tool-card-header"><span class="tool-card-icon">✏️</span><span class="tool-card-name">write_file</span><span class="tool-card-badge auto">自动</span></div>
-                    <div class="tool-card-desc">写入文件，自动创建父目录</div>
+                    <div class="tool-card-desc">写入/追加文件，支持base64二进制，最大10MB</div>
                 </div>
                 <div class="tool-card">
                     <div class="tool-card-header"><span class="tool-card-icon">📁</span><span class="tool-card-name">list_directory</span><span class="tool-card-badge auto">自动</span></div>
-                    <div class="tool-card-desc">列出目录内容，支持递归和隐藏文件</div>
+                    <div class="tool-card-desc">列出目录内容(2000条上限)，支持递归/偏移分页/扩展名过滤</div>
                 </div>
                 <div class="tool-card">
                     <div class="tool-card-header"><span class="tool-card-icon">🔍</span><span class="tool-card-name">search_files</span><span class="tool-card-badge auto">自动</span></div>
-                    <div class="tool-card-desc">按文件名或内容搜索文件</div>
+                    <div class="tool-card-desc">按文件名或内容搜索，支持正则表达式</div>
                 </div>
                 <div class="tool-card">
                     <div class="tool-card-header"><span class="tool-card-icon">📂</span><span class="tool-card-name">create_directory</span><span class="tool-card-badge auto">自动</span></div>
@@ -465,7 +465,7 @@
                 </div>
                 <div class="tool-card">
                     <div class="tool-card-header"><span class="tool-card-icon">🗑️</span><span class="tool-card-name">delete_file</span><span class="tool-card-badge auto">自动</span></div>
-                    <div class="tool-card-desc">删除文件或目录</div>
+                    <div class="tool-card-desc">删除文件或目录，返回被删文件数和总大小</div>
                 </div>
                 <div class="tool-card">
                     <div class="tool-card-header"><span class="tool-card-icon">📦</span><span class="tool-card-name">move_file</span><span class="tool-card-badge auto">自动</span></div>
@@ -477,7 +477,7 @@
                 </div>
                 <div class="tool-card">
                     <div class="tool-card-header"><span class="tool-card-icon">🌐</span><span class="tool-card-name">web_fetch</span><span class="tool-card-badge auto">自动</span></div>
-                    <div class="tool-card-desc">抓取网页内容，自动提取文本</div>
+                    <div class="tool-card-desc">抓取网页内容，反爬headers+UA切换+自动回退浏览器渲染</div>
                 </div>
                 <div class="tool-card">
                     <div class="tool-card-header"><span class="tool-card-icon">➕</span><span class="tool-card-name">append_file</span><span class="tool-card-badge auto">自动</span></div>
@@ -485,7 +485,7 @@
                 </div>
                 <div class="tool-card">
                     <div class="tool-card-header"><span class="tool-card-icon">✂️</span><span class="tool-card-name">edit_file</span><span class="tool-card-badge auto">自动</span></div>
-                    <div class="tool-card-desc">文件内查找替换，支持全部替换</div>
+                    <div class="tool-card-desc">查找替换(支持正则use_regex)，全部或单次替换</div>
                 </div>
                 <div class="tool-card">
                     <div class="tool-card-header"><span class="tool-card-icon">💻</span><span class="tool-card-name">run_command</span><span class="tool-card-badge confirm" id="runCommandBadge">需确认</span></div>
@@ -521,7 +521,7 @@
                 </div>
                 <div class="tool-card">
                     <div class="tool-card-header"><span class="tool-card-icon">📚</span><span class="tool-card-name">read_multiple_files</span><span class="tool-card-badge auto">自动</span></div>
-                    <div class="tool-card-desc">一次读取多个文件内容</div>
+                    <div class="tool-card-desc">并行读取最多50个文件，每文件10KB</div>
                 </div>
                 <div class="tool-card">
                     <div class="tool-card-header"><span class="tool-card-icon">🔖</span><span class="tool-card-name">git</span><span class="tool-card-badge auto">自动</span></div>
@@ -533,7 +533,7 @@
                 </div>
                 <div class="tool-card">
                     <div class="tool-card-header"><span class="tool-card-icon">🔍</span><span class="tool-card-name">web_search</span><span class="tool-card-badge auto">自动</span></div>
-                    <div class="tool-card-desc">联网搜索（Bing + 百度 + Google 三引擎），返回标题/URL/摘要</div>
+                    <div class="tool-card-desc">4引擎并行搜索(Bing+百度+DDG+Google)，智能排序+时间过滤+摘要增强</div>
                 </div>
                 <div class="tool-card">
                     <div class="tool-card-header"><span class="tool-card-icon">🧠</span><span class="tool-card-name">memory_search</span><span class="tool-card-badge auto">自动</span></div>
@@ -573,11 +573,11 @@
                 </div>
                 <div class="tool-card">
                     <div class="tool-card-header"><span class="tool-card-icon">🌐</span><span class="tool-card-name">browser_open</span><span class="tool-card-badge auto">自动</span></div>
-                    <div class="tool-card-desc">在 Agent 浏览器中打开 URL</div>
+                    <div class="tool-card-desc">打开URL，支持等待特定CSS元素出现(SPA页面)</div>
                 </div>
                 <div class="tool-card">
                     <div class="tool-card-header"><span class="tool-card-icon">📸</span><span class="tool-card-name">browser_screenshot</span><span class="tool-card-badge auto">自动</span></div>
-                    <div class="tool-card-desc">对浏览器页面截图（base64 PNG）</div>
+                    <div class="tool-card-desc">截图(视口/全页面/指定元素)，返回base64 PNG</div>
                 </div>
                 <div class="tool-card">
                     <div class="tool-card-header"><span class="tool-card-icon">⚡</span><span class="tool-card-name">browser_evaluate</span><span class="tool-card-badge auto">自动</span></div>
@@ -585,19 +585,23 @@
                 </div>
                 <div class="tool-card">
                     <div class="tool-card-header"><span class="tool-card-icon">📰</span><span class="tool-card-name">browser_extract</span><span class="tool-card-badge auto">自动</span></div>
-                    <div class="tool-card-desc">提取浏览器页面的文本内容和链接</div>
+                    <div class="tool-card-desc">提取页面文本+链接，支持CSS选择器指定区域</div>
                 </div>
                 <div class="tool-card">
                     <div class="tool-card-header"><span class="tool-card-icon">👆</span><span class="tool-card-name">browser_click</span><span class="tool-card-badge auto">自动</span></div>
-                    <div class="tool-card-desc">通过 CSS 选择器点击页面元素</div>
+                    <div class="tool-card-desc">点击元素，支持等待出现+自动滚动到视图</div>
                 </div>
                 <div class="tool-card">
                     <div class="tool-card-header"><span class="tool-card-icon">⌨️</span><span class="tool-card-name">browser_type</span><span class="tool-card-badge auto">自动</span></div>
-                    <div class="tool-card-desc">通过 CSS 选择器向输入框输入文本</div>
+                    <div class="tool-card-desc">输入文本，支持追加模式(不先清空)+自动提交表单</div>
                 </div>
                 <div class="tool-card">
                     <div class="tool-card-header"><span class="tool-card-icon">↕️</span><span class="tool-card-name">browser_scroll</span><span class="tool-card-badge auto">自动</span></div>
-                    <div class="tool-card-desc">滚动浏览器页面（上/下/顶部/底部）</div>
+                    <div class="tool-card-desc">滚动页面(上/下/顶/底)或滚动到指定元素</div>
+                </div>
+                <div class="tool-card">
+                    <div class="tool-card-header"><span class="tool-card-icon">⏳</span><span class="tool-card-name">browser_wait</span><span class="tool-card-badge auto">自动</span></div>
+                    <div class="tool-card-desc">等待指定元素出现或固定时间延迟</div>
                 </div>
                 <div class="tool-card">
                     <div class="tool-card-header"><span class="tool-card-icon">❌</span><span class="tool-card-name">browser_close</span><span class="tool-card-badge auto">自动</span></div>
