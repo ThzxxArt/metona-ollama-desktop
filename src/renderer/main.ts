@@ -363,9 +363,14 @@ async function init(): Promise<void> {
     (document.querySelector('#inputMaxTurns') as HTMLInputElement).value = String(maxTurns);
 
     // ── v5.2 超时设置：-1=默认, 0=禁用, 正数=自定义 ──
-    const httpTimeout = await db.getSetting<number>('httpTimeout', -1);
-    const streamTimeout = await db.getSetting<number>('streamTimeout', -1);
-    const mcpTimeout = await db.getSetting<number>('mcpTimeout', -1);
+    let httpTimeout = await db.getSetting<number>('httpTimeout', -1);
+    let streamTimeout = await db.getSetting<number>('streamTimeout', -1);
+    let mcpTimeout = await db.getSetting<number>('mcpTimeout', -1);
+
+    // 兼容旧版：旧版把"未设置"存为0，新版0=禁用。将0迁移为-1(默认)
+    if (httpTimeout === 0) { httpTimeout = -1; await db.saveSetting('httpTimeout', -1); }
+    if (streamTimeout === 0) { streamTimeout = -1; await db.saveSetting('streamTimeout', -1); }
+    if (mcpTimeout === 0) { mcpTimeout = -1; await db.saveSetting('mcpTimeout', -1); }
 
     // 应用流式超时到 state（agent-engine 读取，0=禁用）
     state.set('streamTimeout', streamTimeout >= 0 ? streamTimeout * 1000 : 300_000);
