@@ -40,7 +40,7 @@
 | 📋 | **自定义文件** | SOUL.md（人格，不可压缩）+ AGENT.md（行为准则）+ USER.md（用户画像），工作空间优先，内置默认 fallback |
 | 🎯 | **技能自动生成 v1.1** | 工具调用链自动提取 → 语义匹配 → 参数自优化 → 未使用衰减 → 技能链合并，越用越精准 |
 | 🌐 | **MCP 协议扩展** | JSON-RPC 2.0 over stdio，动态工具发现，Shadowing 防护 |
-|| 🔍 | **四引擎联网搜索** | Bing + 百度 + DuckDuckGo + Google 并行聚合，5分钟缓存，URL可达性预检，web_fetch支持自动重试+移动端UA+SPA浏览器渲染回退 |
+| 🔍 | **四引擎联网搜索** | Bing + 百度 + DuckDuckGo + Google 并行聚合，智能排序+时间过滤+摘要增强，web_fetch支持反爬+UA切换+浏览器回退 |
 | 🌏 | **浏览器控制** | 打开网页 · 截图 · 执行 JS · 提取内容 · 点击 · 输入 · 滚动 · 关闭 |
 | 🖥️ | **工作空间面板** | 终端（实时流式输出）+ 文件浏览器，命令安全检查 |
 | 🔢 | **上下文长度自动检测** | 切换模型时自动从 model_info 获取实际支持的上下文长度，无需手动配置 |
@@ -55,26 +55,25 @@
 ## 🔧 工具清单
 
 <details>
-<summary><strong>📁 文件系统（17 个）</strong></summary>
+<summary><strong>📁 文件系统（16 个）</strong></summary>
 
 | 工具 | 功能 |
 |------|------|
-| `read_file` | 读取文件内容 |
-| `write_file` | 写入文件 |
+| `read_file` | 读取文件（文本/binary，2000行默认） |
+| `write_file` | 写入/追加文件（支持base64二进制） |
 | `list_directory` | 列出目录内容 |
 | `search_files` | 搜索文件（正则/通配符） |
 | `create_directory` | 创建目录 |
-| `delete_file` | 删除文件 |
+| `delete_file` | 删除文件/目录（返回大小） |
 | `move_file` | 移动/重命名文件 |
 | `copy_file` | 复制文件 |
-| `append_file` | 追加内容到文件 |
-| `edit_file` | 编辑文件（查找替换） |
+| `edit_file` | 编辑文件（支持正则替换） |
 | `get_file_info` | 获取文件元信息 |
-| `tree` | 目录树结构 |
+| `tree` | 目录树结构（默认5层深度） |
 | `download_file` | 下载文件 |
 | `diff_files` | 文件差异对比 |
 | `replace_in_files` | 批量替换 |
-| `read_multiple_files` | 批量读取 |
+| `read_multiple_files` | 批量读取（50文件/10KB） |
 | `compress` | 压缩文件/目录 |
 
 </details>
@@ -283,26 +282,25 @@ npm run dist           # 构建 Windows 安装包
 ## 🔧 Tool List
 
 <details>
-<summary><strong>📁 File System (17)</strong></summary>
+<summary><strong>📁 File System (16)</strong></summary>
 
 | Tool | Function |
 |------|------|
-| `read_file` | Read file content |
-| `write_file` | Write file |
+| `read_file` | Read file (text/binary, 2000 lines default) |
+| `write_file` | Write/append file (base64 binary support) |
 | `list_directory` | List directory contents |
 | `search_files` | Search files (regex/wildcard) |
 | `create_directory` | Create directory |
-| `delete_file` | Delete file |
+| `delete_file` | Delete file/dir (returns size) |
 | `move_file` | Move/rename file |
 | `copy_file` | Copy file |
-| `append_file` | Append content to file |
-| `edit_file` | Edit file (find & replace) |
+| `edit_file` | Edit file (regex support) |
 | `get_file_info` | Get file metadata |
-| `tree` | Directory tree structure |
+| `tree` | Directory tree (default 5 levels) |
 | `download_file` | Download file |
 | `diff_files` | File diff comparison |
 | `replace_in_files` | Batch replace |
-| `read_multiple_files` | Batch read |
+| `read_multiple_files` | Batch read (50 files/10KB) |
 | `compress` | Compress file/directory |
 
 </details>
@@ -327,7 +325,7 @@ npm run dist           # 构建 Windows 安装包
 </details>
 
 <details>
-<summary><strong>🌐 Browser Control (8)</strong></summary>
+<summary><strong>🌐 Browser Control (9)</strong></summary>
 
 | Tool | Function |
 |------|------|
