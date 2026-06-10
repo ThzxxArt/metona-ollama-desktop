@@ -83,14 +83,14 @@ export function initSettingsModal(): void {
     if (bridge?.tool?.setTimeouts) {
       await bridge.tool.setTimeouts({ http: httpMs });
     }
-    logInfo('HTTP 超时', httpSec >= 0 ? (httpSec === 0 ? '已禁用' : `${httpSec}s`) : '默认(30s)');
+    logSetting('HTTP 超时', httpSec >= 0 ? (httpSec === 0 ? '已禁用' : `${httpSec}s`) : '默认(30s)');
 
     // 流式超时（秒→毫秒）
     const streamSec = parseSec(inputStreamTimeout.value.trim());
     const streamMs = streamSec >= 0 ? streamSec * 1000 : 300_000;
     state.set('streamTimeout', streamMs);
     if (db) await db.saveSetting('streamTimeout', streamSec);
-    logInfo('流式超时', streamSec >= 0 ? (streamSec === 0 ? '已禁用' : `${streamSec}s`) : '默认(300s)');
+    logSetting('流式超时', streamSec >= 0 ? (streamSec === 0 ? '已禁用' : `${streamSec}s`) : '默认(300s)');
 
     // MCP 超时（秒→毫秒）
     const mcpSec = parseSec(inputMCPTimeout.value.trim());
@@ -99,7 +99,7 @@ export function initSettingsModal(): void {
     if (bridge?.tool?.setTimeouts) {
       await bridge.tool.setTimeouts({ mcp: mcpMs });
     }
-    logInfo('MCP 超时', mcpSec >= 0 ? (mcpSec === 0 ? '已禁用' : `${mcpSec}s`) : '默认(60s)');
+    logSetting('MCP 超时', mcpSec >= 0 ? (mcpSec === 0 ? '已禁用' : `${mcpSec}s`) : '默认(60s)');
   };
 
   const saveHttpTimeout = debounce(applyTimeouts, 500);
