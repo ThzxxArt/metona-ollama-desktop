@@ -418,7 +418,7 @@ async function handleRetry(): Promise<void> {
                 ...s, messages: [...s.messages, lastMsg], updatedAt: Date.now()
               }));
             }
-            updateLastAssistantMessage(finalContent, retryThinkContent || null, loopStats || null, undefined, Date.now(), toolRecords?.length ? toolRecords : undefined);
+            updateLastAssistantMessage(finalContent, retryThinkContent || null, loopStats || null, getSelectedModel(), Date.now(), toolRecords?.length ? toolRecords : undefined);
           } else {
             const assistantMsg: ChatMessage = {
               role: 'assistant', content: finalContent || '', timestamp: Date.now(),
@@ -431,7 +431,7 @@ async function handleRetry(): Promise<void> {
             state.update(KEYS.CURRENT_SESSION, (s: any) => ({
               ...s, messages: [...s.messages, assistantMsg], updatedAt: Date.now()
             }));
-            updateLastAssistantMessage(finalContent, retryThinkContent || null, loopStats || null, undefined, Date.now(), toolRecords?.length ? toolRecords : undefined);
+            updateLastAssistantMessage(finalContent, retryThinkContent || null, loopStats || null, getSelectedModel(), Date.now(), toolRecords?.length ? toolRecords : undefined);
           }
           renderMessages();
           await saveCurrentSession();
@@ -984,7 +984,7 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
               updatedAt: Date.now()
             }));
           }
-          updateLastAssistantMessage(assistantContent, thinkContent || null, loopStats || null, undefined, Date.now(), toolRecords?.length ? toolRecords : undefined);
+          updateLastAssistantMessage(assistantContent, thinkContent || null, loopStats || null, getSelectedModel(), Date.now(), toolRecords?.length ? toolRecords : undefined);
         } else {
           // 单迭代模式：正常保存
           const assistantMsg: ChatMessage = {
@@ -1002,7 +1002,7 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
             messages: [...session.messages, assistantMsg],
             updatedAt: Date.now()
           }));
-          updateLastAssistantMessage(assistantContent, thinkContent || null, loopStats || null, undefined, Date.now(), toolRecords?.length ? toolRecords : undefined);
+          updateLastAssistantMessage(assistantContent, thinkContent || null, loopStats || null, getSelectedModel(), Date.now(), toolRecords?.length ? toolRecords : undefined);
         }
         renderMessages();
         await saveCurrentSession();

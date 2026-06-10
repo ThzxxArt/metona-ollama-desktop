@@ -224,12 +224,15 @@ function applyCapability(_modelName: string, caps: { think: boolean; vision: boo
 
 function setThinkAvailable(available: boolean): void {
   if (available) {
+    thinkCheckbox.checked = true;
     thinkCheckbox.disabled = false;
+    state.set('thinkEnabled', true);
     thinkWrap.title = 'Think 模式：启用深度推理';
     thinkWrap.classList.remove('unavailable');
   } else {
     thinkCheckbox.checked = false;
     thinkCheckbox.disabled = true;
+    state.set('thinkEnabled', false);
     thinkWrap.title = '当前模型不支持 Think 模式';
     thinkWrap.classList.add('unavailable');
   }
