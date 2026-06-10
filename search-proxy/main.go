@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -27,14 +27,14 @@ const version = "2.2.0"
 
 // ── CLI ──
 var (
-	cliPort    = flag.Int("port", 7899, "")
-	cliCache   = flag.Int("cache", 5, "")
-	cliRate    = flag.Int("rate", 30, "")
-	cliBurst   = flag.Int("burst", 60, "")
-	cliTimeout = flag.Int("timeout", 12, "")
+	cliPort    = flag.Int("port", 7899, "监听端口")
+	cliCache   = flag.Int("cache", 5, "缓存时间(分钟)")
+	cliRate    = flag.Int("rate", 30, "限流速率(req/s)")
+	cliBurst   = flag.Int("burst", 60, "限流突发容量")
+	cliTimeout = flag.Int("timeout", 12, "搜索引擎请求超时(秒)")
 	cliVersion = flag.Bool("version", false, "显示版本")
-	cliStop    = flag.Bool("stop", false, "停止后台实例")
-	cliStart   = flag.Bool("start", false, "后台启动")
+	cliStop    = flag.Bool("stop", false, "停止后台运行的实例")
+	cliStart   = flag.Bool("start", false, "后台启动（nohup模式）")
 	cliStatus  = flag.Bool("status", false, "查看运行状态")
 	cliRestart = flag.Bool("restart", false, "重启后台实例")
 )
@@ -43,11 +43,11 @@ var pidFile = "/tmp/metona-search-proxy.pid"
 
 // ── 统计 ──
 type statsData struct {
-	ReqTotal   int64
-	ReqRate    int64
-	CacheHit   int64
-	EngineOK   [4]int64
-	EngineFail [4]int64
+	ReqTotal   atomic.Int64
+	ReqRate    atomic.Int64   // 被限流的
+	CacheHit   atomic.Int64
+	EngineOK   [4]atomic.Int64 // google/bing/baidu/ddg 成功
+	EngineFail [4]atomic.Int64 // google/bing/baidu/ddg 失败
 	StartTime  time.Time
 }
 
@@ -55,43 +55,43 @@ var stats = &statsData{StartTime: time.Now()}
 
 // ── 限流器 ──
 type RateLimiter struct {
-	tokens   int64
+	tokens   atomic.Int64
 	capacity int64
 	rate     int64
-	lastFill int64
+	lastFill atomic.Int64
 }
 
 func newRateLimiter(rate, cap int64) *RateLimiter {
 	rl := &RateLimiter{rate: rate, capacity: cap}
-	atomic.StoreInt64(&rl.tokens, cap)
-	atomic.StoreInt64(&rl.lastFill, time.Now().UnixNano())
+	rl.tokens.Store(cap)
+	rl.lastFill.Store(time.Now().UnixNano())
 	return rl
 }
 
 func (rl *RateLimiter) Allow() bool {
 	now := time.Now().UnixNano()
-	last := atomic.LoadInt64(&rl.lastFill)
+	last := rl.lastFill.Load()
 	elapsed := float64(now-last) / 1e9
 	newTokens := int64(elapsed * float64(rl.rate))
 	if newTokens > 0 {
-		atomic.StoreInt64(&rl.lastFill, now)
+		rl.lastFill.Store(now)
 		for {
-			current := atomic.LoadInt64(&rl.tokens)
+			current := rl.tokens.Load()
 			next := current + newTokens
 			if next > rl.capacity {
 				next = rl.capacity
 			}
-			if atomic.CompareAndSwapInt64(&rl.tokens, current, next) {
+			if rl.tokens.CompareAndSwap(current, next) {
 				break
 			}
 		}
 	}
 	for {
-		current := atomic.LoadInt64(&rl.tokens)
+		current := rl.tokens.Load()
 		if current <= 0 {
 			return false
 		}
-		if atomic.CompareAndSwapInt64(&rl.tokens, current, current-1) {
+		if rl.tokens.CompareAndSwap(current, current-1) {
 			return true
 		}
 	}
@@ -105,12 +105,14 @@ type cacheEntry struct {
 	ExpiresAt int64
 }
 
+var cacheSize atomic.Int64
+
 func cleanCacheLoop(interval time.Duration) {
 	for {
 		time.Sleep(interval)
 		now := time.Now().Unix()
 		count := 0
-		cache.Range(func(key, value interface{}) bool {
+		cache.Range(func(key, value any) bool {
 			ce := value.(cacheEntry)
 			if now >= ce.ExpiresAt {
 				cache.Delete(key)
@@ -119,12 +121,12 @@ func cleanCacheLoop(interval time.Duration) {
 			return true
 		})
 		if count > 0 {
-			log.Printf("cache cleaned: %d", count)
+			log.Printf("cache cleaned: %d entries removed", count)
 		}
 	}
 }
 
-// ── 预编译正则 ──
+// ── 正则预编译（全局，避免每次搜索重新编译）──
 var (
 	reGoogleBlock = regexp.MustCompile(`<(?:div|li)[^>]*class="[^"]*(?:Gx5Zad|g|kvH3mc)[^"]*"[^>]*>([\s\S]*?)(?=<(?:div|li)[^>]*class="[^"]*(?:Gx5Zad|kvH3mc)[^"]*"|<(?:div|g-section)|\z)`)
 	reGoogleTitle = regexp.MustCompile(`<a[^>]*href="(https?://[^"]*)"[^>]*>[\s\S]*?<h3[^>]*>([\s\S]*?)</h3>`)
@@ -161,6 +163,7 @@ type SearchResp struct {
 	FromCache bool     `json:"from_cache,omitempty"`
 }
 
+// ── 全局 ──
 var (
 	httpClient *http.Client
 	ua         = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
@@ -169,14 +172,15 @@ var (
 	cacheTTL   int64
 )
 
-// ── PID ──
+// ── PID 管理 ──
+
 func writePID(port int) {
 	pid := os.Getpid()
-	ioutil.WriteFile(pidFile, []byte(fmt.Sprintf("%d\n%d", pid, port)), 0644)
+	os.WriteFile(pidFile, []byte(fmt.Sprintf("%d\n%d", pid, port)), 0644)
 }
 
 func readPID() (pid int, port int, ok bool) {
-	data, err := ioutil.ReadFile(pidFile)
+	data, err := os.ReadFile(pidFile)
 	if err != nil {
 		return 0, 0, false
 	}
@@ -290,6 +294,7 @@ func doRestart() {
 }
 
 // ── recovery ──
+
 func recoverWrap(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
@@ -302,9 +307,9 @@ func recoverWrap(h http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// ── 引擎 ──
+// ── 引擎实现 ──
+
 var engineNames = []string{"google", "bing", "baidu", "ddg"}
-var engineIdx = map[string]int{"google": 0, "bing": 1, "baidu": 2, "ddg": 3}
 
 func doGet(u string) (*http.Response, error) {
 	req, _ := http.NewRequest("GET", u, nil)
@@ -313,37 +318,20 @@ func doGet(u string) (*http.Response, error) {
 	return httpClient.Do(req)
 }
 
-func codeLog(engine string, code int) {
-	if code == 0 {
-		log.Printf("%s: network error", engine)
-		return
-	}
-	switch code {
-	case 429:
-		log.Printf("%s: 429 rate limited", engine)
-	case 503:
-		log.Printf("%s: 503 unavailable", engine)
-	case 403:
-		log.Printf("%s: 403 blocked (可能需要验证码)", engine)
-	default:
-		log.Printf("%s: HTTP %d", engine, code)
-	}
-}
-
 func searchGoogle(q string, n int) []Result {
 	u := fmt.Sprintf("https://www.google.com/search?q=%s&num=%d&hl=zh-CN", url.QueryEscape(q), n)
 	resp, err := doGet(u)
 	if err != nil || resp.StatusCode != 200 {
 		if resp != nil {
-			codeLog("google", resp.StatusCode)
 			resp.Body.Close()
+			codeLog("google", resp.StatusCode)
 		} else {
 			codeLog("google", 0)
 		}
 		return nil
 	}
 	defer resp.Body.Close()
-	body, _ := ioutil.ReadAll(resp.Body)
+	body, _ := io.ReadAll(resp.Body)
 	html := string(body)
 
 	var out []Result
@@ -373,15 +361,15 @@ func searchBing(q string, n int) []Result {
 	resp, err := doGet(u)
 	if err != nil || resp.StatusCode != 200 {
 		if resp != nil {
-			codeLog("bing", resp.StatusCode)
 			resp.Body.Close()
+			codeLog("bing", resp.StatusCode)
 		} else {
 			codeLog("bing", 0)
 		}
 		return nil
 	}
 	defer resp.Body.Close()
-	body, _ := ioutil.ReadAll(resp.Body)
+	body, _ := io.ReadAll(resp.Body)
 	html := string(body)
 
 	var out []Result
@@ -411,15 +399,15 @@ func searchDDG(q string, n int) []Result {
 	resp, err := doGet(u)
 	if err != nil || resp.StatusCode != 200 {
 		if resp != nil {
-			codeLog("ddg", resp.StatusCode)
 			resp.Body.Close()
+			codeLog("ddg", resp.StatusCode)
 		} else {
 			codeLog("ddg", 0)
 		}
 		return nil
 	}
 	defer resp.Body.Close()
-	body, _ := ioutil.ReadAll(resp.Body)
+	body, _ := io.ReadAll(resp.Body)
 	html := string(body)
 
 	var out []Result
@@ -442,15 +430,15 @@ func searchBaidu(q string, n int) []Result {
 	resp, err := doGet(u)
 	if err != nil || resp.StatusCode != 200 {
 		if resp != nil {
-			codeLog("baidu", resp.StatusCode)
 			resp.Body.Close()
+			codeLog("baidu", resp.StatusCode)
 		} else {
 			codeLog("baidu", 0)
 		}
 		return nil
 	}
 	defer resp.Body.Close()
-	body, _ := ioutil.ReadAll(resp.Body)
+	body, _ := io.ReadAll(resp.Body)
 	html := string(body)
 
 	var out []Result
@@ -481,7 +469,28 @@ func searchBaidu(q string, n int) []Result {
 	return out
 }
 
+func codeLog(engine string, code int) {
+	if code == 0 {
+		log.Printf("%s: network error", engine)
+		return
+	}
+	switch code {
+	case 429:
+		log.Printf("%s: 429 rate limited", engine)
+	case 503:
+		log.Printf("%s: 503 unavailable", engine)
+	case 403:
+		log.Printf("%s: 403 blocked (可能需要验证码)", engine)
+	default:
+		log.Printf("%s: HTTP %d", engine, code)
+	}
+}
+
+// ── 引擎索引 ──
+var engineIdx = map[string]int{"google": 0, "bing": 1, "baidu": 2, "ddg": 3}
+
 // ── 工具 ──
+
 func clean(s string) string {
 	s = reHTMLTags.ReplaceAllString(s, "")
 	s = decodeEntities(s)
@@ -500,9 +509,9 @@ func decodeEntities(s string) string {
 func recordEngine(eng string, ok bool) {
 	if idx, exists := engineIdx[eng]; exists {
 		if ok {
-			atomic.AddInt64(&stats.EngineOK[idx], 1)
+			stats.EngineOK[idx].Add(1)
 		} else {
-			atomic.AddInt64(&stats.EngineFail[idx], 1)
+			stats.EngineFail[idx].Add(1)
 		}
 	}
 }
@@ -538,10 +547,11 @@ func parallelSearch(q string, n int) []Result {
 }
 
 // ── Handler ──
+
 func handleSearch(w http.ResponseWriter, r *http.Request) {
-	atomic.AddInt64(&stats.ReqTotal, 1)
+	stats.ReqTotal.Add(1)
 	if !limiter.Allow() {
-		atomic.AddInt64(&stats.ReqRate, 1)
+		stats.ReqRate.Add(1)
 		writeJSON(w, http.StatusTooManyRequests, SearchResp{Error: "rate limited"})
 		return
 	}
@@ -570,7 +580,7 @@ func handleSearch(w http.ResponseWriter, r *http.Request) {
 	if v, ok := cache.Load(ck); ok {
 		ce := v.(cacheEntry)
 		if time.Now().Unix() < ce.ExpiresAt {
-			atomic.AddInt64(&stats.CacheHit, 1)
+			stats.CacheHit.Add(1)
 			writeJSON(w, http.StatusOK, SearchResp{
 				Success: true, Query: q, Engine: engine,
 				Total: len(ce.Results), Results: ce.Results, FromCache: true,
@@ -619,9 +629,9 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 
 func handleStats(w http.ResponseWriter, r *http.Request) {
 	uptime := time.Since(stats.StartTime).Round(time.Second).String()
-	total := atomic.LoadInt64(&stats.ReqTotal)
-	cacheHit := atomic.LoadInt64(&stats.CacheHit)
-	rate := atomic.LoadInt64(&stats.ReqRate)
+	total := stats.ReqTotal.Load()
+	cacheHit := stats.CacheHit.Load()
+	rate := stats.ReqRate.Load()
 
 	cacheRate := 0.0
 	if total > 0 {
@@ -635,10 +645,10 @@ func handleStats(w http.ResponseWriter, r *http.Request) {
 		"cache_hit":  cacheHit,
 		"cache_rate": fmt.Sprintf("%.1f%%", cacheRate),
 		"engines": map[string]interface{}{
-			"google": map[string]int64{"ok": atomic.LoadInt64(&stats.EngineOK[0]), "fail": atomic.LoadInt64(&stats.EngineFail[0])},
-			"bing":   map[string]int64{"ok": atomic.LoadInt64(&stats.EngineOK[1]), "fail": atomic.LoadInt64(&stats.EngineFail[1])},
-			"baidu":  map[string]int64{"ok": atomic.LoadInt64(&stats.EngineOK[2]), "fail": atomic.LoadInt64(&stats.EngineFail[2])},
-			"ddg":    map[string]int64{"ok": atomic.LoadInt64(&stats.EngineOK[3]), "fail": atomic.LoadInt64(&stats.EngineFail[3])},
+			"google": map[string]int64{"ok": stats.EngineOK[0].Load(), "fail": stats.EngineFail[0].Load()},
+			"bing":   map[string]int64{"ok": stats.EngineOK[1].Load(), "fail": stats.EngineFail[1].Load()},
+			"baidu":  map[string]int64{"ok": stats.EngineOK[2].Load(), "fail": stats.EngineFail[2].Load()},
+			"ddg":    map[string]int64{"ok": stats.EngineOK[3].Load(), "fail": stats.EngineFail[3].Load()},
 		},
 		"version": version,
 	})
@@ -651,7 +661,6 @@ func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	json.NewEncoder(w).Encode(v)
 }
 
-// ── main ──
 func main() {
 	flag.Parse()
 
@@ -681,8 +690,9 @@ func main() {
 		port = fmt.Sprintf("%d", *cliPort)
 	}
 	portNum, _ := strconv.Atoi(port)
+
 	if checkPort(portNum) {
-		log.Fatalf("端口 %s 已被占用", port)
+		log.Fatalf("端口 %s 已被占用。使用 metona-search-proxy -status 查看。", port)
 	}
 
 	httpClient = &http.Client{
@@ -696,6 +706,7 @@ func main() {
 	limiter = newRateLimiter(int64(*cliRate), int64(*cliBurst))
 	cacheTTL = int64(*cliCache)
 
+	// 后台清理过期缓存
 	go cleanCacheLoop(30 * time.Second)
 
 	writePID(portNum)
