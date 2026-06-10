@@ -50,7 +50,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'list_directory',
-      description: 'List directory contents. Returns file names, types, sizes, and modification times. Supports offset-based pagination for directories with many entries.',
+      description: 'List directory contents up to 2000 entries. Returns names, types, sizes, modification times. Supports offset pagination, recursion, and extension filtering.',
       parameters: {
         type: 'object',
         required: ['path'],
@@ -102,13 +102,13 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'delete_file',
-      description: 'Delete a file or directory. Requires user confirmation.',
+      description: 'Delete a file or directory. Returns deleted item count and total size. Use recursive=true for non-empty directories.',
       parameters: {
         type: 'object',
         required: ['path'],
         properties: {
           path: { type: 'string', description: 'Path to delete.' },
-          recursive: { type: 'boolean', description: 'Recursive delete for directories. DANGEROUS.' }
+          recursive: { type: 'boolean', description: 'Recursive delete for directories. Returns filesDeleted count and total deletedSize.' }
         }
       }
     }
@@ -197,15 +197,16 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'edit_file',
-      description: 'Find and replace text in a file. More efficient than rewriting the whole file for small changes. Requires user confirmation.',
+      description: 'Find and replace text in a file. Supports literal string matching and regex (use_regex=true). Use all=true to replace all occurrences. More efficient than write_file for small edits.',
       parameters: {
         type: 'object',
         required: ['path', 'old_text', 'new_text'],
         properties: {
           path: { type: 'string', description: 'File path to edit.' },
-          old_text: { type: 'string', description: 'Exact text to find.' },
+          old_text: { type: 'string', description: 'Text to find. Can be a regex pattern when use_regex=true.' },
           new_text: { type: 'string', description: 'Replacement text.' },
-          all: { type: 'boolean', description: 'Replace all occurrences. Default: false (replace first only).' }
+          all: { type: 'boolean', description: 'Replace all occurrences. Default: false.' },
+          use_regex: { type: 'boolean', description: 'Treat old_text as a regular expression. Default: false.' }
         }
       }
     }
@@ -228,7 +229,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'tree',
-      description: 'Display directory structure as a tree. Shows nested files and folders.',
+      description: 'Display directory structure as a tree. Shows nested files and folders. Default depth: 5 levels.',
       parameters: {
         type: 'object',
         required: ['path'],
@@ -292,7 +293,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'read_multiple_files',
-      description: 'Read multiple files at once. Returns contents of all requested files.',
+      description: 'Read up to 50 files at once in parallel. Returns content of all requested files (10KB each by default).',
       parameters: {
         type: 'object',
         required: ['paths'],

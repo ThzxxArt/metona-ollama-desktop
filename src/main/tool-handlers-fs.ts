@@ -237,7 +237,7 @@ export async function handleListDir(params: { path: string; recursive?: boolean;
     const allowed = checkPathAllowed(dirPath, 'read');
     if (!allowed.ok) return { success: false, error: allowed.reason };
 
-    const maxEntries = 500;
+    const maxEntries = 2000;
     const startOffset = params.offset || 0;
     const entries: Array<{ name: string; type: string; size: number | null; modified: string }> = [];
     let truncated = false;
@@ -408,7 +408,28 @@ export async function handleDeleteFile(params: { path: string; recursive?: boole
     if (!allowed.ok) return { success: false, error: allowed.reason };
 
     const stat = await fs.stat(filePath);
-    if (stat.isDirectory()) {
+    const isDir = stat.isDirectory();
+    let deletedSize = stat.size;
+    let deletedCount = 1;
+
+    if (isDir) {
+      // 统计目录内容
+      let fileCount = 0;
+      async function countDir(dir: string): Promise<void> {
+        const items = await fs.readdir(dir, { withFileTypes: true });
+        for (const item of items) {
+          const fp = path.join(dir, item.name);
+          try {
+            const s = await fs.stat(fp);
+            deletedSize += s.size;
+            if (item.isFile()) fileCount++;
+            else if (item.isDirectory()) await countDir(fp);
+          } catch { /* skip */ }
+        }
+      }
+      await countDir(filePath);
+      deletedCount = fileCount;
+
       if (params.recursive) {
         await fs.rm(filePath, { recursive: true, force: true });
       } else {
@@ -418,7 +439,12 @@ export async function handleDeleteFile(params: { path: string; recursive?: boole
       await fs.unlink(filePath);
     }
 
-    return { success: true, path: filePath, deleted: true };
+    return {
+      success: true, path: filePath, deleted: true,
+      type: isDir ? 'directory' : 'file',
+      ...(isDir && { filesDeleted: deletedCount }),
+      deletedSize,
+    };
   } catch (err) {
     return { success: false, error: (err as Error).message };
   }
@@ -445,7 +471,7 @@ export async function handleAppendFile(params: { path: string; content: string; 
   }
 }
 
-export async function handleEditFile(params: { path: string; old_text: string; new_text: string; all?: boolean }): Promise<ToolResult> {
+export async function handleEditFile(params: { path: string; old_text: string; new_text: string; all?: boolean; use_regex?: boolean }): Promise<ToolResult> {
   try {
     const filePath = resolvePath(params.path);
     const allowed = checkPathAllowed(filePath, 'write');
@@ -453,26 +479,42 @@ export async function handleEditFile(params: { path: string; old_text: string; n
 
     const content = await fs.readFile(filePath, 'utf-8');
 
-    if (!content.includes(params.old_text)) {
-      return { success: false, error: '未找到要替换的文本' };
-    }
-
-    let newContent: string;
     let replaceCount: number;
+    let newContent: string;
 
-    if (params.all) {
-      const parts = content.split(params.old_text);
-      replaceCount = parts.length - 1;
-      newContent = parts.join(params.new_text);
+    if (params.use_regex) {
+      try {
+        const regex = new RegExp(params.old_text, params.all ? 'g' : '');
+        if (!regex.test(content)) {
+          return { success: false, error: '未找到匹配正则的文本' };
+        }
+        // 重新创建 regex 因为 test() 会消耗 lastIndex（带g标志时）
+        const re = new RegExp(params.old_text, params.all ? 'g' : '');
+        const matches = content.match(re);
+        replaceCount = matches ? matches.length : 1;
+        const finalRe = new RegExp(params.old_text, params.all ? 'g' : '');
+        newContent = content.replace(finalRe, params.new_text);
+      } catch (regexErr) {
+        return { success: false, error: `无效的正则表达式: ${(regexErr as Error).message}` };
+      }
     } else {
-      replaceCount = 1;
-      newContent = content.replace(params.old_text, params.new_text);
+      if (!content.includes(params.old_text)) {
+        return { success: false, error: '未找到要替换的文本' };
+      }
+      if (params.all) {
+        const parts = content.split(params.old_text);
+        replaceCount = parts.length - 1;
+        newContent = parts.join(params.new_text);
+      } else {
+        replaceCount = 1;
+        newContent = content.replace(params.old_text, params.new_text);
+      }
     }
 
-    sendLog('info', `✂️ edit_file`, `${filePath} (${replaceCount} 处替换)`);
+    sendLog('info', `✂️ edit_file`, `${filePath} (${replaceCount} 处替换${params.use_regex ? ', 正则模式' : ''})`);
     await fs.writeFile(filePath, newContent, 'utf-8');
     sendLog('success', `✂️ edit_file 完成`, `${newContent.length}B`);
-    return { success: true, path: filePath, replaceCount, newSize: newContent.length };
+    return { success: true, path: filePath, replaceCount, newSize: newContent.length, regex: params.use_regex || false };
   } catch (err) {
     sendLog('error', `✂️ edit_file 失败`, (err as Error).message);
     return { success: false, error: (err as Error).message };
@@ -508,7 +550,7 @@ export async function handleTree(params: { path: string; max_depth?: number; inc
     const allowed = checkPathAllowed(rootPath, 'read');
     if (!allowed.ok) return { success: false, error: allowed.reason };
 
-    const maxDepth = params.max_depth || 3;
+    const maxDepth = params.max_depth || 5;
     const includeHidden = params.include_hidden || false;
     const lines: string[] = [];
     let fileCount = 0;
@@ -724,10 +766,10 @@ export async function handleReplaceInFiles(params: { path: string; glob: string;
 
 export async function handleReadMultipleFiles(params: { paths: string[]; max_chars_per_file?: number }): Promise<ToolResult> {
   try {
-    const maxChars = params.max_chars_per_file || 2000;
+    const maxChars = params.max_chars_per_file || 10000;
 
-    // 并行读取所有文件（最多20个）
-    const filesToRead = params.paths.slice(0, 20).map(async (p) => {
+    // 并行读取所有文件（最多50个）
+    const filesToRead = params.paths.slice(0, 50).map(async (p) => {
       const filePath = resolvePath(p);
       const allowed = checkPathAllowed(filePath, 'read');
       if (!allowed.ok) {
