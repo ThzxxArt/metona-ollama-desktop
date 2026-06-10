@@ -379,8 +379,8 @@ async function handleRetry(): Promise<void> {
           retryThinkContent = '';
           retryIterations++;
         },
-        onThinking: (thinking) => { retryThinkContent = thinking; updateLastAssistantMessage(retryContent, thinking, null); },
-        onContent: (content) => { retryContent = content; updateLastAssistantMessage(content, retryThinkContent || null, null); },
+        onThinking: (thinking) => { retryThinkContent = thinking; updateLastAssistantMessage(retryContent, thinking, null, getSelectedModel()); },
+        onContent: (content) => { retryContent = content; updateLastAssistantMessage(content, retryThinkContent || null, null, getSelectedModel()); },
         onToolCallStart: (call) => {
           addToolCard({
             name: call.function.name, arguments: call.function.arguments,
@@ -930,11 +930,11 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
       },
       onThinking: (thinking) => {
         thinkContent = thinking;
-        updateLastAssistantMessage(assistantContent, thinkContent || null, null);
+        updateLastAssistantMessage(assistantContent, thinkContent || null, null, getSelectedModel());
       },
       onContent: (content) => {
         assistantContent = content;
-        updateLastAssistantMessage(assistantContent, thinkContent || null, null);
+        updateLastAssistantMessage(assistantContent, thinkContent || null, null, getSelectedModel());
       },
       onToolCallStart: (call) => {
         addToolCard({
