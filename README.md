@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/icons/icon-new.png" alt="Metona Ollama Desktop" width="128">
+  <img src="https://gitee.com/thzxx/metona-ollama-desktop/raw/master/assets/icons/icon-new.png" alt="Metona Ollama Desktop" width="128">
 </p>
 
 <h1 align="center">Metona Ollama Desktop</h1>
