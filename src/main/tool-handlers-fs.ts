@@ -8,20 +8,98 @@ import { spawn } from 'child_process';
 import { checkPathAllowed } from './tool-security.js';
 import { sendLog, resolvePath, type ToolResult } from './tool-handlers-shared.js';
 
-export async function handleReadFile(params: { path: string; encoding?: string; start_line?: number; end_line?: number }): Promise<ToolResult> {
+export async function handleReadFile(params: { path: string; encoding?: string; start_line?: number; end_line?: number; mode?: string; offset_bytes?: number; limit_bytes?: number }): Promise<ToolResult> {
   try {
     const filePath = resolvePath(params.path);
     const allowed = checkPathAllowed(filePath, 'read');
     if (!allowed.ok) return { success: false, error: allowed.reason };
 
     const stat = await fs.stat(filePath);
-    if (stat.size > 1024 * 1024) {
-      return { success: false, error: `文件过大 (${(stat.size / 1024 / 1024).toFixed(1)}MB)，最大支持 1MB` };
+    const MAX_SIZE = params.mode === 'binary' ? 50 * 1024 * 1024 : 5 * 1024 * 1024; // 二进制50MB，文本5MB
+    if (stat.size > MAX_SIZE) {
+      return { success: false, error: `文件过大 (${(stat.size / 1024 / 1024).toFixed(1)}MB)，最大支持 ${MAX_SIZE / 1024 / 1024}MB` };
     }
 
+    const mode = params.mode || 'text';
+
+    // ── 二进制模式：返回 base64 ──
+    if (mode === 'binary') {
+      const buf = await fs.readFile(filePath);
+      let resultBuf = buf;
+      let truncated = false;
+      let byteRange: [number, number] = [0, buf.length];
+
+      if (params.offset_bytes !== undefined || params.limit_bytes !== undefined) {
+        const offset = params.offset_bytes || 0;
+        const limit = params.limit_bytes || Math.min(100 * 1024, buf.length - offset); // 默认100KB
+        const end = Math.min(buf.length, offset + limit);
+        resultBuf = buf.subarray(offset, end);
+        byteRange = [offset, end];
+        truncated = end < buf.length;
+      } else if (buf.length > 100 * 1024) {
+        resultBuf = buf.subarray(0, 100 * 1024);
+        byteRange = [0, 100 * 1024];
+        truncated = true;
+      }
+
+      const ext = path.extname(filePath).toLowerCase();
+      return {
+        success: true,
+        path: filePath,
+        content: resultBuf.toString('base64'),
+        encoding: 'base64',
+        mode: 'binary',
+        size: stat.size,
+        bytes_read: resultBuf.length,
+        byte_range: byteRange,
+        truncated,
+        ...(truncated && {
+          remaining_bytes: stat.size - byteRange[1],
+          hint: `文件共 ${stat.size} 字节(${(stat.size / 1024 / 1024).toFixed(1)}MB)，已返回 ${byteRange[1]} 字节。使用 offset_bytes=${byteRange[1]} 继续读取后续内容。`
+        }),
+        mime_hint: extToMime(ext),
+      };
+    }
+
+    // ── 文本模式 ──
     const encoding = (params.encoding as BufferEncoding) || 'utf-8';
+
+    // 字节分页优先
+    if (params.offset_bytes !== undefined || params.limit_bytes !== undefined) {
+      const offset = params.offset_bytes || 0;
+      const limit = params.limit_bytes || 50000;
+      const fd = await fs.open(filePath, 'r');
+      try {
+        const buf = Buffer.alloc(Math.min(limit, stat.size - offset));
+        await fd.read(buf, 0, buf.length, offset);
+        const content = buf.toString(encoding);
+        const contentLines = content.split('\n');
+        const end = offset + buf.length;
+        const truncated = end < stat.size;
+        return {
+          success: true,
+          path: filePath,
+          content,
+          encoding,
+          mode: 'text',
+          size: stat.size,
+          lines: contentLines.length,
+          byte_range: [offset, end],
+          truncated,
+          ...(truncated && {
+            remaining_bytes: stat.size - end,
+            hint: `文件共 ${stat.size} 字节，已返回 ${offset}-${end} 的内容。使用 offset_bytes=${end} 继续读取。`
+          }),
+        };
+      } finally {
+        await fd.close();
+      }
+    }
+
+    // 按行读取
     const content = await fs.readFile(filePath, encoding);
     const lines = content.split('\n');
+    const defaultLimit = 500;
 
     let resultContent = content;
     let lineRange: [number, number] = [1, lines.length];
@@ -29,13 +107,13 @@ export async function handleReadFile(params: { path: string; encoding?: string; 
 
     if (params.start_line || params.end_line) {
       const start = Math.max(1, params.start_line || 1) - 1;
-      const end = Math.min(lines.length, params.end_line || Math.min(start + 500, lines.length));
+      const end = Math.min(lines.length, params.end_line || Math.min(start + defaultLimit, lines.length));
       resultContent = lines.slice(start, end).join('\n');
       lineRange = [start + 1, end];
       truncated = end < lines.length;
-    } else if (lines.length > 500) {
-      resultContent = lines.slice(0, 500).join('\n');
-      lineRange = [1, 500];
+    } else if (lines.length > defaultLimit) {
+      resultContent = lines.slice(0, defaultLimit).join('\n');
+      lineRange = [1, defaultLimit];
       truncated = true;
     }
 
@@ -44,14 +122,36 @@ export async function handleReadFile(params: { path: string; encoding?: string; 
       path: filePath,
       content: resultContent,
       encoding,
+      mode: 'text',
       size: stat.size,
       lines: lines.length,
+      line_range: lineRange,
       truncated,
-      line_range: lineRange
+      ...(truncated && {
+        remaining_lines: lines.length - lineRange[1],
+        hint: `文件共 ${lines.length} 行，已返回第 ${lineRange[0]}-${lineRange[1]} 行。使用 start_line=${lineRange[1] + 1} 继续读取后续内容。`
+      }),
     };
   } catch (err) {
     return { success: false, error: (err as Error).message };
   }
+}
+
+/** 扩展名 → MIME 类型 */
+function extToMime(ext: string): string {
+  const map: Record<string, string> = {
+    '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+    '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml',
+    '.pdf': 'application/pdf', '.zip': 'application/zip',
+    '.gz': 'application/gzip', '.tar': 'application/x-tar',
+    '.mp4': 'video/mp4', '.mp3': 'audio/mpeg', '.wav': 'audio/wav',
+    '.json': 'application/json', '.xml': 'application/xml',
+    '.html': 'text/html', '.css': 'text/css', '.js': 'application/javascript',
+    '.ts': 'text/typescript', '.py': 'text/x-python',
+    '.wasm': 'application/wasm', '.bin': 'application/octet-stream',
+    '.woff2': 'font/woff2', '.ttf': 'font/ttf',
+  };
+  return map[ext] || 'application/octet-stream';
 }
 
 export async function handleWriteFile(params: { path: string; content: string; encoding?: string }): Promise<ToolResult> {
