@@ -151,7 +151,7 @@
 </details>
 
 <details>
-<summary><strong>🕐 系统工具（2 个）</strong></summary>
+<summary><strong>🕐 系统工具（6 个）</strong></summary>
 
 | 工具 | 功能 |
 |------|------|
@@ -391,7 +391,7 @@ npm run dist           # 构建 Windows 安装包
 </details>
 
 <details>
-<summary><strong>🕐 System Tools (2)</strong></summary>
+<summary><strong>🕐 System Tools (6)</strong></summary>
 
 | Tool | Function |
 |------|------|
