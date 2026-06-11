@@ -3,10 +3,20 @@
  */
 
 import { contextBridge, ipcRenderer } from 'electron';
+import * as os from 'os';
 
 contextBridge.exposeInMainWorld('metonaDesktop', {
   isDesktop: true,
   info: () => ipcRenderer.invoke('app:info'),
+  sys: {
+    homeDir: os.homedir(),
+    tmpDir: os.tmpdir(),
+    shell: process.env.SHELL || process.env.ComSpec || (process.platform === 'win32' ? 'cmd.exe' : 'bash'),
+    arch: os.arch(),
+    platform: os.platform(),
+    hostname: os.hostname(),
+    username: os.userInfo().username,
+  },
   dialog: {
     openFile: (options?: unknown) => ipcRenderer.invoke('dialog:openFile', options),
     saveFile: (options?: unknown) => ipcRenderer.invoke('dialog:saveFile', options)
@@ -20,8 +30,7 @@ contextBridge.exposeInMainWorld('metonaDesktop', {
     execute: (toolName: string, args: Record<string, unknown>) => ipcRenderer.invoke('tool:execute', toolName, args),
     getConfig: () => ipcRenderer.invoke('tool:getConfig'),
     setAllowedDirs: (dirs: string[]) => ipcRenderer.invoke('tool:setAllowedDirs', dirs),
-    setTimeouts: (timeouts: { http?: number; mcp?: number }) => ipcRenderer.invoke('tool:setTimeouts', timeouts),
-    setProxy: (url: string) => ipcRenderer.invoke('proxy:set', url)
+    setTimeouts: (timeouts: { http?: number; mcp?: number }) => ipcRenderer.invoke('tool:setTimeouts', timeouts)
   },
   notify: (title: string, body: string) => ipcRenderer.invoke('notify', title, body),
   window: {

@@ -207,6 +207,15 @@ export interface WorkspaceDirResult {
 export interface MetonaDesktopAPI {
   isDesktop: boolean;
   info: () => Promise<AppInfo>;
+  sys: {
+    homeDir: string;
+    tmpDir: string;
+    shell: string;
+    arch: string;
+    platform: string;
+    hostname: string;
+    username: string;
+  };
   dialog: {
     openFile: (options?: FileFilterOptions) => Promise<string[] | null>;
     saveFile: (options?: SaveFileOptions) => Promise<string | null>;
@@ -221,7 +230,6 @@ export interface MetonaDesktopAPI {
     getConfig: () => Promise<{ allowedDirs: string[]; blockedDirs: string[] }>;
     setAllowedDirs: (dirs: string[]) => Promise<void>;
     setTimeouts: (timeouts: { http?: number; mcp?: number }) => Promise<{ success: boolean }>;
-    setProxy: (url: string) => Promise<void>;
   };
   notify: (title: string, body: string) => void;
   window: {

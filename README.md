@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-v0.11.0-E8734A?style=flat-square" alt="version">
+  <img src="https://img.shields.io/badge/version-v0.11.1-E8734A?style=flat-square" alt="version">
   <img src="https://img.shields.io/badge/electron-33+-47848F?style=flat-square&logo=electron" alt="electron">
   <img src="https://img.shields.io/badge/typescript-5.7+-3178C6?style=flat-square&logo=typescript" alt="typescript">
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="license">
@@ -35,12 +35,12 @@
 | | 功能 | 说明 |
 |:---:|:---|:---|
 | 🤖 | **ReAct Agent Loop** | 始终开启的唯一对话模式。Thought → Action → Observation → Reflection 完整循环，最大 85 轮（可配置），自动重试 2 次，工具去重，并行/链式执行 |
-| 🔧 | **38 个内置工具** | 文件系统（16个） · 命令执行 · 联网搜索 · 浏览器控制（9个） · Git · 记忆 · 会话 · 子代理 |
+| 🔧 | **44 个内置工具** | 文件系统（16个） · 命令执行 · 联网搜索 · 浏览器控制（9个） · Git · 记忆 · 会话 · 子代理 · 系统工具 |
 | 🧠 | **智能记忆系统** | 三类记忆（fact / preference / rule），FTS5 全文搜索 + 向量语义搜索，写入前安全扫描，容量 500 条，90 天衰减 |
 | 📋 | **自定义文件** | SOUL.md（人格，不可压缩）+ AGENT.md（行为准则）+ USER.md（用户画像），工作空间优先，内置默认 fallback |
 | 🎯 | **技能自动生成 v1.1** | 工具调用链自动提取 → 语义匹配 → 参数自优化 → 未使用衰减 → 技能链合并，越用越精准 |
 | 🌐 | **MCP 协议扩展** | JSON-RPC 2.0 over stdio，动态工具发现，Shadowing 防护 |
-| 🔍 | **四引擎联网搜索** | Bing + 百度 + DuckDuckGo + Google 并行聚合，智能排序+时间过滤+摘要增强，web_fetch支持反爬+UA切换+浏览器回退 |
+| 🔍 | **四引擎联网搜索** | Bing + 百度 + 搜狗 + 360搜索 并行聚合，智能排序+时间过滤+摘要增强，web_fetch支持反爬+UA切换+浏览器回退 |
 | 🌏 | **浏览器控制** | 打开网页 · 截图 · 执行 JS · 提取内容 · 点击 · 输入 · 滚动 · 关闭 |
 | 🖥️ | **工作空间面板** | 终端（实时流式输出）+ 文件浏览器，命令安全检查 |
 | 🔢 | **上下文长度自动检测** | 切换模型时自动从 model_info 获取实际支持的上下文长度，无需手动配置 |
@@ -92,7 +92,7 @@
 
 | 工具 | 功能 |
 |------|------|
-| `web_search` | 四引擎并行搜索（Bing+百度+DDG+Google），智能排序+时间过滤+摘要增强，5分钟缓存 |
+| `web_search` | 四引擎并行搜索（Bing+百度+搜狗+360），智能排序+时间过滤+摘要增强，5分钟缓存 |
 | `web_fetch` | 网页内容抓取，自动重试（指数退避），移动端UA切换，SPA页面自动升级到浏览器渲染 |
 
 </details>
@@ -147,6 +147,20 @@
 | `session_list` | 列出历史会话 |
 | `session_read` | 读取会话内容 |
 | `spawn_task` | 委派子代理（独立上下文 + 超时保护） |
+
+</details>
+
+<details>
+<summary><strong>🕐 系统工具（2 个）</strong></summary>
+
+| 工具 | 功能 |
+|------|------|
+| `datetime` | 获取系统精确时间（ISO/Unix/日期/时间/完整） |
+| `calculator` | 安全数学计算（+ - * / ** % ()，递归下降解析器） |
+| `random` | 随机生成（整数/浮点/抽取/随机字符串） |
+| `uuid` | 生成 UUID v4 唯一标识符 |
+| `json_format` | JSON 格式化 + 语法验证 + 键排序 |
+| `hash` | 哈希计算（MD5/SHA1/SHA256/SHA384/SHA512） |
 
 </details>
 
@@ -231,7 +245,7 @@ npm start
 ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm run dist
 ```
 
-产出：`release/Metona Ollama Setup v0.11.0.exe`
+产出：`release/Metona Ollama Setup v0.11.1.exe`
 
 ## 🛠️ 常用命令
 
@@ -262,12 +276,12 @@ npm run dist           # 构建 Windows 安装包
 | | Feature | Description |
 |:---:|:---|:---|
 | 🤖 | **ReAct Agent Loop** | Always-on, only chat mode. Full Thought → Action → Observation → Reflection cycle, up to 85 iterations (configurable), auto-retry 2 times, tool dedup, parallel/chain execution |
-| 🔧 | **39 Built-in Tools** | File system · Command · Web search · Browser · Git · Memory · Skills · Sessions · Sub-agent |
+| 🔧 | **44 Built-in Tools** | File system · Command · Web search · Browser · Git · Memory · Skills · Sessions · Sub-agent · System |
 | 🧠 | **Smart Memory System** | Three types (fact / preference / rule), FTS5 + vector semantic search, pre-write security scan, 500 capacity, 90-day decay |
 | 📋 | **Custom Files** | SOUL.md (persona, never compressed) + AGENT.md (behavior rules) + USER.md (user profile), workspace-first with built-in defaults |
 | 🎯 | **Auto Skill Generation v1.1** | Tool chain extraction → semantic matching → parameter self-optimization → decay → chain merging |
 | 🌐 | **MCP Protocol Extension** | JSON-RPC 2.0 over stdio, dynamic tool discovery, Shadowing protection |
-| 🔍 | **Quad-engine Web Search** | Bing + Baidu + DuckDuckGo + Google parallel, 5min cache, URL reachability check, web_fetch with auto-retry+mobile UA+SPA browser fallback |
+| 🔍 | **Quad-engine Web Search** | Bing + Baidu + Sogou + 360 parallel, 5min cache, URL reachability check, web_fetch with auto-retry+mobile UA+SPA browser fallback |
 | 🌏 | **Browser Control** | Open pages · Screenshot · JS execution · Content extraction · Click · Type · Scroll · Close |
 | 🖥️ | **Workspace Panel** | Terminal (real-time streaming) + file browser, command security checks |
 | 🔢 | **Auto Context Length Detection** | Reads actual context_length from model metadata on model switch — no manual config needed |
@@ -376,6 +390,20 @@ npm run dist           # 构建 Windows 安装包
 
 </details>
 
+<details>
+<summary><strong>🕐 System Tools (2)</strong></summary>
+
+| Tool | Function |
+|------|------|
+| `datetime` | Get precise system time (ISO/Unix/date/time/full) |
+| `calculator` | Safe math evaluation (+ - * / ** % (), recursive descent parser) |
+| `random` | Random generation (int/float/pick/string) |
+| `uuid` | Generate UUID v4 unique identifier |
+| `json_format` | JSON format + validate + sort keys |
+| `hash` | Cryptographic hash (MD5/SHA1/SHA256/SHA384/SHA512) |
+
+</details>
+
 ## 🏗️ Architecture
 
 ```
@@ -385,7 +413,7 @@ User message → workspace SOUL.md (never compressed) → AGENT.md → USER.md
               ↓
          Ollama API (Streaming Response)
               ↓
-         Tool Registry (39 Built-in + MCP Dynamic)
+         Tool Registry (44 Built-in + MCP Dynamic)
               ↓
          Observation → Reflection → Loop / Final Answer
 ```
@@ -453,7 +481,7 @@ npm start
 ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm run dist
 ```
 
-Output: `release/Metona Ollama Setup v0.11.0.exe`
+Output: `release/Metona Ollama Setup v0.11.1.exe`
 
 ## 🛠️ Common Commands
 

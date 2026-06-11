@@ -24,7 +24,7 @@ export {
   handleReadMultipleFiles,
 } from './tool-handlers-fs.js';
 
-// 系统与网络操作（6 个）
+// 系统与网络操作（8 个）
 export {
   handleRunCommand,
   killToolProcess,
@@ -32,6 +32,12 @@ export {
   handleWebSearch,
   handleDownloadFile,
   handleCompress,
+  handleDateTime,
+  handleCalculator,
+  handleRandom,
+  handleUUID,
+  handleJsonFormat,
+  handleHash,
 } from './tool-handlers-system.js';
 
 // Git 操作（1 个）

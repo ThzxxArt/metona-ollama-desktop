@@ -834,7 +834,7 @@ function renderToolCalls(): void {
         </div>
         <div class="ws-idle-divider"></div>
         <div class="ws-idle-desc">AI 对话中自动调用工具，结果在此展示</div>
-        <div class="ws-idle-hint">共 38 个内置工具 · MCP 动态扩展</div>
+        <div class="ws-idle-hint">共 44 个内置工具 · MCP 动态扩展</div>
       </div>
     `;
     return;

@@ -39,12 +39,20 @@ function getOSEnvironment() {
   const bridge = (window as any).metonaDesktop;
   const isDesktop = bridge?.isDesktop || false;
 
+  // 通过 preload 暴露的真实系统信息（同步，无 IPC 开销）
+  const sys = bridge?.sys;
+  const realHomeDir = sys?.homeDir || '';
+  const realShell = sys?.shell || '';
+  const realArch = sys?.arch || (navigator.platform || 'unknown');
+  const realUser = sys?.username || '';
+
   return {
     os: isWin ? 'Windows' : isMac ? 'macOS' : 'Linux',
-    platform: isDesktop ? (bridge.info ? 'Electron Desktop' : 'Desktop') : 'Browser',
-    arch: navigator.platform || 'unknown',
-    shell: isWin ? 'cmd.exe / PowerShell' : 'bash',
-    homeDir: isWin ? 'C:\\Users\\<用户名>' : '/home/<用户名>',
+    platform: isDesktop ? 'Electron Desktop' : 'Browser',
+    arch: realArch,
+    shell: realShell || (isWin ? 'cmd.exe / PowerShell' : 'bash'),
+    homeDir: realHomeDir || (isWin ? 'C:\\Users\\<用户名>' : '/home/<用户名>'),
+    username: realUser,
     lineEnding: isWin ? 'CRLF (\\r\\n)' : 'LF (\\n)',
     pathSep: isWin ? '\\ (反斜杠)' : '/ (正斜杠)',
   };
@@ -65,8 +73,8 @@ const TOOL_MAX_RESULT_SIZE: Record<string, number> = {
   browser_evaluate: 8000,
 };
 
-/** v4.1: 工具并行执行 — 依赖检测用 */
-const TOOLS_WITH_DATA_DEPS = new Set(['web_fetch', 'edit_file', 'move_file', 'delete_file']);
+/** v4.1: 工具并行执行 — 依赖检测。只有确实依赖前序工具输出结果的才串行 */
+const TOOLS_WITH_DATA_DEPS = new Set(['web_fetch']); // web_fetch 可能依赖 web_search 的结果 URL
 
 /** 始终可并行的只读/独立工具（无数据依赖，永远可以同批执行） */
 const ALWAYS_PARALLEL = new Set([
@@ -74,6 +82,8 @@ const ALWAYS_PARALLEL = new Set([
   'web_search', 'browser_screenshot', 'browser_extract', 'browser_evaluate',
   'memory_search', 'session_list', 'session_read', 'skill_list', 'skill_view',
   'diff_files', 'git',
+  'datetime', 'calculator',
+  'random', 'uuid', 'json_format', 'hash',
 ]);
 
 /** 工具名白名单：用于文本解析兜底时过滤非法工具名 */
@@ -83,7 +93,9 @@ const VALID_TOOL_NAMES = new Set([
   'edit_file', 'get_file_info', 'tree', 'download_file', 'diff_files',
   'replace_in_files', 'read_multiple_files', 'git', 'compress',
   'memory_search', 'memory_add', 'memory_replace', 'memory_remove', 'session_list', 'session_read',
-  'skill_list', 'skill_view'
+  'skill_list', 'skill_view',
+  'datetime', 'calculator',
+  'random', 'uuid', 'json_format', 'hash'
 ]);
 
 /**
@@ -816,10 +828,15 @@ Shell: ${osInfo.shell}
       /最终答案[：:]/,
       /最终回答[：:]/,
       /总结[：:]/,
+      /任务完成[！!]?/,
+      /以上(是|为)[我对]?/,
+      /以上就是/,
     ];
-    const isFinalAnswer = toolCalls.length === 0
-      && content.length > 50
-      && FINAL_PATTERNS.some(p => p.test(content));
+    // 有工具历史 + 回复较长(>300字)且无工具调用 → 大概率是最终回答
+    const isFinalAnswer = toolCalls.length === 0 && content.length > 50 && (
+      FINAL_PATTERNS.some(p => p.test(content)) ||
+      (allToolRecords.length > 0 && content.length > 300)
+    );
 
     // 处理空响应：如果之前有工具调用但模型返回空内容，不立即结束
     if (toolCalls.length === 0 && !content.trim() && loopCount > 1 && allToolRecords.length > 0) {
@@ -838,13 +855,17 @@ Shell: ${osInfo.shell}
       // ── 反过早结束：如果之前有工具调用，但模型返回的内容不像最终回答，引导继续 ──
       if (allToolRecords.length > 0 && !isFinalAnswer && loopCount < maxLoops - 1) {
         const contentLower = content.toLowerCase();
+        // "还在思考中"的典型信号：短内容 + 思考动词
         const isThinking = contentLower.includes('让我') || contentLower.includes('看看') ||
-          contentLower.includes('观察') || contentLower.includes('分析') || contentLower.includes('检查');
-        const isContinuation = content.length < 300 && (isThinking || contentLower.includes('接下来') || contentLower.includes('继续'));
+          contentLower.includes('观察') || (contentLower.includes('分析') && !contentLower.includes('分析结果'));
+        const isMidSentence = contentLower.endsWith('...') || contentLower.endsWith('等等') ||
+          contentLower.includes('让我再');
+        const isContinuation = content.length < 300 && isThinking &&
+          (isMidSentence || contentLower.includes('接下来') || contentLower.includes('继续'));
 
-        if (isContinuation || content.length < 100) {
+        if (isContinuation) {
           logWarn('模型可能过早停止，注入继续提示', `${content.length}字`);
-          messages.pop(); // 移除空/过渡性的 assistant 消息
+          messages.pop();
           messages.push({
             role: 'user',
             content: '请继续完成任务。你可以调用工具获取更多信息，或者根据已有结果给出完整的最终回答。如果任务已完成，请明确说出"任务完成"或"最终回答"。'
@@ -878,19 +899,21 @@ Shell: ${osInfo.shell}
       return;
     }
 
-    // 跨轮次重复检测：仅当连续两轮调用完全相同且全部成功时才终止（失败的允许重试）
+    // 跨轮次重复检测：连续两轮调用完全相同且全部成功 → 注入警告而不强制终止
     const currentLoopKeys = toolCalls.map(c => getToolCacheKey(c.function.name, c.function.arguments)).sort();
     const currentKeysStr = JSON.stringify(currentLoopKeys);
     const prevKeysStr = JSON.stringify([...prevLoopSuccessKeys].sort());
     if (currentKeysStr === prevKeysStr && currentLoopKeys.length > 0) {
-      // 检查是否有上一轮失败的工具——如果有，不终止，允许重试
       const hasFailedInPrev = allToolRecords
         .filter(r => prevLoopSuccessKeys.includes(getToolCacheKey(r.name, r.arguments)))
         .some(r => r.status !== 'success');
       if (!hasFailedInPrev) {
-        logWarn('检测到连续两轮工具调用完全相同且全部成功，终止 ReAct Loop', currentKeysStr.slice(0, 200));
-        callbacks.onDone(content || '（检测到重复工具调用，已自动停止）', allToolRecords, makeStats());
-        return;
+        logWarn('检测到连续两轮工具调用完全相同且全部成功，注入提醒而非终止');
+        messages.push({
+          role: 'user',
+          content: '⚠️ 检测到你连续调用了与上一轮完全相同的工具。请基于已有结果给出最终回答，或者调用不同的工具获取新信息。如果任务已完成，请给出最终回答。'
+        });
+        continue;
       }
       logInfo('检测到重复调用但上一轮有失败，允许重试');
     }
@@ -1045,6 +1068,22 @@ Shell: ${osInfo.shell}
       }
     }
 
+    // P0-1: 硬限制工具消息数量 — 保留最近 40 条，删除旧的防止上下文无限膨胀
+    {
+      const toolIndices: number[] = [];
+      for (let i = 0; i < messages.length; i++) {
+        if (messages[i].role === 'tool') toolIndices.push(i);
+      }
+      if (toolIndices.length > 40) {
+        const toRemove = toolIndices.slice(0, toolIndices.length - 40);
+        // 从后往前删，避免索引偏移
+        for (let i = toRemove.length - 1; i >= 0; i--) {
+          messages.splice(toRemove[i], 1);
+        }
+        logInfo(`工具消息裁剪: ${toRemove.length} 条旧结果已移除 (保留最近 40 条)`);
+      }
+    }
+
     // 更新跨轮去重：仅跟踪本轮成功的工具调用
     prevLoopSuccessKeys = allToolRecords
       .filter(r => r.status === 'success')
@@ -1056,24 +1095,23 @@ Shell: ${osInfo.shell}
     ).join('; ');
     saveTrace(traceStep);
 
-    // P2-2: 增量记忆提取 — 每 20 轮自动触发轻量级记忆提取
+    // P2-2: 增量记忆提取 — 每 20 轮 fire-and-forget，不阻塞主循环
     if (isMemoryEnabled() && loopCount > 1 && loopCount % 20 === 0 && messages.length >= 10) {
-      try {
-        const { extractMemoriesFromConversation } = await import('./memory-manager.js');
+      import('./memory-manager.js').then(({ extractMemoriesFromConversation }) => {
         const recentMsgs = messages.slice(-30).filter(m => m.role === 'user' || m.role === 'assistant');
-        await extractMemoriesFromConversation(
+        extractMemoriesFromConversation(
           recentMsgs.map(m => ({ role: m.role, content: m.content })),
           currentSession?.title
-        );
-        logInfo('增量记忆提取完成', `第 ${loopCount} 轮`);
-      } catch { /* 不阻塞 */ }
+        ).then(() => logInfo('增量记忆提取完成', `第 ${loopCount} 轮`))
+         .catch(() => {});
+      }).catch(() => {});
     }
 
     // 保存本轮工具调用，供下一轮 onNewIteration 使用
     prevToolCalls = toolCalls;
 
-    // P1-3: 增量工具结果截断 — 超过 10 轮的旧工具结果自动截断到 500 字符
-    if (loopCount > 10 && loopCount % 5 === 0) {
+    // P1-3: 增量工具结果截断 — 超过 10 轮的旧工具结果每 3 轮截断到 500 字符
+    if (loopCount > 10 && loopCount % 3 === 0) {
       const truncateBefore = messages.length - 15;
       for (let i = 0; i < messages.length && i < truncateBefore; i++) {
         const m = messages[i];

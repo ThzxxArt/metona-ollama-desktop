@@ -10,33 +10,6 @@ import { mainWindow } from './main.js';
 import { sendLog, resolvePath, type ToolResult } from './tool-handlers-shared.js';
 import { getWorkspaceDir } from './workspace.js';
 
-// ── 代理支持 ──
-let _proxyUrl = '';
-
-function getProxyAgent(): any {
-  if (!_proxyUrl) return null;
-
-  // 尝试 https-proxy-agent（需 npm install）
-  try {
-    const { HttpsProxyAgent } = require('https-proxy-agent');
-    const a = new HttpsProxyAgent(_proxyUrl);
-    return a;
-  } catch { /* 未安装 */ }
-
-  // 尝试 undici（Node.js 内置）
-  try {
-    const { ProxyAgent } = require('undici');
-    return new ProxyAgent({ uri: _proxyUrl });
-  } catch { /* 不可用 */ }
-
-  return null;
-}
-
-/** 设置 HTTP 代理（供 IPC 调用） */
-export function setProxyUrl(url: string): void {
-  _proxyUrl = url;
-}
-
 /** 当前工具命令进程（用于用户手动终止） */
 let _toolProc: ReturnType<typeof spawn> | null = null;
 
@@ -207,42 +180,10 @@ function buildFetchHeaders(url: string, useMobileUA: boolean): Record<string, st
   };
 }
 
-/** 带超时的 fetch 封装。有代理时走 https.request + HttpsProxyAgent */
+/** 带超时的 fetch 封装 */
 async function fetchWithTimeout(url: string, timeout = HTTP_TIMEOUT, headers?: Record<string,string>): Promise<Response | null> {
   const _headers = headers || buildFetchHeaders(url, false);
 
-  // 有代理时用 https.request（兼容 https-proxy-agent）
-  const proxy = process.env.HTTPS_PROXY || process.env.HTTP_PROXY || '';
-  if (proxy) {
-    try {
-      const { HttpsProxyAgent } = require('https-proxy-agent');
-      return new Promise((resolve) => {
-        const mod = require(url.startsWith('https:') ? 'https' : 'http');
-        const u = new URL(url);
-        const req = mod.request({
-          hostname: u.hostname, port: u.port || (url.startsWith('https:') ? 443 : 80),
-          path: u.pathname + u.search, method: 'GET',
-          headers: { ..._headers, Host: u.hostname },
-          agent: new HttpsProxyAgent(proxy), timeout, rejectUnauthorized: false,
-        }, (res: any) => {
-          let body = '';
-          res.on('data', (d: Buffer) => body += d.toString());
-          res.on('end', () => resolve({
-            ok: res.statusCode >= 200 && res.statusCode < 400,
-            status: res.statusCode, statusText: res.statusMessage,
-            headers: new Headers(res.headers as Record<string,string>),
-            text: () => Promise.resolve(body),
-            arrayBuffer: () => Promise.resolve(Buffer.from(body).buffer),
-          } as unknown as Response));
-        });
-        req.on('timeout', () => req.destroy());
-        req.on('error', (e: Error) => { sendLog('warn', `🌐 代理请求失败`, `${url.slice(0,80)} | ${e.message.slice(0,100)}`); resolve(null); });
-        req.end();
-      });
-    } catch { /* 代理包不可用，回退到原生 fetch */ }
-  }
-
-  // 无代理 / 代理包不可用 → 原生 fetch
   const controller = new AbortController();
   const tid = setTimeout(() => controller.abort(), timeout);
   try {
@@ -496,7 +437,7 @@ export async function handleWebFetch(params: { url: string; max_chars?: number; 
 
 /**
  * Web Search — 联网搜索（并行多引擎 + LRU 缓存 + 智能排序 + 时间过滤 + 摘要增强）
- * 同时请求 Bing / 百度 / DuckDuckGo / Google，智能排序后返回
+ * 同时请求 Bing / 百度 / 搜狗 / 360搜索，智能排序后返回
  */
 export async function handleWebSearch(params: { query: string; max_results?: number; time_range?: string; enhance_snippets?: boolean }): Promise<ToolResult> {
   try {
@@ -512,13 +453,11 @@ export async function handleWebSearch(params: { query: string; max_results?: num
 
     // ── 时间范围 → URL 参数映射 ──
     let bingFreshness = '';
-    let googleTbs = '';
     if (timeRange) {
       const tr = timeRange.toLowerCase();
-      if (tr === 'day' || tr === '1d' || tr === '一天') { bingFreshness = 'Day'; googleTbs = 'qdr:d'; }
-      else if (tr === 'week' || tr === '1w' || tr === '一周') { bingFreshness = 'Week'; googleTbs = 'qdr:w'; }
-      else if (tr === 'month' || tr === '1m' || tr === '一月') { bingFreshness = 'Month'; googleTbs = 'qdr:m'; }
-      else if (tr === 'year' || tr === '1y' || tr === '一年') { googleTbs = 'qdr:y'; }
+      if (tr === 'day' || tr === '1d' || tr === '一天') { bingFreshness = 'Day'; }
+      else if (tr === 'week' || tr === '1w' || tr === '一周') { bingFreshness = 'Week'; }
+      else if (tr === 'month' || tr === '1m' || tr === '一月') { bingFreshness = 'Month'; }
     }
 
     // ── 1. 检查缓存 ──
@@ -552,22 +491,23 @@ export async function handleWebSearch(params: { query: string; max_results?: num
         }
       },
       {
-        name: 'ddg', weight: 70,
+        name: 'sogou', weight: 75,
         fetcher: async () => {
           const resp = await fetchWithTimeout(
-            `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}`
+            `https://www.sogou.com/web?query=${encodeURIComponent(query)}`
           );
-          if (!resp?.ok) throw new Error(`DDG ${resp?.status}`);
-          return parseDDGResults(await resp.text(), maxResults);
+          if (!resp?.ok) throw new Error(`搜狗 ${resp?.status}`);
+          return parseSogouResults(await resp.text(), maxResults);
         }
       },
       {
-        name: 'google', weight: 85,
+        name: '360搜索', weight: 75,
         fetcher: async () => {
-          const googleUrl = `https://www.google.com/search?q=${encodeURIComponent(query)}&num=${maxResults}${googleTbs ? '&tbs=' + googleTbs : ''}`;
-          const resp = await fetchWithTimeout(googleUrl);
-          if (!resp?.ok) throw new Error(`Google ${resp?.status}`);
-          return parseGoogleResults(await resp.text(), maxResults);
+          const resp = await fetchWithTimeout(
+            `https://www.so.com/s?q=${encodeURIComponent(query)}`
+          );
+          if (!resp?.ok) throw new Error(`360 ${resp?.status}`);
+          return parse360Results(await resp.text(), maxResults);
         }
       },
     ];
@@ -769,31 +709,32 @@ function parseBaiduResults(html: string, maxResults: number): Array<{ title: str
   return results;
 }
 
-/** 解析 DuckDuckGo Lite HTML 搜索结果 */
-function parseDDGResults(html: string, maxResults: number): Array<{ title: string; url: string; snippet: string }> {
+/** 解析搜狗 HTML 搜索结果 */
+function parseSogouResults(html: string, maxResults: number): Array<{ title: string; url: string; snippet: string }> {
   const results: Array<{ title: string; url: string; snippet: string }> = [];
 
-  // DDG Lite 结果：<tr class="result-snippet"> 内的 <a> + <td class="result-snippet">
-  // 尝试匹配：<a rel="nofollow" href="...">title</a> 后跟 <span class="link-text"> 显示URL
-  // 以及 <td class="result-snippet">snippet</td>
-  const blockRegex = /<tr[^>]*class="[^"]*result-snippet[^"]*"[^>]*>([\s\S]*?)<\/tr>/gi;
+  // 搜狗结果块：<div class="vrwrap"> 或 <div class="rb">
+  const blockRegex = /<div[^>]*class="[^"]*(?:vrwrap|rb)[^"]*"[^>]*>([\s\S]*?)(?=<div[^>]*class="[^"]*(?:vrwrap|rb)[^"]*"|<div[^>]*id="pagebar)/gi;
   let blockMatch;
 
   while ((blockMatch = blockRegex.exec(html)) !== null && results.length < maxResults) {
     const block = blockMatch[1];
 
-    // 提取 URL
-    const linkMatch = block.match(/<a[^>]*href="(https?:\/\/[^"]*)"[^>]*>([\s\S]*?)<\/a>/);
+    // 提取标题和 URL：<a href="..." ...>标题</a>
+    const linkMatch = block.match(/<a[^>]*href="(https?:\/\/[^"]*)"[^>]*>([\s\S]*?)<\/a>/i);
     if (!linkMatch) continue;
 
     const url = decodeHTML(linkMatch[1].trim());
     const title = decodeHTML(linkMatch[2].replace(/<[^>]+>/g, '').trim());
 
-    // 跳过 DuckDuckGo 自身链接
-    if (url.includes('duckduckgo.com')) continue;
+    // 跳过搜狗自身链接
+    if (url.includes('sogou.com') || url.includes('sogo.com')) continue;
 
-    // 提取摘要
-    const snippetMatch = block.match(/<td[^>]*class="[^"]*result-snippet[^"]*"[^>]*>([\s\S]*?)<\/td>/);
+    // 提取摘要：<p class="star-wiki"> 或 <div class="space-txt"> 或 <p class="str_info">
+    const snippetMatch =
+      block.match(/<p[^>]*class="[^"]*star-wiki[^"]*"[^>]*>([\s\S]*?)<\/p>/i) ||
+      block.match(/<div[^>]*class="[^"]*space-txt[^"]*"[^>]*>([\s\S]*?)<\/div>/i) ||
+      block.match(/<p[^>]*class="[^"]*str_info[^"]*"[^>]*>([\s\S]*?)<\/p>/i);
     const snippet = snippetMatch ? decodeHTML(snippetMatch[1].replace(/<[^>]+>/g, '').trim()) : '';
 
     if (title && url.startsWith('http')) {
@@ -801,17 +742,40 @@ function parseDDGResults(html: string, maxResults: number): Array<{ title: strin
     }
   }
 
-  // 回退：尝试匹配更通用的 DDG 结果格式
-  if (results.length === 0) {
-    const altRegex = /<a[^>]*href="(https?:\/\/[^"]*)"[^>]*class="[^"]*result-link[^"]*"[^>]*>([\s\S]*?)<\/a>/gi;
-    let altMatch;
-    while ((altMatch = altRegex.exec(html)) !== null && results.length < maxResults) {
-      const url = decodeHTML(altMatch[1].trim());
-      const title = decodeHTML(altMatch[2].replace(/<[^>]+>/g, '').trim());
-      if (url.includes('duckduckgo.com')) continue;
-      if (title && url.startsWith('http')) {
-        results.push({ title, url, snippet: '' });
-      }
+  return results;
+}
+
+/** 解析 360 搜索 HTML 搜索结果 */
+function parse360Results(html: string, maxResults: number): Array<{ title: string; url: string; snippet: string }> {
+  const results: Array<{ title: string; url: string; snippet: string }> = [];
+
+  // 360 结果块：<li class="res-list"> 或 <div class="result">
+  const blockRegex = /<(?:li[^>]*class="[^"]*res-list[^"]*"|div[^>]*class="[^"]*result[^"]*")[^>]*>([\s\S]*?)(?=<(?:li[^>]*class="[^"]*res-list|div[^>]*class="[^"]*result)|<\/ul>|<\/div>\s*<\/div>\s*$)/gi;
+  let blockMatch;
+
+  while ((blockMatch = blockRegex.exec(html)) !== null && results.length < maxResults) {
+    const block = blockMatch[1];
+
+    // 提取标题和 URL
+    const linkMatch = block.match(/<a[^>]*href="(https?:\/\/[^"]*)"[^>]*>([\s\S]*?)<\/a>/i);
+    if (!linkMatch) continue;
+
+    const url = decodeHTML(linkMatch[1].trim());
+    const title = decodeHTML(linkMatch[2].replace(/<[^>]+>/g, '').trim());
+
+    // 跳过 360 自身链接
+    if (url.includes('so.com') && !url.includes('www.so.com/link')) continue;
+
+    // 提取摘要：<p class="res-desc"> 或 <div class="res-rich"> 或 <p class="res-summary">
+    const snippetMatch =
+      block.match(/<p[^>]*class="[^"]*res-desc[^"]*"[^>]*>([\s\S]*?)<\/p>/i) ||
+      block.match(/<div[^>]*class="[^"]*res-rich[^"]*"[^>]*>([\s\S]*?)<\/div>/i) ||
+      block.match(/<p[^>]*class="[^"]*res-summary[^"]*"[^>]*>([\s\S]*?)<\/p>/i) ||
+      block.match(/<dd[^>]*>([\s\S]*?)<\/dd>/i);
+    const snippet = snippetMatch ? decodeHTML(snippetMatch[1].replace(/<[^>]+>/g, '').trim()) : '';
+
+    if (title && url.startsWith('http')) {
+      results.push({ title, url, snippet });
     }
   }
 
@@ -840,38 +804,6 @@ function parseBingResults(html: string, maxResults: number): Array<{ title: stri
       if (title && url.startsWith('http')) {
         results.push({ title, url, snippet });
       }
-    }
-  }
-
-  return results;
-}
-
-/** 解析 Google HTML 搜索结果 */
-function parseGoogleResults(html: string, maxResults: number): Array<{ title: string; url: string; snippet: string }> {
-  const results: Array<{ title: string; url: string; snippet: string }> = [];
-
-  // Google 结果块：<div class="g">...</div>，内含 <a href="..."><h3>title</h3></a> 和摘要
-  const blockRegex = /<div class="g"[^>]*>([\s\S]*?)(?=<div class="g"|<\/div>\s*<\/div>\s*<\/div>)/gi;
-  let blockMatch;
-
-  while ((blockMatch = blockRegex.exec(html)) !== null && results.length < maxResults) {
-    const block = blockMatch[1];
-
-    const titleMatch = block.match(/<a[^>]*href="(https?:\/\/[^"]*)"[^>]*>[\s\S]*?<h3[^>]*>([\s\S]*?)<\/h3>/);
-    if (!titleMatch) continue;
-
-    const url = titleMatch[1].trim();
-    const title = decodeHTML(titleMatch[2].replace(/<[^>]+>/g, '').trim());
-
-    // 摘要：尝试多种模式
-    const snippetMatch =
-      block.match(/<div[^>]*data-sncf="[^"]*"[^>]*>([\s\S]*?)<\/div>/) ||
-      block.match(/<span[^>]*class="[^"]*st[^"]*"[^>]*>([\s\S]*?)<\/span>/) ||
-      block.match(/<div[^>]*class="[^"]*VwiC3b[^"]*"[^>]*>([\s\S]*?)<\/div>/);
-    const snippet = snippetMatch ? decodeHTML(snippetMatch[1].replace(/<[^>]+>/g, '').trim()) : '';
-
-    if (title && url.startsWith('http') && !url.includes('google.com')) {
-      results.push({ title, url, snippet });
     }
   }
 
@@ -995,6 +927,292 @@ export async function handleCompress(params: { action: string; path: string; des
         proc.on('error', (err) => resolve({ success: false, error: err.message }));
       });
     }
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+}
+
+// ── datetime: 获取系统精确时间 ──
+export function handleDateTime(params: { format?: string; timezone?: string }): ToolResult {
+  try {
+    const now = new Date();
+    const tz = params.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const fmt = params.format || 'full';
+
+    const iso = now.toISOString();
+    const unixSec = Math.floor(now.getTime() / 1000);
+    const unixMs = now.getTime();
+
+    // 中文日期（无前导零月份）
+    const y = now.getFullYear();
+    const m = now.getMonth() + 1;
+    const d = now.getDate();
+    const weekdays = ['日', '一', '二', '三', '四', '五', '六'];
+    const weekday = `星期${weekdays[now.getDay()]}`;
+    const dateStr = `${y}年${m}月${d}日 ${weekday}`;
+
+    // 24小时制时间
+    const h = now.getHours();
+    const min = now.getMinutes();
+    const sec = now.getSeconds();
+    const time24 = `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+
+    // 时段
+    const period = h < 6 ? '凌晨' : h < 12 ? '上午' : h < 14 ? '中午' : h < 18 ? '下午' : '晚上';
+
+    // 人性化时间（12小时制 + 时段）
+    const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+    const timeFriendly = `${period} ${h12}:${String(min).padStart(2, '0')}`;
+
+    // 完整人性化字符串
+    const friendly = `${y}年${m}月${d}日 ${weekday} ${timeFriendly}`;
+
+    let result: Record<string, unknown>;
+
+    switch (fmt) {
+      case 'iso':
+        result = { iso, timezone: tz };
+        break;
+      case 'unix':
+        result = { unix_seconds: unixSec, unix_milliseconds: unixMs, timezone: tz };
+        break;
+      case 'date':
+        result = { date: dateStr, weekday, timezone: tz };
+        break;
+      case 'time':
+        result = { time_24h: time24, period, time_friendly: timeFriendly, timezone: tz };
+        break;
+      default: // full
+        result = {
+          iso,
+          unix_seconds: unixSec,
+          unix_milliseconds: unixMs,
+          date: dateStr,
+          weekday,
+          time_24h: time24,
+          period,
+          time_friendly: timeFriendly,
+          friendly,
+          timezone: tz,
+          year: y,
+          month: m,
+          day: d,
+          hour: h,
+          minute: min,
+          second: sec,
+          millisecond: now.getMilliseconds(),
+          day_of_week: now.getDay(),
+        };
+    }
+
+    return { success: true, ...result };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+}
+
+// ── calculator: 安全数学计算器（纯 JS 递归下降解析，无 eval） ──
+export function handleCalculator(params: { expression: string }): ToolResult {
+  try {
+    const expr = params.expression;
+    if (!expr || expr.length > 500) {
+      return { success: false, error: '表达式为空或过长（最大500字符）' };
+    }
+    const result = safeCalc(expr);
+    return { success: true, expression: expr, result };
+  } catch (err) {
+    return { success: false, error: (err as Error).message, expression: params.expression };
+  }
+}
+
+function safeCalc(expr: string): number {
+  expr = expr.replace(/\s+/g, '');
+  if (!/^[\d+\-*/().%^]+$/.test(expr)) {
+    throw new Error('表达式包含非法字符');
+  }
+  let pos = 0;
+
+  function parseExpression(): number {
+    let left = parseTerm();
+    while (pos < expr.length) {
+      if (expr[pos] === '+') { pos++; left += parseTerm(); }
+      else if (expr[pos] === '-') { pos++; left -= parseTerm(); }
+      else break;
+    }
+    return left;
+  }
+
+  function parseTerm(): number {
+    let left = parsePower();
+    while (pos < expr.length) {
+      if (expr[pos] === '*') { pos++; left *= parsePower(); }
+      else if (expr[pos] === '/') { pos++; const d = parsePower(); if (d === 0) throw new Error('除数不能为零'); left /= d; }
+      else if (expr[pos] === '%') { pos++; left %= parsePower(); }
+      else break;
+    }
+    return left;
+  }
+
+  function parsePower(): number {
+    let left = parseUnary();
+    while (pos < expr.length && expr[pos] === '*' && pos + 1 < expr.length && expr[pos + 1] === '*') {
+      pos += 2;
+      left = Math.pow(left, parseUnary());
+    }
+    return left;
+  }
+
+  function parseUnary(): number {
+    if (expr[pos] === '-') { pos++; return -parseAtom(); }
+    if (expr[pos] === '+') { pos++; return parseAtom(); }
+    return parseAtom();
+  }
+
+  function parseAtom(): number {
+    if (expr[pos] === '(') {
+      pos++;
+      const val = parseExpression();
+      if (pos >= expr.length || expr[pos] !== ')') throw new Error('缺少右括号');
+      pos++;
+      return val;
+    }
+    const start = pos;
+    while (pos < expr.length && /[\d.]/.test(expr[pos])) pos++;
+    if (start === pos) throw new Error(`意外字符: ${expr[pos] || 'EOF'}`);
+    const num = parseFloat(expr.slice(start, pos));
+    if (isNaN(num)) throw new Error(`无效数字: ${expr.slice(start, pos)}`);
+    return num;
+  }
+
+  const result = parseExpression();
+  if (pos < expr.length) throw new Error(`表达式末尾有意外字符: ${expr.slice(pos)}`);
+  if (!isFinite(result)) throw new Error('计算结果为无穷大');
+  return result;
+}
+
+// ── random: 随机数生成 ──
+export function handleRandom(params: { type?: string; min?: number; max?: number; count?: number; items?: string[]; length?: number }): ToolResult {
+  try {
+    const type = params.type || 'int';
+
+    switch (type) {
+      case 'int': {
+        const min = params.min ?? 0;
+        const max = params.max ?? 100;
+        if (min > max) return { success: false, error: 'min 不能大于 max' };
+        const count = Math.min(params.count ?? 1, 100);
+        if (count === 1) {
+          return { success: true, type: 'int', result: Math.floor(Math.random() * (max - min + 1)) + min, range: [min, max] };
+        }
+        const results: number[] = [];
+        for (let i = 0; i < count; i++) results.push(Math.floor(Math.random() * (max - min + 1)) + min);
+        return { success: true, type: 'int', results, count, range: [min, max] };
+      }
+      case 'float': {
+        const min = params.min ?? 0;
+        const max = params.max ?? 1;
+        if (min > max) return { success: false, error: 'min 不能大于 max' };
+        const count = Math.min(params.count ?? 1, 100);
+        if (count === 1) {
+          return { success: true, type: 'float', result: Number((Math.random() * (max - min) + min).toFixed(6)), range: [min, max] };
+        }
+        const results: number[] = [];
+        for (let i = 0; i < count; i++) results.push(Number((Math.random() * (max - min) + min).toFixed(6)));
+        return { success: true, type: 'float', results, count, range: [min, max] };
+      }
+      case 'pick': {
+        const items = params.items;
+        if (!items || items.length === 0) return { success: false, error: 'pick 类型需要提供 items 数组' };
+        const count = Math.min(params.count ?? 1, items.length);
+        // Fisher-Yates 部分洗牌
+        const pool = [...items];
+        const picked: string[] = [];
+        for (let i = 0; i < count; i++) {
+          const idx = Math.floor(Math.random() * pool.length);
+          picked.push(pool[idx]);
+          pool.splice(idx, 1);
+        }
+        return { success: true, type: 'pick', result: count === 1 ? picked[0] : picked, from: items.length, count };
+      }
+      case 'string': {
+        const length = Math.min(params.length ?? 8, 256);
+        const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+        let s = '';
+        for (let i = 0; i < length; i++) s += chars.charAt(Math.floor(Math.random() * chars.length));
+        // 使用 crypto 增强随机性
+        const buf = require('crypto').randomBytes(Math.ceil(length * 0.75));
+        let bIdx = 0;
+        let result = '';
+        for (let i = 0; i < length; i++) {
+          const r = buf[bIdx++] || Math.floor(Math.random() * 256);
+          if (bIdx >= buf.length) bIdx = 0;
+          result += chars.charAt(r % chars.length);
+        }
+        return { success: true, type: 'string', result, length, charset: 'alphanumeric' };
+      }
+      default:
+        return { success: false, error: `未知类型: ${type}。支持: int / float / pick / string` };
+    }
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+}
+
+// ── uuid: 生成 UUID v4 ──
+export function handleUUID(params: { count?: number }): ToolResult {
+  try {
+    const crypto = require('crypto');
+    const count = Math.min(params.count ?? 1, 20);
+    if (count === 1) {
+      return { success: true, result: crypto.randomUUID() };
+    }
+    const results: string[] = [];
+    for (let i = 0; i < count; i++) results.push(crypto.randomUUID());
+    return { success: true, results, count };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+}
+
+// ── json_format: JSON 格式化 + 验证 ──
+export function handleJsonFormat(params: { json: string; indent?: number; sort_keys?: boolean }): ToolResult {
+  try {
+    const parsed = JSON.parse(params.json);
+    const indent = params.indent ?? 2;
+    let formatted: string;
+    if (params.sort_keys) {
+      formatted = JSON.stringify(sortObjectKeys(parsed), null, indent);
+    } else {
+      formatted = JSON.stringify(parsed, null, indent);
+    }
+    const size = Buffer.byteLength(formatted, 'utf-8');
+    return { success: true, formatted, original_size: params.json.length, formatted_size: size, keys: Object.keys(parsed).length };
+  } catch (err) {
+    return { success: false, error: `JSON 解析失败: ${(err as Error).message}`, input_preview: params.json.slice(0, 200) };
+  }
+
+  function sortObjectKeys(obj: any): any {
+    if (Array.isArray(obj)) return obj.map(sortObjectKeys);
+    if (obj !== null && typeof obj === 'object') {
+      const sorted: Record<string, any> = {};
+      for (const k of Object.keys(obj).sort()) sorted[k] = sortObjectKeys(obj[k]);
+      return sorted;
+    }
+    return obj;
+  }
+}
+
+// ── hash: 哈希计算 ──
+export function handleHash(params: { text: string; algorithm?: string }): ToolResult {
+  try {
+    const crypto = require('crypto');
+    const algo = (params.algorithm || 'sha256').toLowerCase().replace('-', '');
+    const validAlgos = ['md5', 'sha1', 'sha256', 'sha384', 'sha512'];
+    if (!validAlgos.includes(algo)) {
+      return { success: false, error: `不支持的算法: ${algo}。支持: ${validAlgos.join(', ')}` };
+    }
+    const hash = crypto.createHash(algo).update(params.text, 'utf-8').digest('hex');
+    return { success: true, algorithm: algo, hash, input_length: params.text.length };
   } catch (err) {
     return { success: false, error: (err as Error).message };
   }

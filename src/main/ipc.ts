@@ -45,13 +45,19 @@ import {
   handleReplaceInFiles,
   handleReadMultipleFiles,
   handleGit,
-  handleCompress
+  handleCompress,
+  handleDateTime,
+  handleCalculator,
+  handleRandom,
+  handleUUID,
+  handleJsonFormat,
+  handleHash
 } from './tool-handlers.js';
 import { browserOpen, browserScreenshot, browserEvaluate, browserExtract, browserClick, browserType, browserScroll, browserClose, browserWait } from './browser.js';
 import { startServer, stopServer, stopAllServers, callTool, getAllTools, getServerStatuses, refreshTools, setMCPTimeout } from './mcp-manager.js';
 import { getAllowedDirs, getBlockedDirs, setAllowedDirs } from './tool-security.js';
 import { startProcess, killProcess, getWorkspaceDir, setWorkspaceDir, listWorkspaceDir } from './workspace.js';
-import { setHTTPTimeout, setProxyUrl } from './tool-handlers-system.js';
+import { setHTTPTimeout } from './tool-handlers-system.js';
 
 /** 工具结果摘要（用于日志面板） */
 function summarizeResult(toolName: string, result: Record<string, unknown>): string {
@@ -75,6 +81,12 @@ function summarizeResult(toolName: string, result: Record<string, unknown>): str
     case 'read_multiple_files': return `${result.total} 个文件`;
     case 'git': return `${result.action} ✓`;
     case 'compress': return `${result.action} → ${result.archive || result.destination}`;
+    case 'datetime': return `${(result as any).date || (result as any).iso}`;
+    case 'calculator': return `${(result as any).expression} = ${(result as any).result}`;
+    case 'random': return `${(result as any).type === 'pick' ? '🎲 ' + String((result as any).result) : String((result as any).result)}`;
+    case 'uuid': return `${(result as any).result}`;
+    case 'json_format': return `${(result as any).keys || 0} keys, ${(result as any).formatted_size}B`;
+    case 'hash': return `${(result as any).algorithm}: ${(result as any).hash?.slice(0, 16)}...`;
     default: return '完成';
   }
 }
@@ -187,6 +199,12 @@ export async function setupIPC(): Promise<void> {
         case 'read_multiple_files':result = await handleReadMultipleFiles(args as { paths: string[]; max_chars_per_file?: number }); break;
         case 'git':                result = await handleGit(args as { action: string; path?: string; files?: string[]; message?: string; branch?: string; remote?: string; remote_url?: string; count?: number; all?: boolean; staged?: boolean; new_branch?: boolean; delete_branch?: boolean; force?: boolean; url?: string }); break;
         case 'compress':           result = await handleCompress(args as { action: string; path: string; destination?: string; format?: string }); break;
+    case 'datetime':          result = handleDateTime(args as { format?: string; timezone?: string }); break;
+    case 'calculator':        result = handleCalculator(args as { expression: string }); break;
+    case 'random':            result = handleRandom(args as { type?: string; min?: number; max?: number; count?: number; items?: string[]; length?: number }); break;
+    case 'uuid':              result = handleUUID(args as { count?: number }); break;
+    case 'json_format':       result = handleJsonFormat(args as { json: string; indent?: number; sort_keys?: boolean }); break;
+    case 'hash':              result = handleHash(args as { text: string; algorithm?: string }); break;
         // v5.1 Browser 控制（增强版）
         case 'browser_open':       result = await browserOpen(args.url as string, args.wait_selector as string | undefined); break;
         case 'browser_screenshot': result = await browserScreenshot({ full_page: args.full_page as boolean, selector: args.selector as string }); break;
@@ -229,22 +247,6 @@ export async function setupIPC(): Promise<void> {
       setMCPTimeout(timeouts.mcp);
     }
     return { success: true };
-  });
-
-  // ── 代理设置（web_search/web_fetch 走代理）──
-  ipcMain.handle('proxy:set', (_, url: string) => {
-    setProxyUrl(url);
-    if (url) {
-      process.env.HTTP_PROXY = url;
-      process.env.HTTPS_PROXY = url;
-      process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-      sendLog('info', `🌐 代理已设置`, url);
-    } else {
-      delete process.env.HTTP_PROXY;
-      delete process.env.HTTPS_PROXY;
-      delete process.env.NODE_TLS_REJECT_UNAUTHORIZED;
-      sendLog('info', `🌐 代理已禁用`);
-    }
   });
 
   // ── Workspace IPC ──

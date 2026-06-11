@@ -8,6 +8,7 @@ import { formatSize } from '../utils/utils.js';
 import { OllamaAPI } from '../api/ollama.js';
 import { ChatDB } from '../db/chat-db.js';
 import { logModel, logDebug, logError, logWarn } from '../services/log-service.js';
+import { clearCtxRemain } from './input-area.js';
 import type { OllamaModelDetail, ModelCaps } from '../types.js';
 
 let modelSelectEl: HTMLSelectElement;
@@ -159,11 +160,13 @@ async function filterEmbedModels(models: Array<{ name: string }>): Promise<void>
 }
 
 async function checkModelCapability(modelName: string): Promise<void> {
+  // 切换模型时清除旧上下文剩余显示
+  clearCtxRemain();
+
   if (modelCapabilityCache.has(modelName)) {
     const cached = modelCapabilityCache.get(modelName)!;
     state.set(KEYS.NUM_CTX, cached.contextLength);
-    const displayEl = document.querySelector('#displayNumCtx');
-    if (displayEl) displayEl.textContent = `${cached.contextLength.toLocaleString()} tokens`;
+    updateCtxTotal(cached.contextLength);
     applyCapability(modelName, cached);
     return;
   }
@@ -200,9 +203,8 @@ async function checkModelCapability(modelName: string): Promise<void> {
     const db = state.get<any>(KEYS.DB);
     if (db) await db.saveSetting('numCtx', contextLength);
 
-    // 更新设置面板显示
-    const displayEl = document.querySelector('#displayNumCtx');
-    if (displayEl) displayEl.textContent = `${contextLength.toLocaleString()} tokens`;
+    // 更新模型栏上下文长度显示
+    updateCtxTotal(contextLength);
 
     applyCapability(modelName, caps);
   } catch (err) {
@@ -274,4 +276,17 @@ export function isToolCallingSupported(): boolean {
   if (!model) return false;
   const caps = modelCapabilityCache.get(model);
   return caps?.tools === true;
+}
+
+function formatCtx(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1024) return `${(n / 1024).toFixed(0)}K`;
+  return String(n);
+}
+
+function updateCtxTotal(contextLength: number): void {
+  const el = document.querySelector('#ctxTotal') as HTMLElement;
+  if (!el) return;
+  el.style.display = 'inline-flex';
+  el.textContent = formatCtx(contextLength);
 }

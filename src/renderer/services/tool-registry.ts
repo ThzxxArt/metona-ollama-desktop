@@ -336,7 +336,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'web_search',
-      description: 'Search the web using 4 engines in parallel (Bing + Baidu + DuckDuckGo + Google). Results are intelligently ranked by reachability + engine weight + snippet quality. 5-minute cache. Supports time range filtering (day/week/month/year). Short snippets are auto-enhanced via web_fetch. Use when you need current, time-sensitive, or factual information.',
+      description: 'Search the web using 4 engines in parallel (Bing + Baidu + Sogou + 360). Results are intelligently ranked by reachability + engine weight + snippet quality. 5-minute cache. Supports time range filtering (day/week/month/year). Short snippets are auto-enhanced via web_fetch. Use when you need current, time-sensitive, or factual information.',
       parameters: {
         type: 'object',
         required: ['query'],
@@ -618,6 +618,96 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       description: 'Close the agent browser and free resources.',
       parameters: { type: 'object', properties: {} }
     }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'datetime',
+      description: 'Get the precise current system time. Returns ISO timestamp, Unix time (seconds and milliseconds), locale-formatted date/time, timezone, and individual components (year/month/day/hour/minute/second/millisecond/day_of_week). Use format parameter to request specific output: "iso" / "unix" / "date" / "time" / "full" (default: full).',
+      parameters: {
+        type: 'object',
+        properties: {
+          format: { type: 'string', enum: ['full', 'iso', 'unix', 'date', 'time'], description: 'Output format. Default: full (all fields).' },
+          timezone: { type: 'string', description: 'IANA timezone name (e.g., "Asia/Shanghai", "America/New_York"). Default: system timezone.' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'calculator',
+      description: 'Safely evaluate a mathematical expression. Supports + - * / ** % () and floating-point numbers. Uses a pure JS recursive descent parser — no eval(), CSP-safe. Returns the numeric result.',
+      parameters: {
+        type: 'object',
+        required: ['expression'],
+        properties: {
+          expression: { type: 'string', description: 'The mathematical expression to evaluate (e.g., "(3 + 5) * 2 ** 3"). Max 500 characters.' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'random',
+      description: 'Generate random numbers or pick random items. Supports: int (integer range, default 0-100), float (decimal, default 0-1), pick (select from array of items), string (random alphanumeric, default length 8). Use count for multiple values.',
+      parameters: {
+        type: 'object',
+        properties: {
+          type: { type: 'string', enum: ['int', 'float', 'pick', 'string'], description: 'Random type. Default: int.' },
+          min: { type: 'number', description: 'Minimum value (int/float). Default: 0.' },
+          max: { type: 'number', description: 'Maximum value (int/float). Default: 100 (int) or 1 (float).' },
+          count: { type: 'integer', description: 'Number of results. Max 100. Default: 1.' },
+          items: { type: 'array', items: { type: 'string' }, description: 'Item pool for pick type.' },
+          length: { type: 'integer', description: 'String length for string type. Max 256. Default: 8.' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'uuid',
+      description: 'Generate cryptographically random UUID v4 (e.g., "550e8400-e29b-41d4-a716-446655440000"). Uses Node.js crypto.randomUUID(). Supports batch generation up to 20.',
+      parameters: {
+        type: 'object',
+        properties: {
+          count: { type: 'integer', description: 'Number of UUIDs. Max 20. Default: 1.' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'json_format',
+      description: 'Format and validate a JSON string. Returns pretty-printed JSON with configurable indentation. Optionally sort object keys alphabetically. Also works as a JSON syntax validator — returns error details on invalid input.',
+      parameters: {
+        type: 'object',
+        required: ['json'],
+        properties: {
+          json: { type: 'string', description: 'The JSON string to format/validate.' },
+          indent: { type: 'integer', description: 'Indentation spaces. Default: 2.' },
+          sort_keys: { type: 'boolean', description: 'Sort object keys alphabetically. Default: false.' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'hash',
+      description: 'Compute cryptographic hash of text. Supports MD5, SHA-1, SHA-256, SHA-384, SHA-512. Default: SHA-256. Returns hex-encoded digest.',
+      parameters: {
+        type: 'object',
+        required: ['text'],
+        properties: {
+          text: { type: 'string', description: 'The text to hash.' },
+          algorithm: { type: 'string', enum: ['md5', 'sha1', 'sha256', 'sha384', 'sha512'], description: 'Hash algorithm. Default: sha256.' }
+        }
+      }
+    }
   }
 ];
 
@@ -652,7 +742,9 @@ let enabledTools: Set<string> = new Set([
   'memory_search', 'memory_add', 'memory_replace', 'memory_remove',
   'session_list', 'session_read', 'skill_list', 'skill_view', 'spawn_task',
   'browser_open', 'browser_screenshot', 'browser_evaluate', 'browser_extract',
-  'browser_click', 'browser_type', 'browser_scroll', 'browser_close'
+  'browser_click', 'browser_type', 'browser_scroll', 'browser_close',
+  'datetime', 'calculator',
+  'random', 'uuid', 'json_format', 'hash'
 ]);
 
 export function setToolEnabled(toolName: string, enabled: boolean): void {

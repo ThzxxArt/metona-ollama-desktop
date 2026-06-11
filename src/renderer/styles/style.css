@@ -490,6 +490,36 @@ html, body {
     border-color: rgba(212, 160, 60, 0.15);
 }
 
+/* ── 上下文长度胶囊（模型栏） ── */
+.ctx-total {
+    display: inline-flex;
+    align-items: center;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+    padding: 3px 10px;
+    border-radius: 20px;
+    color: #47848F;
+    background: rgba(71, 132, 143, 0.08);
+    border: 1px solid rgba(71, 132, 143, 0.15);
+    margin-left: 6px;
+}
+
+/* ── 剩余上下文胶囊 ── */
+.ctx-remain {
+    display: inline-flex;
+    align-items: center;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+    padding: 3px 10px;
+    border-radius: 20px;
+    color: #4CAF50;
+    background: rgba(76, 175, 80, 0.08);
+    border: 1px solid rgba(76, 175, 80, 0.15);
+    margin-left: 2px;
+}
+
 /* ── 温度滑块 ── */
 .temp-slider {
     width: 100%;

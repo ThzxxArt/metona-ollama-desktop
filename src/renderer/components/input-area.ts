@@ -435,6 +435,7 @@ async function handleRetry(): Promise<void> {
           }
           renderMessages();
           await saveCurrentSession();
+          if (loopStats?.prompt_eval_count) updateCtxRemain(loopStats.prompt_eval_count);
         }
       });
     } catch (err) {
@@ -592,6 +593,33 @@ function updateSendButton(streaming: boolean): void {
 function stopGeneration(): void {
   const abortController = state.get<AbortController | null>(KEYS.ABORT_CONTROLLER);
   if (abortController) abortController.abort();
+}
+
+/** 更新剩余上下文显示 */
+function updateCtxRemain(promptEvalCount?: number): void {
+  const el = document.querySelector('#ctxRemain') as HTMLElement;
+  if (!el) return;
+  const total = state.get<number>(KEYS.NUM_CTX, 0);
+  if (!total || !promptEvalCount || promptEvalCount <= 0) {
+    el.style.display = 'none';
+    return;
+  }
+  const remain = total - promptEvalCount;
+  if (remain <= 0) {
+    el.style.display = 'inline-flex';
+    el.textContent = '⚠ 上下文已满';
+    el.style.color = 'var(--danger, #e74c3c)';
+  } else {
+    el.style.display = 'inline-flex';
+    el.style.color = '';
+    const fmt = remain >= 1024 ? `${(remain / 1024).toFixed(0)}K` : String(remain);
+    el.textContent = `剩余 ${fmt}`;
+  }
+}
+
+export function clearCtxRemain(): void {
+  const el = document.querySelector('#ctxRemain') as HTMLElement;
+  if (el) el.style.display = 'none';
 }
 
 /** Token 预算比例：文件内容最多占用上下文窗口的比例 */
@@ -1006,6 +1034,8 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
         }
         renderMessages();
         await saveCurrentSession();
+        // 更新剩余上下文
+        if (loopStats?.prompt_eval_count) updateCtxRemain(loopStats.prompt_eval_count);
       }
     });
   } catch (err) {

@@ -4,7 +4,7 @@
 
 ## 项目简介
 
-Metona Ollama Desktop 是一个基于 **Ollama** 的本地 AI 桌面客户端，采用 TypeScript + Electron 构建。所有 AI 推理均在本地完成，数据不离开本机。支持 ReAct Agent Loop、39 个内置工具、智能记忆系统、MCP 协议扩展、四引擎联网搜索、浏览器控制等能力。
+Metona Ollama Desktop 是一个基于 **Ollama** 的本地 AI 桌面客户端，采用 TypeScript + Electron 构建。所有 AI 推理均在本地完成，数据不离开本机。支持 ReAct Agent Loop、44 个内置工具、智能记忆系统、MCP 协议扩展、四引擎联网搜索、浏览器控制等能力。
 
 ---
 
@@ -18,19 +18,20 @@ Metona Ollama Desktop 是一个基于 **Ollama** 的本地 AI 桌面客户端，
 - 链式工具调用：web_search → web_fetch、list_directory → read_file 等模式
 - 文本解析兜底：当模型未通过 tool_calls 返回时，从文本中提取 Action/Input
 
-### 🔧 39 个内置工具
+### 🔧 44 个内置工具
 
 | 分类 | 数量 | 工具 |
 |------|------|------|
 | 文件系统 | 17 | read_file, write_file, list_directory, search_files, create_directory, delete_file, move_file, copy_file, append_file, edit_file, get_file_info, tree, download_file, diff_files, replace_in_files, read_multiple_files, compress |
 | 命令执行 | 1 | run_command（实时流式输出，工作空间终端集成） |
-| 联网搜索 | 2 | web_search（Bing + 百度 + DuckDuckGo + Google 四引擎）, web_fetch |
+| 联网搜索 | 2 | web_search（Bing + 百度 + 搜狗 + 360搜索 四引擎）, web_fetch |
 | 浏览器控制 | 8 | browser_open, browser_screenshot, browser_evaluate, browser_extract, browser_click, browser_type, browser_scroll, browser_close |
 | Git | 1 | git（init/clone/add/commit/push/pull/diff/log/status/branch/checkout/merge/stash/reset/tag/remote） |
 | 记忆管理 | 4 | memory_search, memory_add, memory_replace, memory_remove |
 | 技能系统 | 2 | skill_list, skill_view（渐进式加载） |
 | 会话管理 | 2 | session_list, session_read |
 | 子代理 | 1 | spawn_task（独立上下文 + 超时保护） |
+| 系统工具 | 6 | datetime / calculator / random / uuid / json_format / hash |
 
 ### 🧠 智能记忆系统
 - **三类记忆**：fact（事实）、preference（偏好）、rule（规则，始终注入上下文）
@@ -46,7 +47,7 @@ Metona Ollama Desktop 是一个基于 **Ollama** 的本地 AI 桌面客户端，
 - 60 秒请求超时保护
 
 ### 🔍 四引擎联网搜索
-- Bing + 百度 + DuckDuckGo + Google 四引擎聚合
+- Bing + 百度 + 搜狗 + 360搜索 四引擎聚合
 - web_search 返回标题、URL、摘要（默认 15 条）
 - web_fetch 支持网页内容抓取（默认不截断）
 - 工具链规则：搜索后自动引导抓取详情

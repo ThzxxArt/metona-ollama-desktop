@@ -17,6 +17,7 @@ import { initHeader, checkConnection } from './components/header.js';
 import { initModelBar, loadModels, setSelectedModel } from './components/model-bar.js';
 import { initChatArea, renderMessages, clearMessages, enableAutoScroll } from './components/chat-area.js';
 import { initInputArea } from './components/input-area.js';
+import { clearCtxRemain } from './components/input-area.js';
 import { initSettingsModal, closeSettingsModal } from './components/settings-modal.js';
 import { initHistoryModal, closeHistoryModal } from './components/history-modal.js';
 import { initMemoryModal } from './components/memory-modal.js';
@@ -254,6 +255,9 @@ async function startNewSession(): Promise<void> {
   state.set(KEYS.CURRENT_SESSION, session);
   logInfo('新建会话');
 
+  // 清除剩余上下文显示
+  clearCtxRemain();
+
   // ── 强制中断正在进行的生成 ──
   const abortController = state.get<AbortController | null>(KEYS.ABORT_CONTROLLER);
   if (abortController) {
@@ -393,21 +397,6 @@ async function init(): Promise<void> {
     (document.querySelector('#inputStreamTimeout') as HTMLInputElement).value = streamTimeout >= 0 ? String(streamTimeout) : '';
     (document.querySelector('#inputMCPTimeout') as HTMLInputElement).value = mcpTimeout >= 0 ? String(mcpTimeout) : '';
     logInit(`超时设置: HTTP=${httpTimeout>=0?httpTimeout:30}s 流式=${streamTimeout>=0?streamTimeout:300}s MCP=${mcpTimeout>=0?mcpTimeout:60}s`);
-
-    // ── 代理设置 ──
-    const proxyUrl = await db.getSetting('proxyUrl', '');
-    if (proxyUrl) {
-      try {
-        await fetch(proxyUrl, { method: 'HEAD', signal: AbortSignal.timeout(2000) });
-        logInit(`代理: ${proxyUrl} ✓`);
-      } catch { logInit(`代理: ${proxyUrl} (无法连接，但已设置)`); }
-      state.set('proxyUrl', proxyUrl);
-      // 通知主进程设置环境变量
-      if (bridge?.tool?.setProxy) {
-        await bridge.tool.setProxy(proxyUrl);
-      }
-    }
-    (document.querySelector('#inputProxyUrl') as HTMLInputElement).value = proxyUrl;
 
     // ── Tool Calling 设置（永久开启，不可关闭）──
     state.set('toolCallingEnabled', true);
