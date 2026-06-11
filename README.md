@@ -177,7 +177,7 @@
               ↓
          Ollama API (流式响应，num_ctx 自动检测)
               ↓
-         Tool Registry (39 内置 + MCP 动态)
+         Tool Registry (44 内置 + MCP 动态)
               ↓
          观察结果 → 反思 → 循环 / 最终回答
 ```
