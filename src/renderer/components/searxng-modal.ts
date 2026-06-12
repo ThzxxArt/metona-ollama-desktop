@@ -11,7 +11,7 @@ import { logInfo, logSuccess } from '../services/log-service.js';
 const DEFAULTS = {
   enabled: false,
   url: '',
-  engines: 'google,bing,duckduckgo,wikipedia',
+  engines: '',
   language: 'zh-CN',
   safesearch: 1,
   time_range: '',

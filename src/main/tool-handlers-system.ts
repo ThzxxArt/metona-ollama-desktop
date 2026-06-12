@@ -450,7 +450,7 @@ async function handleWebSearchSearxng(
   if (!url) {
     return { success: false, error: 'SearXNG API 地址未配置。请在 SearXNG 设置中填写 API 地址。' };
   }
-  const engines = getSetting<string>('searxng_engines', 'google,bing,duckduckgo,wikipedia');
+  const engines = getSetting<string>('searxng_engines', '');
   const language = getSetting<string>('searxng_language', 'zh-CN');
   const safesearch = getSetting<number>('searxng_safesearch', 1);
   const cfgTimeRange = getSetting<string>('searxng_time_range', '');
