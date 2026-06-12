@@ -880,6 +880,7 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
   clearToolCardsExternal();
   clearTerminalExternal();
 
+  enableAutoScroll(); // renderMessages 的 DOM 操作可能触发 scroll 事件导致 autoScroll=false
   appendAssistantPlaceholder();
   state.set(KEYS.IS_STREAMING, true);
   updateSendButton(true);
