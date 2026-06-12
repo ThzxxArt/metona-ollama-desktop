@@ -102,6 +102,12 @@ export function scrollToBottom(): void {
   });
 }
 
+/** 发送新消息时重置自动滚动，确保新消息可见 */
+export function resetAutoScroll(): void {
+  autoScroll = true;
+  if (scrollBtnEl) scrollBtnEl.style.display = 'none';
+}
+
 export function renderMessages(): void {
   const currentSession = state.get<ChatSession | null>(KEYS.CURRENT_SESSION);
   const msgs = currentSession ? currentSession.messages : [];

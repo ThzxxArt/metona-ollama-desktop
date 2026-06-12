@@ -8,7 +8,7 @@ import { detectLanguage, truncate, escapeHtml, formatSize } from '../utils/utils
 import { getSelectedModel, isThinkEnabled, isVisionAvailable, isToolCallingSupported } from './model-bar.js';
 import {
   renderMessages, clearMessagesDOM, appendAssistantPlaceholder, appendSystemMessage,
-  updateLastAssistantMessage, clearMessages, safeMarkdown, enableAutoScroll,
+  updateLastAssistantMessage, clearMessages, safeMarkdown, enableAutoScroll, resetAutoScroll,
   appendToolCallCardToPlaceholder, updateToolCallCardInPlaceholder, resetCurrentPlaceholder
 } from './chat-area.js';
 import { showToast } from './toast.js';
@@ -778,6 +778,7 @@ export async function sendMessage(): Promise<void> {
   }
 
   logInfo(`发送消息: ${model}`, text ? text.slice(0, 60) + (text.length > 60 ? '...' : '') : '[附件消息]');
+  resetAutoScroll(); // 发送新消息时强制恢复自动滚动
 
   if (pendingImages.length > 0 && !isVisionAvailable()) {
     appendSystemMessage('⚠️ 当前模型不支持图片分析，请移除图片后重试');
