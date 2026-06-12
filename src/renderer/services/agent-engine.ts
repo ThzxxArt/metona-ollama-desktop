@@ -717,23 +717,24 @@ Shell: ${osInfo.shell}
       // 流式调用
       const streamStartTime = Date.now();
       let lastLoggedLen = 0;
-      let lastProgressAt = 0;
-      const PROGRESS_INTERVAL = 5000; // 每5秒输出一次流式进度
+      let lastContentTime = streamStartTime; // 追踪最后一次收到新内容的时间
+      const PROGRESS_INTERVAL = 15000; // 每15秒输出一次流式进度
 
       // ── 独立定时器：即使没有新 chunk 也会持续输出进度 ──
       progressTimer = setInterval(() => {
         const elapsed = Date.now() - streamStartTime;
         const grew = content.length - lastLoggedLen;
-        const sinceLast = elapsed - lastProgressAt;
-        if (sinceLast >= PROGRESS_INTERVAL) {
-          lastProgressAt = elapsed;
-          const sec = Math.round(elapsed / 1000);
-          if (grew > 0) {
-            lastLoggedLen = content.length;
-            logStream(`流式输出中… ${content.length} 字 / ${sec}s${toolCalls.length > 0 ? ` [${toolCalls.length} 个工具调用]` : ''}`);
-          } else if (elapsed > 15000 && content.length > 0) {
-            // 超过 15 秒无新内容 → 可能模型卡住了
-            logStream(`⚠️ 无新内容 ${Math.round(sinceLast / 1000)}s，当前 ${content.length} 字`);
+        const sec = Math.round(elapsed / 1000);
+        if (grew > 0) {
+          // 有新增内容 → 正常进度
+          lastLoggedLen = content.length;
+          lastContentTime = Date.now();
+          logStream(`流式输出中… ${content.length} 字 / ${sec}s${toolCalls.length > 0 ? ` [${toolCalls.length} 个工具调用]` : ''}`);
+        } else if (content.length > 0) {
+          // 内容不变 → 计算真正的无新内容时长
+          const idleSec = Math.round((Date.now() - lastContentTime) / 1000);
+          if (idleSec >= 10) {
+            logStream(`⚠️ ${idleSec}s 无新内容，当前 ${content.length} 字`);
           }
         }
       }, PROGRESS_INTERVAL);

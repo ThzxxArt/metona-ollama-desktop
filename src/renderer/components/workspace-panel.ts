@@ -831,8 +831,10 @@ function appendToolCardDOM(tc: ToolCallRecord): void {
   if (card) {
     card.dataset.toolName = tc.name;
     container.appendChild(card);
-    // 新卡片出现时始终滚到底部（用户需要看到最新的工具状态）
-    container.scrollTop = container.scrollHeight;
+    // 等浏览器完成布局后再滚到底部
+    requestAnimationFrame(() => {
+      container.scrollTop = container.scrollHeight;
+    });
   }
 }
 
@@ -936,8 +938,10 @@ function renderToolCalls(): void {
     html += renderToolCard(tc);
   }
   container.innerHTML = html;
-  // 全量渲染后滚到底部
-  container.scrollTop = container.scrollHeight;
+  // 等浏览器完成布局后再滚到底部
+  requestAnimationFrame(() => {
+    container.scrollTop = container.scrollHeight;
+  });
 }
 
 function getToolDisplayName(name: string): string {
