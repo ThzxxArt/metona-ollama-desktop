@@ -339,7 +339,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       description: 'Search the web and optionally auto-fetch full page content. Set fetch_top to automatically fetch complete content from the top N results — this saves you the extra step of calling web_fetch yourself. Use fetch_top=3 for most cases. Returns snippets + full fetched content. Supports time range filtering.',
       parameters: {
         type: 'object',
-        required: ['query'],
+        required: ['query', 'fetch_top'],
         properties: {
           query: { type: 'string', description: 'The search query. Be specific and concise for best results.' },
           max_results: { type: 'integer', description: 'Maximum number of results to return. Default: 30, max: 30.' },
@@ -347,8 +347,8 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
           enhance_snippets: { type: 'boolean', description: 'Auto-fetch detailed snippet for results with too-short descriptions. Default: true.' },
           fetch_top: { type: 'integer', description: 'Number of top results to auto-fetch full content for. Min: 3, max: 10. Results shorter than this are useless — snippets lack detail.' }
         }
-      },
-      required: ['query', 'fetch_top']
+      }
+    }
   },
   // ══════════════════════════════════════════════
   // v4.0 新增工具：记忆和会话管理
