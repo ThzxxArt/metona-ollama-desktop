@@ -40,7 +40,7 @@ interface FileNode {
 }
 
 let panelVisible = true; // 常驻显示，不可关闭
-let activeTab: 'terminal' | 'tools' | 'files' = 'terminal';
+let activeTab: 'terminal' | 'tools' | 'files' = 'tools';
 let terminal: TerminalSession | null = null; // 唯一终端
 let workspaceDir = '';
 let currentFileDir = '';
@@ -85,7 +85,6 @@ export function clearTerminalExternal(): void {
 
 /** 工具调用卡片列表 */
 let toolCards: ToolCallRecord[] = [];
-let toolAutoScroll = true;
 
 /** 当前正在运行的 AI 命令（用于用户手动终止时通知 AI） */
 let currentAiCommand: string | null = null;
@@ -764,31 +763,108 @@ function isTerminalBusy(): boolean {
 export function addToolCard(tc: ToolCallRecord): void {
   toolCards.push(tc);
 
+  // ── 立即追加 DOM 节点，不等待全量渲染 ──
+  if (activeTab === 'tools') {
+    appendToolCardDOM(tc);
+  }
+
+  const isPending = tc.status === 'pending';
   if (tc.name === 'run_command') {
     // run_command：始终切到终端
     switchToTab('terminal');
-  } else if (!isTerminalBusy()) {
-    // 终端空闲时才切到工具页签
+  } else if (!isTerminalBusy() && !isPending) {
+    // 终端空闲且非 pending 时才切到工具页签
+    // pending 卡片不切换 tab（准备中不应打断当前视图）
     switchToTab('tools');
   }
-  // 终端忙碌时不切换，避免打断用户看命令输出
 }
 
-/** 更新工具调用卡片状态（由外部调用） */
+/** 工具开始执行：将 pending 卡片升级为 running，或新增 running 卡片 */
+export function startToolCard(tc: ToolCallRecord): void {
+  // 查找是否有同名 pending 卡片（由 onToolCallPrepare 提前创建）
+  const pendingIdx = toolCards.findIndex(
+    c => c.name === tc.name && c.status === 'pending'
+  );
+  if (pendingIdx !== -1) {
+    // 升级 pending → running，增量更新 DOM
+    toolCards[pendingIdx] = tc;
+    if (activeTab === 'tools') {
+      updateToolCardDOM(tc);
+    }
+  } else {
+    // 没有提前创建的 pending 卡片，走正常追加流程
+    addToolCard(tc);
+  }
+  updateToolsHint();
+}
+
+/** 更新工具调用卡片状态（由外部调用）—— 增量更新 DOM，不触发全量重绘 */
 export function updateToolCard(tc: ToolCallRecord): void {
-  // 找到最后一个同名且 running 的卡片
+  // 找到最后一个同名且 running/pending 的卡片（pending 被 onToolCallStart 更新为 running）
   for (let i = toolCards.length - 1; i >= 0; i--) {
-    if (toolCards[i].name === tc.name && toolCards[i].status === 'running') {
+    if (toolCards[i].name === tc.name && (toolCards[i].status === 'running' || toolCards[i].status === 'pending')) {
       toolCards[i] = tc;
       break;
     }
   }
 
-  // 如果当前在工具页签，刷新显示
+  // 增量更新 DOM：只替换这一个卡片的 DOM 节点，保留其他卡片不动
   if (activeTab === 'tools') {
-    renderToolCalls();
+    updateToolCardDOM(tc);
   }
   updateToolsHint();
+}
+
+/** 将单个工具卡片追加到 #wsToolsOutput DOM 容器 */
+function appendToolCardDOM(tc: ToolCallRecord): void {
+  const container = document.querySelector('#wsToolsOutput') as HTMLElement;
+  if (!container) return;
+
+  // 首次添加卡片时清除空闲状态占位
+  if (container.querySelector('.ws-idle-state')) {
+    container.innerHTML = '';
+  }
+
+  const wrapper = document.createElement('div');
+  wrapper.innerHTML = renderToolCard(tc);
+  const card = wrapper.firstElementChild as HTMLElement;
+  if (card) {
+    card.dataset.toolName = tc.name;
+    container.appendChild(card);
+    // 新卡片出现时始终滚到底部（用户需要看到最新的工具状态）
+    container.scrollTop = container.scrollHeight;
+  }
+}
+
+/** 增量更新工具卡片 DOM 节点（找到 pending/running 状态的卡片并替换） */
+function updateToolCardDOM(tc: ToolCallRecord): void {
+  const container = document.querySelector('#wsToolsOutput') as HTMLElement;
+  if (!container) return;
+
+  // 查找同名且状态为 pending 或 running 的卡片 DOM 节点
+  const runningCard = (
+    container.querySelector(`.tool-call-card[data-tool-name="${escapeAttr(tc.name)}"].tool-call-running`) ||
+    container.querySelector(`.tool-call-card[data-tool-name="${escapeAttr(tc.name)}"].tool-call-pending`)
+  ) as HTMLElement | null;
+
+  if (runningCard) {
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = renderToolCard(tc);
+    const newCard = wrapper.firstElementChild as HTMLElement;
+    if (newCard) {
+      newCard.dataset.toolName = tc.name;
+      runningCard.replaceWith(newCard);
+    }
+  } else {
+    // running 卡片不在 DOM 中（可能是 tab 切换后再切回或其他边缘情况）
+    // 回退：追加新卡片
+    appendToolCardDOM(tc);
+  }
+}
+
+/** CSS.escape 回退（兼容旧 Electron） */
+function escapeAttr(value: string): string {
+  try { return CSS.escape(value); } catch { return value.replace(/["\\]/g, '\\$&'); }
 }
 
 function clearToolCards(): void {
@@ -802,17 +878,32 @@ function clearToolCards(): void {
 function updateToolsHint(): void {
   const hint = document.querySelector('#wsToolsHint') as HTMLElement;
   if (!hint) return;
-  const running = toolCards.filter(c => c.status === 'running');
-  if (running.length > 0) {
-    hint.textContent = `⏳ 执行中: ${running.map(c => getToolDisplayName(c.name)).join(', ')}`;
-    hint.classList.add('running');
-  } else {
-    const total = toolCards.length;
-    const success = toolCards.filter(c => c.status === 'success').length;
-    const error = toolCards.filter(c => c.status === 'error').length;
-    hint.textContent = total > 0 ? `共 ${total} 个工具调用（✅${success} ❌${error}）` : '等待工具调用...';
+  if (toolCards.length === 0) {
+    hint.textContent = '等待工具调用...';
     hint.classList.remove('running');
+    return;
   }
+
+  const byStatus: Record<string, string[]> = {};
+  for (const tc of toolCards) {
+    const name = getToolDisplayName(tc.name);
+    if (!byStatus[tc.status]) byStatus[tc.status] = [];
+    byStatus[tc.status].push(name);
+  }
+
+  const parts: string[] = [];
+  const order = ['pending', 'running', 'success', 'error', 'cancelled'];
+  const icons: Record<string, string> = {
+    pending: '📝', running: '🔄', success: '✅', error: '❌', cancelled: '🚫'
+  };
+  for (const s of order) {
+    if (byStatus[s]?.length) {
+      parts.push(`${icons[s] || ''} ${byStatus[s].join(', ')}`);
+    }
+  }
+
+  hint.textContent = parts.join('  ·  ');
+  hint.classList.toggle('running', !!(byStatus.pending || byStatus.running));
 }
 
 function renderToolCalls(): void {
@@ -845,14 +936,8 @@ function renderToolCalls(): void {
     html += renderToolCard(tc);
   }
   container.innerHTML = html;
-
-  if (toolAutoScroll) {
-    container.scrollTop = container.scrollHeight;
-  }
-
-  container.onscroll = () => {
-    toolAutoScroll = container.scrollHeight - container.scrollTop - container.clientHeight < 50;
-  };
+  // 全量渲染后滚到底部
+  container.scrollTop = container.scrollHeight;
 }
 
 function getToolDisplayName(name: string): string {
@@ -892,8 +977,12 @@ function getToolIcon(name: string): string {
 function renderToolCard(tc: ToolCallRecord): string {
   const icon = getToolIcon(tc.name);
   const name = getToolDisplayName(tc.name);
+  const statusClass = tc.status === 'running' ? 'tool-call-running'
+    : tc.status === 'pending' ? 'tool-call-pending'
+    : tc.status === 'error' ? 'tool-call-error'
+    : '';
   const statusLabels: Record<string, string> = {
-    pending: '⏳ 等待确认', running: '🔄 执行中', success: '✅ 完成', error: '❌ 失败', cancelled: '🚫 已取消'
+    pending: '📝 准备中…', running: '🔄 执行中', success: '✅ 完成', error: '❌ 失败', cancelled: '🚫 已取消'
   };
   const status = statusLabels[tc.status] || tc.status;
   const args = tc.arguments || {};
@@ -951,8 +1040,6 @@ function renderToolCard(tc: ToolCallRecord): string {
     }
   }
 
-  const statusClass = tc.status === 'running' ? 'tool-call-running' : tc.status === 'error' ? 'tool-call-error' : '';
-
   return `<div class="tool-call-card ${statusClass}" data-tool-name="${escapeHtml(tc.name)}">
     <div class="tool-call-header">
       <span class="tool-call-icon">${icon}</span>
@@ -975,5 +1062,27 @@ export function getWorkspaceDirPath(): string {
 export function switchToTab(tab: 'terminal' | 'tools' | 'files'): void {
   activeTab = tab;
   renderPanel();
+}
+
+/** 检查工作空间是否有 pending 或 running 的工具卡片 */
+export function hasActiveCards(): boolean {
+  return toolCards.some(c => c.status === 'pending' || c.status === 'running');
+}
+
+/** 在工具页签显示工作提示（AI 正在处理中，但还没有具体的工具调用） */
+export function showWorkingHint(text: string): void {
+  // 只在工具页签空闲时显示提示，避免覆盖已有的工具卡片
+  if (hasActiveCards()) return;
+  if (activeTab !== 'tools') return;
+  const hint = document.querySelector('#wsToolsHint') as HTMLElement;
+  if (hint) {
+    hint.textContent = text;
+    hint.classList.add('running');
+  }
+}
+
+/** 清除工作提示，恢复显示 updateToolsHint */
+export function clearWorkingHint(): void {
+  updateToolsHint();
 }
 

@@ -15,7 +15,7 @@ import {
 import { searchMemories, buildMemoryContext, markMemoryUsed, isMemoryEnabled } from './memory-manager.js';
 import { extractSkillsFromToolRecords, matchSkills, buildSkillContext } from './skill-manager.js';
 import { showToast } from '../components/toast.js';
-import { logInfo, logWarn, logSuccess, logError, logToolStart, logToolResult, logAgentLoop, logModelResponse } from './log-service.js';
+import { logInfo, logWarn, logSuccess, logError, logToolStart, logToolResult, logAgentLoop, logModelResponse, logStream } from './log-service.js';
 import { getWorkspaceDirPath } from '../components/workspace-panel.js';
 import { generateId } from '../utils/utils.js';
 import { buildContext, estimateTokens, shouldAutoCompress, compressWithLLM, AUTO_COMPRESS_THRESHOLD, recordActualTokens } from './context-manager.js';
@@ -328,6 +328,9 @@ function formatToolResultForModel(toolName: string, result: ToolResult): string 
 export interface AgentCallbacks {
   onThinking: (text: string) => void;
   onContent: (text: string) => void;
+  /** 模型正在流式生成 tool_call，工具名已知但参数还没生成完 */
+  onToolCallPrepare?: (call: ToolCall) => void;
+  /** 模型已完成 tool_call 生成，即将执行工具 */
   onToolCallStart: (call: ToolCall) => void;
   onToolCallResult: (name: string, result: ToolResult, call: ToolCall) => void;
   onToolCallError: (name: string, error: string, call: ToolCall) => void;
@@ -708,8 +711,33 @@ Shell: ${osInfo.shell}
       }, STREAM_TIMEOUT_MS);
     }
 
+    let progressTimer: ReturnType<typeof setInterval> | null = null;
+
     try {
       // 流式调用
+      const streamStartTime = Date.now();
+      let lastLoggedLen = 0;
+      let lastProgressAt = 0;
+      const PROGRESS_INTERVAL = 5000; // 每5秒输出一次流式进度
+
+      // ── 独立定时器：即使没有新 chunk 也会持续输出进度 ──
+      progressTimer = setInterval(() => {
+        const elapsed = Date.now() - streamStartTime;
+        const grew = content.length - lastLoggedLen;
+        const sinceLast = elapsed - lastProgressAt;
+        if (sinceLast >= PROGRESS_INTERVAL) {
+          lastProgressAt = elapsed;
+          const sec = Math.round(elapsed / 1000);
+          if (grew > 0) {
+            lastLoggedLen = content.length;
+            logStream(`流式输出中… ${content.length} 字 / ${sec}s${toolCalls.length > 0 ? ` [${toolCalls.length} 个工具调用]` : ''}`);
+          } else if (elapsed > 15000 && content.length > 0) {
+            // 超过 15 秒无新内容 → 可能模型卡住了
+            logStream(`⚠️ 无新内容 ${Math.round(sinceLast / 1000)}s，当前 ${content.length} 字`);
+          }
+        }
+      }, PROGRESS_INTERVAL);
+
       await api.chatStream(
           {
             model,
@@ -737,6 +765,15 @@ Shell: ${osInfo.shell}
             if (chunk.message?.tool_calls?.length) {
               for (const tc of chunk.message.tool_calls) {
                 if (tc.function?.name) {
+                  // 首次看到工具名 → 提前在工作空间创建"准备中"卡片
+                  // 此时参数还没生成完，但用户可以知道 AI 打算调哪个工具
+                  const isNewTool = !toolCalls.some(existing => existing.function.name === tc.function.name);
+                  if (isNewTool && callbacks.onToolCallPrepare) {
+                    callbacks.onToolCallPrepare({
+                      type: 'function',
+                      function: { name: tc.function.name, arguments: tc.function.arguments || {} }
+                    });
+                  }
                   toolCalls.push({
                     type: 'function',
                     function: {
@@ -782,10 +819,12 @@ Shell: ${osInfo.shell}
 
     // 流式调用成功完成，清除超时定时器
     if (streamTimer) { clearTimeout(streamTimer); streamTimer = null; }
+    if (progressTimer) clearInterval(progressTimer as unknown as number);
 
     } catch (err) {
       // 清除超时定时器
       if (streamTimer) { clearTimeout(streamTimer); streamTimer = null; }
+      if (progressTimer) clearInterval(progressTimer as unknown as number);
       if (abortController.signal.aborted) {
         logInfo('流式调用已中止');
         // 保存工具记录到 state，供消费方的 catch 处理中止消息
@@ -999,8 +1038,16 @@ Shell: ${osInfo.shell}
         toolResultCache.delete(cacheKey);
       }
 
+      // ── 等待渲染帧：确保 onToolCallPrepare 创建的 pending 卡片已上屏 ──
+      // 然后 onToolCallStart 将 pending 升级为 running
+      await new Promise(r => requestAnimationFrame(r));
+
       callbacks.onToolCallStart(call);
       logToolStart(call.function.name, JSON.stringify(call.function.arguments));
+
+      // ── 确保 running 状态 DOM 已被浏览器渲染后再执行工具 ──
+      // 网络工具（web_search/web_fetch）天然慢无需此处理，但文件 I/O 工具极快
+      await new Promise(r => requestAnimationFrame(r));
 
       // 需要确认的工具（目前只有 run_command 在 confirm 模式下）
       if (needsConfirmation(call.function.name)) {

@@ -12,7 +12,7 @@ import {
   appendToolCallCardToPlaceholder, updateToolCallCardInPlaceholder, resetCurrentPlaceholder
 } from './chat-area.js';
 import { showToast } from './toast.js';
-import { addToolCard, updateToolCard, clearToolCardsExternal, clearTerminalExternal, getWorkspaceDirPath } from './workspace-panel.js';
+import { addToolCard, startToolCard, updateToolCard, clearToolCardsExternal, clearTerminalExternal, getWorkspaceDirPath, hasActiveCards, showWorkingHint, clearWorkingHint } from './workspace-panel.js';
 import { ChatDB } from '../db/chat-db.js';
 import { OllamaAPI } from '../api/ollama.js';
 import { runAgentLoop } from '../services/agent-engine.js';
@@ -352,11 +352,26 @@ async function handleRetry(): Promise<void> {
         return { role: m.role, content, ...(m.images?.length && { images: m.images }) };
       });
 
+    let retryMonitor: ReturnType<typeof setInterval> | null = null;
+
     try {
       let retryContent = '';
       let retryThinkContent = '';
       let retryIterations = 0;
+
+      // ── 监控定时器 ──
+      retryMonitor = setInterval(() => {
+        if (!hasActiveCards()) {
+          showWorkingHint('⏳ AI 正在处理中...');
+        }
+      }, 2000);
       await runAgentLoop(userMsg.content || '', userMsg.images || [], historyMessages, {
+        onToolCallPrepare: (call) => {
+          addToolCard({
+            name: call.function.name, arguments: call.function.arguments,
+            result: null, status: 'pending', timestamp: Date.now()
+          });
+        },
         onNewIteration: (toolCalls) => {
           if (retryContent || toolCalls) {
             const now = Date.now();
@@ -382,7 +397,7 @@ async function handleRetry(): Promise<void> {
         onThinking: (thinking) => { retryThinkContent = thinking; updateLastAssistantMessage(retryContent, thinking, null, getSelectedModel()); },
         onContent: (content) => { retryContent = content; updateLastAssistantMessage(content, retryThinkContent || null, null, getSelectedModel()); },
         onToolCallStart: (call) => {
-          addToolCard({
+          startToolCard({
             name: call.function.name, arguments: call.function.arguments,
             result: null, status: 'running', timestamp: Date.now()
           });
@@ -441,6 +456,9 @@ async function handleRetry(): Promise<void> {
     } catch (err) {
     logError('重试失败', (err as Error).message);
     appendSystemMessage(`❌ 重试失败: ${(err as Error).message}`);
+  } finally {
+    if (retryMonitor) clearInterval(retryMonitor as unknown as number);
+    clearWorkingHint();
   }
 
   state.set(KEYS.IS_STREAMING, false);
@@ -909,8 +927,23 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
   let lastIterationEvalCount = 0; // 上一轮迭代结束时的累计 token 数
   let lastIterationStartTime = Date.now(); // 当前迭代开始时间
 
+  // ── 监控定时器：流式输出期间持续显示工作提示 ──
+  // 模型生成大参数 tool_call 可能需要几分钟，期间工作空间显示提示
+  const monitorInterval = setInterval(() => {
+    if (!hasActiveCards()) {
+      showWorkingHint('⏳ AI 正在处理中...');
+    }
+  }, 2000);
+
   try {
     await runAgentLoop(text || (pendingFiles.length > 0 ? `请分析 ${pendingFiles.map(f => f.name).join(', ')}` : ''), images, historyMessages, {
+      /** 模型正在生成 tool_call 参数中 — 提前在工作空间显示"准备中"卡片 */
+      onToolCallPrepare: (call) => {
+        addToolCard({
+          name: call.function.name, arguments: call.function.arguments,
+          result: null, status: 'pending', timestamp: Date.now()
+        });
+      },
       onNewIteration: (toolCalls) => {
         // Agent Loop 新迭代开始：保存上一轮内容为独立消息，创建新 placeholder
         // 先移除旧 placeholder（防止被 renderMessages 当作已渲染消息计数）
@@ -967,7 +1000,7 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
         updateLastAssistantMessage(assistantContent, thinkContent || null, null, getSelectedModel());
       },
       onToolCallStart: (call) => {
-        addToolCard({
+        startToolCard({
           name: call.function.name, arguments: call.function.arguments,
           result: null, status: 'running', timestamp: Date.now()
         });
@@ -1097,6 +1130,8 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
       appendSystemMessage(errMsg);
     }
   } finally {
+    clearInterval(monitorInterval);
+    clearWorkingHint();
     state.set(KEYS.IS_STREAMING, false);
     updateSendButton(false);
     state.set(KEYS.ABORT_CONTROLLER, null);

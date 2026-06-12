@@ -261,7 +261,7 @@ function renderToolCallCard(tc: ToolCallRecord): string {
     browser_click: '点击元素', browser_type: '输入文本', browser_scroll: '滚动页面', browser_close: '关闭浏览器'
   };
   const statusLabels: Record<string, string> = {
-    pending: '⏳ 等待确认', running: '🔄 执行中', success: '✅ 完成', error: '❌ 失败', cancelled: '🚫 已取消'
+    pending: '📝 准备中…', running: '🔄 执行中', success: '✅ 完成', error: '❌ 失败', cancelled: '🚫 已取消'
   };
 
   const icon = icons[tc.name] || '🔧';
@@ -428,8 +428,9 @@ export function updateToolCallCardInPlaceholder(tc: ToolCallRecord): void {
   if (!currentPlaceholder) return;
   const container = currentPlaceholder.querySelector('.tool-calls-container');
   if (!container) return;
-  // 找到第一个同名且状态为 running 的卡片
-  const existing = container.querySelector(`.tool-call-card[data-tool-name="${tc.name}"].tool-call-running`) as HTMLElement;
+  // 找到第一个同名且状态为 running 的卡片（CSS.escape 防特殊字符）
+  const escapedName = CSS.escape(tc.name);
+  const existing = container.querySelector(`.tool-call-card[data-tool-name="${escapedName}"].tool-call-running`) as HTMLElement;
   if (existing) {
     const cardDiv = document.createElement('div');
     cardDiv.innerHTML = renderToolCallCard(tc);

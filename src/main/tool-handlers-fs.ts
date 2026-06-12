@@ -196,6 +196,7 @@ export async function handleWriteFile(params: { path: string; content: string; e
     }
 
     const dir = path.dirname(filePath);
+    sendLog('info', `✏️ write_file 开始`, `${filePath} (${contentLength}B, ${writeMode})`);
     await fs.mkdir(dir, { recursive: true });
 
     if (writeMode === 'append') {

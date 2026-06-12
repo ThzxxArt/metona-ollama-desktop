@@ -1,6 +1,6 @@
 {
   "name": "metona-ollama-desktop",
-  "version": "0.11.2",
+  "version": "0.11.3",
   "description": "Metona Ollama - TypeScript + Electron 桌面 AI 聊天客户端",
   "main": "dist/main/main.js",
   "author": "thzxx",
