@@ -17,6 +17,7 @@ const DEFAULTS = {
   time_range: '',
   max_results: 20,
   auth_key: '',
+  format: 'json',
 };
 
 let modalEl: HTMLElement;
@@ -35,6 +36,7 @@ async function saveConfig(db: ChatDB): Promise<void> {
   await db.saveSetting('searxng_time_range', searxngConfig.time_range);
   await db.saveSetting('searxng_max_results', searxngConfig.max_results);
   await db.saveSetting('searxng_auth_key', searxngConfig.auth_key);
+  await db.saveSetting('searxng_format', searxngConfig.format);
   logSuccess('SearXNG 配置已保存');
 }
 
@@ -48,6 +50,7 @@ export async function loadSearxngConfig(db: ChatDB): Promise<void> {
   searxngConfig.time_range = await db.getSetting('searxng_time_range', DEFAULTS.time_range);
   searxngConfig.max_results = await db.getSetting('searxng_max_results', DEFAULTS.max_results);
   searxngConfig.auth_key = await db.getSetting('searxng_auth_key', DEFAULTS.auth_key);
+  searxngConfig.format = await db.getSetting('searxng_format', DEFAULTS.format);
   logInfo('SearXNG 配置已加载', searxngConfig.enabled ? `已启用: ${searxngConfig.url}` : '未启用');
 }
 
@@ -60,6 +63,7 @@ function syncFormFromConfig(): void {
   (document.querySelector('#searxngTimeRange') as HTMLSelectElement).value = searxngConfig.time_range || '';
   (document.querySelector('#searxngMaxResults') as HTMLInputElement).value = String(searxngConfig.max_results);
   (document.querySelector('#searxngAuthKey') as HTMLInputElement).value = searxngConfig.auth_key;
+  (document.querySelector('#searxngFormat') as HTMLSelectElement).value = searxngConfig.format;
   const toggle = document.querySelector('#toggleSearxngEnabled') as HTMLInputElement;
   toggle.checked = searxngConfig.enabled;
   updateEnabledUI(searxngConfig.enabled);
@@ -132,6 +136,7 @@ export function initSearxngModal(): void {
     searxngConfig.time_range = (document.querySelector('#searxngTimeRange') as HTMLSelectElement).value;
     searxngConfig.max_results = parseInt((document.querySelector('#searxngMaxResults') as HTMLInputElement).value) || 20;
     searxngConfig.auth_key = (document.querySelector('#searxngAuthKey') as HTMLInputElement).value.trim();
+    searxngConfig.format = (document.querySelector('#searxngFormat') as HTMLSelectElement).value;
     const db = state.get<ChatDB | null>(KEYS.DB);
     if (db) await saveConfig(db);
     updateEnabledUI(searxngConfig.enabled);

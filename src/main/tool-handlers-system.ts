@@ -456,10 +456,11 @@ async function handleWebSearchSearxng(
   const cfgTimeRange = getSetting<string>('searxng_time_range', '');
   const effectiveTimeRange = timeRange || cfgTimeRange;
 
-  const params = new URLSearchParams({
-    q: query,
-    format: 'json',
-  });
+  const format = getSetting<string>('searxng_format', 'json');
+  const isHtml = format === 'html';
+
+  const params = new URLSearchParams({ q: query });
+  if (!isHtml) params.set('format', 'json');
   if (engines) params.set('engines', engines);
   if (language) params.set('language', language);
   if (safesearch > 0) params.set('safesearch', String(safesearch));
@@ -468,18 +469,36 @@ async function handleWebSearchSearxng(
   const authKey = getSetting<string>('searxng_auth_key', '');
 
   const apiUrl = `${url.replace(/\/+$/, '')}/search?${params.toString()}`;
-  sendLog('info', `🔍 SearXNG 搜索`, `"${query}" → ${url}`);
+  sendLog('info', `🔍 SearXNG 搜索`, `${query} → ${url} (${format})`);
 
   try {
     const headers = buildFetchHeaders(apiUrl, false);
     if (authKey) headers['Authorization'] = `Bearer ${authKey}`;
     const resp = await fetchWithTimeout(apiUrl, HTTP_TIMEOUT, headers);
     if (!resp || !resp.ok) {
-      const fallbackUrl = encodeURIComponent(query);
       return {
         success: false,
-        error: `SearXNG 搜索失败 (HTTP ${resp?.status || 'timeout'})。请检查 SearXNG 实例是否运行正常：${url}。你也可以在设置中禁用 SearXNG 回退到内置四引擎搜索。`,
-        _searxng_fallback: `${url}/search?q=${fallbackUrl}`
+        error: `SearXNG 搜索失败 (HTTP ${resp?.status || 'timeout'})。请检查 SearXNG 实例是否运行正常：${url}。`,
+        _searxng_url: apiUrl
+      };
+    }
+
+    // ── HTML 模式：返回原始网页文本，让 AI 自行分析 ──
+    if (isHtml) {
+      const html = await resp.text();
+      const text = htmlToText(html);
+      const truncated = maxResults > 0 && text.length > maxResults * 500;
+      const content = truncated ? text.slice(0, maxResults * 500) + '\n...（已截断）' : text;
+      sendLog('success', `🔍 SearXNG HTML 完成`, `${text.length} 字符`);
+      return {
+        success: true,
+        url: apiUrl,
+        content,
+        content_type: 'text/html',
+        length: content.length,
+        truncated,
+        format: 'html',
+        _hint: '这是 SearXNG 搜索结果页面的纯文本提取。请从中提取有用的搜索结果信息来回答用户问题。'
       };
     }
 
