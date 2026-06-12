@@ -71,7 +71,7 @@ function summarizeResult(toolName: string, result: Record<string, unknown>): str
     case 'move_file': return `${result.source} → ${result.destination}`;
     case 'copy_file': return `${result.source} → ${result.destination}`;
     case 'web_fetch': return `${result.status} | ${result.length} chars`;
-    case 'web_search': return `"${result.query}" → ${result.total} 条结果`;
+    case 'web_search': return `[${(result as any)._mode === 'searxng' ? 'SearXNG' : '内置'}] "${result.query}" → ${result.total} 条结果`;
     case 'edit_file': return `${result.path} (${result.replaceCount} 处替换)`;
     case 'get_file_info': return `${result.name} (${result.type}, ${result.size}B)`;
     case 'tree': return `${result.path} (${result.fileCount} 文件 / ${result.dirCount} 目录)`;

@@ -494,6 +494,7 @@ async function handleWebSearchSearxng(
       sendLog('success', `🔍 SearXNG HTML 完成`, `${text.length} 字符`);
       return {
         success: true,
+        _mode: 'searxng',
         url: apiUrl,
         content,
         content_type: 'text/html',
@@ -545,7 +546,7 @@ async function handleWebSearchSearxng(
 
     sendLog('success', `🔍 SearXNG 完成`, `${results.length} 条结果, 引擎: ${engineNames.join(', ')}`);
 
-    return buildSearchResponse(
+    const result = buildSearchResponse(
       results.map(r => ({
         title: r.title,
         url: r.url,
@@ -558,6 +559,8 @@ async function handleWebSearchSearxng(
       false,
       engineStats
     );
+    result._mode = 'searxng';
+    return result;
   } catch (err) {
     sendLog('error', `🔍 SearXNG 异常`, (err as Error).message);
     return { success: false, error: `SearXNG 搜索异常: ${(err as Error).message}` };
@@ -583,9 +586,11 @@ export async function handleWebSearch(params: { query: string; max_results?: num
     // ── SearXNG 模式：如果启用了 SearXNG，走 JSON API ──
     const searxngEnabled = getSetting<boolean>('searxng_enabled', false);
     if (searxngEnabled) {
+      sendLog('info', `🔍 web_search → SearXNG 模式`, `\"${query}\"`);
       return handleWebSearchSearxng(query, maxResults, timeRange, enhanceSnippets);
     }
 
+    sendLog('info', `🔍 web_search → 内置引擎`, `\"${query}\"`);
     const cacheKey = `${query}|${maxResults}|${timeRange}`;
 
     // ── 时间范围 → URL 参数映射 ──
@@ -601,7 +606,9 @@ export async function handleWebSearch(params: { query: string; max_results?: num
     const cached = cacheGet(cacheKey);
     if (cached) {
       sendLog('success', `🔍 web_search 缓存命中`, `"${query}" → ${cached.results.length} 条`);
-      return buildSearchResponse(cached.results, maxResults, true);
+      const cachedResult = buildSearchResponse(cached.results, maxResults, true);
+      cachedResult._mode = 'builtin';
+      return cachedResult;
     }
 
     sendLog('info', `🔍 web_search`, `"${query}" (${maxResults} 条) [并行]`);
@@ -747,7 +754,9 @@ export async function handleWebSearch(params: { query: string; max_results?: num
     // ── 6. 缓存结果 ──
     cacheSet(cacheKey, { results: finalResults, time: Date.now() });
 
-    return buildSearchResponse(finalResults, maxResults, false, engineStats);
+    const finalResult = buildSearchResponse(finalResults, maxResults, false, engineStats);
+    finalResult._mode = 'builtin';
+    return finalResult;
   } catch (err) {
     return { success: false, error: (err as Error).message };
   }
