@@ -236,9 +236,6 @@ function formatToolResultForModel(toolName: string, result: ToolResult): string 
 
     case 'web_fetch': {
       let content = (result.content as string) || '';
-      // 截断过长内容，避免撑爆上下文
-      const webFetchMax = TOOL_MAX_RESULT_SIZE['web_fetch'] || 20000;
-      if (content.length > webFetchMax) content = content.slice(0, webFetchMax) + '\n... (已截断)';
       return JSON.stringify({ success: true, url: result.url, content });
     }
 
