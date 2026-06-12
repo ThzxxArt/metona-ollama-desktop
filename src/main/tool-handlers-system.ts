@@ -446,7 +446,10 @@ async function handleWebSearchSearxng(
   timeRange: string,
   _enhanceSnippets: boolean
 ): Promise<ToolResult> {
-  const url = getSetting<string>('searxng_url', 'https://search.metona.cn');
+  const url = getSetting<string>('searxng_url', '');
+  if (!url) {
+    return { success: false, error: 'SearXNG API 地址未配置。请在 SearXNG 设置中填写 API 地址。' };
+  }
   const engines = getSetting<string>('searxng_engines', 'google,bing,duckduckgo,wikipedia');
   const language = getSetting<string>('searxng_language', 'zh-CN');
   const safesearch = getSetting<number>('searxng_safesearch', 1);

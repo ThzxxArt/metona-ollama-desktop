@@ -10,7 +10,7 @@ import { logInfo, logSuccess } from '../services/log-service.js';
 /** 默认 SearXNG 配置 */
 const DEFAULTS = {
   enabled: false,
-  url: 'https://search.metona.cn',
+  url: '',
   engines: 'google,bing,duckduckgo,wikipedia',
   language: 'zh-CN',
   safesearch: 1,
@@ -113,7 +113,19 @@ export function initSearxngModal(): void {
 
   // ── 保存按钮 ──
   document.querySelector('#btnSaveSearxng')!.addEventListener('click', async () => {
-    searxngConfig.url = (document.querySelector('#searxngUrl') as HTMLInputElement).value.trim();
+    const url = (document.querySelector('#searxngUrl') as HTMLInputElement).value.trim();
+    if (!url) {
+      const { showToast } = await import('./toast.js');
+      showToast('SearXNG API 地址不能为空', 'error');
+      return;
+    }
+    if (!/^https?:\/\/.+/.test(url)) {
+      const { showToast } = await import('./toast.js');
+      showToast('SearXNG API 地址格式不正确，需以 http:// 或 https:// 开头', 'error');
+      return;
+    }
+
+    searxngConfig.url = url;
     searxngConfig.engines = (document.querySelector('#searxngEngines') as HTMLInputElement).value.trim();
     searxngConfig.language = (document.querySelector('#searxngLanguage') as HTMLSelectElement).value;
     searxngConfig.safesearch = parseInt((document.querySelector('#searxngSafeSearch') as HTMLSelectElement).value);
