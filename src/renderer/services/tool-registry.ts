@@ -336,7 +336,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'web_search',
-      description: 'Search the web. Returns title, URL, and short snippet for each result. Snippets are summaries only — to get full page content, you MUST call web_fetch on the relevant result URLs. After searching, pick 3-5 most relevant results and call web_fetch on each before composing your answer. Supports time range filtering (day/week/month/year).',
+      description: 'Search the web and optionally auto-fetch full page content. Set fetch_top to automatically fetch complete content from the top N results — this saves you the extra step of calling web_fetch yourself. Use fetch_top=3 for most cases. Returns snippets + full fetched content. Supports time range filtering.',
       parameters: {
         type: 'object',
         required: ['query'],
@@ -344,7 +344,8 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
           query: { type: 'string', description: 'The search query. Be specific and concise for best results.' },
           max_results: { type: 'integer', description: 'Maximum number of results to return. Default: 30, max: 30.' },
           time_range: { type: 'string', enum: ['day', 'week', 'month', 'year'], description: 'Filter results by time. Supported by Bing and Google. Use for recent news, latest version, etc.' },
-          enhance_snippets: { type: 'boolean', description: 'Auto-fetch detailed snippet for results with too-short descriptions. Default: true.' }
+          enhance_snippets: { type: 'boolean', description: 'Auto-fetch detailed snippet for results with too-short descriptions. Default: true.' },
+          fetch_top: { type: 'integer', description: 'Automatically fetch full content from the top N search results. Default: 0 (no auto-fetch). Recommended: 3-5.' }
         }
       }
     }

@@ -218,20 +218,20 @@ function formatToolResultForModel(toolName: string, result: ToolResult): string 
     case 'web_search': {
       const raw = result.results as Array<{ title: string; url: string; snippet: string }> | undefined;
       if (!raw?.length) return JSON.stringify({ success: true, message: '未找到结果' });
-      // 只保留 top 10，让模型有更多 URL 可选
       const visible = Math.min(10, raw.length);
       const top = raw.slice(0, visible).map((r, i) =>
         `[${i + 1}] ${r.title}\n    URL: ${r.url}\n    ${r.snippet}`
       ).join('\n\n');
-      return `⚠️ 以下仅搜索摘要，缺乏完整内容无法准确回答。你必须从以上结果中选取最相关的 3-5 个 URL，逐一调用 web_fetch 获取完整详情后再综合回答。不要跳过抓取步骤！
-
-` + JSON.stringify({
-        success: true,
-        query: result.query,
-        total: result.total,
-        shown: visible,
-        results: top,
+      const fetched = (result as any)._fetched as Array<{ url: string; title: string; content: string }> | undefined;
+      const body = JSON.stringify({
+        success: true, query: result.query, total: result.total, shown: visible, results: top,
       });
+      if (fetched && fetched.length > 0) {
+        return body + '\n\n' + fetched.map((f, i) =>
+          `\n=== 📄 已抓取 ${i + 1}/${fetched.length}: ${f.title} ===\n${f.content}\n`
+        ).join('\n---\n');
+      }
+      return body;
     }
 
     case 'web_fetch': {
