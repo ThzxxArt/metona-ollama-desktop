@@ -1983,6 +1983,41 @@ html, body {
     .messages { max-width: 900px; }
 }
 
+/* ═══ SearXNG 搜索配置 ═══ */
+.searxng-btn {
+    position: relative;
+}
+
+.searxng-icon-dot {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--text-disabled);
+    transition: var(--transition);
+    z-index: 2;
+}
+
+.searxng-icon-dot.enabled {
+    background: var(--success);
+    box-shadow: 0 0 6px rgba(74, 174, 107, 0.5);
+}
+
+.searxng-badge {
+    display: inline-flex;
+    align-items: center;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-tertiary);
+    transition: var(--transition);
+}
+
+.searxng-badge.enabled {
+    color: var(--success);
+}
+
 /* ── 选中文本 ── */
 ::selection {
     background: rgba(232, 115, 74, 0.2);

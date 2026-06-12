@@ -30,6 +30,7 @@ import { initToolConfirmModal } from './components/tool-confirm-modal.js';
 import { initWorkspacePanel, clearToolCardsExternal, clearTerminalExternal, switchToTab } from './components/workspace-panel.js';
 import { initLogPanel, addLog } from './services/log-service.js';
 import { logInfo, logSuccess, logError, logDebug, logInit, logWarn } from './services/log-service.js';
+import { initSearxngModal, closeSearxngModal, loadSearxngConfig } from './components/searxng-modal.js';
 import type { ChatSession } from './types.js';
 
 // ─── v4.0 数据迁移：IndexedDB → SQLite ───
@@ -337,12 +338,14 @@ async function init(): Promise<void> {
     initTokenDashboard();
     initWorkspacePanel();
     setupDesktopIntegration();
+    initSearxngModal();
 
     bindGlobalEvents();
 
     await checkConnection();
     await loadModels();
     await initMemoryManager();
+    await loadSearxngConfig(db);
     logInit('所有组件已就绪');
 
     const savedModel = await db.getSetting('selectedModel', '');
@@ -458,6 +461,7 @@ function bindGlobalEvents(): void {
       closeLightbox();
       closeToolsModal();
       closeTokenDashboard();
+      closeSearxngModal();
       (document.querySelector('#helpModal') as HTMLElement).style.display = 'none';
       (document.querySelector('#memoryModal') as HTMLElement).style.display = 'none';
     }

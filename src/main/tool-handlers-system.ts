@@ -9,6 +9,7 @@ import { checkPathAllowed, checkCommandAllowed } from './tool-security.js';
 import { mainWindow } from './main.js';
 import { sendLog, resolvePath, type ToolResult } from './tool-handlers-shared.js';
 import { getWorkspaceDir } from './workspace.js';
+import { getSetting } from './db/sqlite.js';
 
 /** 当前工具命令进程（用于用户手动终止） */
 let _toolProc: ReturnType<typeof spawn> | null = null;
@@ -436,8 +437,113 @@ export async function handleWebFetch(params: { url: string; max_chars?: number; 
 }
 
 /**
+ * SearXNG 元搜索引擎 — JSON API 搜索
+ * 支持 70+ 引擎聚合、隐私保护、无广告
+ */
+async function handleWebSearchSearxng(
+  query: string,
+  maxResults: number,
+  timeRange: string,
+  _enhanceSnippets: boolean
+): Promise<ToolResult> {
+  const url = getSetting<string>('searxng_url', 'https://search.metona.cn');
+  const engines = getSetting<string>('searxng_engines', 'google,bing,duckduckgo,wikipedia');
+  const language = getSetting<string>('searxng_language', 'zh-CN');
+  const safesearch = getSetting<number>('searxng_safesearch', 1);
+  const cfgTimeRange = getSetting<string>('searxng_time_range', '');
+  const effectiveTimeRange = timeRange || cfgTimeRange;
+
+  const params = new URLSearchParams({
+    q: query,
+    format: 'json',
+  });
+  if (engines) params.set('engines', engines);
+  if (language) params.set('language', language);
+  if (safesearch > 0) params.set('safesearch', String(safesearch));
+  if (effectiveTimeRange) params.set('time_range', effectiveTimeRange);
+
+  const authKey = getSetting<string>('searxng_auth_key', '');
+
+  const apiUrl = `${url.replace(/\/+$/, '')}/search?${params.toString()}`;
+  sendLog('info', `🔍 SearXNG 搜索`, `"${query}" → ${url}`);
+
+  try {
+    const headers = buildFetchHeaders(apiUrl, false);
+    if (authKey) headers['Authorization'] = `Bearer ${authKey}`;
+    const resp = await fetchWithTimeout(apiUrl, HTTP_TIMEOUT, headers);
+    if (!resp || !resp.ok) {
+      const fallbackUrl = encodeURIComponent(query);
+      return {
+        success: false,
+        error: `SearXNG 搜索失败 (HTTP ${resp?.status || 'timeout'})。请检查 SearXNG 实例是否运行正常：${url}。你也可以在设置中禁用 SearXNG 回退到内置四引擎搜索。`,
+        _searxng_fallback: `${url}/search?q=${fallbackUrl}`
+      };
+    }
+
+    const data = await resp.json() as {
+      query: string;
+      number_of_results?: number;
+      results?: Array<{
+        title: string;
+        url: string;
+        content: string;
+        engine: string;
+        score?: number;
+        category?: string;
+      }>;
+      unresponsive_engines?: Array<[string, string]>;
+    };
+
+    const rawResults = (data.results || []).slice(0, maxResults);
+    if (rawResults.length === 0) {
+      return { success: false, error: 'SearXNG 未返回任何结果，请尝试其他关键词或调整搜索引擎配置' };
+    }
+
+    // 转换为兼容格式
+    const results = rawResults.map(r => ({
+      title: (r.title || '').replace(/<[^>]+>/g, '').trim(),
+      url: r.url,
+      snippet: (r.content || '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim(),
+      engine: r.engine || 'searxng',
+      weight: 80,
+      reachable: true,
+    }));
+
+    const engineNames = [...new Set(rawResults.map(r => r.engine))].filter(Boolean);
+    const unresponsive = data.unresponsive_engines || [];
+    const engineStats: Record<string, string> = {};
+    for (const engine of engineNames) {
+      engineStats[engine] = `${rawResults.filter(r => r.engine === engine).length} 条`;
+    }
+    for (const [eng, reason] of unresponsive) {
+      engineStats[eng] = `⚠️ ${reason}`;
+    }
+
+    sendLog('success', `🔍 SearXNG 完成`, `${results.length} 条结果, 引擎: ${engineNames.join(', ')}`);
+
+    return buildSearchResponse(
+      results.map(r => ({
+        title: r.title,
+        url: r.url,
+        snippet: r.snippet,
+        engine: `searxng:${r.engine}`,
+        weight: 80,
+        reachable: true,
+      })),
+      maxResults,
+      false,
+      engineStats
+    );
+  } catch (err) {
+    sendLog('error', `🔍 SearXNG 异常`, (err as Error).message);
+    return { success: false, error: `SearXNG 搜索异常: ${(err as Error).message}` };
+  }
+}
+
+/**
  * Web Search — 联网搜索（并行多引擎 + LRU 缓存 + 智能排序 + 时间过滤 + 摘要增强）
  * 同时请求 Bing / 百度 / 搜狗 / 360搜索，智能排序后返回
+ * 如果启用了 SearXNG，则使用 SearXNG JSON API 替代
  */
 export async function handleWebSearch(params: { query: string; max_results?: number; time_range?: string; enhance_snippets?: boolean }): Promise<ToolResult> {
   try {
@@ -449,6 +555,13 @@ export async function handleWebSearch(params: { query: string; max_results?: num
     const maxResults = Math.min(params.max_results || 15, 20);
     const timeRange = params.time_range || '';
     const enhanceSnippets = params.enhance_snippets !== false; // 默认开启
+
+    // ── SearXNG 模式：如果启用了 SearXNG，走 JSON API ──
+    const searxngEnabled = getSetting<boolean>('searxng_enabled', false);
+    if (searxngEnabled) {
+      return handleWebSearchSearxng(query, maxResults, timeRange, enhanceSnippets);
+    }
+
     const cacheKey = `${query}|${maxResults}|${timeRange}`;
 
     // ── 时间范围 → URL 参数映射 ──
