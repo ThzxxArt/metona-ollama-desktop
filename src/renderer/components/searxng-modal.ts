@@ -15,7 +15,7 @@ const DEFAULTS = {
   language: 'zh-CN',
   safesearch: 1,
   time_range: '',
-  max_results: 20,
+  max_results: 0,
   auth_key: '',
   format: 'json',
 };
@@ -61,7 +61,7 @@ function syncFormFromConfig(): void {
   (document.querySelector('#searxngLanguage') as HTMLSelectElement).value = searxngConfig.language;
   (document.querySelector('#searxngSafeSearch') as HTMLSelectElement).value = String(searxngConfig.safesearch);
   (document.querySelector('#searxngTimeRange') as HTMLSelectElement).value = searxngConfig.time_range || '';
-  (document.querySelector('#searxngMaxResults') as HTMLInputElement).value = String(searxngConfig.max_results);
+  (document.querySelector('#searxngMaxResults') as HTMLInputElement).value = searxngConfig.max_results > 0 ? String(searxngConfig.max_results) : '';
   (document.querySelector('#searxngAuthKey') as HTMLInputElement).value = searxngConfig.auth_key;
   (document.querySelector('#searxngFormat') as HTMLSelectElement).value = searxngConfig.format;
   const toggle = document.querySelector('#toggleSearxngEnabled') as HTMLInputElement;
@@ -134,7 +134,7 @@ export function initSearxngModal(): void {
     searxngConfig.language = (document.querySelector('#searxngLanguage') as HTMLSelectElement).value;
     searxngConfig.safesearch = parseInt((document.querySelector('#searxngSafeSearch') as HTMLSelectElement).value);
     searxngConfig.time_range = (document.querySelector('#searxngTimeRange') as HTMLSelectElement).value;
-    searxngConfig.max_results = parseInt((document.querySelector('#searxngMaxResults') as HTMLInputElement).value) || 20;
+    searxngConfig.max_results = parseInt((document.querySelector('#searxngMaxResults') as HTMLInputElement).value) || 0;
     searxngConfig.auth_key = (document.querySelector('#searxngAuthKey') as HTMLInputElement).value.trim();
     searxngConfig.format = (document.querySelector('#searxngFormat') as HTMLSelectElement).value;
     const db = state.get<ChatDB | null>(KEYS.DB);

@@ -455,7 +455,8 @@ async function handleWebSearchSearxng(
   const safesearch = getSetting<number>('searxng_safesearch', 1);
   const cfgTimeRange = getSetting<string>('searxng_time_range', '');
   const effectiveTimeRange = timeRange || cfgTimeRange;
-  const cfgMaxResults = getSetting<number>('searxng_max_results', 20);
+  const cfgMaxResults = getSetting<number>('searxng_max_results', 0);
+  const effectiveMax = cfgMaxResults > 0 ? cfgMaxResults : maxResults;
 
   const format = getSetting<string>('searxng_format', 'json');
   const isHtml = format === 'html';
@@ -488,8 +489,8 @@ async function handleWebSearchSearxng(
     if (isHtml) {
       const html = await resp.text();
       const text = htmlToText(html);
-      const truncated = cfgMaxResults > 0 && text.length > cfgMaxResults * 500;
-      const content = truncated ? text.slice(0, cfgMaxResults * 500) + '\n...（已截断）' : text;
+      const truncated = effectiveMax > 0 && text.length > effectiveMax * 500;
+      const content = truncated ? text.slice(0, effectiveMax * 500) + '\n...（已截断）' : text;
       sendLog('success', `🔍 SearXNG HTML 完成`, `${text.length} 字符`);
       return {
         success: true,
@@ -517,7 +518,7 @@ async function handleWebSearchSearxng(
       unresponsive_engines?: Array<[string, string]>;
     };
 
-    const rawResults = (data.results || []).slice(0, cfgMaxResults);
+    const rawResults = (data.results || []).slice(0, effectiveMax);
     if (rawResults.length === 0) {
       return { success: false, error: 'SearXNG 未返回任何结果，请尝试其他关键词或调整搜索引擎配置' };
     }
@@ -553,7 +554,7 @@ async function handleWebSearchSearxng(
         weight: 80,
         reachable: true,
       })),
-      cfgMaxResults,
+      effectiveMax,
       false,
       engineStats
     );
