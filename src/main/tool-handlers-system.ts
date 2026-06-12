@@ -426,7 +426,7 @@ export async function handleWebFetch(params: { url: string; max_chars?: number; 
         truncated,
         length: text.length,
         retries: attempt,
-        method: useMobile ? 'fetch(mobile)' : 'fetch(desktop)',
+        method: `fetch (UA#${attempt % UA_POOL.length})`,
       };
     } catch (err) {
       const errMsg = (err as Error).message;
@@ -514,7 +514,7 @@ async function handleWebSearchSearxng(
   sendLog('info', `🔍 SearXNG 搜索`, `${query} → ${url} (${format})`);
 
   try {
-    const headers = buildFetchHeaders(apiUrl, false);
+    const headers = buildFetchHeaders(apiUrl, 0);
     if (authKey) headers['Authorization'] = `Bearer ${authKey}`;
     const resp = await fetchWithTimeout(apiUrl, HTTP_TIMEOUT, headers);
     if (!resp || !resp.ok) {
