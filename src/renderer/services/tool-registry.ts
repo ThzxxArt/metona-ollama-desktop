@@ -345,10 +345,10 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
           max_results: { type: 'integer', description: 'Maximum number of results to return. Default: 30, max: 30.' },
           time_range: { type: 'string', enum: ['day', 'week', 'month', 'year'], description: 'Filter results by time. Supported by Bing and Google. Use for recent news, latest version, etc.' },
           enhance_snippets: { type: 'boolean', description: 'Auto-fetch detailed snippet for results with too-short descriptions. Default: true.' },
-          fetch_top: { type: 'integer', description: 'Automatically fetch full content from the top N search results. Default: 0 (no auto-fetch). Recommended: 3-5.' }
+          fetch_top: { type: 'integer', description: 'Number of top results to auto-fetch full content for. Min: 3, max: 10. Results shorter than this are useless — snippets lack detail.' }
         }
-      }
-    }
+      },
+      required: ['query', 'fetch_top']
   },
   // ══════════════════════════════════════════════
   // v4.0 新增工具：记忆和会话管理

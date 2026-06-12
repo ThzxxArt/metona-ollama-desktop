@@ -582,7 +582,7 @@
 582|    const maxResults = Math.min(params.max_results || 30, 30);
 583|    const timeRange = params.time_range || '';
 584|    const enhanceSnippets = params.enhance_snippets !== false;
-585|    const fetchTop = Math.min(params.fetch_top || 0, 10);
+585|    const fetchTop = Math.max(3, Math.min(params.fetch_top || 3, 10));
 586|
 587|    let result: ToolResult;
 588|
