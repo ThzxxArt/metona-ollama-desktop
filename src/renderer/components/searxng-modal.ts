@@ -52,6 +52,7 @@ export async function loadSearxngConfig(db: ChatDB): Promise<void> {
   searxngConfig.auth_key = await db.getSetting('searxng_auth_key', DEFAULTS.auth_key);
   searxngConfig.format = await db.getSetting('searxng_format', DEFAULTS.format);
   logInfo('SearXNG 配置已加载', searxngConfig.enabled ? `已启用: ${searxngConfig.url}` : '未启用');
+  updateEnabledUI(searxngConfig.enabled);
 }
 
 /** 刷新 UI 控件以匹配当前配置 */
