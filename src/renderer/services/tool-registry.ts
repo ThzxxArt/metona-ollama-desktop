@@ -163,7 +163,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'web_fetch',
-      description: 'Fetch content from a URL. Returns the page text content (HTML stripped). Supports HTTP/HTTPS. Automatically retries on failure (up to 2 times with exponential backoff). Will auto-upgrade to browser rendering for JavaScript-heavy pages that return empty shells.',
+      description: 'Fetch and extract full text content from a URL. Typically used after web_search: pick the most relevant result URLs from search and call web_fetch on each to get detailed content before answering. Automatically retries on failure (up to 2 times with exponential backoff). Auto-upgrades to browser rendering for JavaScript-heavy pages.',
       parameters: {
         type: 'object',
         required: ['url'],
@@ -336,7 +336,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'web_search',
-      description: 'Search the web using 4 engines in parallel (Bing + Baidu + Sogou + 360). Results are intelligently ranked by reachability + engine weight + snippet quality. 5-minute cache. Supports time range filtering (day/week/month/year). Short snippets are auto-enhanced via web_fetch. Use when you need current, time-sensitive, or factual information.',
+      description: 'Search the web. Returns title, URL, and short snippet for each result. Snippets are summaries only — to get full page content, you MUST call web_fetch on the relevant result URLs. After searching, pick 3-5 most relevant results and call web_fetch on each before composing your answer. Supports time range filtering (day/week/month/year).',
       parameters: {
         type: 'object',
         required: ['query'],
