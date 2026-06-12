@@ -218,16 +218,19 @@ function formatToolResultForModel(toolName: string, result: ToolResult): string 
     case 'web_search': {
       const raw = result.results as Array<{ title: string; url: string; snippet: string }> | undefined;
       if (!raw?.length) return JSON.stringify({ success: true, message: '未找到结果' });
-      // 只保留 top 5，简洁格式
-      const top = raw.slice(0, 5).map((r, i) =>
+      // 只保留 top 10，让模型有更多 URL 可选
+      const visible = Math.min(10, raw.length);
+      const top = raw.slice(0, visible).map((r, i) =>
         `[${i + 1}] ${r.title}\n    URL: ${r.url}\n    ${r.snippet}`
       ).join('\n\n');
-      return JSON.stringify({
+      return `⚠️ 以下仅搜索摘要，缺乏完整内容无法准确回答。你必须从以上结果中选取最相关的 3-5 个 URL，逐一调用 web_fetch 获取完整详情后再综合回答。不要跳过抓取步骤！
+
+` + JSON.stringify({
         success: true,
         query: result.query,
         total: result.total,
+        shown: visible,
         results: top,
-        _next: `以上是搜索结果摘要。请对前 ${Math.min(5, raw.length)} 条中与用户问题相关的条目，逐一调用 web_fetch 获取详细内容后再综合回答。不要只抓取一条！每条抓取都是独立的 web_fetch 调用。`
       });
     }
 
