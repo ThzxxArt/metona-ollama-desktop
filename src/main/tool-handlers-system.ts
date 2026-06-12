@@ -152,12 +152,40 @@ function cacheSet(query: string, entry: CacheEntry): void {
 }
 
 // ── 反爬请求头 ────────────────────────────────────
-const DESKTOP_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
-const MOBILE_UA = 'Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36';
+const UA_POOL = [
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Safari/605.1.15',
+  'Mozilla/5.0 (X11; Linux x86_64; rv:132.0) Gecko/20100101 Firefox/132.0',
+  'Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36',
+];
+const LANG_POOL = ['zh-CN,zh;q=0.9,en;q=0.8', 'zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7', 'en-US,en;q=0.9,zh-CN;q=0.8'];
 
-/** 构建 fetch 请求头，根据 UA 类型动态设置 */
-function buildFetchHeaders(url: string, useMobileUA: boolean): Record<string, string> {
-  const ua = useMobileUA ? MOBILE_UA : DESKTOP_UA;
+/** 被拦截页面特征模式 */
+const BLOCKED_PATTERNS = [
+  /<title>\s*(Just a moment\.\.\.|Attention Required!|Cloudflare)\s*<\/title>/i,
+  /challenge-platform/i,
+  /\.cf-challenge-/i,
+  /<title>\s*Access Denied\s*<\/title>/i,
+  /<title>\s*403 Forbidden\s*<\/title>/i,
+  /请启用JavaScript/i,
+  /Please enable JavaScript/i,
+  /Checking your browser/i,
+  /DDoS protection/i,
+];
+
+function isBlockedPage(html: string): boolean {
+  if (html.length < 80) return true;
+  for (const p of BLOCKED_PATTERNS) { if (p.test(html)) return true; }
+  return false;
+}
+
+function jitter(ms: number): number { return ms + Math.floor(Math.random() * ms * 0.6); }
+
+/** 构建 fetch 请求头，根据尝试次数轮换 UA 和语言 */
+function buildFetchHeaders(url: string, attemptIndex: number): Record<string, string> {
+  const ua = UA_POOL[attemptIndex % UA_POOL.length];
+  const lang = LANG_POOL[attemptIndex % LANG_POOL.length];
   let referer = 'https://www.google.com/';
   try {
     const u = new URL(url);
@@ -166,7 +194,7 @@ function buildFetchHeaders(url: string, useMobileUA: boolean): Record<string, st
   return {
     'User-Agent': ua,
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-    'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+    'Accept-Language': lang,
     'Accept-Encoding': 'gzip, deflate, br',
     'Cache-Control': 'no-cache',
     'DNT': '1',
@@ -182,8 +210,8 @@ function buildFetchHeaders(url: string, useMobileUA: boolean): Record<string, st
 }
 
 /** 带超时的 fetch 封装 */
-async function fetchWithTimeout(url: string, timeout = HTTP_TIMEOUT, headers?: Record<string,string>): Promise<Response | null> {
-  const _headers = headers || buildFetchHeaders(url, false);
+async function fetchWithTimeout(url: string, timeout = HTTP_TIMEOUT, headers?: Record<string,string>, attemptIndex = 0): Promise<Response | null> {
+  const _headers = headers || buildFetchHeaders(url, attemptIndex);
 
   const controller = new AbortController();
   const tid = setTimeout(() => controller.abort(), timeout);
@@ -258,8 +286,8 @@ import { browserOpen, browserExtract, browserClose } from './browser.js';
 // ──────────────────────────────────────────────────
 // web_fetch 重试配置
 // ──────────────────────────────────────────────────
-const FETCH_MAX_RETRIES = 2;          // fetch 阶段最多重试 2 次
-const FETCH_RETRY_DELAYS = [1500, 3000]; // 指数退避 (ms)
+const FETCH_MAX_RETRIES = 3;          // fetch 阶段最多重试 3 次
+const FETCH_RETRY_DELAYS = [2000, 4000, 6000]; // 指数退避 (ms)，由 jitter() 随机化
 /** fetch 全部失败后自动回退到浏览器渲染 */
 const BROWSER_FALLBACK_ENABLED = true;
 /** 内容过短阈值：小于此字符数且是 HTML 时，自动升级到浏览器渲染 */
@@ -299,20 +327,19 @@ export async function handleWebFetch(params: { url: string; max_chars?: number; 
 
   sendLog('info', `🌐 web_fetch`, `${url} (${maxChars > 0 ? maxChars + ' chars' : '完整内容'}${useMobileUA ? ', 移动端UA' : ''})`);
 
-  // ── Phase 1 & 2: HTTP fetch with UA switching ──
+  // ── Phase 1 & 2: HTTP fetch with UA rotation + 反爬增强 ──
   let lastError = '';
   const maxAttempts = shouldRetry ? FETCH_MAX_RETRIES + 1 : 1;
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     if (attempt > 0) {
-      const delay = FETCH_RETRY_DELAYS[attempt - 1] || 3000;
-      sendLog('warn', `🌐 web_fetch 重试`, `第 ${attempt + 1}/${maxAttempts} 次, 等待 ${delay}ms`);
+      const baseDelay = FETCH_RETRY_DELAYS[attempt - 1] || 5000;
+      const delay = jitter(baseDelay);
+      sendLog('warn', `🌐 web_fetch 重试`, `第 ${attempt + 1}/${maxAttempts} 次, 等待 ${delay}ms, UA#${attempt % UA_POOL.length}`);
       await new Promise(r => setTimeout(r, delay));
     }
 
-    // 重试时切换 UA：首次用指定 UA，第二次换另一种，第三次用移动端
-    const useMobile = attempt >= 2 ? true : (attempt === 1 ? !useMobileUA : useMobileUA);
-    const headers = buildFetchHeaders(url, useMobile);
+    const headers = buildFetchHeaders(url, attempt);
 
     try {
       const controller = new AbortController();
@@ -352,6 +379,19 @@ export async function handleWebFetch(params: { url: string; max_chars?: number; 
       const isHTML = contentType.includes('html');
       if (isHTML) {
         text = htmlToText(text);
+        // 检测是否被拦截（Cloudflare/验证码/空白页）
+        if (isBlockedPage(text) && BROWSER_FALLBACK_ENABLED) {
+          sendLog('warn', `🌐 web_fetch 检测到拦截页`, '自动回退浏览器渲染');
+          const browserResult = await browserFallback(url, maxChars);
+          if (browserResult) {
+            return {
+              success: true, url, content: browserResult.text,
+              content_type: 'text/html (browser)', status: resp.status,
+              truncated: maxChars > 0 && browserResult.text.length >= maxChars,
+              length: browserResult.text.length, retries: attempt, method: 'browser(blocked)',
+            };
+          }
+        }
       }
 
       // ── SPA/短内容自动升级到浏览器渲染 ──
@@ -622,7 +662,7 @@ export async function handleWebSearch(params: { query: string; max_results?: num
         name: 'bing', weight: 90,
         fetcher: async () => {
           const bingUrl = `https://www.bing.com/search?q=${encodeURIComponent(query)}&count=${maxResults}${bingFreshness ? '&freshness=' + bingFreshness : ''}`;
-          const resp = await fetchWithTimeout(bingUrl);
+          const resp = await fetchWithTimeout(bingUrl, HTTP_TIMEOUT, undefined, 0);
           if (!resp?.ok) throw new Error(`Bing ${resp?.status}`);
           return parseBingResults(await resp.text(), maxResults);
         }
@@ -707,7 +747,7 @@ export async function handleWebSearch(params: { query: string; max_results?: num
       const checks = batch.map(async r => {
         try {
           const resp = await fetchWithTimeout(r.url, 3000, {
-            'User-Agent': DESKTOP_UA,
+            'User-Agent': UA_POOL[0],
             'Accept': 'text/html,*/*',
           });
           r.reachable = resp?.ok === true;
