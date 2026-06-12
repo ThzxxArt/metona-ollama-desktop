@@ -336,7 +336,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'web_search',
-      description: 'Search the web and optionally auto-fetch full page content. Set fetch_top to automatically fetch complete content from the top N results — this saves you the extra step of calling web_fetch yourself. Use fetch_top=3 for most cases. Returns snippets + full fetched content. Supports time range filtering.',
+      description: 'Search the web with auto-fetch. Always use this when the user asks for information, news, facts, or current data. Never rely on training data or past conversation results — call this tool every time the user asks to search. Set fetch_top to auto-fetch full page content from the top N results.',
       parameters: {
         type: 'object',
         required: ['query', 'fetch_top'],
