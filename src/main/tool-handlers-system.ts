@@ -785,9 +785,9 @@ async function applyAutoFetch(result: ToolResult, fetchTop: number): Promise<Too
   const fetched: Array<{ url: string; title: string; content: string }> = [];
   for (const r of toFetch) {
     try {
-      const fetchResult = await handleWebFetch({ url: r.url, max_chars: 5000, retry: false });
+      const fetchResult = await handleWebFetch({ url: r.url, retry: false });
       if (fetchResult.success && fetchResult.content) {
-        fetched.push({ url: r.url, title: r.title, content: String(fetchResult.content).slice(0, 5000) });
+        fetched.push({ url: r.url, title: r.title, content: String(fetchResult.content) });
       }
     } catch { /* skip failed fetch */ }
   }
