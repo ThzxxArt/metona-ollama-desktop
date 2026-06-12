@@ -342,7 +342,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         required: ['query'],
         properties: {
           query: { type: 'string', description: 'The search query. Be specific and concise for best results.' },
-          max_results: { type: 'integer', description: 'Maximum number of results to return. Default: 15, max: 20.' },
+          max_results: { type: 'integer', description: 'Maximum number of results to return. Default: 30, max: 30.' },
           time_range: { type: 'string', enum: ['day', 'week', 'month', 'year'], description: 'Filter results by time. Supported by Bing and Google. Use for recent news, latest version, etc.' },
           enhance_snippets: { type: 'boolean', description: 'Auto-fetch detailed snippet for results with too-short descriptions. Default: true.' }
         }

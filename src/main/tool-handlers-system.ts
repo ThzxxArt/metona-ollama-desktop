@@ -575,7 +575,7 @@ export async function handleWebSearch(params: { query: string; max_results?: num
       return { success: false, error: '搜索关键词不能为空' };
     }
 
-    const maxResults = Math.min(params.max_results || 15, 20);
+    const maxResults = Math.min(params.max_results || 30, 30);
     const timeRange = params.time_range || '';
     const enhanceSnippets = params.enhance_snippets !== false; // 默认开启
 
