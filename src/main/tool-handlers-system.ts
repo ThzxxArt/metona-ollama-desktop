@@ -128,7 +128,7 @@ let HTTP_TIMEOUT = 30_000;
 
 /** 设置 HTTP 请求超时（毫秒） */
 export function setHTTPTimeout(ms: number): void {
-  HTTP_TIMEOUT = Math.max(5000, Math.min(300_000, ms)); // 5s ~ 300s
+  HTTP_TIMEOUT = Math.max(5000, ms);
 }
 
 // ── LRU 搜索缓存 ──────────────────────────────────
@@ -509,13 +509,20 @@ async function handleWebSearchSearxng(
   if (effectiveTimeRange) params.set('time_range', effectiveTimeRange);
 
   const authKey = getSetting<string>('searxng_auth_key', '');
+  const authType = getSetting<string>('searxng_auth_type', 'bearer');
 
   const apiUrl = `${url.replace(/\/+$/, '')}/search?${params.toString()}`;
   sendLog('info', `🔍 SearXNG 搜索`, `${query} → ${url} (${format})`);
 
   try {
     const headers = buildFetchHeaders(apiUrl, 0);
-    if (authKey) headers['Authorization'] = `Bearer ${authKey}`;
+    if (authKey) {
+      if (authType === 'basic') {
+        headers['Authorization'] = 'Basic ' + Buffer.from(authKey).toString('base64');
+      } else {
+        headers['Authorization'] = `Bearer ${authKey}`;
+      }
+    }
     const resp = await fetchWithTimeout(apiUrl, HTTP_TIMEOUT, headers);
     if (!resp || !resp.ok) {
       return {
@@ -622,17 +629,25 @@ export async function handleWebSearch(params: { query: string; max_results?: num
     const maxResults = Math.min(params.max_results || 30, 30);
     const timeRange = params.time_range || '';
     const enhanceSnippets = params.enhance_snippets !== false;
-    const fetchTop = Math.max(3, Math.min(params.fetch_top || 3, 10));
+    const aiFetchTop = Math.max(3, params.fetch_top || 5);
+
+    // 内置引擎默认：使用 AI 指定条数 + 顺序抓取
+    let fetchTop = aiFetchTop;
+    let fetchMode: 'sequential' | 'random' = 'sequential';
 
     let result: ToolResult;
 
     // ── SearXNG 模式 ──
     const searxngEnabled = getSetting<boolean>('searxng_enabled', false);
     if (searxngEnabled) {
-      sendLog('info', `🔍 web_search → SearXNG 模式`, `"${query}"`);
+      // SearXNG 模式下读取用户面板设置的抓取条数和类型
+      const userFetchCount = getSetting<number>('fetch_count', 0);
+      fetchMode = (getSetting<string>('fetch_mode', 'sequential') || 'sequential') as 'sequential' | 'random';
+      fetchTop = userFetchCount > 0 ? Math.max(3, userFetchCount) : aiFetchTop;
+      sendLog('info', `🔍 web_search → SearXNG 模式`, `"${query}" | 抓取=${fetchTop}条 ${fetchMode === 'random' ? '随机' : '顺序'}`);
       result = await handleWebSearchSearxng(query, maxResults, timeRange, enhanceSnippets);
     } else {
-      sendLog('info', `🔍 web_search → 内置引擎`, `"${query}"`);
+      sendLog('info', `🔍 web_search → 内置引擎`, `"${query}" | 抓取=${fetchTop}条 顺序`);
       result = await (async () => {
     const cacheKey = `${query}|${maxResults}|${timeRange}`;
 
@@ -805,7 +820,7 @@ export async function handleWebSearch(params: { query: string; max_results?: num
 
     // ── 自动抓取前 N 条完整内容 ──
     if (fetchTop > 0 && result.success && (result as any).results) {
-      result = await applyAutoFetch(result, fetchTop);
+      result = await applyAutoFetch(result, fetchTop, fetchMode);
     }
 
     return result;
@@ -814,25 +829,83 @@ export async function handleWebSearch(params: { query: string; max_results?: num
   }
 }
 
-/** 对搜索结果的前 fetchTop 条自动调用 web_fetch 获取完整内容 */
-async function applyAutoFetch(result: ToolResult, fetchTop: number): Promise<ToolResult> {
+/** 对搜索结果的前 fetchTop 条自动调用 web_fetch 获取完整内容
+ *  @param fetchMode 'sequential'=顺序抓取前N条 | 'random'=从结果中随机选取N条
+ *  抓取失败时：先依赖 handleWebFetch 内置的浏览器回退，全部失败后随机选 1 条未抓取的补充抓取 */
+async function applyAutoFetch(result: ToolResult, fetchTop: number, fetchMode: 'sequential' | 'random' = 'sequential'): Promise<ToolResult> {
   const results = (result as any).results as Array<{ url: string; title: string; snippet: string }> | undefined;
   if (!results || results.length === 0) return result;
 
-  const toFetch = results.slice(0, fetchTop);
-  sendLog('info', `⬇️ 自动抓取 ${toFetch.length} 条网页`, toFetch.map(r => r.title.slice(0, 30)).join(', '));
+  const count = Math.min(fetchTop, results.length);
 
-  const fetched: Array<{ url: string; title: string; content: string }> = [];
-  for (const r of toFetch) {
-    try {
-      const fetchResult = await handleWebFetch({ url: r.url, retry: false });
-      if (fetchResult.success && fetchResult.content) {
-        fetched.push({ url: r.url, title: r.title, content: String(fetchResult.content) });
-      }
-    } catch { /* skip failed fetch */ }
+  // ── 构建抓取列表 ──
+  let fetchList: Array<{ url: string; title: string; originalIndex: number }>;
+  if (fetchMode === 'random') {
+    // Fisher-Yates 洗牌索引，取前 count 个
+    const indices = results.map((_, i) => i);
+    for (let i = indices.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [indices[i], indices[j]] = [indices[j], indices[i]];
+    }
+    fetchList = indices.slice(0, count).map(idx => ({
+      url: results[idx].url,
+      title: results[idx].title,
+      originalIndex: idx,
+    }));
+  } else {
+    fetchList = results.slice(0, count).map((r, i) => ({
+      url: r.url,
+      title: r.title,
+      originalIndex: i,
+    }));
   }
 
-  sendLog('success', `⬇️ 自动抓取完成`, `${fetched.length}/${toFetch.length} 条成功`);
+  const modeLabel = fetchMode === 'random' ? '随机' : '顺序';
+  sendLog('info', `⬇️ 自动抓取 ${fetchList.length} 条网页 (${modeLabel})`, fetchList.map(r => r.title.slice(0, 30)).join(', '));
+
+  const fetched: Array<{ url: string; title: string; content: string }> = [];
+  const fetchedUrls = new Set<string>();
+  const failedUrls = new Set<string>();
+
+  /** 尝试抓取单条 URL，成功则加入 fetched */
+  const tryFetchOne = async (url: string, title: string): Promise<boolean> => {
+    if (fetchedUrls.has(url)) return false;
+    try {
+      const fetchResult = await handleWebFetch({ url, retry: false });
+      if (fetchResult.success && fetchResult.content) {
+        fetched.push({ url, title, content: String(fetchResult.content) });
+        fetchedUrls.add(url);
+        sendLog('debug', `  ✅ ${title.slice(0, 40)} (${String(fetchResult.content).length} 字)`);
+        return true;
+      } else {
+        sendLog('warn', `  ❌ ${title.slice(0, 50)} — ${fetchResult.error || '无内容'}`);
+      }
+    } catch (e) {
+      sendLog('warn', `  ❌ ${title.slice(0, 50)} — ${(e as Error).message}`);
+    }
+    return false;
+  };
+
+  for (const item of fetchList) {
+    const ok = await tryFetchOne(item.url, item.title);
+    if (!ok) {
+      failedUrls.add(item.url);
+      // ── 失败重试：从剩余未抓取结果中随机选 1 条 ──
+      const unfetched = results.filter((r, idx) =>
+        !fetchedUrls.has(r.url) && !failedUrls.has(r.url)
+      );
+      if (unfetched.length > 0) {
+        const pick = unfetched[Math.floor(Math.random() * unfetched.length)];
+        sendLog('info', `🔄 ${item.title.slice(0, 30)} 抓取失败，随机重试: ${pick.title.slice(0, 40)}`);
+        const retryOk = await tryFetchOne(pick.url, pick.title);
+        if (!retryOk) {
+          failedUrls.add(pick.url);
+        }
+      }
+    }
+  }
+
+  sendLog('success', `⬇️ 自动抓取完成`, `${fetched.length} 条成功 / ${failedUrls.size} 条失败`);
   (result as any)._fetched = fetched;
   (result as any)._fetched_count = fetched.length;
   return result;

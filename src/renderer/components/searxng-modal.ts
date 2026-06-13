@@ -17,7 +17,10 @@ const DEFAULTS = {
   time_range: '',
   max_results: 0,
   auth_key: '',
+  auth_type: 'bearer',
   format: 'json',
+  fetch_count: 0,
+  fetch_mode: 'sequential',
 };
 
 let modalEl: HTMLElement;
@@ -36,7 +39,11 @@ async function saveConfig(db: ChatDB): Promise<void> {
   await db.saveSetting('searxng_time_range', searxngConfig.time_range);
   await db.saveSetting('searxng_max_results', searxngConfig.max_results);
   await db.saveSetting('searxng_auth_key', searxngConfig.auth_key);
+  await db.saveSetting('searxng_auth_type', searxngConfig.auth_type);
   await db.saveSetting('searxng_format', searxngConfig.format);
+  // 通用搜索设置（非 SearXNG 专属，主进程搜索时读取）
+  await db.saveSetting('fetch_count', searxngConfig.fetch_count);
+  await db.saveSetting('fetch_mode', searxngConfig.fetch_mode);
   logSuccess('SearXNG 配置已保存');
 }
 
@@ -50,7 +57,11 @@ export async function loadSearxngConfig(db: ChatDB): Promise<void> {
   searxngConfig.time_range = await db.getSetting('searxng_time_range', DEFAULTS.time_range);
   searxngConfig.max_results = await db.getSetting('searxng_max_results', DEFAULTS.max_results);
   searxngConfig.auth_key = await db.getSetting('searxng_auth_key', DEFAULTS.auth_key);
+  searxngConfig.auth_type = await db.getSetting('searxng_auth_type', DEFAULTS.auth_type);
   searxngConfig.format = await db.getSetting('searxng_format', DEFAULTS.format);
+  // 通用搜索设置
+  searxngConfig.fetch_count = await db.getSetting<number>('fetch_count', DEFAULTS.fetch_count);
+  searxngConfig.fetch_mode = await db.getSetting<string>('fetch_mode', DEFAULTS.fetch_mode);
   logInfo('SearXNG 配置已加载', searxngConfig.enabled ? `已启用: ${searxngConfig.url}` : '未启用');
   updateEnabledUI(searxngConfig.enabled);
 }
@@ -64,7 +75,10 @@ function syncFormFromConfig(): void {
   (document.querySelector('#searxngTimeRange') as HTMLSelectElement).value = searxngConfig.time_range || '';
   (document.querySelector('#searxngMaxResults') as HTMLInputElement).value = searxngConfig.max_results > 0 ? String(searxngConfig.max_results) : '';
   (document.querySelector('#searxngAuthKey') as HTMLInputElement).value = searxngConfig.auth_key;
+  (document.querySelector('#searxngAuthType') as HTMLSelectElement).value = searxngConfig.auth_type;
   (document.querySelector('#searxngFormat') as HTMLSelectElement).value = searxngConfig.format;
+  (document.querySelector('#searxngFetchCount') as HTMLInputElement).value = searxngConfig.fetch_count > 0 ? String(searxngConfig.fetch_count) : '';
+  (document.querySelector('#searxngFetchMode') as HTMLSelectElement).value = searxngConfig.fetch_mode;
   const toggle = document.querySelector('#toggleSearxngEnabled') as HTMLInputElement;
   toggle.checked = searxngConfig.enabled;
   updateEnabledUI(searxngConfig.enabled);
@@ -137,7 +151,10 @@ export function initSearxngModal(): void {
     searxngConfig.time_range = (document.querySelector('#searxngTimeRange') as HTMLSelectElement).value;
     searxngConfig.max_results = parseInt((document.querySelector('#searxngMaxResults') as HTMLInputElement).value) || 0;
     searxngConfig.auth_key = (document.querySelector('#searxngAuthKey') as HTMLInputElement).value.trim();
+    searxngConfig.auth_type = (document.querySelector('#searxngAuthType') as HTMLSelectElement).value as 'bearer' | 'basic';
     searxngConfig.format = (document.querySelector('#searxngFormat') as HTMLSelectElement).value;
+    searxngConfig.fetch_count = parseInt((document.querySelector('#searxngFetchCount') as HTMLInputElement).value) || 0;
+    searxngConfig.fetch_mode = (document.querySelector('#searxngFetchMode') as HTMLSelectElement).value as 'sequential' | 'random';
     const db = state.get<ChatDB | null>(KEYS.DB);
     if (db) await saveConfig(db);
     updateEnabledUI(searxngConfig.enabled);

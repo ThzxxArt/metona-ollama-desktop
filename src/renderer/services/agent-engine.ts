@@ -15,7 +15,7 @@ import {
 import { searchMemories, buildMemoryContext, markMemoryUsed, isMemoryEnabled } from './memory-manager.js';
 import { extractSkillsFromToolRecords, matchSkills, buildSkillContext } from './skill-manager.js';
 import { showToast } from '../components/toast.js';
-import { logInfo, logWarn, logSuccess, logError, logToolStart, logToolResult, logAgentLoop, logModelResponse, logStreamProgress } from './log-service.js';
+import { logInfo, logWarn, logSuccess, logError, logToolStart, logToolResult, logAgentLoop, logModelResponse, logStreamProgress, resetStreamProgress } from './log-service.js';
 import { getWorkspaceDirPath } from '../components/workspace-panel.js';
 import { generateId } from '../utils/utils.js';
 import { buildContext, estimateTokens, shouldAutoCompress, compressWithLLM, AUTO_COMPRESS_THRESHOLD, recordActualTokens } from './context-manager.js';
@@ -720,6 +720,9 @@ Shell: ${osInfo.shell}
       let lastContentTime = streamStartTime; // 追踪最后一次收到新内容的时间
       const PROGRESS_INTERVAL = 15000; // 每15秒输出一次流式进度
 
+      // ── 同步创建本轮的进度条目（appendChild，保证在后续工具日志之前）──
+      resetStreamProgress();
+
       // ── 独立定时器：即使没有新 chunk 也会持续输出进度 ──
       progressTimer = setInterval(() => {
         const elapsed = Date.now() - streamStartTime;
@@ -736,6 +739,9 @@ Shell: ${osInfo.shell}
           if (idleSec >= 10) {
             logStreamProgress(`⚠️ ${idleSec}s 无新内容，当前 ${content.length} 字`);
           }
+        } else {
+          // 模型尚未开始输出（可能在思考/加载模型/生成大参数）→ 显示等待状态
+          logStreamProgress(`⏳ 等待模型响应… ${sec}s`);
         }
       }, PROGRESS_INTERVAL);
 
@@ -766,26 +772,42 @@ Shell: ${osInfo.shell}
             if (chunk.message?.tool_calls?.length) {
               for (const tc of chunk.message.tool_calls) {
                 if (tc.function?.name) {
+                  // Ollama 可能返回 arguments 为 JSON 字符串，统一转为对象
+                  let parsedArgs: Record<string, unknown> = {};
+                  if (tc.function.arguments) {
+                    if (typeof tc.function.arguments === 'string') {
+                      try { parsedArgs = JSON.parse(tc.function.arguments); } catch { parsedArgs = {}; }
+                    } else if (typeof tc.function.arguments === 'object') {
+                      parsedArgs = tc.function.arguments as Record<string, unknown>;
+                    }
+                  }
                   // 首次看到工具名 → 提前在工作空间创建"准备中"卡片
-                  // 此时参数还没生成完，但用户可以知道 AI 打算调哪个工具
                   const isNewTool = !toolCalls.some(existing => existing.function.name === tc.function.name);
                   if (isNewTool && callbacks.onToolCallPrepare) {
                     callbacks.onToolCallPrepare({
                       type: 'function',
-                      function: { name: tc.function.name, arguments: tc.function.arguments || {} }
+                      function: { name: tc.function.name, arguments: parsedArgs }
                     });
                   }
                   toolCalls.push({
                     type: 'function',
                     function: {
                       name: tc.function.name,
-                      arguments: tc.function.arguments || {}
+                      arguments: parsedArgs
                     }
                   });
                 } else if (toolCalls.length > 0) {
                   const last = toolCalls[toolCalls.length - 1];
-                  if (tc.function?.arguments && typeof tc.function.arguments === 'object') {
-                    Object.assign(last.function.arguments, tc.function.arguments);
+                  if (tc.function?.arguments) {
+                    let chunkArgs: Record<string, unknown> | null = null;
+                    if (typeof tc.function.arguments === 'string') {
+                      try { chunkArgs = JSON.parse(tc.function.arguments); } catch { /* ignore */ }
+                    } else if (typeof tc.function.arguments === 'object') {
+                      chunkArgs = tc.function.arguments as Record<string, unknown>;
+                    }
+                    if (chunkArgs) {
+                      Object.assign(last.function.arguments, chunkArgs);
+                    }
                   }
                 }
               }

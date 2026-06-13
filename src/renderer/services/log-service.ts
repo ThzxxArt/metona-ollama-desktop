@@ -176,25 +176,23 @@ export function logThink(thinking: string): void {
 
 export function logStream(msg: string): void { addLog('stream', msg); }
 
-/** 更新流式进度日志（原地更新，不追加新条目） */
-let _progressCreated = false;
+/** 本轮流式开始：同步创建新进度条目到日志底部（不删旧，日志就是完整记录） */
+export function resetStreamProgress(): void {
+  if (!logBodyEl) return;
+  const entry = document.createElement('div');
+  entry.className = 'log-entry log-stream log-stream-progress';
+  entry.innerHTML = `<span class="log-time">${formatTime(Date.now())}</span><span class="log-icon">📡</span><span class="log-msg">⏳ 等待模型响应… 0s</span>`;
+  logBodyEl.appendChild(entry);
+}
+
+/** 更新**最新**一条流式进度日志（原地更新消息，不改变 DOM 位置和时间戳） */
 export function logStreamProgress(msg: string): void {
-  if (logBodyEl) {
-    const existing = document.getElementById('log-stream-progress');
-    if (existing) {
-      // 已在 DOM 中 → 原地更新
-      const timeSpan = existing.querySelector('.log-time');
-      if (timeSpan) timeSpan.textContent = formatTime(Date.now());
-      const msgSpan = existing.querySelector('.log-msg');
-      if (msgSpan) msgSpan.textContent = msg;
-      return;
-    }
-  }
-  // DOM 中不存在，且还没创建过 → addLog（customId 确保渲染后 ID 正确）
-  // _progressCreated 防止 addLog 在未渲染前被重复调用
-  if (!_progressCreated) {
-    _progressCreated = true;
-    addLog('stream', msg, undefined, undefined, 'log-stream-progress');
+  // 找最后一条进度日志（当前轮）
+  const all = logBodyEl?.querySelectorAll?.('.log-stream-progress');
+  if (all && all.length > 0) {
+    const latest = all[all.length - 1] as HTMLElement;
+    const msgSpan = latest.querySelector('.log-msg');
+    if (msgSpan) msgSpan.textContent = msg;
   }
 }
 

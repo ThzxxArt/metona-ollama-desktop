@@ -4,9 +4,11 @@
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import * as os from 'os';
 import { spawn } from 'child_process';
 import { checkPathAllowed } from './tool-security.js';
 import { sendLog, resolvePath, type ToolResult } from './tool-handlers-shared.js';
+import { getWorkspaceDir } from './workspace.js';
 
 export async function handleReadFile(params: { path: string; encoding?: string; start_line?: number; end_line?: number; mode?: string; offset_bytes?: number; limit_bytes?: number }): Promise<ToolResult> {
   try {
@@ -156,6 +158,17 @@ function extToMime(ext: string): string {
 
 export async function handleWriteFile(params: { path: string; content: string; encoding?: string; mode?: string }): Promise<ToolResult> {
   try {
+    if (!params.path || typeof params.path !== 'string') {
+      const wsDir = getWorkspaceDir();
+      const homeDir = os.homedir();
+      const absExample = process.platform === 'win32'
+        ? `${homeDir}\\Documents\\file.txt`
+        : `${homeDir}/file.txt`;
+      return { success: false, error: `缺少 path 参数。请指定文件路径，相对路径基于工作空间 ${wsDir}。例如: "output.txt" 或 "${absExample}"` };
+    }
+    if (params.content === undefined || params.content === null) {
+      return { success: false, error: '缺少 content 参数，请指定要写入的内容' };
+    }
     const filePath = resolvePath(params.path);
     const allowed = checkPathAllowed(filePath, 'write');
     if (!allowed.ok) return { success: false, error: allowed.reason };

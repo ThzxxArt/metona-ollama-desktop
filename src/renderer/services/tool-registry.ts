@@ -33,12 +33,12 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'write_file',
-      description: 'Write content to a local file. Creates parent directories automatically. Supports text (utf-8/latin1) and binary (base64) modes. Use mode="append" to add to existing file instead of overwriting. Max 10MB (overwrite) or 5MB (append). Returns file stats including overwrite info.',
+      description: 'Write content to a local file. Creates parent directories automatically. The "path" parameter is REQUIRED — always specify a file path (relative to workspace or absolute). For example: path="output.txt" writes to workspace. Supports text (utf-8/latin1) and binary (base64). Use mode="append" to add to existing file. Max 10MB overwrite / 5MB append.',
       parameters: {
         type: 'object',
         required: ['path', 'content'],
         properties: {
-          path: { type: 'string', description: 'The file path to write to. Absolute or relative to workspace.' },
+          path: { type: 'string', description: 'REQUIRED — File path. Relative paths use workspace as base. E.g. "output.txt", "docs/report.md", or absolute "/home/user/file.txt".' },
           content: { type: 'string', description: 'The content to write. For binary files, pass base64-encoded string with encoding="base64".' },
           encoding: { type: 'string', enum: ['utf-8', 'latin1', 'base64'], description: 'File encoding. Use "base64" to write binary content (images, PDFs, etc). Default: utf-8.' },
           mode: { type: 'string', enum: ['overwrite', 'append'], description: 'Write mode. overwrite = replace file, append = add to end. Default: overwrite.' }
@@ -345,7 +345,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
           max_results: { type: 'integer', description: 'Maximum number of results to return. Default: 30, max: 30.' },
           time_range: { type: 'string', enum: ['day', 'week', 'month', 'year'], description: 'Filter results by time. Supported by Bing and Google. Use for recent news, latest version, etc.' },
           enhance_snippets: { type: 'boolean', description: 'Auto-fetch detailed snippet for results with too-short descriptions. Default: true.' },
-          fetch_top: { type: 'integer', description: 'Number of top results to auto-fetch full content for. Min: 3, max: 10. Results shorter than this are useless — snippets lack detail.' }
+          fetch_top: { type: 'integer', description: 'Number of top results to auto-fetch full content for. Min: 3. Results shorter than this are useless — snippets lack detail.' }
         }
       }
     }
