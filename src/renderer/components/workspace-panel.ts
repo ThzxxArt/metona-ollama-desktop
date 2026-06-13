@@ -836,11 +836,9 @@ function appendToolCardDOM(tc: ToolCallRecord): void {
   if (card) {
     card.dataset.toolName = tc.name;
     container.appendChild(card);
-    // 等浏览器完成布局后再滚到底部
-    requestAnimationFrame(() => {
-      container.lastElementChild?.scrollIntoView({ block: 'end' });
-    });
   }
+  // 始终滚到底部
+  scrollToolsToBottom(container);
 }
 
 /** 增量更新工具卡片 DOM 节点（找到 pending/running 状态的卡片并替换） */
@@ -861,12 +859,23 @@ function updateToolCardDOM(tc: ToolCallRecord): void {
     if (newCard) {
       newCard.dataset.toolName = tc.name;
       runningCard.replaceWith(newCard);
+      // 卡片内容变化后可能变高（如出现执行结果），跟随滚动
+      scrollToolsToBottom(container);
     }
   } else {
     // running 卡片不在 DOM 中（可能是 tab 切换后再切回或其他边缘情况）
     // 回退：追加新卡片
     appendToolCardDOM(tc);
   }
+}
+
+/** 工具页签滚动到底部（双重 rAF 保证布局完成） */
+function scrollToolsToBottom(container: HTMLElement): void {
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      container.scrollTop = container.scrollHeight;
+    });
+  });
 }
 
 /** CSS.escape 回退（兼容旧 Electron） */
@@ -943,12 +952,7 @@ function renderToolCalls(): void {
     html += renderToolCard(tc);
   }
   container.innerHTML = html;
-  // 全量重建后等两帧让布局稳定，再滚到底部
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      container.lastElementChild?.scrollIntoView({ block: 'end' });
-    });
-  });
+  scrollToolsToBottom(container);
 }
 
 function getToolDisplayName(name: string): string {
