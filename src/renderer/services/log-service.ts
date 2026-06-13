@@ -175,6 +175,26 @@ export function logThink(thinking: string): void {
 }
 
 export function logStream(msg: string): void { addLog('stream', msg); }
+
+/** 更新流式进度日志（原地更新，不追加新条目） */
+export function logStreamProgress(msg: string): void {
+  if (!logBodyEl) { addLog('stream', msg); return; }
+  const existing = document.getElementById('log-stream-progress');
+  if (existing) {
+    // 更新已有条目
+    const timeSpan = existing.querySelector('.log-time');
+    if (timeSpan) timeSpan.textContent = formatTime(Date.now());
+    const msgSpan = existing.querySelector('.log-msg');
+    if (msgSpan) msgSpan.textContent = msg;
+  } else {
+    // 创建新条目 — 直接 addLog 然后手动修改 id
+    addLog('stream', msg);
+    // 最后一个日志条目就是我们刚加的
+    const lastEntry = logBodyEl.querySelector('.log-stream:last-of-type');
+    if (lastEntry) lastEntry.id = 'log-stream-progress';
+  }
+}
+
 export function logAgentLoop(iteration: number, maxLoops: number): void { addLog('info', `Loop #${iteration}/${maxLoops}`); }
 export function logModelResponse(contentLen: number, toolCalls: number): void { addLog('stream', `响应: ${contentLen}字, ${toolCalls}工具`); }
 export function logConnection(status: string, detail?: string): void { addLog(status === 'connected' ? 'success' : 'warn', `连接: ${status}`, detail); }

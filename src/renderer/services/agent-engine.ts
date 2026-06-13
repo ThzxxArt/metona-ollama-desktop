@@ -15,7 +15,7 @@ import {
 import { searchMemories, buildMemoryContext, markMemoryUsed, isMemoryEnabled } from './memory-manager.js';
 import { extractSkillsFromToolRecords, matchSkills, buildSkillContext } from './skill-manager.js';
 import { showToast } from '../components/toast.js';
-import { logInfo, logWarn, logSuccess, logError, logToolStart, logToolResult, logAgentLoop, logModelResponse, logStream } from './log-service.js';
+import { logInfo, logWarn, logSuccess, logError, logToolStart, logToolResult, logAgentLoop, logModelResponse, logStreamProgress } from './log-service.js';
 import { getWorkspaceDirPath } from '../components/workspace-panel.js';
 import { generateId } from '../utils/utils.js';
 import { buildContext, estimateTokens, shouldAutoCompress, compressWithLLM, AUTO_COMPRESS_THRESHOLD, recordActualTokens } from './context-manager.js';
@@ -729,12 +729,12 @@ Shell: ${osInfo.shell}
           // 有新增内容 → 正常进度
           lastLoggedLen = content.length;
           lastContentTime = Date.now();
-          logStream(`流式输出中… ${content.length} 字 / ${sec}s${toolCalls.length > 0 ? ` [${toolCalls.length} 个工具调用]` : ''}`);
+          logStreamProgress(`流式输出中… ${content.length} 字 / ${sec}s${toolCalls.length > 0 ? ` [${toolCalls.length} 个工具调用]` : ''}`);
         } else if (content.length > 0) {
           // 内容不变 → 计算真正的无新内容时长
           const idleSec = Math.round((Date.now() - lastContentTime) / 1000);
           if (idleSec >= 10) {
-            logStream(`⚠️ ${idleSec}s 无新内容，当前 ${content.length} 字`);
+            logStreamProgress(`⚠️ ${idleSec}s 无新内容，当前 ${content.length} 字`);
           }
         }
       }, PROGRESS_INTERVAL);

@@ -833,7 +833,7 @@ function appendToolCardDOM(tc: ToolCallRecord): void {
     container.appendChild(card);
     // 等浏览器完成布局后再滚到底部
     requestAnimationFrame(() => {
-      container.scrollTop = container.scrollHeight;
+      container.lastElementChild?.scrollIntoView({ block: 'end' });
     });
   }
 }
@@ -938,9 +938,11 @@ function renderToolCalls(): void {
     html += renderToolCard(tc);
   }
   container.innerHTML = html;
-  // 等浏览器完成布局后再滚到底部
+  // 全量重建后等两帧让布局稳定，再滚到底部
   requestAnimationFrame(() => {
-    container.scrollTop = container.scrollHeight;
+    requestAnimationFrame(() => {
+      container.lastElementChild?.scrollIntoView({ block: 'end' });
+    });
   });
 }
 
