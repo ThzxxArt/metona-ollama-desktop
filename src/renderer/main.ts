@@ -287,7 +287,7 @@ async function startNewSession(): Promise<void> {
   // ── 重置工作空间到空闲状态 ──
   clearToolCardsExternal();
   clearTerminalExternal();
-  switchToTab('terminal');
+  switchToTab('tools');
 
   (document.querySelector('#chatInput') as HTMLElement)?.focus();
 }
