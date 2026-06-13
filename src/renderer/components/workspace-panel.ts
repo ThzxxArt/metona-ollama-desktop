@@ -191,6 +191,11 @@ function ansiToHtml(raw: string): string {
 
 // ── 初始化 ──
 export async function initWorkspacePanel(): Promise<void> {
+  // ── 强制重置默认页签：Electron 窗口关闭再打开时渲染进程未销毁，
+  //     模块级 activeTab 可能保留上次用户手动切换的值
+  activeTab = 'tools';
+  renderPanel();
+
   const bridge = window.metonaDesktop;
   if (!bridge?.isDesktop) {
     logDebug('非桌面环境，跳过工作空间面板初始化');
