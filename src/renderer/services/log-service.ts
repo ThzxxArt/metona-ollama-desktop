@@ -125,10 +125,10 @@ function flushPending(): void {
 }
 
 /** 核心日志方法 — 永远不阻塞调用方 */
-export function addLog(level: LogLevel, message: string, detail?: string, icon?: string): void {
+export function addLog(level: LogLevel, message: string, detail?: string, icon?: string, customId?: string): void {
   try {
     const entry: LogEntry = {
-      id: genId(),
+      id: customId || genId(),
       time: Date.now(),
       level,
       icon: icon || LEVEL_ICONS[level] || '•',
@@ -177,21 +177,24 @@ export function logThink(thinking: string): void {
 export function logStream(msg: string): void { addLog('stream', msg); }
 
 /** 更新流式进度日志（原地更新，不追加新条目） */
+let _progressCreated = false;
 export function logStreamProgress(msg: string): void {
-  if (!logBodyEl) { addLog('stream', msg); return; }
-  const existing = document.getElementById('log-stream-progress');
-  if (existing) {
-    // 更新已有条目
-    const timeSpan = existing.querySelector('.log-time');
-    if (timeSpan) timeSpan.textContent = formatTime(Date.now());
-    const msgSpan = existing.querySelector('.log-msg');
-    if (msgSpan) msgSpan.textContent = msg;
-  } else {
-    // 创建新条目 — 直接 addLog 然后手动修改 id
-    addLog('stream', msg);
-    // 最后一个日志条目就是我们刚加的
-    const lastEntry = logBodyEl.querySelector('.log-stream:last-of-type');
-    if (lastEntry) lastEntry.id = 'log-stream-progress';
+  if (logBodyEl) {
+    const existing = document.getElementById('log-stream-progress');
+    if (existing) {
+      // 已在 DOM 中 → 原地更新
+      const timeSpan = existing.querySelector('.log-time');
+      if (timeSpan) timeSpan.textContent = formatTime(Date.now());
+      const msgSpan = existing.querySelector('.log-msg');
+      if (msgSpan) msgSpan.textContent = msg;
+      return;
+    }
+  }
+  // DOM 中不存在，且还没创建过 → addLog（customId 确保渲染后 ID 正确）
+  // _progressCreated 防止 addLog 在未渲染前被重复调用
+  if (!_progressCreated) {
+    _progressCreated = true;
+    addLog('stream', msg, undefined, undefined, 'log-stream-progress');
   }
 }
 
