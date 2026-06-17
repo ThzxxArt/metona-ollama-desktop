@@ -30,6 +30,12 @@ export function initModelBar(): void {
   thinkWrap = document.querySelector('#thinkToggleWrap')!;
   btnAttachImg = document.querySelector('#btnAttachImg')!;
 
+  // Think 开关：同步 state 中的 thinkEnabled
+  thinkCheckbox.addEventListener('change', () => {
+    state.set('thinkEnabled', thinkCheckbox.checked);
+    logDebug(`Think 模式: ${thinkCheckbox.checked ? '开启' : '关闭'}`);
+  });
+
   modelSelectEl.addEventListener('change', async () => {
     const model = modelSelectEl.value;
     const db = state.get<ChatDB | null>(KEYS.DB);
