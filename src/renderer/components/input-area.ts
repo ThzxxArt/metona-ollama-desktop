@@ -31,6 +31,7 @@ let pendingImages: Array<{ name: string; base64: string }> = [];
 let pendingFiles: Array<{ name: string; content: string; language: string; size: number }> = [];
 let pendingVideoFrames: Array<{ name: string; base64: string; timestampSeconds: number }> = [];
 let pendingVideoMeta: { fileName: string; duration: number; width: number; height: number } | null = null;
+let completedVideos: Array<{ fileName: string; duration: number; frames: Array<{ name: string; base64: string; timestampSeconds: number }> }> = [];
 
 const TEXT_EXTENSIONS = new Set([
   'txt','md','markdown','rst','log','csv','tsv',
@@ -286,6 +287,7 @@ async function handleVideoPath(filePath: string): Promise<void> {
 
     pendingVideoFrames = result.frames!;
     pendingVideoMeta = { fileName: name, ...result.videoInfo! };
+    completedVideos.push({ fileName: name, duration: result.videoInfo!.duration, frames: [...result.frames!] });
 
     // 完成：聊天区系统消息原地更新为完成
     const sysMsg = document.querySelector('.sysmsg-video-progress');
@@ -951,10 +953,12 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
   // 合并图片和视频帧为统一的 images 数组
   const images: string[] = [
     ...pendingImages.map(img => img.base64),
-    ...pendingVideoFrames.map(f => f.base64)
+    ...pendingVideoFrames.map(f => f.base64),
+    ...completedVideos.flatMap(v => v.frames.map(f => f.base64))
   ];
   let apiContentForModel = text || '';
-  const hasAttachments = pendingImages.length > 0 || pendingVideoFrames.length > 0 || userFiles.length > 0;
+  const hasVideos = pendingVideoFrames.length > 0 || completedVideos.length > 0;
+  const hasAttachments = pendingImages.length > 0 || hasVideos || userFiles.length > 0;
 
   if (hasAttachments) {
     // 聊天卡片显示用的简短描述
@@ -962,6 +966,9 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
     if (text) displayParts.push(text);
     if (pendingVideoMeta && pendingVideoFrames.length > 0) {
       displayParts.push(`[视频: ${pendingVideoMeta.fileName}, ${pendingVideoFrames.length}帧, 1fps]`);
+    }
+    for (const v of completedVideos) {
+      displayParts.push(`[视频: ${v.fileName}, ${v.frames.length}帧, 1fps]`);
     }
     if (pendingImages.length === 1) {
       displayParts.push(`[图片: ${pendingImages[0].name}]`);
@@ -971,11 +978,20 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
     const displayContent = displayParts.join('\n');
 
     // Ollama API 用的完整描述（视频带帧序列）
-    if (pendingVideoMeta && pendingVideoFrames.length > 0) {
-      const frameList = pendingVideoFrames
-        .map(f => `  ${String(f.timestampSeconds).padStart(4, ' ')}s — ${f.name}`)
-        .join('\n');
-      apiContentForModel = (text || '') + `\n\n[视频帧序列 · ${pendingVideoFrames.length}帧 · 1fps · ${pendingVideoMeta.duration.toFixed(0)}s]\n${frameList}\n\n上述帧按时间顺序排列，帧间存在时序关系。请分析视频内容。`;
+    if (hasVideos) {
+      const allVids: Array<{ name: string; count: number; dur: number; frames: Array<{ timestampSeconds: number; name: string }> }> = [];
+      if (pendingVideoMeta && pendingVideoFrames.length > 0) {
+        allVids.push({ name: pendingVideoMeta.fileName, count: pendingVideoFrames.length, dur: pendingVideoMeta.duration, frames: pendingVideoFrames });
+      }
+      for (const v of completedVideos) {
+        allVids.push({ name: v.fileName, count: v.frames.length, dur: v.duration, frames: v.frames });
+      }
+      const parts: string[] = [];
+      for (const v of allVids) {
+        const fl = v.frames.map(f => `  ${String(f.timestampSeconds).padStart(4, ' ')}s — ${f.name}`).join('\n');
+        parts.push(`[视频帧序列 · ${v.name} · ${v.count}帧 · 1fps · ${v.dur.toFixed(0)}s]\n${fl}`);
+      }
+      apiContentForModel = (text || '') + '\n\n' + parts.join('\n\n') + '\n\n上述帧按时间顺序排列，帧间存在时序关系。请分析视频内容。';
       if (pendingImages.length > 0) {
         apiContentForModel += `\n\n[同时上传了 ${pendingImages.length} 张图片]`;
       }
@@ -1022,6 +1038,7 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
   pendingFiles = [];
   pendingVideoFrames = [];
   pendingVideoMeta = null;
+  completedVideos = [];
   imagePreviewEl.style.display = 'none';
   imagePreviewEl.innerHTML = '';
   filePreviewEl.style.display = 'none';
