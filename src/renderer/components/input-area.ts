@@ -130,7 +130,9 @@ export function initInputArea(): void {
       filters: [{ name: '视频', extensions: Array.from(VIDEO_EXTENSIONS) }]
     });
     if (!paths || paths.length === 0) return;
-    await handleVideoPath(paths[0]);
+    for (const p of paths) {
+      await handleVideoPath(p);
+    }
   });
 
   imagePreviewEl.addEventListener('click', (e) => {
