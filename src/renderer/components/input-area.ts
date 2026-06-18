@@ -1006,7 +1006,9 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
     if (text) apiParts.push(text);
     if (userFiles.length > 0) {
       const fileContents = pendingFiles.map(f => ({ language: f.language, content: f.content }));
-      apiParts.push(...buildFileContentParts(fileContents));
+      const fileParts = buildFileContentParts(fileContents);
+      apiParts.push(...fileParts);
+      logInfo('📄 文件内容已注入', `${fileParts.length} 段, 共 ${fileContents.reduce((s, f) => s + f.content.length, 0)} 字符`);
     }
     let allVids: Array<{ name: string; count: number; dur: number; frames: Array<{ timestampSeconds: number; name: string }> }> = [];
     if (hasVideos) {
