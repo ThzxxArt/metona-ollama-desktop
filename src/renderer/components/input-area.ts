@@ -1001,7 +1001,13 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
     }
     const displayContent = displayParts.join('\n');
 
-    // Ollama API 用的完整描述（视频带帧序列）
+    // Ollama API 用的完整描述（文字 + 文件 + 视频帧序列 + 图片提示）
+    const apiParts: string[] = [];
+    if (text) apiParts.push(text);
+    if (userFiles.length > 0) {
+      const fileContents = pendingFiles.map(f => ({ language: f.language, content: f.content }));
+      apiParts.push(...buildFileContentParts(fileContents));
+    }
     let allVids: Array<{ name: string; count: number; dur: number; frames: Array<{ timestampSeconds: number; name: string }> }> = [];
     if (hasVideos) {
       if (pendingVideoMeta && pendingVideoFrames.length > 0) {
@@ -1015,13 +1021,13 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
         const fl = v.frames.map(f => `  ${String(f.timestampSeconds).padStart(4, ' ')}s — ${f.name}`).join('\n');
         parts.push(`[视频帧序列 · ${v.name} · ${v.count}帧 · 1fps · ${v.dur.toFixed(0)}s]\n${fl}`);
       }
-      apiContentForModel = (text || '') + '\n\n' + parts.join('\n\n') + '\n\n上述帧按时间顺序排列，帧间存在时序关系。请分析视频内容。';
-      if (pendingImages.length > 0) {
-        apiContentForModel += `\n\n[同时上传了 ${pendingImages.length} 张图片]`;
-      }
-    } else if (displayContent) {
-      apiContentForModel = displayContent;
+      apiParts.push(parts.join('\n\n'));
+      apiParts.push('上述帧按时间顺序排列，帧间存在时序关系。请分析视频内容。');
     }
+    if (pendingImages.length > 0) {
+      apiParts.push(pendingImages.length === 1 ? `[同时上传了图片: ${pendingImages[0].name}]` : `[同时上传了 ${pendingImages.length} 张图片]`);
+    }
+    apiContentForModel = apiParts.join('\n\n');
 
     const msg: ChatMessage = {
       role: 'user',
