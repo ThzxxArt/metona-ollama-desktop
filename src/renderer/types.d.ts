@@ -111,6 +111,9 @@ export interface ChatMessage {
   images?: string[];
   files?: ChatFile[];
   _fileContents?: FileContent[];
+  /** 视频帧数据（用于消息卡片渲染，不走 images 缩略图） */
+  _videoFrames?: Array<{ name: string; base64: string; timestampSeconds: number }>;
+  _videoMeta?: { fileName: string; duration: number; frameCount: number };
   stopped?: boolean;
   toolCalls?: ToolCallRecord[];
   /** 标记此消息为 LLM 压缩摘要生成 */

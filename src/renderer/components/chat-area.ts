@@ -149,13 +149,6 @@ export function appendMessageDOM(msg: ChatMessage, index: number): void {
   let contentHtml = '';
   let safeContent = (msg.content != null) ? String(msg.content) : '';
 
-  // 视频消息：折叠帧列表，只显示摘要
-  const isVideoMsg = safeContent.includes('[视频帧序列');
-  if (isVideoMsg) {
-    const idx = safeContent.indexOf('[视频帧序列');
-    safeContent = safeContent.slice(0, idx) + safeContent.slice(idx).split('\n')[0];
-  }
-
   if (msg.role === 'assistant') {
     // ── 系统提示词折叠卡片（每条助理消息顶部展示）──
     const sysPrompt = state.get<string>('_lastSystemPrompt', '');
@@ -183,18 +176,16 @@ export function appendMessageDOM(msg: ChatMessage, index: number): void {
   }
 
   if (msg.images && msg.images.length > 0) {
-    // 视频帧序列：不逐帧渲染缩略图，只显示视频指示
-    const isVideo = msg.content?.includes('[视频帧序列');
-    if (isVideo) {
-      const frameCount = msg.images.length;
-      contentHtml += `<div class="msg-video-indicator">🎬 视频帧序列 · ${frameCount} 帧 · 1fps</div>`;
-    } else {
-      contentHtml += '<div class="msg-images">';
-      for (const img of msg.images) {
-        contentHtml += `<img class="msg-img" src="data:image/png;base64,${img}" alt="用户图片" data-lightbox="true">`;
-      }
-      contentHtml += '</div>';
+    contentHtml += '<div class="msg-images">';
+    for (const img of msg.images) {
+      contentHtml += `<img class="msg-img" src="data:image/png;base64,${img}" alt="用户图片" data-lightbox="true">`;
     }
+    contentHtml += '</div>';
+  }
+
+  if ((msg as any)._videoFrames && (msg as any)._videoFrames.length > 0) {
+    const n = (msg as any)._videoFrames.length;
+    contentHtml += `<div class="msg-video-indicator">🎬 视频帧序列 · ${n} 帧 · 1fps</div>`;
   }
 
   if (msg.files && msg.files.length > 0) {

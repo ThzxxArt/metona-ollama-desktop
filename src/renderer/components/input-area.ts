@@ -953,40 +953,46 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
     ...pendingImages.map(img => img.base64),
     ...pendingVideoFrames.map(f => f.base64)
   ];
-  const totalAttachments = pendingImages.length + pendingVideoFrames.length;
+  let apiContentForModel = text || '';
+  const hasAttachments = pendingImages.length > 0 || pendingVideoFrames.length > 0 || userFiles.length > 0;
 
-  if (totalAttachments > 0) {
-    let imgDesc: string;
+  if (hasAttachments) {
+    // 聊天卡片显示用的简短描述
+    const displayParts: string[] = [];
+    if (text) displayParts.push(text);
     if (pendingVideoMeta && pendingVideoFrames.length > 0) {
-      // 有视频：构建帧序列描述
+      displayParts.push(`[视频: ${pendingVideoMeta.fileName}, ${pendingVideoFrames.length}帧, 1fps]`);
+    }
+    if (pendingImages.length === 1) {
+      displayParts.push(`[图片: ${pendingImages[0].name}]`);
+    } else if (pendingImages.length > 1) {
+      displayParts.push(`[${pendingImages.length} 张图片]`);
+    }
+    const displayContent = displayParts.join('\n');
+
+    // Ollama API 用的完整描述（视频带帧序列）
+    if (pendingVideoMeta && pendingVideoFrames.length > 0) {
       const frameList = pendingVideoFrames
         .map(f => `  ${String(f.timestampSeconds).padStart(4, ' ')}s — ${f.name}`)
         .join('\n');
-      imgDesc = `[视频帧序列 · ${pendingVideoFrames.length}帧 · 1fps · ${pendingVideoMeta.duration.toFixed(0)}s]\n${frameList}\n\n上述帧按时间顺序排列，帧间存在时序关系。请分析视频内容。`;
-    } else if (pendingImages.length === 1) {
-      imgDesc = `[上传了图片: ${pendingImages[0].name}]`;
-    } else if (pendingImages.length > 0) {
-      imgDesc = `[上传了 ${pendingImages.length} 张图片]`;
-    } else {
-      imgDesc = '';
+      apiContentForModel = (text || '') + `\n\n[视频帧序列 · ${pendingVideoFrames.length}帧 · 1fps · ${pendingVideoMeta.duration.toFixed(0)}s]\n${frameList}\n\n上述帧按时间顺序排列，帧间存在时序关系。请分析视频内容。`;
+      if (pendingImages.length > 0) {
+        apiContentForModel += `\n\n[同时上传了 ${pendingImages.length} 张图片]`;
+      }
+    } else if (displayContent) {
+      apiContentForModel = displayContent;
     }
+
     const msg: ChatMessage = {
       role: 'user',
-      content: text ? `${text}\n\n${imgDesc}` : imgDesc,
-      images,
+      content: displayContent,
+      images: [...pendingImages.map(img => img.base64)],
       timestamp: now
     };
-    if (userFiles.length > 0) {
-      msg.files = userFiles;
-      msg._fileContents = pendingFiles.map(f => ({ language: f.language, content: f.content }));
+    if (pendingVideoFrames.length > 0 && pendingVideoMeta) {
+      msg._videoFrames = [...pendingVideoFrames];
+      msg._videoMeta = { ...pendingVideoMeta, frameCount: pendingVideoFrames.length };
     }
-    msgsToAdd.push(msg);
-  } else if (text || pendingFiles.length > 0) {
-    const msg: ChatMessage = {
-      role: 'user',
-      content: text || '',
-      timestamp: now
-    };
     if (userFiles.length > 0) {
       msg.files = userFiles;
       msg._fileContents = pendingFiles.map(f => ({ language: f.language, content: f.content }));
@@ -1046,7 +1052,8 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
       return {
         role: m.role,
         content,
-        ...(m.images?.length && { images: m.images })
+        ...(m.images?.length && { images: m.images }),
+        ...((m as any)._videoFrames?.length && { images: [...(m.images || []), ...(m as any)._videoFrames.map((f: any) => f.base64)] })
       };
     });
 
@@ -1066,7 +1073,7 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
   }, 2000);
 
   try {
-    await runAgentLoop(text || (pendingFiles.length > 0 ? `请分析 ${pendingFiles.map(f => f.name).join(', ')}` : ''), images, historyMessages, {
+    await runAgentLoop(apiContentForModel || (pendingFiles.length > 0 ? `请分析 ${pendingFiles.map(f => f.name).join(', ')}` : ''), images, historyMessages, {
       /** 模型正在生成 tool_call 参数中 — 提前在工作空间显示"准备中"卡片 */
       onToolCallPrepare: (call) => {
         addToolCard({
