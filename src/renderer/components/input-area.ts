@@ -999,6 +999,9 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
     } else if (pendingImages.length > 1) {
       displayParts.push(`[${pendingImages.length} 张图片]`);
     }
+    for (const f of userFiles) {
+      displayParts.push(`[文件: ${f.name}]`);
+    }
     const displayContent = displayParts.join('\n');
 
     // Ollama API 用的完整描述（文字 + 文件 + 视频帧序列 + 图片提示）
