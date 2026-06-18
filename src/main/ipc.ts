@@ -569,15 +569,15 @@ function extractVideoFrames(filePath: string, maxFrames: number, maxWidth: numbe
         });
         child.stderr?.on('data', (data: Buffer) => {
           ffmpegStderr += data.toString();
-          // 实时解析进度 frame=\d+
-          const progressMatch = ffmpegStderr.match(/frame=\s*(\d+)/g);
-          if (progressMatch) {
-            const last = progressMatch[progressMatch.length - 1];
+          // 实时推送进度到渲染进程（每秒一次，覆盖更新）
+          const match = ffmpegStderr.match(/frame=\s*(\d+)/g);
+          if (match) {
+            const last = match[match.length - 1];
             const currentFrame = parseInt(last.replace(/\D/g, ''));
             if (currentFrame > lastProgressFrame && Date.now() - lastProgressTime > 1000) {
               lastProgressFrame = currentFrame;
               lastProgressTime = Date.now();
-              sendLog('debug', `🎬 提取进度`, `${currentFrame} 帧`);
+              mainWindow?.webContents.send('video:progress', { current: currentFrame });
             }
           }
         });

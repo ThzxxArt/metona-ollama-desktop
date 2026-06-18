@@ -127,6 +127,12 @@ contextBridge.exposeInMainWorld('metonaDesktop', {
   },
   video: {
     extractFrames: (filePath: string, options?: { maxFrames?: number; maxWidth?: number; maxSize?: number }) =>
-      ipcRenderer.invoke('video:extractFrames', filePath, options)
+      ipcRenderer.invoke('video:extractFrames', filePath, options),
+    onProgress: (callback: (data: { current: number }) => void) => {
+      ipcRenderer.on('video:progress', (_: unknown, data: { current: number }) => callback(data));
+    },
+    removeProgressListener: () => {
+      ipcRenderer.removeAllListeners('video:progress');
+    }
   }
 });

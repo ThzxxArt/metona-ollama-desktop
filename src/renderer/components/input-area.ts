@@ -251,28 +251,43 @@ async function handleVideoPath(filePath: string): Promise<void> {
   }
 
   const name = filePath.split(/[/\\]/).pop() || filePath;
-  appendSystemMessage(`🎬 正在提取视频帧 (1fps): ${name}...`);
+
+  // 先显示提取中的预览卡片
+  pendingVideoMeta = { fileName: name, duration: 0, width: 0, height: 0 };
+  renderVideoPreview();
+
+  // 监听提取进度，实时更新卡片
+  let progressEl: HTMLElement | null = null;
+  bridge.video.onProgress(({ current }) => {
+    if (!progressEl) progressEl = videoPreviewEl.querySelector('.video-meta');
+    if (progressEl) progressEl.textContent = `提取中 · ${current}帧`;
+  });
 
   try {
     const result = await bridge.video.extractFrames(filePath, { maxFrames: 600, maxWidth: 512 });
+    bridge.video.removeProgressListener();
+
     if (!result.success) {
+      pendingVideoFrames = [];
+      pendingVideoMeta = null;
+      renderVideoPreview();
       appendSystemMessage(`❌ 视频帧提取失败: ${result.error}`);
       return;
     }
 
-    const frames = result.frames!;
-    const info = result.videoInfo!;
-
-    // 存入视频专用存储
-    pendingVideoFrames = frames;
-    pendingVideoMeta = { fileName: name, duration: info.duration, width: info.width, height: info.height };
+    pendingVideoFrames = result.frames!;
+    pendingVideoMeta = { fileName: name, ...result.videoInfo! };
 
     logInfo(`视频帧提取完成: ${name}`, 
-      `${frames.length} 帧 (1fps, ${info.duration.toFixed(0)}s, ${info.width}x${info.height})`);
-    appendSystemMessage(`✅ ${name}: 已提取 ${frames.length} 帧 (1fps 采样)`);
+      `${pendingVideoFrames.length} 帧 (1fps, ${pendingVideoMeta.duration.toFixed(0)}s)`);
+    appendSystemMessage(`✅ ${name}: 已提取 ${pendingVideoFrames.length} 帧 (1fps 采样)`);
 
     renderVideoPreview();
   } catch (err) {
+    bridge.video.removeProgressListener();
+    pendingVideoFrames = [];
+    pendingVideoMeta = null;
+    renderVideoPreview();
     logError('视频帧提取异常', (err as Error).message);
     appendSystemMessage(`❌ 视频处理失败: ${(err as Error).message}`);
   }

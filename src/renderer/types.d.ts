@@ -278,6 +278,8 @@ export interface MetonaDesktopAPI {
       videoInfo?: { duration: number; width: number; height: number };
       error?: string;
     }>;
+    onProgress: (callback: (data: { current: number }) => void) => void;
+    removeProgressListener: () => void;
   };
 }
 
