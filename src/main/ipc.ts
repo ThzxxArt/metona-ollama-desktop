@@ -69,15 +69,6 @@ function getFFmpegPath(): string {
   return 'ffmpeg';
 }
 
-function getFFprobePath(): string {
-  const fmpeg = getFFmpegPath();
-  if (fmpeg !== 'ffmpeg') {
-    const ext = process.platform === 'win32' ? '.exe' : '';
-    return path.join(path.dirname(fmpeg), 'ffprobe' + ext);
-  }
-  return 'ffprobe';
-}
-
 /** 工具结果摘要（用于日志面板） */
 function summarizeResult(toolName: string, result: Record<string, unknown>): string {
   switch (toolName) {
@@ -533,25 +524,18 @@ interface VideoInfo {
   height: number;
 }
 
-function ffprobeVideo(filePath: string): Promise<VideoInfo> {
-  return new Promise((resolve, reject) => {
-    execFile(getFFprobePath(), [
-      '-v', 'quiet', '-print_format', 'json', '-show_format', '-show_streams',
-      '-select_streams', 'v:0', filePath
-    ], { timeout: 15_000 }, (err, stdout) => {
-      if (err) { reject(new Error(`ffprobe 失败: ${err.message}`)); return; }
-      try {
-        const info = JSON.parse(stdout);
-        const stream = (info.streams || []).find((s: any) => s.codec_type === 'video');
-        if (!stream) { reject(new Error('未找到视频流')); return; }
-        resolve({
-          duration: parseFloat(info.format?.duration || stream.duration || '0'),
-          width: stream.width || 0,
-          height: stream.height || 0
-        });
-      } catch { reject(new Error('ffprobe 输出解析失败')); }
-    });
-  });
+function parseVideoInfo(stderr: string): { duration: number; width: number; height: number } | null {
+  // 解析 Duration: 00:00:30.05
+  const durMatch = stderr.match(/Duration:\s*(\d+):(\d+):(\d+\.?\d*)/);
+  const duration = durMatch ? parseInt(durMatch[1]) * 3600 + parseInt(durMatch[2]) * 60 + parseFloat(durMatch[3]) : 0;
+
+  // 解析 Video: ... 1920x1080 ...
+  const resMatch = stderr.match(/(\d{2,5})x(\d{2,5})/);
+  const width = resMatch ? parseInt(resMatch[1]) : 0;
+  const height = resMatch ? parseInt(resMatch[2]) : 0;
+
+  if (duration <= 0 && width <= 0) return null;
+  return { duration, width, height };
 }
 
 function extractVideoFrames(filePath: string, maxFrames: number, maxWidth: number): Promise<{ success: boolean; frames?: ExtractedFrame[]; videoInfo?: VideoInfo; error?: string }> {
@@ -560,38 +544,35 @@ function extractVideoFrames(filePath: string, maxFrames: number, maxWidth: numbe
     try {
       await fs.promises.mkdir(tmpDir, { recursive: true });
 
-      // 1. 获取视频信息
-      const videoInfo = await ffprobeVideo(filePath);
-      if (videoInfo.duration <= 0) {
-        await fs.promises.rm(tmpDir, { recursive: true, force: true });
-        resolve({ success: false, error: '无法获取视频时长' });
-        return;
-      }
-
-      // 2. 计算帧提取策略：固定 1fps，按视频实际时长
-      const frameCount = Math.min(Math.ceil(videoInfo.duration), maxFrames);
-      const scaleFilter = videoInfo.width > maxWidth
-        ? `scale=${maxWidth}:-1`
-        : 'scale=iw:ih';  // 不放大
-
-      // 3. ffmpeg 提取帧：固定 1fps
+      // ffmpeg 提取帧：1fps，同时捕获 stderr 解析视频信息
       const outPattern = path.join(tmpDir, 'frame_%04d.jpg');
+      let ffmpegStderr = '';
+
       await new Promise<void>((ffResolve, ffReject) => {
-        execFile(getFFmpegPath(), [
+        const child = execFile(getFFmpegPath(), [
           '-y',
           '-i', filePath,
-          '-vf', `${scaleFilter},fps=1`,
-          '-q:v', '3',          // JPEG 质量 (2-31, 越小越好, 3≈80%)
-          '-frames:v', String(frameCount),
+          '-vf', `scale=${maxWidth}:-1,fps=1`,
+          '-q:v', '3',
+          '-frames:v', String(maxFrames),
           '-threads', '2',
           outPattern
         ], { timeout: 120_000 }, (err) => {
           if (err) { ffReject(new Error(`ffmpeg 执行失败: ${err.message}`)); return; }
           ffResolve();
         });
+        child.stderr?.on('data', (data: Buffer) => {
+          ffmpegStderr += data.toString();
+        });
       });
 
-      // 4. 读取提取的帧为 base64，附时间戳
+      // 从 stderr 解析视频信息，失败则从帧数估算
+      let videoInfo = parseVideoInfo(ffmpegStderr);
+      if (!videoInfo) {
+        videoInfo = { duration: 0, width: 0, height: 0 };
+      }
+
+      // 读取提取的帧
       const files = await fs.promises.readdir(tmpDir);
       const jpegs = files.filter(f => f.endsWith('.jpg')).sort();
       if (jpegs.length === 0) {
@@ -600,13 +581,17 @@ function extractVideoFrames(filePath: string, maxFrames: number, maxWidth: numbe
         return;
       }
 
+      // 如果没解析到时长，从帧数估算（fps=1）
+      if (videoInfo.duration <= 0) {
+        videoInfo.duration = jpegs.length;
+      }
+
       const frames: ExtractedFrame[] = [];
       for (let i = 0; i < jpegs.length; i++) {
         const f = jpegs[i];
         const buf = await fs.promises.readFile(path.join(tmpDir, f));
-        // 跳过太小的帧（可能是纯黑/白，无信息量）
         if (buf.length < 200) continue;
-        const timestampSec = i; // fps=1，所以帧索引 = 秒数
+        const timestampSec = i; // fps=1，帧索引 = 秒数
         frames.push({
           name: `frame_${String(i + 1).padStart(2, '0')}_${timestampSec.toFixed(1)}s.jpg`,
           base64: buf.toString('base64'),
@@ -614,7 +599,6 @@ function extractVideoFrames(filePath: string, maxFrames: number, maxWidth: numbe
         });
       }
 
-      // 5. 清理临时文件
       await fs.promises.rm(tmpDir, { recursive: true, force: true });
 
       sendLog('info', `🎬 视频帧提取完成: 1fps`, `${filePath} → ${frames.length} 帧 / ${videoInfo.duration.toFixed(1)}s (${videoInfo.width}x${videoInfo.height})`);
