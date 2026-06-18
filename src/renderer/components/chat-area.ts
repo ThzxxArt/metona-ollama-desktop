@@ -185,7 +185,9 @@ export function appendMessageDOM(msg: ChatMessage, index: number): void {
 
   if ((msg as any)._videoFrames && (msg as any)._videoFrames.length > 0) {
     const n = (msg as any)._videoFrames.length;
-    contentHtml += `<div class="msg-video-indicator">🎬 视频帧序列 · ${n} 帧 · 1fps</div>`;
+    const name = (msg as any)._videoMeta?.fileName || '';
+    const label = name ? `${name} · ` : '';
+    contentHtml += `<div class="msg-video-indicator">🎬 ${label}${n} 帧 · 1fps</div>`;
   }
 
   if (msg.files && msg.files.length > 0) {
