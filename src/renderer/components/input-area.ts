@@ -287,17 +287,21 @@ async function handleVideoPath(filePath: string): Promise<void> {
       return;
     }
 
-    pendingVideoFrames = result.frames!;
-    pendingVideoMeta = { fileName: name, ...result.videoInfo! };
-    completedVideos.push({ fileName: name, duration: result.videoInfo!.duration, frames: [...result.frames!] });
+    const frameCount = result.frames!.length;
+    const duration = result.videoInfo!.duration;
+
+    // 移入 completedVideos，清除 pending 状态（避免预览重复）
+    completedVideos.push({ fileName: name, duration, frames: [...result.frames!] });
+    pendingVideoFrames = [];
+    pendingVideoMeta = null;
 
     // 完成：聊天区系统消息原地更新为完成
     const sysMsg = document.querySelector('.sysmsg-video-progress');
     if (sysMsg) {
       sysMsg.classList.remove('sysmsg-video-progress');
-      sysMsg.textContent = `✅ ${name}: 已提取 ${pendingVideoFrames.length} 帧 (1fps 采样)`;
+      sysMsg.textContent = `✅ ${name}: 已提取 ${frameCount} 帧 (1fps 采样)`;
     }
-    logSuccess('✅ 视频帧提取完成', `${pendingVideoFrames.length} 帧 / ${pendingVideoMeta.duration.toFixed(1)}s (1fps)`);
+    logSuccess('✅ 视频帧提取完成', `${frameCount} 帧 / ${duration.toFixed(1)}s (1fps)`);
     renderVideoPreview();
   } catch (err) {
     bridge.video.removeProgressListener();
