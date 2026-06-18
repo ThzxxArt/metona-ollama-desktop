@@ -1032,11 +1032,7 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
     if (allVids.length > 0) {
       const totalFrames = allVids.flatMap(v => v.frames);
       msg._videoFrames = totalFrames;
-      msg._videoMeta = {
-        fileName: allVids.length === 1 ? allVids[0].name : `${allVids.length}个视频`,
-        duration: allVids[0].dur,
-        frameCount: totalFrames.length
-      };
+      msg._videos = allVids.map(v => ({ fileName: v.name, frameCount: v.count, duration: v.dur }));
     }
     if (userFiles.length > 0) {
       msg.files = userFiles;

@@ -183,11 +183,13 @@ export function appendMessageDOM(msg: ChatMessage, index: number): void {
     contentHtml += '</div>';
   }
 
-  if ((msg as any)._videoFrames && (msg as any)._videoFrames.length > 0) {
+  if ((msg as any)._videos && (msg as any)._videos.length > 0) {
+    for (const v of (msg as any)._videos) {
+      contentHtml += `<div class="msg-video-indicator">🎬 ${v.fileName} · ${v.frameCount} 帧 · 1fps</div>`;
+    }
+  } else if ((msg as any)._videoFrames && (msg as any)._videoFrames.length > 0) {
     const n = (msg as any)._videoFrames.length;
-    const name = (msg as any)._videoMeta?.fileName || '';
-    const label = name ? `${name} · ` : '';
-    contentHtml += `<div class="msg-video-indicator">🎬 ${label}${n} 帧 · 1fps</div>`;
+    contentHtml += `<div class="msg-video-indicator">🎬 ${n} 帧 · 1fps</div>`;
   }
 
   if (msg.files && msg.files.length > 0) {
