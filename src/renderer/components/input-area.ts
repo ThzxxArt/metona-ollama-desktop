@@ -311,25 +311,43 @@ async function handleVideoPath(filePath: string): Promise<void> {
 }
 
 function renderVideoPreview(): void {
-  if (!pendingVideoMeta || pendingVideoFrames.length === 0) {
+  const all: Array<{ fileName: string; frameCount: number; duration: number; isPending: boolean }> = [];
+  if (pendingVideoMeta) {
+    all.push({ fileName: pendingVideoMeta.fileName, frameCount: pendingVideoFrames.length, duration: pendingVideoMeta.duration, isPending: true });
+  }
+  for (const v of completedVideos) {
+    all.push({ fileName: v.fileName, frameCount: v.frames.length, duration: v.duration, isPending: false });
+  }
+
+  if (all.length === 0) {
     videoPreviewEl.style.display = 'none';
     videoPreviewEl.innerHTML = '';
     return;
   }
-  const m = pendingVideoMeta;
   videoPreviewEl.style.display = '';
-  videoPreviewEl.innerHTML = `
+  videoPreviewEl.innerHTML = all.map((v, i) => {
+    const meta = v.isPending && v.duration <= 0 ? '提取中...' : `${v.frameCount}帧 · ${v.duration.toFixed(0)}s`;
+    return `
     <div class="video-chip">
       <span class="video-icon">🎬</span>
-      <span class="video-name">${escapeHtml(m.fileName)}</span>
-      <span class="video-meta">${pendingVideoFrames.length}帧 · ${m.duration.toFixed(0)}s</span>
-      <button class="remove-video">×</button>
-    </div>
-  `;
-  videoPreviewEl.querySelector('.remove-video')!.addEventListener('click', () => {
-    pendingVideoFrames = [];
-    pendingVideoMeta = null;
-    renderVideoPreview();
+      <span class="video-name">${escapeHtml(v.fileName)}</span>
+      <span class="video-meta">${meta}</span>
+      <button class="remove-video" data-idx="${i}">×</button>
+    </div>`;
+  }).join('');
+  videoPreviewEl.querySelectorAll('.remove-video').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const idx = parseInt((e.target as HTMLElement).dataset.idx!);
+      // 从 all 数组反查是 pending 还是 completed
+      if (idx === 0 && pendingVideoMeta) {
+        pendingVideoFrames = [];
+        pendingVideoMeta = null;
+      } else {
+        const completedIdx = pendingVideoMeta ? idx - 1 : idx;
+        completedVideos.splice(completedIdx, 1);
+      }
+      renderVideoPreview();
+    });
   });
 }
 
