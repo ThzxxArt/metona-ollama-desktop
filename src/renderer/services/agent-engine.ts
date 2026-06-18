@@ -566,13 +566,13 @@ Shell: ${osInfo.shell}
   };
   messages.push(userMsg);
 
-  // P2-1: 自动子任务拆解 — 检测用户消息中的并行任务关键词
-  // 排除文件内容（避免把小说/设定集误拆成子任务）
+  // P2-1: 自动子任务拆解 — 仅在纯文本短消息且无附件时触发
   const PARALLEL_PATTERNS = /同时|分别|以及|另外|此外|并且|也|also|and\s+also|separately|in\s+addition|meanwhile/i;
   const SUBTASK_SEPARATORS = /(?:^|\n)\s*(?:[1-9][.、)]|[-*•]\s+)/;
   const userText = userContent || '';
-  const hasFileContent = userText.includes('📄 文件');
-  const hasParallel = !hasFileContent && PARALLEL_PATTERNS.test(userText) && userText.length > 100 && userText.length < 5000;
+  const hasAttachments = (images?.length || 0) > 0;
+  const hasParallel = !hasAttachments && userText.length > 50 && userText.length < 2000
+    && PARALLEL_PATTERNS.test(userText);
 
   if (hasParallel && useTools) {
     // 尝试按数字列表拆分子任务
