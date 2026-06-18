@@ -27,8 +27,12 @@
       "dist/**/*",
       "assets/**/*",
       "!node_modules/**/*",
-      "node_modules/sql.js/**/*"
+      "node_modules/sql.js/**/*",
+      "node_modules/ffmpeg-static/**/*"
     ],
+    "asar": {
+      "unpack": ["node_modules/ffmpeg-static/**"]
+    },
     "extraResources": [
       {
         "from": "node_modules/sql.js/dist/sql-wasm.wasm",
@@ -67,6 +71,7 @@
     "vite": "^5.4.0"
   },
   "dependencies": {
+    "ffmpeg-static": "^5.2.0",
     "sql.js": "^1.11.0"
   }
 }

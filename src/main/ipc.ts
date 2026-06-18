@@ -61,6 +61,22 @@ import { startProcess, killProcess, getWorkspaceDir, setWorkspaceDir, listWorksp
 import { setHTTPTimeout } from './tool-handlers-system.js';
 import { execFile } from 'child_process';
 import * as crypto from 'crypto';
+import ffmpegStatic from 'ffmpeg-static';
+
+/** 获取 ffmpeg 可执行文件路径（优先打包内置，回退系统PATH） */
+function getFFmpegPath(): string {
+  if (ffmpegStatic) return ffmpegStatic;
+  return 'ffmpeg';
+}
+
+function getFFprobePath(): string {
+  const fmpeg = getFFmpegPath();
+  if (fmpeg !== 'ffmpeg') {
+    const ext = process.platform === 'win32' ? '.exe' : '';
+    return path.join(path.dirname(fmpeg), 'ffprobe' + ext);
+  }
+  return 'ffprobe';
+}
 
 /** 工具结果摘要（用于日志面板） */
 function summarizeResult(toolName: string, result: Record<string, unknown>): string {
@@ -519,7 +535,7 @@ interface VideoInfo {
 
 function ffprobeVideo(filePath: string): Promise<VideoInfo> {
   return new Promise((resolve, reject) => {
-    execFile('ffprobe', [
+    execFile(getFFprobePath(), [
       '-v', 'quiet', '-print_format', 'json', '-show_format', '-show_streams',
       '-select_streams', 'v:0', filePath
     ], { timeout: 15_000 }, (err, stdout) => {
@@ -561,7 +577,7 @@ function extractVideoFrames(filePath: string, maxFrames: number, maxWidth: numbe
       // 3. ffmpeg 提取帧：固定 1fps
       const outPattern = path.join(tmpDir, 'frame_%04d.jpg');
       await new Promise<void>((ffResolve, ffReject) => {
-        execFile('ffmpeg', [
+        execFile(getFFmpegPath(), [
           '-y',
           '-i', filePath,
           '-vf', `${scaleFilter},fps=1`,
