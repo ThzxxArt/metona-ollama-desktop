@@ -1002,8 +1002,8 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
     const displayContent = displayParts.join('\n');
 
     // Ollama API 用的完整描述（视频带帧序列）
+    let allVids: Array<{ name: string; count: number; dur: number; frames: Array<{ timestampSeconds: number; name: string }> }> = [];
     if (hasVideos) {
-      const allVids: Array<{ name: string; count: number; dur: number; frames: Array<{ timestampSeconds: number; name: string }> }> = [];
       if (pendingVideoMeta && pendingVideoFrames.length > 0) {
         allVids.push({ name: pendingVideoMeta.fileName, count: pendingVideoFrames.length, dur: pendingVideoMeta.duration, frames: pendingVideoFrames });
       }
@@ -1029,9 +1029,10 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
       images: [...pendingImages.map(img => img.base64)],
       timestamp: now
     };
-    if (pendingVideoFrames.length > 0 && pendingVideoMeta) {
-      msg._videoFrames = [...pendingVideoFrames];
-      msg._videoMeta = { ...pendingVideoMeta, frameCount: pendingVideoFrames.length };
+    if (allVids.length > 0) {
+      const totalFrames = allVids.flatMap(v => v.frames);
+      msg._videoFrames = totalFrames;
+      msg._videoMeta = { fileName: allVids[0].name, duration: allVids[0].dur, frameCount: totalFrames.length };
     }
     if (userFiles.length > 0) {
       msg.files = userFiles;
