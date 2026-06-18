@@ -544,9 +544,14 @@ function extractVideoFrames(filePath: string, maxFrames: number, maxWidth: numbe
     try {
       await fs.promises.mkdir(tmpDir, { recursive: true });
 
-      // ffmpeg 提取帧：1fps，同时捕获 stderr 解析视频信息
+      const fileName = path.basename(filePath);
+      sendLog('info', `🎬 开始提取视频帧: 1fps`, fileName);
+
+      // ffmpeg 提取帧：1fps，同时捕获 stderr 解析进度和视频信息
       const outPattern = path.join(tmpDir, 'frame_%04d.jpg');
       let ffmpegStderr = '';
+      let lastProgressFrame = 0;
+      let lastProgressTime = Date.now();
 
       await new Promise<void>((ffResolve, ffReject) => {
         const child = execFile(getFFmpegPath(), [
@@ -556,6 +561,7 @@ function extractVideoFrames(filePath: string, maxFrames: number, maxWidth: numbe
           '-q:v', '3',
           '-frames:v', String(maxFrames),
           '-threads', '2',
+          '-progress', 'pipe:1',  // 结构化进度输出到 stdout
           outPattern
         ], { timeout: 120_000 }, (err) => {
           if (err) { ffReject(new Error(`ffmpeg 执行失败: ${err.message}`)); return; }
@@ -563,6 +569,17 @@ function extractVideoFrames(filePath: string, maxFrames: number, maxWidth: numbe
         });
         child.stderr?.on('data', (data: Buffer) => {
           ffmpegStderr += data.toString();
+          // 实时解析进度 frame=\d+
+          const progressMatch = ffmpegStderr.match(/frame=\s*(\d+)/g);
+          if (progressMatch) {
+            const last = progressMatch[progressMatch.length - 1];
+            const currentFrame = parseInt(last.replace(/\D/g, ''));
+            if (currentFrame > lastProgressFrame && Date.now() - lastProgressTime > 1000) {
+              lastProgressFrame = currentFrame;
+              lastProgressTime = Date.now();
+              sendLog('debug', `🎬 提取进度`, `${currentFrame} 帧`);
+            }
+          }
         });
       });
 
@@ -601,7 +618,7 @@ function extractVideoFrames(filePath: string, maxFrames: number, maxWidth: numbe
 
       await fs.promises.rm(tmpDir, { recursive: true, force: true });
 
-      sendLog('info', `🎬 视频帧提取完成: 1fps`, `${filePath} → ${frames.length} 帧 / ${videoInfo.duration.toFixed(1)}s (${videoInfo.width}x${videoInfo.height})`);
+      sendLog('success', `🎬 视频帧提取完成: 1fps`, `${filePath} → ${frames.length} 帧 / ${videoInfo.duration.toFixed(1)}s (${videoInfo.width}x${videoInfo.height})`);
       resolve({ success: true, frames, videoInfo });
 
     } catch (err) {
