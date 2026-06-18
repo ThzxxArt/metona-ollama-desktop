@@ -150,10 +150,10 @@ export function appendMessageDOM(msg: ChatMessage, index: number): void {
   let safeContent = (msg.content != null) ? String(msg.content) : '';
 
   // 视频消息：折叠帧列表，只显示摘要
-  if (safeContent.startsWith('[视频帧序列')) {
-    const lines = safeContent.split('\n');
-    const header = lines[0]; // "[视频帧序列 · 30帧 · 1fps · 30s]"
-    safeContent = header;
+  const isVideoMsg = safeContent.includes('[视频帧序列');
+  if (isVideoMsg) {
+    const idx = safeContent.indexOf('[视频帧序列');
+    safeContent = safeContent.slice(0, idx) + safeContent.slice(idx).split('\n')[0];
   }
 
   if (msg.role === 'assistant') {
@@ -184,7 +184,7 @@ export function appendMessageDOM(msg: ChatMessage, index: number): void {
 
   if (msg.images && msg.images.length > 0) {
     // 视频帧序列：不逐帧渲染缩略图，只显示视频指示
-    const isVideo = msg.content?.startsWith('[视频帧序列');
+    const isVideo = msg.content?.includes('[视频帧序列');
     if (isVideo) {
       const frameCount = msg.images.length;
       contentHtml += `<div class="msg-video-indicator">🎬 视频帧序列 · ${frameCount} 帧 · 1fps</div>`;
