@@ -147,7 +147,14 @@ export function appendMessageDOM(msg: ChatMessage, index: number): void {
     : '';
 
   let contentHtml = '';
-  const safeContent = (msg.content != null) ? String(msg.content) : '';
+  let safeContent = (msg.content != null) ? String(msg.content) : '';
+
+  // 视频消息：折叠帧列表，只显示摘要
+  if (safeContent.startsWith('[视频帧序列')) {
+    const lines = safeContent.split('\n');
+    const header = lines[0]; // "[视频帧序列 · 30帧 · 1fps · 30s]"
+    safeContent = header;
+  }
 
   if (msg.role === 'assistant') {
     // ── 系统提示词折叠卡片（每条助理消息顶部展示）──
@@ -176,11 +183,18 @@ export function appendMessageDOM(msg: ChatMessage, index: number): void {
   }
 
   if (msg.images && msg.images.length > 0) {
-    contentHtml += '<div class="msg-images">';
-    for (const img of msg.images) {
-      contentHtml += `<img class="msg-img" src="data:image/png;base64,${img}" alt="用户图片" data-lightbox="true">`;
+    // 视频帧序列：不逐帧渲染缩略图，只显示视频指示
+    const isVideo = msg.content?.startsWith('[视频帧序列');
+    if (isVideo) {
+      const frameCount = msg.images.length;
+      contentHtml += `<div class="msg-video-indicator">🎬 视频帧序列 · ${frameCount} 帧 · 1fps</div>`;
+    } else {
+      contentHtml += '<div class="msg-images">';
+      for (const img of msg.images) {
+        contentHtml += `<img class="msg-img" src="data:image/png;base64,${img}" alt="用户图片" data-lightbox="true">`;
+      }
+      contentHtml += '</div>';
     }
-    contentHtml += '</div>';
   }
 
   if (msg.files && msg.files.length > 0) {
