@@ -214,21 +214,6 @@ export function updateVideoProgress(current: number): void {
   }
 }
 
-/** 视频提取完成：将进度条目原地更新为完成状态 */
-export function finishVideoProgress(fileName: string, frameCount: number, duration: number): void {
-  const all = logBodyEl?.querySelectorAll?.('.log-video-progress');
-  if (all && all.length > 0) {
-    const latest = all[all.length - 1] as HTMLElement;
-    latest.className = 'log-entry log-success';
-    const icon = latest.querySelector('.log-icon');
-    const msg = latest.querySelector('.log-msg');
-    const detail = latest.querySelector('.log-detail');
-    if (icon) icon.textContent = '✅';
-    if (msg) msg.textContent = `视频帧提取完成: ${escapeHtml(fileName)}`;
-    if (detail) detail.textContent = `${frameCount} 帧 / ${duration.toFixed(1)}s (1fps)`;
-  }
-}
-
 export function logAgentLoop(iteration: number, maxLoops: number): void { addLog('info', `Loop #${iteration}/${maxLoops}`); }
 export function logModelResponse(contentLen: number, toolCalls: number): void { addLog('stream', `响应: ${contentLen}字, ${toolCalls}工具`); }
 export function logConnection(status: string, detail?: string): void { addLog(status === 'connected' ? 'success' : 'warn', `连接: ${status}`, detail); }

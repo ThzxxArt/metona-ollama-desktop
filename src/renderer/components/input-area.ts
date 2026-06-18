@@ -19,7 +19,7 @@ import { runAgentLoop } from '../services/agent-engine.js';
 import { estimateTokens } from '../services/context-manager.js';
 import { searchMemories, buildMemoryContext, markMemoryUsed, extractMemoriesFromConversation, isMemoryEnabled } from '../services/memory-manager.js';
 import { showToolConfirm } from './tool-confirm-modal.js';
-import { logInfo, logStream, logError, logSuccess, logWarn, resetVideoProgress, updateVideoProgress, finishVideoProgress } from '../services/log-service.js';
+import { logInfo, logStream, logError, logSuccess, logWarn, resetVideoProgress, updateVideoProgress } from '../services/log-service.js';
 import type { ChatSession, ChatMessage, OllamaStreamChunk, FileContent, ChatFile, ToolCallRecord } from '../types.js';
 
 let chatInputEl: HTMLTextAreaElement;
@@ -252,7 +252,8 @@ async function handleVideoPath(filePath: string): Promise<void> {
 
   const name = filePath.split(/[/\\]/).pop() || filePath;
 
-  // 先显示提取中的预览卡片 + 日志进度条目
+  // 日志：开始 → 进度（原地更新） → 完成
+  logInfo('🎬 正在提取视频帧', name);
   pendingVideoMeta = { fileName: name, duration: 0, width: 0, height: 0 };
   renderVideoPreview();
   resetVideoProgress(name);
@@ -280,8 +281,8 @@ async function handleVideoPath(filePath: string): Promise<void> {
     pendingVideoFrames = result.frames!;
     pendingVideoMeta = { fileName: name, ...result.videoInfo! };
 
-    // 完成：日志条目原地更新为 success（不新增）
-    finishVideoProgress(name, pendingVideoFrames.length, pendingVideoMeta.duration);
+    // 完成：新加一条 success 日志，进度条目保留原地
+    logSuccess('✅ 视频帧提取完成', `${pendingVideoFrames.length} 帧 / ${pendingVideoMeta.duration.toFixed(1)}s (1fps)`);
     renderVideoPreview();
   } catch (err) {
     bridge.video.removeProgressListener();
