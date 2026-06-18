@@ -5,6 +5,7 @@
 import { ipcMain, dialog, shell } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 import { mainWindow } from './main.js';
 import { showNotification } from './utils.js';
 import {
@@ -58,6 +59,8 @@ import { startServer, stopServer, stopAllServers, callTool, getAllTools, getServ
 import { getAllowedDirs, getBlockedDirs, setAllowedDirs } from './tool-security.js';
 import { startProcess, killProcess, getWorkspaceDir, setWorkspaceDir, listWorkspaceDir } from './workspace.js';
 import { setHTTPTimeout } from './tool-handlers-system.js';
+import { execFile } from 'child_process';
+import * as crypto from 'crypto';
 
 /** 工具结果摘要（用于日志面板） */
 function summarizeResult(toolName: string, result: Record<string, unknown>): string {
@@ -478,5 +481,133 @@ export async function setupIPC(): Promise<void> {
   });
   ipcMain.handle('mcp:refreshTools', async (_, name: string) => {
     return refreshTools(name);
+  });
+
+  // ── 视频帧提取 ──
+  ipcMain.handle('video:extractFrames', async (_, filePath: string, options?: { maxFrames?: number; maxWidth?: number; maxSize?: number }) => {
+    const maxFrames = options?.maxFrames || 600;
+    const maxWidth = options?.maxWidth || 512;
+    const maxSize = options?.maxSize || 10 * 1024 * 1024; // 默认 10MB
+
+    // 文件大小检查
+    try {
+      const stat = await fs.promises.stat(filePath);
+      if (stat.size > maxSize) {
+        return { success: false, error: `视频文件过大: ${(stat.size / 1024 / 1024).toFixed(1)}MB，限制 ${maxSize / 1024 / 1024}MB` };
+      }
+    } catch {
+      return { success: false, error: '无法读取视频文件' };
+    }
+
+    return extractVideoFrames(filePath, maxFrames, maxWidth);
+  });
+}
+
+// ── 视频帧提取 (ffmpeg) ──
+
+interface ExtractedFrame {
+  name: string;            // 如 "frame_01_0.0s.jpg"
+  base64: string;          // JPEG base64
+  timestampSeconds: number; // 帧在视频中的时间位置（秒）
+}
+
+interface VideoInfo {
+  duration: number;   // 秒
+  width: number;
+  height: number;
+}
+
+function ffprobeVideo(filePath: string): Promise<VideoInfo> {
+  return new Promise((resolve, reject) => {
+    execFile('ffprobe', [
+      '-v', 'quiet', '-print_format', 'json', '-show_format', '-show_streams',
+      '-select_streams', 'v:0', filePath
+    ], { timeout: 15_000 }, (err, stdout) => {
+      if (err) { reject(new Error(`ffprobe 失败: ${err.message}`)); return; }
+      try {
+        const info = JSON.parse(stdout);
+        const stream = (info.streams || []).find((s: any) => s.codec_type === 'video');
+        if (!stream) { reject(new Error('未找到视频流')); return; }
+        resolve({
+          duration: parseFloat(info.format?.duration || stream.duration || '0'),
+          width: stream.width || 0,
+          height: stream.height || 0
+        });
+      } catch { reject(new Error('ffprobe 输出解析失败')); }
+    });
+  });
+}
+
+function extractVideoFrames(filePath: string, maxFrames: number, maxWidth: number): Promise<{ success: boolean; frames?: ExtractedFrame[]; videoInfo?: VideoInfo; error?: string }> {
+  return new Promise(async (resolve) => {
+    const tmpDir = path.join(os.tmpdir(), `metona-video-${crypto.randomBytes(6).toString('hex')}`);
+    try {
+      await fs.promises.mkdir(tmpDir, { recursive: true });
+
+      // 1. 获取视频信息
+      const videoInfo = await ffprobeVideo(filePath);
+      if (videoInfo.duration <= 0) {
+        await fs.promises.rm(tmpDir, { recursive: true, force: true });
+        resolve({ success: false, error: '无法获取视频时长' });
+        return;
+      }
+
+      // 2. 计算帧提取策略：固定 1fps，按视频实际时长
+      const frameCount = Math.min(Math.ceil(videoInfo.duration), maxFrames);
+      const scaleFilter = videoInfo.width > maxWidth
+        ? `scale=${maxWidth}:-1`
+        : 'scale=iw:ih';  // 不放大
+
+      // 3. ffmpeg 提取帧：固定 1fps
+      const outPattern = path.join(tmpDir, 'frame_%04d.jpg');
+      await new Promise<void>((ffResolve, ffReject) => {
+        execFile('ffmpeg', [
+          '-y',
+          '-i', filePath,
+          '-vf', `${scaleFilter},fps=1`,
+          '-q:v', '3',          // JPEG 质量 (2-31, 越小越好, 3≈80%)
+          '-frames:v', String(frameCount),
+          '-threads', '2',
+          outPattern
+        ], { timeout: 120_000 }, (err) => {
+          if (err) { ffReject(new Error(`ffmpeg 执行失败: ${err.message}`)); return; }
+          ffResolve();
+        });
+      });
+
+      // 4. 读取提取的帧为 base64，附时间戳
+      const files = await fs.promises.readdir(tmpDir);
+      const jpegs = files.filter(f => f.endsWith('.jpg')).sort();
+      if (jpegs.length === 0) {
+        await fs.promises.rm(tmpDir, { recursive: true, force: true });
+        resolve({ success: false, error: '没有提取到视频帧' });
+        return;
+      }
+
+      const frames: ExtractedFrame[] = [];
+      for (let i = 0; i < jpegs.length; i++) {
+        const f = jpegs[i];
+        const buf = await fs.promises.readFile(path.join(tmpDir, f));
+        // 跳过太小的帧（可能是纯黑/白，无信息量）
+        if (buf.length < 200) continue;
+        const timestampSec = i; // fps=1，所以帧索引 = 秒数
+        frames.push({
+          name: `frame_${String(i + 1).padStart(2, '0')}_${timestampSec.toFixed(1)}s.jpg`,
+          base64: buf.toString('base64'),
+          timestampSeconds: timestampSec
+        });
+      }
+
+      // 5. 清理临时文件
+      await fs.promises.rm(tmpDir, { recursive: true, force: true });
+
+      sendLog('info', `🎬 视频帧提取完成: 1fps`, `${filePath} → ${frames.length} 帧 / ${videoInfo.duration.toFixed(1)}s (${videoInfo.width}x${videoInfo.height})`);
+      resolve({ success: true, frames, videoInfo });
+
+    } catch (err) {
+      try { await fs.promises.rm(tmpDir, { recursive: true, force: true }); } catch { /* ignore */ }
+      sendLog('error', '视频帧提取失败', (err as Error).message);
+      resolve({ success: false, error: (err as Error).message });
+    }
   });
 }

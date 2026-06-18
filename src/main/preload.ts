@@ -124,5 +124,9 @@ contextBridge.exposeInMainWorld('metonaDesktop', {
     getTools: () => ipcRenderer.invoke('mcp:getTools'),
     getStatuses: () => ipcRenderer.invoke('mcp:getStatuses'),
     refreshTools: (name: string) => ipcRenderer.invoke('mcp:refreshTools', name)
+  },
+  video: {
+    extractFrames: (filePath: string, options?: { maxFrames?: number; maxWidth?: number; maxSize?: number }) =>
+      ipcRenderer.invoke('video:extractFrames', filePath, options)
   }
 });

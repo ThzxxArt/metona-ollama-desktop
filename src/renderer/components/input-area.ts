@@ -26,8 +26,9 @@ let chatInputEl: HTMLTextAreaElement;
 let btnSendEl: HTMLButtonElement;
 let imagePreviewEl: HTMLElement;
 let filePreviewEl: HTMLElement;
-let pendingImages: Array<{ name: string; base64: string }> = [];
+let pendingImages: Array<{ name: string; base64: string; timestampSeconds?: number }> = [];
 let pendingFiles: Array<{ name: string; content: string; language: string; size: number }> = [];
+let pendingVideoInfo: { duration: number; width: number; height: number } | null = null;
 
 const TEXT_EXTENSIONS = new Set([
   'txt','md','markdown','rst','log','csv','tsv',
@@ -41,6 +42,8 @@ const TEXT_EXTENSIONS = new Set([
 ]);
 
 const MAX_FILE_SIZE = 500 * 1024;
+
+const VIDEO_EXTENSIONS = new Set(['mp4', 'avi', 'mov', 'mkv', 'webm', 'flv', 'wmv', 'm4v']);
 
 function getFileIcon(filename: string): string {
   const name = filename.toLowerCase();
@@ -109,6 +112,21 @@ export function initInputArea(): void {
     });
     if (!paths || paths.length === 0) return;
     await handleTextFilePaths(paths);
+  });
+
+  // ── 视频上传：提取帧作为图片 ──
+  document.querySelector('#btnAttachVideo')!.addEventListener('click', async () => {
+    if (!isVisionAvailable()) {
+      showToast('当前模型不支持图片/视频分析', 'warning');
+      return;
+    }
+    const bridge = getBridge();
+    if (!bridge) return;
+    const paths = await bridge.dialog.openFile({
+      filters: [{ name: '视频', extensions: Array.from(VIDEO_EXTENSIONS) }]
+    });
+    if (!paths || paths.length === 0) return;
+    await handleVideoPath(paths[0]);
   });
 
   imagePreviewEl.addEventListener('click', (e) => {
@@ -220,6 +238,45 @@ async function handleImagePaths(paths: string[]): Promise<void> {
     }
   }
   renderImagePreviews();
+}
+
+async function handleVideoPath(filePath: string): Promise<void> {
+  const bridge = getBridge();
+  if (!bridge?.video) {
+    showToast('视频功能需要桌面版', 'warning');
+    return;
+  }
+
+  const name = filePath.split(/[/\\]/).pop() || filePath;
+  appendSystemMessage(`🎬 正在提取视频帧 (1fps): ${name}...`);
+
+  try {
+    const result = await bridge.video.extractFrames(filePath, { maxFrames: 60, maxWidth: 512 });
+    if (!result.success) {
+      appendSystemMessage(`❌ 视频帧提取失败: ${result.error}`);
+      return;
+    }
+
+    const frames = result.frames!;
+    const info = result.videoInfo!;
+
+    // 保存视频元信息（用于消息构建时的时序标注）
+    pendingVideoInfo = { duration: info.duration, width: info.width, height: info.height };
+
+    // 帧加入 pendingImages，保留时间戳
+    for (const frame of frames) {
+      pendingImages.push({ name: frame.name, base64: frame.base64, timestampSeconds: frame.timestampSeconds });
+    }
+
+    logInfo(`视频帧提取完成: ${name}`, 
+      `${frames.length} 帧 (1fps, ${info.duration.toFixed(0)}s, ${info.width}x${info.height})`);
+    appendSystemMessage(`✅ ${name}: 已提取 ${frames.length} 帧 (1fps 采样)`);
+
+    renderImagePreviews();
+  } catch (err) {
+    logError('视频帧提取异常', (err as Error).message);
+    appendSystemMessage(`❌ 视频处理失败: ${(err as Error).message}`);
+  }
 }
 
 function renderImagePreviews(): void {
@@ -843,7 +900,20 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
   const images = pendingImages.map(img => img.base64);
 
   if (pendingImages.length > 0) {
-    const imgDesc = pendingImages.length === 1 ? `[上传了图片: ${pendingImages[0].name}]` : `[上传了 ${pendingImages.length} 张图片]`;
+    const hasVideoFrames = pendingVideoInfo !== null && pendingImages.some(img => img.timestampSeconds !== undefined);
+    let imgDesc: string;
+    if (hasVideoFrames) {
+      const vi = pendingVideoInfo!;
+      const frameList = pendingImages
+        .filter(img => img.timestampSeconds !== undefined)
+        .map(img => `  ${String(img.timestampSeconds!).padStart(4, ' ')}s — ${img.name}`)
+        .join('\n');
+      imgDesc = `[视频帧序列 · ${pendingImages.length}帧 · 1fps · ${vi.duration.toFixed(0)}s]\n${frameList}\n\n上述帧按时间顺序排列，帧间存在时序关系。请分析视频内容。`;
+    } else if (pendingImages.length === 1) {
+      imgDesc = `[上传了图片: ${pendingImages[0].name}]`;
+    } else {
+      imgDesc = `[上传了 ${pendingImages.length} 张图片]`;
+    }
     const msg: ChatMessage = {
       role: 'user',
       content: text ? `${text}\n\n${imgDesc}` : imgDesc,
@@ -872,7 +942,7 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
   state.update(KEYS.CURRENT_SESSION, (session: any) => ({
     ...session,
     ...(isFirstMsg && {
-      title: truncate(text || (pendingFiles.length > 0 ? `[文件: ${pendingFiles.map(f => f.name).join(', ')}]` : '[图片消息]'), 30),
+      title: truncate(text || (pendingFiles.length > 0 ? `[文件: ${pendingFiles.map(f => f.name).join(', ')}]` : pendingVideoInfo ? '[视频消息]' : '[图片消息]'), 30),
       model
     }),
     messages: [...session.messages, ...msgsToAdd],
@@ -888,6 +958,7 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
   chatInputEl.value = '';
   pendingImages = [];
   pendingFiles = [];
+  pendingVideoInfo = null;
   imagePreviewEl.style.display = 'none';
   imagePreviewEl.innerHTML = '';
   filePreviewEl.style.display = 'none';

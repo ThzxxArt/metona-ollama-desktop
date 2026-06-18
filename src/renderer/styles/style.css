@@ -351,6 +351,15 @@ html, body {
     background: var(--critical-bg);
 }
 
+#btnAttachVideo.disabled {
+    pointer-events: auto;
+}
+
+#btnAttachVideo.disabled:hover {
+    opacity: 0.3;
+    background: var(--critical-bg);
+}
+
 .icon-btn.sm {
     width: 28px;
     height: 28px;

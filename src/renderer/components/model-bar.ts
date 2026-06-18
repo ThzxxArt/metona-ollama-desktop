@@ -18,6 +18,7 @@ let badgeToolsEl: HTMLElement;
 let thinkCheckbox: HTMLInputElement;
 let thinkWrap: HTMLElement;
 let btnAttachImg: HTMLButtonElement;
+let btnAttachVideo: HTMLButtonElement;
 
 const modelCapabilityCache = new Map<string, ModelCaps>();
 
@@ -29,6 +30,7 @@ export function initModelBar(): void {
   thinkCheckbox = document.querySelector('#toggleThink')!;
   thinkWrap = document.querySelector('#thinkToggleWrap')!;
   btnAttachImg = document.querySelector('#btnAttachImg')!;
+  btnAttachVideo = document.querySelector('#btnAttachVideo')!;
 
   // Think 开关：同步 state 中的 thinkEnabled
   thinkCheckbox.addEventListener('change', () => {
@@ -252,10 +254,20 @@ function setVisionAvailable(available: boolean): void {
     btnAttachImg.disabled = false;
     btnAttachImg.title = '上传图片';
     btnAttachImg.classList.remove('disabled');
+    if (btnAttachVideo) {
+      btnAttachVideo.disabled = false;
+      btnAttachVideo.title = '上传视频（提取帧分析）';
+      btnAttachVideo.classList.remove('disabled');
+    }
   } else {
     btnAttachImg.disabled = true;
     btnAttachImg.title = '当前模型不支持图片分析';
     btnAttachImg.classList.add('disabled');
+    if (btnAttachVideo) {
+      btnAttachVideo.disabled = true;
+      btnAttachVideo.title = '当前模型不支持图片/视频分析';
+      btnAttachVideo.classList.add('disabled');
+    }
   }
 }
 

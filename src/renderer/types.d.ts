@@ -271,6 +271,14 @@ export interface MetonaDesktopAPI {
     getStatuses: () => Promise<Array<{ name: string; running: boolean; toolCount: number }>>;
     refreshTools: (name: string) => Promise<Array<{ name: string; description?: string; inputSchema: Record<string, unknown> }>>;
   };
+  video: {
+    extractFrames: (filePath: string, options?: { maxFrames?: number; maxWidth?: number; maxSize?: number }) => Promise<{
+      success: boolean;
+      frames?: Array<{ name: string; base64: string; timestampSeconds: number }>;
+      videoInfo?: { duration: number; width: number; height: number };
+      error?: string;
+    }>;
+  };
 }
 
 export interface AppInfo {
