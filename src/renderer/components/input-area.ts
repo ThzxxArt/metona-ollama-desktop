@@ -1013,12 +1013,10 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
       apiParts.push(...fileParts);
       logInfo('📄 文件内容已注入', `${fileParts.length} 段, 共 ${fileContents.reduce((s, f) => s + f.content.length, 0)} 字符`);
     }
-    // 图片和视频帧按顺序分块描述（images 数组：图片在前，视频帧在后）
     if (pendingImages.length === 1) {
-      apiParts.push(`[独立图片: ${pendingImages[0].name}]（请单独分析该图片，勿与视频帧混淆）`);
+      apiParts.push(`[图片: ${pendingImages[0].name}]`);
     } else if (pendingImages.length > 1) {
-      const imgNames = pendingImages.map(img => img.name).join(', ');
-      apiParts.push(`[${pendingImages.length} 张独立图片: ${imgNames}]（请分别分析每张图片，勿与视频帧混淆）`);
+      apiParts.push(`[${pendingImages.length} 张图片: ${pendingImages.map(img => img.name).join(', ')}]`);
     }
     let allVids: Array<{ name: string; count: number; dur: number; frames: Array<{ timestampSeconds: number; name: string }> }> = [];
     if (hasVideos) {
@@ -1034,10 +1032,7 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
         parts.push(`[视频帧序列 · ${v.name} · ${v.count}帧 · 1fps · ${v.dur.toFixed(0)}s]\n${fl}`);
       }
       apiParts.push(parts.join('\n\n'));
-      apiParts.push('以上为视频帧序列，按时间顺序排列，帧间存在时序关系。请分析视频内容。');
-    }
-    if (pendingImages.length > 0 && hasVideos) {
-      apiParts.push('注意：独立图片和视频帧是不同的内容，请分别分析，不要混淆。');
+      apiParts.push('以上为视频帧序列，按时间顺序排列。');
     }
     apiContentForModel = apiParts.join('\n\n');
 
