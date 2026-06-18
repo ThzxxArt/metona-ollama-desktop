@@ -187,12 +187,45 @@ export function resetStreamProgress(): void {
 
 /** 更新**最新**一条流式进度日志（原地更新消息，不改变 DOM 位置和时间戳） */
 export function logStreamProgress(msg: string): void {
-  // 找最后一条进度日志（当前轮）
   const all = logBodyEl?.querySelectorAll?.('.log-stream-progress');
   if (all && all.length > 0) {
     const latest = all[all.length - 1] as HTMLElement;
     const msgSpan = latest.querySelector('.log-msg');
     if (msgSpan) msgSpan.textContent = msg;
+  }
+}
+
+/** 视频提取进度：创建初始条目 */
+export function resetVideoProgress(fileName: string): void {
+  if (!logBodyEl) return;
+  const entry = document.createElement('div');
+  entry.className = 'log-entry log-info log-video-progress';
+  entry.innerHTML = `<span class="log-time">${formatTime(Date.now())}</span><span class="log-icon">🎬</span><span class="log-msg">开始提取视频帧: ${escapeHtml(fileName)}</span><pre class="log-detail">0 帧</pre>`;
+  logBodyEl.appendChild(entry);
+}
+
+/** 更新视频提取进度（原地更新，不新增条目） */
+export function updateVideoProgress(current: number): void {
+  const all = logBodyEl?.querySelectorAll?.('.log-video-progress');
+  if (all && all.length > 0) {
+    const latest = all[all.length - 1] as HTMLElement;
+    const detail = latest.querySelector('.log-detail');
+    if (detail) detail.textContent = `${current} 帧`;
+  }
+}
+
+/** 视频提取完成：将进度条目原地更新为完成状态 */
+export function finishVideoProgress(fileName: string, frameCount: number, duration: number): void {
+  const all = logBodyEl?.querySelectorAll?.('.log-video-progress');
+  if (all && all.length > 0) {
+    const latest = all[all.length - 1] as HTMLElement;
+    latest.className = 'log-entry log-success';
+    const icon = latest.querySelector('.log-icon');
+    const msg = latest.querySelector('.log-msg');
+    const detail = latest.querySelector('.log-detail');
+    if (icon) icon.textContent = '✅';
+    if (msg) msg.textContent = `视频帧提取完成: ${escapeHtml(fileName)}`;
+    if (detail) detail.textContent = `${frameCount} 帧 / ${duration.toFixed(1)}s (1fps)`;
   }
 }
 

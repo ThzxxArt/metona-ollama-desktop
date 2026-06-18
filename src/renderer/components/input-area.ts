@@ -19,7 +19,7 @@ import { runAgentLoop } from '../services/agent-engine.js';
 import { estimateTokens } from '../services/context-manager.js';
 import { searchMemories, buildMemoryContext, markMemoryUsed, extractMemoriesFromConversation, isMemoryEnabled } from '../services/memory-manager.js';
 import { showToolConfirm } from './tool-confirm-modal.js';
-import { logInfo, logStream, logError, logSuccess, logWarn } from '../services/log-service.js';
+import { logInfo, logStream, logError, logSuccess, logWarn, resetVideoProgress, updateVideoProgress, finishVideoProgress } from '../services/log-service.js';
 import type { ChatSession, ChatMessage, OllamaStreamChunk, FileContent, ChatFile, ToolCallRecord } from '../types.js';
 
 let chatInputEl: HTMLTextAreaElement;
@@ -252,13 +252,15 @@ async function handleVideoPath(filePath: string): Promise<void> {
 
   const name = filePath.split(/[/\\]/).pop() || filePath;
 
-  // 先显示提取中的预览卡片
+  // 先显示提取中的预览卡片 + 日志进度条目
   pendingVideoMeta = { fileName: name, duration: 0, width: 0, height: 0 };
   renderVideoPreview();
+  resetVideoProgress(name);
 
-  // 监听提取进度，实时更新卡片
+  // 监听提取进度：实时更新日志条目 + 视频芯片
   let progressEl: HTMLElement | null = null;
   bridge.video.onProgress(({ current }) => {
+    updateVideoProgress(current);
     if (!progressEl) progressEl = videoPreviewEl.querySelector('.video-meta');
     if (progressEl) progressEl.textContent = `提取中 · ${current}帧`;
   });
@@ -271,25 +273,22 @@ async function handleVideoPath(filePath: string): Promise<void> {
       pendingVideoFrames = [];
       pendingVideoMeta = null;
       renderVideoPreview();
-      appendSystemMessage(`❌ 视频帧提取失败: ${result.error}`);
+      logError('视频帧提取失败', result.error || '');
       return;
     }
 
     pendingVideoFrames = result.frames!;
     pendingVideoMeta = { fileName: name, ...result.videoInfo! };
 
-    logInfo(`视频帧提取完成: ${name}`, 
-      `${pendingVideoFrames.length} 帧 (1fps, ${pendingVideoMeta.duration.toFixed(0)}s)`);
-    appendSystemMessage(`✅ ${name}: 已提取 ${pendingVideoFrames.length} 帧 (1fps 采样)`);
-
+    // 完成：日志条目原地更新为 success（不新增）
+    finishVideoProgress(name, pendingVideoFrames.length, pendingVideoMeta.duration);
     renderVideoPreview();
   } catch (err) {
     bridge.video.removeProgressListener();
     pendingVideoFrames = [];
     pendingVideoMeta = null;
     renderVideoPreview();
-    logError('视频帧提取异常', (err as Error).message);
-    appendSystemMessage(`❌ 视频处理失败: ${(err as Error).message}`);
+    logError('视频帧提取失败', (err as Error).message);
   }
 }
 

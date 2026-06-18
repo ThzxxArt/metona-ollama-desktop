@@ -544,9 +544,6 @@ function extractVideoFrames(filePath: string, maxFrames: number, maxWidth: numbe
     try {
       await fs.promises.mkdir(tmpDir, { recursive: true });
 
-      const fileName = path.basename(filePath);
-      sendLog('info', `🎬 开始提取视频帧: 1fps`, fileName);
-
       // ffmpeg 提取帧：1fps，同时捕获 stderr 解析进度和视频信息
       const outPattern = path.join(tmpDir, 'frame_%04d.jpg');
       let ffmpegStderr = '';
@@ -618,7 +615,6 @@ function extractVideoFrames(filePath: string, maxFrames: number, maxWidth: numbe
 
       await fs.promises.rm(tmpDir, { recursive: true, force: true });
 
-      sendLog('success', `🎬 视频帧提取完成: 1fps`, `${filePath} → ${frames.length} 帧 / ${videoInfo.duration.toFixed(1)}s (${videoInfo.width}x${videoInfo.height})`);
       resolve({ success: true, frames, videoInfo });
 
     } catch (err) {
