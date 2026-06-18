@@ -26,9 +26,11 @@ let chatInputEl: HTMLTextAreaElement;
 let btnSendEl: HTMLButtonElement;
 let imagePreviewEl: HTMLElement;
 let filePreviewEl: HTMLElement;
-let pendingImages: Array<{ name: string; base64: string; timestampSeconds?: number }> = [];
+let videoPreviewEl: HTMLElement;
+let pendingImages: Array<{ name: string; base64: string }> = [];
 let pendingFiles: Array<{ name: string; content: string; language: string; size: number }> = [];
-let pendingVideoInfo: { duration: number; width: number; height: number } | null = null;
+let pendingVideoFrames: Array<{ name: string; base64: string; timestampSeconds: number }> = [];
+let pendingVideoMeta: { fileName: string; duration: number; width: number; height: number } | null = null;
 
 const TEXT_EXTENSIONS = new Set([
   'txt','md','markdown','rst','log','csv','tsv',
@@ -70,6 +72,7 @@ export function initInputArea(): void {
   btnSendEl = document.querySelector('#btnSend')!;
   imagePreviewEl = document.querySelector('#imagePreview')!;
   filePreviewEl = document.querySelector('#filePreview')!;
+  videoPreviewEl = document.querySelector('#videoPreview')!;
 
   btnSendEl.addEventListener('click', () => {
     if (state.get<boolean>(KEYS.IS_STREAMING)) {
@@ -251,7 +254,7 @@ async function handleVideoPath(filePath: string): Promise<void> {
   appendSystemMessage(`🎬 正在提取视频帧 (1fps): ${name}...`);
 
   try {
-    const result = await bridge.video.extractFrames(filePath, { maxFrames: 60, maxWidth: 512 });
+    const result = await bridge.video.extractFrames(filePath, { maxFrames: 600, maxWidth: 512 });
     if (!result.success) {
       appendSystemMessage(`❌ 视频帧提取失败: ${result.error}`);
       return;
@@ -260,23 +263,42 @@ async function handleVideoPath(filePath: string): Promise<void> {
     const frames = result.frames!;
     const info = result.videoInfo!;
 
-    // 保存视频元信息（用于消息构建时的时序标注）
-    pendingVideoInfo = { duration: info.duration, width: info.width, height: info.height };
-
-    // 帧加入 pendingImages，保留时间戳
-    for (const frame of frames) {
-      pendingImages.push({ name: frame.name, base64: frame.base64, timestampSeconds: frame.timestampSeconds });
-    }
+    // 存入视频专用存储
+    pendingVideoFrames = frames;
+    pendingVideoMeta = { fileName: name, duration: info.duration, width: info.width, height: info.height };
 
     logInfo(`视频帧提取完成: ${name}`, 
       `${frames.length} 帧 (1fps, ${info.duration.toFixed(0)}s, ${info.width}x${info.height})`);
     appendSystemMessage(`✅ ${name}: 已提取 ${frames.length} 帧 (1fps 采样)`);
 
-    renderImagePreviews();
+    renderVideoPreview();
   } catch (err) {
     logError('视频帧提取异常', (err as Error).message);
     appendSystemMessage(`❌ 视频处理失败: ${(err as Error).message}`);
   }
+}
+
+function renderVideoPreview(): void {
+  if (!pendingVideoMeta || pendingVideoFrames.length === 0) {
+    videoPreviewEl.style.display = 'none';
+    videoPreviewEl.innerHTML = '';
+    return;
+  }
+  const m = pendingVideoMeta;
+  videoPreviewEl.style.display = '';
+  videoPreviewEl.innerHTML = `
+    <div class="video-chip">
+      <span class="video-icon">🎬</span>
+      <span class="video-name">${escapeHtml(m.fileName)}</span>
+      <span class="video-meta">${pendingVideoFrames.length}帧 · ${m.duration.toFixed(0)}s</span>
+      <button class="remove-video">×</button>
+    </div>
+  `;
+  videoPreviewEl.querySelector('.remove-video')!.addEventListener('click', () => {
+    pendingVideoFrames = [];
+    pendingVideoMeta = null;
+    renderVideoPreview();
+  });
 }
 
 function renderImagePreviews(): void {
@@ -897,22 +919,28 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
   const now = Date.now();
   const msgsToAdd: ChatMessage[] = [];
   const userFiles: ChatFile[] = pendingFiles.map(f => ({ name: f.name, language: f.language, size: f.size }));
-  const images = pendingImages.map(img => img.base64);
 
-  if (pendingImages.length > 0) {
-    const hasVideoFrames = pendingVideoInfo !== null && pendingImages.some(img => img.timestampSeconds !== undefined);
+  // 合并图片和视频帧为统一的 images 数组
+  const images: string[] = [
+    ...pendingImages.map(img => img.base64),
+    ...pendingVideoFrames.map(f => f.base64)
+  ];
+  const totalAttachments = pendingImages.length + pendingVideoFrames.length;
+
+  if (totalAttachments > 0) {
     let imgDesc: string;
-    if (hasVideoFrames) {
-      const vi = pendingVideoInfo!;
-      const frameList = pendingImages
-        .filter(img => img.timestampSeconds !== undefined)
-        .map(img => `  ${String(img.timestampSeconds!).padStart(4, ' ')}s — ${img.name}`)
+    if (pendingVideoMeta && pendingVideoFrames.length > 0) {
+      // 有视频：构建帧序列描述
+      const frameList = pendingVideoFrames
+        .map(f => `  ${String(f.timestampSeconds).padStart(4, ' ')}s — ${f.name}`)
         .join('\n');
-      imgDesc = `[视频帧序列 · ${pendingImages.length}帧 · 1fps · ${vi.duration.toFixed(0)}s]\n${frameList}\n\n上述帧按时间顺序排列，帧间存在时序关系。请分析视频内容。`;
+      imgDesc = `[视频帧序列 · ${pendingVideoFrames.length}帧 · 1fps · ${pendingVideoMeta.duration.toFixed(0)}s]\n${frameList}\n\n上述帧按时间顺序排列，帧间存在时序关系。请分析视频内容。`;
     } else if (pendingImages.length === 1) {
       imgDesc = `[上传了图片: ${pendingImages[0].name}]`;
-    } else {
+    } else if (pendingImages.length > 0) {
       imgDesc = `[上传了 ${pendingImages.length} 张图片]`;
+    } else {
+      imgDesc = '';
     }
     const msg: ChatMessage = {
       role: 'user',
@@ -942,7 +970,7 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
   state.update(KEYS.CURRENT_SESSION, (session: any) => ({
     ...session,
     ...(isFirstMsg && {
-      title: truncate(text || (pendingFiles.length > 0 ? `[文件: ${pendingFiles.map(f => f.name).join(', ')}]` : pendingVideoInfo ? '[视频消息]' : '[图片消息]'), 30),
+      title: truncate(text || (pendingFiles.length > 0 ? `[文件: ${pendingFiles.map(f => f.name).join(', ')}]` : pendingVideoMeta ? '[视频消息]' : '[图片消息]'), 30),
       model
     }),
     messages: [...session.messages, ...msgsToAdd],
@@ -958,11 +986,14 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
   chatInputEl.value = '';
   pendingImages = [];
   pendingFiles = [];
-  pendingVideoInfo = null;
+  pendingVideoFrames = [];
+  pendingVideoMeta = null;
   imagePreviewEl.style.display = 'none';
   imagePreviewEl.innerHTML = '';
   filePreviewEl.style.display = 'none';
   filePreviewEl.innerHTML = '';
+  videoPreviewEl.style.display = 'none';
+  videoPreviewEl.innerHTML = '';
   autoResizeTextarea();
 
   // 新一轮开始：清理上一轮的工作空间状态

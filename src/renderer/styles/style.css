@@ -1227,6 +1227,60 @@ html, body {
     background: var(--critical-bg);
 }
 
+/* ── 视频预览 ── */
+
+.video-preview {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px 0;
+}
+
+.video-chip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px;
+    border-radius: 20px;
+    background: rgba(212, 160, 60, 0.1);
+    border: 1px solid rgba(212, 160, 60, 0.2);
+    font-size: 12px;
+    line-height: 1;
+    animation: fadeSlideUp 200ms ease;
+}
+
+.video-chip .video-icon { font-size: 16px; flex-shrink: 0; }
+
+.video-chip .video-name {
+    font-weight: 600;
+    color: var(--text-primary);
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.video-chip .video-meta {
+    color: #D4A03C;
+    flex-shrink: 0;
+}
+
+.remove-video {
+    background: none;
+    border: none;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    font-size: 14px;
+    padding: 0 2px;
+    border-radius: 3px;
+    transition: var(--transition);
+}
+
+.remove-video:hover {
+    color: var(--critical);
+    background: var(--critical-bg);
+}
+
 .input-row {
     display: flex;
     align-items: flex-end;
