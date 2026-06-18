@@ -566,49 +566,6 @@ Shell: ${osInfo.shell}
   };
   messages.push(userMsg);
 
-  // P2-1: 自动子任务拆解 — 仅在纯文本短消息且无附件时触发
-  const PARALLEL_PATTERNS = /同时|分别|以及|另外|此外|并且|也|also|and\s+also|separately|in\s+addition|meanwhile/i;
-  const SUBTASK_SEPARATORS = /(?:^|\n)\s*(?:[1-9][.、)]|[-*•]\s+)/;
-  const userText = userContent || '';
-  const hasAttachments = (images?.length || 0) > 0;
-  const hasParallel = !hasAttachments && userText.length > 50 && userText.length < 2000
-    && PARALLEL_PATTERNS.test(userText);
-
-  if (hasParallel && useTools) {
-    // 尝试按数字列表拆分子任务
-    const parts = userText.split(SUBTASK_SEPARATORS).filter(p => p.trim().length > 20);
-    if (parts.length >= 3) {
-      logInfo(`自动子任务拆解: 检测到 ${parts.length} 个并行子任务`);
-      const subtaskResults: string[] = [];
-      const { executeSubAgent } = await import('./sub-agent.js');
-      const subTasks = parts.slice(0, Math.min(parts.length, 3)); // 最多3个
-      // 并行 spawn
-      const subResults = await Promise.allSettled(
-        subTasks.map((subTask, idx) =>
-          executeSubAgent(subTask.trim(), `这是父任务的第 ${idx + 1}/${subTasks.length} 个子任务`, {
-            maxLoops: 8,
-            timeout: 120_000,
-          })
-        )
-      );
-      for (let i = 0; i < subResults.length; i++) {
-        const r = subResults[i];
-        if (r.status === 'fulfilled' && r.value.success) {
-          const content = (r.value as any).content || JSON.stringify(r.value);
-          subtaskResults.push(`[子任务 ${i + 1}] ${subTasks[i].trim().slice(0, 80)}...\n结果: ${content.slice(0, 1000)}`);
-        }
-      }
-      if (subtaskResults.length > 0) {
-        messages.push({
-          role: 'system',
-          content: `以下是通过并行子代理预先完成的子任务结果，你可以直接引用这些结果来加速回答：\n\n${subtaskResults.join('\n\n')}`,
-          ephemeral: true,
-        });
-        logInfo(`子任务拆解完成: ${subtaskResults.length}/${subTasks.length} 个成功`);
-      }
-    }
-  }
-
   // 上下文窗口管理：滑动窗口 + 摘要压缩 + token 裁剪
   const numCtx = state.get<number>(KEYS.NUM_CTX, 24576);
   const contextResult = buildContext(messages, { maxTokens: numCtx, windowSize: 20 });
