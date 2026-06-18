@@ -252,19 +252,22 @@ async function handleVideoPath(filePath: string): Promise<void> {
 
   const name = filePath.split(/[/\\]/).pop() || filePath;
 
-  // 日志：开始 → 进度（原地更新） → 完成
+  // 聊天区：开始消息（带 class 标记，后续原地更新进度）
   logInfo('🎬 正在提取视频帧', name);
-  appendSystemMessage(`🎬 正在提取视频帧 (1fps): ${name}...`);
+  appendSystemMessage(`🎬 正在提取视频帧 (1fps): ${name}...`, 'sysmsg-video-progress');
   pendingVideoMeta = { fileName: name, duration: 0, width: 0, height: 0 };
   renderVideoPreview();
   resetVideoProgress(name);
 
-  // 监听提取进度：实时更新日志条目 + 视频芯片
+  // 监听提取进度：实时更新日志条目 + 视频芯片 + 聊天区系统消息
   let progressEl: HTMLElement | null = null;
   bridge.video.onProgress(({ current }) => {
     updateVideoProgress(current);
     if (!progressEl) progressEl = videoPreviewEl.querySelector('.video-meta');
     if (progressEl) progressEl.textContent = `提取中 · ${current}帧`;
+    // 聊天区系统消息原地更新
+    const sysMsg = document.querySelector('.sysmsg-video-progress');
+    if (sysMsg) sysMsg.textContent = `🎬 正在提取视频帧 (1fps): ${name}...  ${current} 帧`;
   });
 
   try {
@@ -272,10 +275,11 @@ async function handleVideoPath(filePath: string): Promise<void> {
     bridge.video.removeProgressListener();
 
     if (!result.success) {
+      const sysMsg = document.querySelector('.sysmsg-video-progress');
+      if (sysMsg) { sysMsg.classList.remove('sysmsg-video-progress'); sysMsg.textContent = `❌ 视频帧提取失败: ${result.error || ''}`; }
       pendingVideoFrames = [];
       pendingVideoMeta = null;
       renderVideoPreview();
-      appendSystemMessage(`❌ 视频帧提取失败: ${result.error || ''}`);
       logError('视频帧提取失败', result.error || '');
       return;
     }
@@ -283,16 +287,21 @@ async function handleVideoPath(filePath: string): Promise<void> {
     pendingVideoFrames = result.frames!;
     pendingVideoMeta = { fileName: name, ...result.videoInfo! };
 
-    // 完成：新加一条 success 日志，进度条目保留原地
+    // 完成：聊天区系统消息原地更新为完成
+    const sysMsg = document.querySelector('.sysmsg-video-progress');
+    if (sysMsg) {
+      sysMsg.classList.remove('sysmsg-video-progress');
+      sysMsg.textContent = `✅ ${name}: 已提取 ${pendingVideoFrames.length} 帧 (1fps 采样)`;
+    }
     logSuccess('✅ 视频帧提取完成', `${pendingVideoFrames.length} 帧 / ${pendingVideoMeta.duration.toFixed(1)}s (1fps)`);
-    appendSystemMessage(`✅ ${name}: 已提取 ${pendingVideoFrames.length} 帧 (1fps 采样)`);
     renderVideoPreview();
   } catch (err) {
     bridge.video.removeProgressListener();
+    const sysMsg = document.querySelector('.sysmsg-video-progress');
+    if (sysMsg) { sysMsg.classList.remove('sysmsg-video-progress'); sysMsg.textContent = `❌ 视频处理失败: ${(err as Error).message}`; }
     pendingVideoFrames = [];
     pendingVideoMeta = null;
     renderVideoPreview();
-    appendSystemMessage(`❌ 视频处理失败: ${(err as Error).message}`);
     logError('视频帧提取失败', (err as Error).message);
   }
 }
