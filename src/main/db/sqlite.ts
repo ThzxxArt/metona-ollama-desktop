@@ -223,8 +223,10 @@ export async function initDatabase(): Promise<SQL.Database> {
     CREATE INDEX IF NOT EXISTS idx_skills_updated ON skills(updated_at DESC);
   `);
 
-  // 兼容迁移：为已有 messages 表补充 prompt_eval_count 列（新库已有，旧库需要 ALTER）
-  try { db.run('ALTER TABLE messages ADD COLUMN prompt_eval_count INTEGER'); } catch { /* 列已存在，忽略 */ }
+  // 兼容迁移：为已有 messages 表补充 attachments 列（文件/视频等附件 JSON）
+  try { db.run('ALTER TABLE messages ADD COLUMN attachments TEXT'); } catch { /* 列已存在，忽略 */ }
+
+  // 兼容迁移：为已有 messages 表补充 prompt_eval_count 列
 
   // 兼容迁移：为已有 skills 表补充 summary 列
   try { db.run("ALTER TABLE skills ADD COLUMN summary TEXT DEFAULT ''"); } catch { /* 列已存在，忽略 */ }
@@ -272,6 +274,7 @@ export interface MessageRow {
   images: string | null;
   tool_calls: string | null;
   tool_name: string | null;
+  attachments: string | null;
   eval_count: number | null;
   prompt_eval_count: number | null;
   total_duration: number | null;
@@ -374,10 +377,10 @@ export function clearAllSessions(): void {
 
 export function saveMessage(msg: MessageRow): string {
   const d = getDb();
-  runExec(d, `INSERT OR REPLACE INTO messages (id, session_id, role, content, thinking, images, tool_calls, tool_name, eval_count, prompt_eval_count, total_duration, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  runExec(d, `INSERT OR REPLACE INTO messages (id, session_id, role, content, thinking, images, tool_calls, tool_name, attachments, eval_count, prompt_eval_count, total_duration, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [msg.id, msg.session_id, msg.role, msg.content, msg.thinking, msg.images,
-     msg.tool_calls, msg.tool_name, msg.eval_count, msg.prompt_eval_count, msg.total_duration, msg.created_at]
+     msg.tool_calls, msg.tool_name, msg.attachments, msg.eval_count, msg.prompt_eval_count, msg.total_duration, msg.created_at]
   );
   persist();
   return msg.id;

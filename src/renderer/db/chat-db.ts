@@ -89,6 +89,7 @@ export class ChatDB {
           images: msg.images?.length ? JSON.stringify(msg.images) : null,
           tool_calls: msg.toolCalls?.length ? JSON.stringify(msg.toolCalls) : null,
           tool_name: null,
+          attachments: JSON.stringify({ files: msg.files, videos: (msg as any)._videos }),
           eval_count: msg.eval_count || null,
           prompt_eval_count: msg.prompt_eval_count || null,
           total_duration: msg.total_duration || null,
@@ -106,17 +107,23 @@ export class ChatDB {
       const row = await dbBridge().getSession(id);
       if (!row) return null;
       const msgRows = await dbBridge().getMessages(id);
-      const messages = msgRows.map((r: any) => ({
-        role: r.role,
-        content: r.content || '',
-        timestamp: r.created_at,
-        think: r.thinking || undefined,
-        images: r.images ? JSON.parse(r.images) : undefined,
-        eval_count: r.eval_count || undefined,
-        prompt_eval_count: r.prompt_eval_count || undefined,
-        total_duration: r.total_duration || undefined,
-        toolCalls: r.tool_calls ? JSON.parse(r.tool_calls) : undefined
-      }));
+      const messages = msgRows.map((r: any) => {
+        let files, videos;
+        try { const a = JSON.parse(r.attachments || '{}'); files = a.files; videos = a.videos; } catch { /* ignore */ }
+        return {
+          role: r.role,
+          content: r.content || '',
+          timestamp: r.created_at,
+          think: r.thinking || undefined,
+          images: r.images ? JSON.parse(r.images) : undefined,
+          eval_count: r.eval_count || undefined,
+          prompt_eval_count: r.prompt_eval_count || undefined,
+          total_duration: r.total_duration || undefined,
+          toolCalls: r.tool_calls ? JSON.parse(r.tool_calls) : undefined,
+          ...(files?.length && { files }),
+          ...(videos?.length && { _videos: videos })
+        };
+      });
       return {
         id: row.id,
         title: row.title,
