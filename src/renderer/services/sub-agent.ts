@@ -50,6 +50,7 @@ export async function executeSubAgent(
   const model = options.model || state.get<string>('_defaultModel', '');
   const maxLoops = options.maxLoops ?? state.get<number>('subAgentMaxLoops', SUB_AGENT_MAX_LOOPS);
   const timeout = options.timeout ?? state.get<number>('subAgentTimeout', SUB_AGENT_TIMEOUT);
+  const effectiveTimeout = timeout > 0 ? timeout : Infinity; // 0=禁用超时
 
   if (!api || !model) {
     return { success: false, error: '未选择模型，无法执行子任务' };
@@ -73,7 +74,7 @@ ${context ? `\n附加上下文：\n${context}` : ''}`;
   while (loopCount < maxLoops) {
     loopCount++;
 
-    if (Date.now() - startTime > timeout) {
+    if (Date.now() - startTime > effectiveTimeout) {
       logWarn('子 Agent 超时', `${loopCount} 轮`);
       return { success: true, content: '子任务执行超时', loops: loopCount, duration: Date.now() - startTime, partial: true };
     }
