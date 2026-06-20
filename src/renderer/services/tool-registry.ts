@@ -478,14 +478,13 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'spawn_task',
-      description: 'Spawn a sub-agent to independently execute a task using read-only tools (file reading, web search, browser viewing, memory/session/skill queries). Use this to parallelize independent research or analysis sub-tasks. For the model parameter, prefer smaller models (e.g. "qwen3:1.8b", "qwen3:4b") for simple lookups and the current model for complex analysis. Leave blank to use the default configured in Settings.',
+      description: 'Spawn a sub-agent to independently execute a task using read-only tools (file reading, web search, browser viewing, memory/session/skill queries). Use this to parallelize independent research or analysis sub-tasks. The model is configured in Settings and cannot be overridden per call.',
       parameters: {
         type: 'object',
         required: ['task'],
         properties: {
           task: { type: 'string', description: 'The task description for the sub-agent to execute.' },
-          context: { type: 'string', description: 'Optional additional context or reference data for the sub-agent.' },
-          model: { type: 'string', description: 'Optional model name. If the specified model is not installed, the default model will be used automatically. Best practice: only specify a model you know exists (e.g. "qwen3:1.8b"), or leave blank for the Settings default.' }
+          context: { type: 'string', description: 'Optional additional context or reference data for the sub-agent.' }
         }
       }
     }
@@ -886,28 +885,20 @@ export async function executeTool(toolName: string, args: Record<string, unknown
       return { success: true, session: { id: session.id, title: session.title, model: session.model }, messages: msgs, total: messages.length };
     }
 
-    // v4.3 spawn_task 走子代理
+    // v4.3 spawn_task 走子代理（模型只能从设置面板指定，不允许 AI 自选）
     if (toolName === 'spawn_task') {
       const { executeSubAgent } = await import('./sub-agent.js');
       const task = args.task as string;
       const context = args.context as string | undefined;
-      const specifiedModel = (args.model as string) || state.get<string>('subAgentModel', '');
-      // 校验指定模型是否存在，不存在则回退
+      // 只使用设置面板配置的子代理模型，忽略 AI 传入的 model 参数
+      const configuredModel = state.get<string>('subAgentModel', '');
       let model: string | undefined;
-      if (specifiedModel) {
-        try {
-          const api = state.get<any>(KEYS.API);
-          const models = await api.listModels();
-          const names = new Set(models.models?.map((m: any) => m.name) || []);
-          if (names.has(specifiedModel)) {
-            model = specifiedModel;
-          } else {
-            logWarn(`子代理指定模型 "${specifiedModel}" 未安装，回退到默认模型`);
-          }
-        } catch { model = undefined; }
+      if (configuredModel) {
+        // 设置面板存的模型名直接使用（面板加载时已验证过列表）
+        model = configuredModel;
       }
       if (!task) return { success: false, error: '缺少 task 参数' };
-      logInfo(`子代理委派: ${task.slice(0, 80)}${model ? ` (模型: ${model})` : ''}`);
+      logInfo(`子代理委派: ${task.slice(0, 80)}${model ? ` (模型: ${model})` : ' (跟随当前模型)'}`);
       const result = await executeSubAgent(task, context, model ? { model } : {});
       logToolResult('spawn_task', result.success, result.success ? `完成, ${(result as any).loops} 轮` : result.error);
       return result;
