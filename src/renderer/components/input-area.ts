@@ -482,7 +482,7 @@ async function handleRetry(): Promise<void> {
           const fileParts = buildFileContentParts(m._fileContents);
           content = content ? content + '\n\n---\n' + fileParts.join('\n\n---\n') : fileParts.join('\n\n---\n');
         }
-        return { role: m.role, content, ...(m.images?.length && { images: m.images }) };
+        return { role: m.role, content, ...(m.images?.length && { images: m.images }), ...((m as any)._videoFrames?.length && { images: [...(m.images || []), ...(m as any)._videoFrames.map((f: any) => f.base64)] }) };
       });
 
     let retryMonitor: ReturnType<typeof setInterval> | null = null;
@@ -492,13 +492,24 @@ async function handleRetry(): Promise<void> {
       let retryThinkContent = '';
       let retryIterations = 0;
 
+      // 构建重试用的完整内容和 images（含文件内容和视频帧）
+      let retryUserContent = userMsg.content || '';
+      const retryImages: string[] = [...(userMsg.images || [])];
+      if ((userMsg as any)._fileContents?.length) {
+        const fileParts = buildFileContentParts((userMsg as any)._fileContents);
+        retryUserContent = retryUserContent ? retryUserContent + '\n\n---\n' + fileParts.join('\n\n---\n') : fileParts.join('\n\n---\n');
+      }
+      if ((userMsg as any)._videoFrames?.length) {
+        retryImages.push(...(userMsg as any)._videoFrames.map((f: any) => f.base64));
+      }
+
       // ── 监控定时器 ──
       retryMonitor = setInterval(() => {
         if (!hasActiveCards()) {
           showWorkingHint('⏳ AI 正在处理中...');
         }
       }, 2000);
-      await runAgentLoop(userMsg.content || '', userMsg.images || [], historyMessages, {
+      await runAgentLoop(retryUserContent, retryImages, historyMessages, {
         onToolCallPrepare: (call) => {
           addToolCard({
             name: call.function.name, arguments: call.function.arguments,
