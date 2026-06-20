@@ -89,7 +89,7 @@ ${context ? `\n附加上下文：\n${context}` : ''}`;
         stream: true,
         think: false,
         tools: tools as any,
-        options: { num_ctx: 8192, temperature: 0.3 }
+        options: { num_ctx: 16384, temperature: 0.3 }
       } as any, (chunk: any) => {
         if (chunk.message?.content) content += chunk.message.content;
         if (chunk.message?.tool_calls?.length) {
@@ -145,9 +145,9 @@ ${context ? `\n附加上下文：\n${context}` : ''}`;
 function formatResult(name: string, r: ToolResult): string {
   if (!r.success) return JSON.stringify({ success: false, error: r.error });
   switch (name) {
-    case 'web_search': return JSON.stringify({ success: true, query: r.query, total: r.total, results: (r.results as any[])?.slice(0, 3) });
-    case 'web_fetch': return JSON.stringify({ success: true, url: r.url, content: String(r.content || '').slice(0, 3000) });
-    case 'read_file': return JSON.stringify({ success: true, path: r.path, content: String(r.content || '').slice(0, 3000) });
+    case 'web_search': return JSON.stringify({ success: true, query: r.query, total: r.total, results: (r.results as any[])?.slice(0, 8) });
+    case 'web_fetch': return JSON.stringify({ success: true, url: r.url, content: String(r.content || '').slice(0, 5000) });
+    case 'read_file': return JSON.stringify({ success: true, path: r.path, content: String(r.content || '').slice(0, 5000) });
     default: return JSON.stringify(r);
   }
 }
