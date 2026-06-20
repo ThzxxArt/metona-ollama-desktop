@@ -363,14 +363,14 @@
                 </select>
             </div>
             <div class="setting-group">
-                <label class="setting-label">🤖 子代理最大轮次</label>
-                <p class="text-muted" style="font-size:11px;margin-bottom:8px;">子代理最多执行多少轮工具调用。留空使用默认值（10轮）。</p>
-                <input type="number" id="inputSubAgentMaxLoops" class="setting-input" placeholder="10" min="1" max="100" step="1" style="width:100px;">
-            </div>
-            <div class="setting-group">
-                <label class="setting-label">🤖 子代理超时（秒）</label>
-                <p class="text-muted" style="font-size:11px;margin-bottom:8px;">子代理最长运行时间，填 0 禁用超时。留空使用默认值（300秒）。</p>
-                <input type="number" id="inputSubAgentTimeout" class="setting-input" placeholder="300" min="0" max="3600" step="30" style="width:100px;">
+                <label class="setting-label">🤖 子代理参数</label>
+                <p class="text-muted" style="font-size:11px;margin-bottom:8px;">最大轮次（留空=10轮）和超时（留空=300s，填0=禁用）</p>
+                <div style="display:flex;gap:16px;align-items:center;">
+                    <span style="font-size:13px;">最大轮次</span>
+                    <input type="number" id="inputSubAgentMaxLoops" class="setting-input" placeholder="10" min="1" max="100" step="1" style="width:80px;">
+                    <span style="font-size:13px;">超时(秒)</span>
+                    <input type="number" id="inputSubAgentTimeout" class="setting-input" placeholder="300" min="0" max="3600" step="30" style="width:80px;">
+                </div>
             </div>
             <div class="setting-group">
                 <label class="setting-label">显存管理</label>
