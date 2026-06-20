@@ -89,7 +89,7 @@ ${context ? `\n附加上下文：\n${context}` : ''}`;
         stream: true,
         think: false,
         tools: tools as any,
-        options: { num_ctx: 16384, temperature: 0.3 }
+        options: { num_ctx: state.get<number>(KEYS.NUM_CTX, 24576), temperature: 0.3 }
       } as any, (chunk: any) => {
         if (chunk.message?.content) content += chunk.message.content;
         if (chunk.message?.tool_calls?.length) {
@@ -141,13 +141,8 @@ ${context ? `\n附加上下文：\n${context}` : ''}`;
   return { success: true, content: '达到最大轮次限制', loops: loopCount, duration: Date.now() - startTime, partial: true };
 }
 
-/** 简洁格式化工具结果给子代理 */
+/** 格式化工具结果给子代理（不截断，和主AI一致） */
 function formatResult(name: string, r: ToolResult): string {
   if (!r.success) return JSON.stringify({ success: false, error: r.error });
-  switch (name) {
-    case 'web_search': return JSON.stringify({ success: true, query: r.query, total: r.total, results: (r.results as any[])?.slice(0, 8) });
-    case 'web_fetch': return JSON.stringify({ success: true, url: r.url, content: String(r.content || '').slice(0, 5000) });
-    case 'read_file': return JSON.stringify({ success: true, path: r.path, content: String(r.content || '').slice(0, 5000) });
-    default: return JSON.stringify(r);
-  }
+  return JSON.stringify(r);
 }
