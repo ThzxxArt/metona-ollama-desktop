@@ -58,7 +58,23 @@ export async function executeSubAgent(
 
   const tools = getSubAgentTools();
   const toolNames = [...SUB_AGENT_TOOL_WHITELIST].join(', ');
-  logInfo(`子 Agent 启动`, `任务: ${task.slice(0, 80)} | 工具: ${toolNames}`);
+  logInfo(`子 Agent 启动`, `任务: ${task.slice(0, 80)} | 工具: ${toolNames} | 模型: ${model}`);
+
+  // 如果子代理使用了不同于主 AI 的模型，获取该模型的实际上下文长度
+  const defaultModel = state.get<string>('_defaultModel', '');
+  let numCtx = state.get<number>(KEYS.NUM_CTX, 24576);
+  if (model !== defaultModel) {
+    try {
+      const detail = await api.showModel(model);
+      const modelInfo = detail.model_info || {};
+      for (const key of Object.keys(modelInfo)) {
+        if (key.endsWith('.context_length')) {
+          numCtx = Number(modelInfo[key]) || numCtx;
+          break;
+        }
+      }
+    } catch { /* 获取失败用默认值 */ }
+  }
 
   const systemPrompt = `你是一个子任务执行 Agent，拥有只读工具权限。请高效完成指定任务，给出结果报告。
 ${context ? `\n附加上下文：\n${context}` : ''}`;
@@ -89,7 +105,7 @@ ${context ? `\n附加上下文：\n${context}` : ''}`;
         stream: true,
         think: false,
         tools: tools as any,
-        options: { num_ctx: state.get<number>(KEYS.NUM_CTX, 24576), temperature: 0.3 }
+        options: { num_ctx: numCtx, temperature: 0.3 }
       } as any, (chunk: any) => {
         if (chunk.message?.content) content += chunk.message.content;
         if (chunk.message?.tool_calls?.length) {
