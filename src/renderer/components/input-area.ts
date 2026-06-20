@@ -1018,7 +1018,7 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
     } else if (pendingImages.length > 1) {
       apiParts.push(`[${pendingImages.length} 张图片: ${pendingImages.map(img => img.name).join(', ')}]`);
     }
-    let allVids: Array<{ name: string; count: number; dur: number; frames: Array<{ timestampSeconds: number; name: string }> }> = [];
+    let allVids: Array<{ name: string; count: number; dur: number; frames: Array<{ timestampSeconds: number; name: string; base64: string }> }> = [];
     if (hasVideos) {
       if (pendingVideoMeta && pendingVideoFrames.length > 0) {
         allVids.push({ name: pendingVideoMeta.fileName, count: pendingVideoFrames.length, dur: pendingVideoMeta.duration, frames: pendingVideoFrames });
@@ -1047,6 +1047,18 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
       msg._videoFrames = totalFrames;
       msg._videos = allVids.map(v => ({ fileName: v.name, frameCount: v.count, duration: v.dur }));
     }
+    if (userFiles.length > 0) {
+      msg.files = userFiles;
+      msg._fileContents = pendingFiles.map(f => ({ language: f.language, content: f.content }));
+    }
+    msgsToAdd.push(msg);
+  } else if (text || pendingFiles.length > 0) {
+    // 纯文本/纯文件消息（无图片、视频附件）
+    const msg: ChatMessage = {
+      role: 'user',
+      content: text || '',
+      timestamp: now
+    };
     if (userFiles.length > 0) {
       msg.files = userFiles;
       msg._fileContents = pendingFiles.map(f => ({ language: f.language, content: f.content }));

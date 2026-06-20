@@ -401,6 +401,14 @@ async function init(): Promise<void> {
     (document.querySelector('#inputMCPTimeout') as HTMLInputElement).value = mcpTimeout >= 0 ? String(mcpTimeout) : '';
     logInit(`超时设置: HTTP=${httpTimeout>=0?httpTimeout:30}s 流式=${streamTimeout>=0?streamTimeout:300}s MCP=${mcpTimeout>=0?mcpTimeout:60}s`);
 
+    // ── 子代理参数 ──
+    let subAgentMaxLoops = await db.getSetting<number>('subAgentMaxLoops', 10);
+    let subAgentTimeout = await db.getSetting<number>('subAgentTimeout', -1); // -1=默认
+    state.set('subAgentMaxLoops', subAgentMaxLoops);
+    state.set('subAgentTimeout', subAgentTimeout >= 0 ? subAgentTimeout * 1000 : 300_000);
+    (document.querySelector('#inputSubAgentMaxLoops') as HTMLInputElement).value = String(subAgentMaxLoops);
+    (document.querySelector('#inputSubAgentTimeout') as HTMLInputElement).value = subAgentTimeout >= 0 ? String(subAgentTimeout) : '';
+
     // ── Tool Calling 设置（永久开启，不可关闭）──
     state.set('toolCallingEnabled', true);
     const runCommandMode = await db.getSetting('runCommandMode', 'confirm') as 'auto' | 'confirm' | 'disabled';
