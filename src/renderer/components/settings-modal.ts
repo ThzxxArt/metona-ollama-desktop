@@ -480,7 +480,7 @@ const saveSubAgentMaxLoops = debounce(async () => {
   if (db) await db.saveSetting('subAgentMaxLoops', maxLoops);
   logSetting('子代理最大轮次', `${maxLoops} 轮`);
 }, 500);
-document.querySelector('#inputSubAgentMaxLoops')?.addEventListener('input', saveSubAgentMaxLoops);
+document.querySelector('#inputSubAgentMaxLoops')!.addEventListener('input', saveSubAgentMaxLoops);
 
 // 子代理超时（秒）
 const saveSubAgentTimeout = debounce(async () => {
@@ -492,7 +492,7 @@ const saveSubAgentTimeout = debounce(async () => {
   if (db) await db.saveSetting('subAgentTimeout', sec);
   logSetting('子代理超时', sec >= 0 ? (sec === 0 ? '已禁用' : `${sec}s`) : '默认(300s)');
 }, 500);
-document.querySelector('#inputSubAgentTimeout')?.addEventListener('input', saveSubAgentTimeout);
+document.querySelector('#inputSubAgentTimeout')!.addEventListener('input', saveSubAgentTimeout);
 
 function updateMemoryVectorStatus(): void {
   const statusEl = document.querySelector('#memoryVectorStatus');
