@@ -205,22 +205,6 @@ export async function initDatabase(): Promise<SQL.Database> {
     );
     CREATE INDEX IF NOT EXISTS idx_traces_session ON traces(session_id, created_at);
 
-    -- v4.2 技能表（自动从成功工具调用链提取）
-    CREATE TABLE IF NOT EXISTS skills (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      description TEXT NOT NULL,
-      summary TEXT DEFAULT '',
-      trigger_keywords TEXT,
-      tool_chain TEXT NOT NULL,
-      success_count INTEGER DEFAULT 0,
-      fail_count INTEGER DEFAULT 0,
-      avg_duration_ms INTEGER DEFAULT 0,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL,
-      last_used_at INTEGER
-    );
-    CREATE INDEX IF NOT EXISTS idx_skills_updated ON skills(updated_at DESC);
   `);
 
   // 兼容迁移：为已有 messages 表补充 attachments 列（文件/视频等附件 JSON）
@@ -228,8 +212,6 @@ export async function initDatabase(): Promise<SQL.Database> {
 
   // 兼容迁移：为已有 messages 表补充 prompt_eval_count 列
 
-  // 兼容迁移：为已有 skills 表补充 summary 列
-  try { db.run("ALTER TABLE skills ADD COLUMN summary TEXT DEFAULT ''"); } catch { /* 列已存在，忽略 */ }
 
   // 尝试创建 FTS5 全文搜索（可选，sql.js 默认 WASM 可能不包含 FTS5）
   try {
@@ -312,22 +294,6 @@ export interface ToolCallRow {
   status: string;
   duration_ms: number | null;
   created_at: number;
-}
-
-// v4.2
-export interface SkillRow {
-  id: string;
-  name: string;
-  description: string;
-  summary: string;
-  trigger_keywords: string | null;
-  tool_chain: string;
-  success_count: number;
-  fail_count: number;
-  avg_duration_ms: number;
-  created_at: number;
-  updated_at: number;
-  last_used_at: number | null;
 }
 
 export interface TraceRow {
@@ -525,62 +491,6 @@ export function saveTrace(trace: TraceRow): string {
 
 export function getTracesBySession(sessionId: string): TraceRow[] {
   return queryAll(getDb(), 'SELECT * FROM traces WHERE session_id = ? ORDER BY step_index ASC', [sessionId]) as unknown as TraceRow[];
-}
-
-// ─── Skills CRUD (v4.2) ───
-
-export function saveSkill(skill: SkillRow): string {
-  runExec(getDb(), `INSERT OR REPLACE INTO skills (id, name, description, summary, trigger_keywords, tool_chain, success_count, fail_count, avg_duration_ms, created_at, updated_at, last_used_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [skill.id, skill.name, skill.description, skill.summary || '', skill.trigger_keywords, skill.tool_chain,
-     skill.success_count, skill.fail_count, skill.avg_duration_ms,
-     skill.created_at, skill.updated_at, skill.last_used_at]
-  );
-  persist();
-  return skill.id;
-}
-
-
-export function getAllSkills(): SkillRow[] {
-  return queryAll(getDb(), 'SELECT * FROM skills ORDER BY success_count DESC, updated_at DESC') as unknown as SkillRow[];
-}
-
-export function deleteSkill(id: string): void {
-  runExec(getDb(), 'DELETE FROM skills WHERE id = ?', [id]);
-  persist();
-}
-
-export function clearAllSkills(): void {
-  getDb().run('DELETE FROM skills');
-  persist();
-}
-
-export function searchSkills(keywords: string, limit = 5): SkillRow[] {
-  const likeQ = `%${keywords.replace(/[^\w\u4e00-\u9fff]/g, '%')}%`;
-  return queryAll(getDb(), `
-    SELECT * FROM skills
-    WHERE trigger_keywords LIKE ? OR name LIKE ? OR description LIKE ?
-    ORDER BY success_count DESC, updated_at DESC
-    LIMIT ?
-  `, [likeQ, likeQ, likeQ, limit]) as unknown as SkillRow[];
-}
-
-export function incrementSkillUsage(id: string, success: boolean, durationMs: number): void {
-  const d = getDb();
-  const skill = queryOne(d, 'SELECT success_count, fail_count, avg_duration_ms FROM skills WHERE id = ?', [id]) as any;
-  if (!skill) return;
-
-  const newSuccess = success ? skill.success_count + 1 : skill.success_count;
-  const newFail = success ? skill.fail_count : skill.fail_count + 1;
-  const totalUses = newSuccess + newFail;
-  // 指数移动平均
-  const alpha = 0.3;
-  const newAvg = Math.round(alpha * durationMs + (1 - alpha) * (skill.avg_duration_ms || durationMs));
-
-  runExec(d, `UPDATE skills SET success_count = ?, fail_count = ?, avg_duration_ms = ?, updated_at = ?, last_used_at = ? WHERE id = ?`,
-    [newSuccess, newFail, newAvg, Date.now(), Date.now(), id]
-  );
-  persist();
 }
 
 // ─── Token 全局统计 ───

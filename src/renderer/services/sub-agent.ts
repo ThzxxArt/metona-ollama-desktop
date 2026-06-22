@@ -21,7 +21,6 @@ const SUB_AGENT_TOOL_WHITELIST = new Set([
   'browser_extract', 'browser_screenshot',
   'memory_search',
   'session_list', 'session_read',
-  'skill_list', 'skill_view',
 ]);
 
 /** 从总工具列表中筛选子代理可用的 */

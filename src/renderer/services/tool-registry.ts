@@ -446,31 +446,6 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       }
     }
   },
-  {
-    type: 'function',
-    function: {
-      name: 'skill_list',
-      description: 'List all available auto-generated skills. Shows name, description, and success rate. Use skill_view to see full details of a specific skill.',
-      parameters: {
-        type: 'object',
-        properties: {}
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'skill_view',
-      description: 'View full details of a specific skill including its tool chain, parameter hints, and usage statistics.',
-      parameters: {
-        type: 'object',
-        required: ['name'],
-        properties: {
-          name: { type: 'string', description: 'The skill name (or partial name) to view.' }
-        }
-      }
-    }
-  },
   // ══════════════════════════════════════════════
   // v4.3 新增工具：子代理委派
   // ══════════════════════════════════════════════
@@ -478,7 +453,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'spawn_task',
-      description: 'Spawn a sub-agent to independently execute a task using read-only tools (file reading, web search, browser viewing, memory/session/skill queries). Use this to parallelize independent research or analysis sub-tasks. The model is configured in Settings and cannot be overridden per call.',
+      description: 'Spawn a sub-agent to independently execute a task using read-only tools (file reading, web search, browser viewing, memory/session queries). Use this to parallelize independent research or analysis sub-tasks. The model is configured in Settings and cannot be overridden per call.',
       parameters: {
         type: 'object',
         required: ['task'],
@@ -740,7 +715,7 @@ let enabledTools: Set<string> = new Set([
   'get_file_info', 'tree', 'download_file', 'diff_files', 'replace_in_files',
   'read_multiple_files', 'git', 'compress',
   'memory_search', 'memory_add', 'memory_replace', 'memory_remove',
-  'session_list', 'session_read', 'skill_list', 'skill_view', 'spawn_task',
+  'session_list', 'session_read', 'spawn_task',
   'browser_open', 'browser_screenshot', 'browser_evaluate', 'browser_extract',
   'browser_click', 'browser_type', 'browser_scroll', 'browser_close',
   'datetime', 'calculator',
@@ -903,19 +878,6 @@ export async function executeTool(toolName: string, args: Record<string, unknown
       logToolResult('spawn_task', result.success, result.success ? `完成, ${(result as any).loops} 轮` : result.error);
       return result;
     }
-    if (toolName === 'skill_list') {
-      const { listSkills } = await import('./skill-manager.js');
-      const skills = await listSkills();
-      logToolResult('skill_list', true, `${skills.length} 个技能`);
-      return { success: true, skills, total: skills.length };
-    }
-    if (toolName === 'skill_view') {
-      const { viewSkill } = await import('./skill-manager.js');
-      const name = String(args.name || '');
-      const result = await viewSkill(name);
-      logToolResult('skill_view', result.success, result.success ? result.skill?.name : result.error);
-      return result;
-    }
 
     // run_command 走 workspace IPC
     if (toolName === 'run_command') {
@@ -955,7 +917,7 @@ export function getToolIcon(name: string): string {
     diff_files: '🔀', replace_in_files: '🔄', read_multiple_files: '📚',
     git: '🔖', compress: '🗜️', web_search: '🔍',
     memory_search: '🧠', memory_add: '💾', memory_replace: '🔄', memory_remove: '🗑️',
-    session_list: '📋', session_read: '📖', skill_list: '📚', skill_view: '📖', spawn_task: '🤖',
+    session_list: '📋', session_read: '📖', spawn_task: '🤖',
     browser_open: '🌐', browser_screenshot: '📸', browser_evaluate: '⚡', browser_extract: '📰',
     browser_click: '👆', browser_type: '⌨️', browser_scroll: '↕️', browser_close: '❌'
   };
@@ -972,7 +934,7 @@ export function formatToolName(name: string): string {
     diff_files: '文件对比', replace_in_files: '批量替换', read_multiple_files: '批量读取',
     git: 'Git 操作', compress: '压缩/解压', web_search: '联网搜索',
     memory_search: '搜索记忆', memory_add: '添加记忆', memory_replace: '替换记忆', memory_remove: '删除记忆',
-    session_list: '会话列表', session_read: '读取会话', skill_list: '技能列表', skill_view: '技能详情', spawn_task: '子代理委派',
+    session_list: '会话列表', session_read: '读取会话', spawn_task: '子代理委派',
     browser_open: '打开网页', browser_screenshot: '浏览器截图', browser_evaluate: '执行JS', browser_extract: '提取内容',
     browser_click: '点击元素', browser_type: '输入文本', browser_scroll: '滚动页面', browser_close: '关闭浏览器'
   };

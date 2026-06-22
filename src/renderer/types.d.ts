@@ -462,13 +462,7 @@ export interface DBAPI {
   getTraces: (sessionId: string) => Promise<TraceEntry[]>;
   exportSessions: () => Promise<unknown>;
   importSessions: (data: unknown) => Promise<{ imported: number; skipped: number }>;
-  // v4.2 Skills
-  saveSkill: (skill: unknown) => Promise<{ success: boolean; id?: string; error?: string }>;
-  getAllSkills: () => Promise<unknown[]>;
-  deleteSkill: (id: string) => Promise<{ success: boolean; error?: string }>;
-  clearAllSkills: () => Promise<{ success: boolean; error?: string }>;
-  searchSkills: (query: string, limit?: number) => Promise<unknown[]>;
-  incrementSkillUsage: (id: string, success: boolean, durationMs: number) => Promise<{ success: boolean; error?: string }>;
+
   getAllTokenStats(): Promise<{
     sessions: Array<{
       session_id: string;

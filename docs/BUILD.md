@@ -91,7 +91,7 @@ npm run dist           # NSIS 安装包
 
 | 文件 | 说明 |
 |------|------|
-| `release/Metona Ollama Setup v0.11.10.exe` | NSIS 安装包（可选目录、创建快捷方式） |
+| `release/Metona Ollama Setup v0.11.11.exe` | NSIS 安装包（可选目录、创建快捷方式） |
 
 > 仅提供 NSIS 安装包。
 
@@ -103,7 +103,7 @@ npm run dist           # NSIS 安装包
 TOKEN="your_access_token"
 curl -X POST "https://gitee.com/api/v5/repos/thzxx/metona-ollama-desktop/releases?access_token=$TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"tag_name":"v0.11.10","name":"v0.11.10","body":"Release notes","target_commitish":"master"}'
+  -d '{"tag_name":"v0.11.11","name":"v0.11.11","body":"Release notes","target_commitish":"master"}'
 ```
 
 ### 上传附件
@@ -112,7 +112,7 @@ curl -X POST "https://gitee.com/api/v5/repos/thzxx/metona-ollama-desktop/release
 TOKEN="your_access_token"
 RELEASE_ID="<release_id>"
 curl -X POST "https://gitee.com/api/v5/repos/thzxx/metona-ollama-desktop/releases/$RELEASE_ID/attach_files?access_token=$TOKEN" \
-  -H "Content-Type: multipart/form-data" -F "file=@release/Metona Ollama Setup v0.11.10.exe"
+  -H "Content-Type: multipart/form-data" -F "file=@release/Metona Ollama Setup v0.11.11.exe"
 ```
 
 ## 故障排查

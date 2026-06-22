@@ -4,7 +4,7 @@
 
 ## 项目简介
 
-Metona Ollama Desktop 是一个基于 **Ollama** 的本地 AI 桌面客户端，采用 TypeScript + Electron 构建。所有 AI 推理均在本地完成，数据不离开本机。支持 ReAct Agent Loop、44 个内置工具、智能记忆系统、MCP 协议扩展、四引擎联网搜索、浏览器控制等能力。
+Metona Ollama Desktop 是一个基于 **Ollama** 的本地 AI 桌面客户端，采用 TypeScript + Electron 构建。所有 AI 推理均在本地完成，数据不离开本机。支持 ReAct Agent Loop、42 个内置工具、智能记忆系统、MCP 协议扩展、四引擎联网搜索、浏览器控制等能力。
 
 ---
 
@@ -18,7 +18,7 @@ Metona Ollama Desktop 是一个基于 **Ollama** 的本地 AI 桌面客户端，
 - 链式工具调用：web_search → web_fetch、list_directory → read_file 等模式
 - 文本解析兜底：当模型未通过 tool_calls 返回时，从文本中提取 Action/Input
 
-### 🔧 44 个内置工具
+### 🔧 42 个内置工具
 
 | 分类 | 数量 | 工具 |
 |------|------|------|
@@ -28,7 +28,6 @@ Metona Ollama Desktop 是一个基于 **Ollama** 的本地 AI 桌面客户端，
 | 浏览器控制 | 8 | browser_open, browser_screenshot, browser_evaluate, browser_extract, browser_click, browser_type, browser_scroll, browser_close |
 | Git | 1 | git（init/clone/add/commit/push/pull/diff/log/status/branch/checkout/merge/stash/reset/tag/remote） |
 | 记忆管理 | 4 | memory_search, memory_add, memory_replace, memory_remove |
-| 技能系统 | 2 | skill_list, skill_view（渐进式加载） |
 | 会话管理 | 2 | session_list, session_read |
 | 子代理 | 1 | spawn_task（独立上下文 + 超时保护） |
 | 系统工具 | 6 | datetime / calculator / random / uuid / json_format / hash |
@@ -62,11 +61,6 @@ Metona Ollama Desktop 是一个基于 **Ollama** 的本地 AI 桌面客户端，
 - Token 消耗趋势图（输入/输出分色显示）
 - 2 秒自动刷新
 
-### 📊 技能自动生成系统
-- 从成功的工具调用链中自动提取可复用技能
-- Level 0 简短摘要（~100 tokens），渐进式加载
-- 技能匹配与上下文注入
-
 ### 🔒 安全机制
 - 文件路径安全检查（checkPathAllowed）
 - 命令执行安全检查（checkCommandAllowed）
@@ -91,7 +85,7 @@ Metona Ollama Desktop 是一个基于 **Ollama** 的本地 AI 桌面客户端，
 ```
 
 ### 数据层
-- **SQLite (sql.js WASM)**：7 张表（sessions, messages, tool_calls, memories, settings, traces, skills）
+- **SQLite (sql.js WASM)**：6 张表（sessions, messages, tool_calls, memories, settings, traces）
 - **FTS5 全文搜索**：memories 表支持全文检索
 - **WAL 模式 + NORMAL 同步**：零原生依赖，无需 electron-rebuild
 
@@ -116,7 +110,6 @@ Metona Ollama Desktop 是一个基于 **Ollama** 的本地 AI 桌面客户端，
 ## 最近改进
 
 - **`/compress` 上下文压缩**：支持手动触发 LLM 摘要压缩，长对话不再丢失上下文
-- **Skill 渐进式加载**：技能摘要（Level 0）仅 ~100 tokens，按需加载完整工具链
 - **Token 全局统计**：仪表盘新增跨会话累计 Token 分析视图
 - **图表重写**：Token 消耗趋势图重写 — 网格线 + 正确高度计算 + 柱子底部对齐
 - **Agent Loop 稳定性**：修复 abortController 在自动压缩前未定义的严重 bug

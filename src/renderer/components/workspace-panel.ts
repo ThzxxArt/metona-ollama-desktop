@@ -964,7 +964,7 @@ function getToolDisplayName(name: string): string {
     diff_files: '文件对比', replace_in_files: '批量替换', read_multiple_files: '批量读取',
     git: 'Git 操作', compress: '压缩/解压', web_search: '联网搜索',
     memory_search: '搜索记忆', memory_add: '添加记忆', memory_replace: '替换记忆', memory_remove: '删除记忆',
-    skill_list: '技能列表', skill_view: '查看技能',
+
     session_list: '会话列表', session_read: '读取会话', spawn_task: '子代理委派',
     browser_open: '打开网页', browser_screenshot: '浏览器截图', browser_evaluate: '执行JS', browser_extract: '提取内容',
     browser_click: '点击元素', browser_type: '输入文本', browser_scroll: '滚动页面', browser_close: '关闭浏览器'
@@ -981,7 +981,7 @@ function getToolIcon(name: string): string {
     diff_files: '🔀', replace_in_files: '🔄', read_multiple_files: '📚',
     git: '🔖', compress: '🗜️', web_search: '🔍',
     memory_search: '🧠', memory_add: '💾', memory_replace: '✏️', memory_remove: '🗑️',
-    skill_list: '🎯', skill_view: '👁️',
+
     session_list: '📋', session_read: '📖', spawn_task: '🤖',
     browser_open: '🌐', browser_screenshot: '📸', browser_evaluate: '⚡', browser_extract: '📰',
     browser_click: '👆', browser_type: '⌨️', browser_scroll: '↕️', browser_close: '❌'

@@ -1,6 +1,6 @@
 # Metona Ollama Desktop — 开发规范
 
-> 版本: v0.11.10 | 更新: 2026-06-05 | 维护: 项目团队
+> 版本: v0.11.11 | 更新: 2026-06-05 | 维护: 项目团队
 
 ---
 
@@ -43,7 +43,7 @@ src/
 │   ├── tray.ts                   # 系统托盘
 │   ├── utils.ts                  # 工具函数
 │   └── db/
-│       └── sqlite.ts             # SQLite 数据库层（7 张表 + FTS5）
+│       └── sqlite.ts             # SQLite 数据库层（6 张表 + FTS5）
 ├── renderer/                     # 渲染进程
 │   ├── main.ts                   # 入口、全局初始化
 │   ├── types.d.ts                # 完整类型定义
@@ -53,12 +53,11 @@ src/
 │   ├── components/               # 14 个 UI 组件
 │   ├── services/
 │   │   ├── agent-engine.ts       # ReAct Agent Loop 引擎
-│   │   ├── tool-registry.ts      # 工具注册与调度（39 个内置工具 + MCP 动态）
+│   │   ├── tool-registry.ts      # 工具注册与调度（42 个内置工具 + MCP 动态）
 │   │   ├── memory-manager.ts     # 记忆管理核心
 │   │   ├── vector-memory.ts      # 记忆向量索引（IVF）
 │   │   ├── vector-store.ts       # 向量存储 + IVF 索引
 │   │   ├── context-manager.ts    # 上下文窗口管理
-│   │   ├── skill-manager.ts      # 技能自动生成（Level 0）
 │   │   ├── sub-agent.ts          # 子代理委派
 │   │   ├── mcp-client.ts         # MCP 渲染端客户端
 │   │   ├── log-service.ts        # 结构化日志
@@ -155,11 +154,11 @@ import {
 ### 5.1 五大子系统
 
 ```
-① Agent 系统    → agent-engine.ts + tool-registry.ts（39 内置工具 + MCP 动态）
+① Agent 系统    → agent-engine.ts + tool-registry.ts（42 内置工具 + MCP 动态）
 ② 记忆系统      → memory-manager.ts + vector-memory.ts
 ③ 向量存储      → vector-store.ts（IVF 索引）
 ④ 工作空间      → workspace.ts (主进程) + workspace-panel.ts (渲染进程)
-⑤ 数据层       → db/sqlite.ts（SQLite, 7 张表, FTS5）
+⑤ 数据层       → db/sqlite.ts（SQLite, 6 张表, FTS5）
 ```
 
 ### 5.2 ReAct Agent Loop
@@ -177,7 +176,7 @@ import {
 
 ### 5.3 SQLite 数据库
 
-7 张表，WAL 模式 + NORMAL 同步：
+6 张表，WAL 模式 + NORMAL 同步：
 
 | 表 | 用途 | 关键特性 |
 |---|---|---|
@@ -187,7 +186,6 @@ import {
 | `memories` | Agent 记忆 | FTS5 全文搜索，向量嵌入，容量 500 上限 |
 | `settings` | 设置 | JSON 序列化 |
 | `traces` | ReAct 执行轨迹 | Agent 可观测性 |
-| `skills` | 自动生成的可复用技能 | 成功/失败次数、平均时长 |
 
 ### 5.4 联网搜索联动
 

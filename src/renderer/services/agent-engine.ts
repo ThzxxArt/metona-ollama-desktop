@@ -13,7 +13,6 @@ import {
   needsConfirmation
 } from './tool-registry.js';
 import { searchMemories, buildMemoryContext, markMemoryUsed, isMemoryEnabled } from './memory-manager.js';
-import { extractSkillsFromToolRecords, matchSkills, buildSkillContext } from './skill-manager.js';
 import { showToast } from '../components/toast.js';
 import { logInfo, logWarn, logSuccess, logError, logToolStart, logToolResult, logAgentLoop, logModelResponse, logStreamProgress, resetStreamProgress } from './log-service.js';
 import { getWorkspaceDirPath } from '../components/workspace-panel.js';
@@ -80,7 +79,7 @@ const TOOLS_WITH_DATA_DEPS = new Set(['web_fetch']); // web_fetch 可能依赖 w
 const ALWAYS_PARALLEL = new Set([
   'read_file', 'list_directory', 'search_files', 'get_file_info', 'tree',
   'web_search', 'browser_screenshot', 'browser_extract', 'browser_evaluate',
-  'memory_search', 'session_list', 'session_read', 'skill_list', 'skill_view',
+  'memory_search', 'session_list', 'session_read',
   'diff_files', 'git',
   'datetime', 'calculator',
   'random', 'uuid', 'json_format', 'hash',
@@ -93,7 +92,6 @@ const VALID_TOOL_NAMES = new Set([
   'edit_file', 'get_file_info', 'tree', 'download_file', 'diff_files',
   'replace_in_files', 'read_multiple_files', 'git', 'compress',
   'memory_search', 'memory_add', 'memory_replace', 'memory_remove', 'session_list', 'session_read',
-  'skill_list', 'skill_view',
   'datetime', 'calculator',
   'random', 'uuid', 'json_format', 'hash'
 ]);
@@ -517,17 +515,6 @@ Shell: ${osInfo.shell}
 - 如果是 Linux/macOS，使用 Bash 命令（如 ls、cat、grep，路径用 /）
 - 严禁在 Windows 上执行 Linux 命令，严禁在 Linux 上执行 Windows 命令。`);
 
-  // v4.2 注入匹配的技能上下文
-  if (useTools && userContent) {
-    const matchedSkills = await matchSkills(userContent, 3);
-    if (matchedSkills.length > 0) {
-      const skillContext = buildSkillContext(matchedSkills);
-      if (skillContext) {
-        systemPromptParts.push(skillContext);
-        logInfo(`技能匹配: ${matchedSkills.length} 个技能已注入`, matchedSkills.map(s => s.name).join(', '));
-      }
-    }
-  }
 
   // 组合 system prompt
 
@@ -915,12 +902,6 @@ Shell: ${osInfo.shell}
         } catch { /* 不阻塞 */ }
       }
 
-      // v4.2 自动提取技能
-      if (allToolRecords.length >= 2) {
-        try {
-          await extractSkillsFromToolRecords(allToolRecords, userContent, (currentSession as ChatSession)?.title || '');
-        } catch { /* 不阻塞 */ }
-      }
 
       callbacks.onDone(content || '（模型未返回内容）', allToolRecords.length > 0 ? allToolRecords : undefined, makeStats());
       return;

@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-v0.11.10-E8734A?style=flat-square" alt="version">
+  <img src="https://img.shields.io/badge/version-v0.11.11-E8734A?style=flat-square" alt="version">
   <img src="https://img.shields.io/badge/electron-33+-47848F?style=flat-square&logo=electron" alt="electron">
   <img src="https://img.shields.io/badge/typescript-5.7+-3178C6?style=flat-square&logo=typescript" alt="typescript">
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="license">
@@ -35,10 +35,9 @@
 | | 功能 | 说明 |
 |:---:|:---|:---|
 | 🤖 | **ReAct Agent Loop** | 始终开启的唯一对话模式。Thought → Action → Observation → Reflection 完整循环，最大 85 轮（可配置），自动重试 2 次，工具去重，并行/链式执行 |
-| 🔧 | **44 个内置工具** | 文件系统（16个） · 命令执行 · 联网搜索 · 浏览器控制（9个） · Git · 记忆 · 会话 · 子代理 · 系统工具 |
+| 🔧 | **42 个内置工具** | 文件系统（16个） · 命令执行 · 联网搜索 · 浏览器控制（9个） · Git · 记忆 · 会话 · 子代理 · 系统工具 |
 | 🧠 | **智能记忆系统** | 三类记忆（fact / preference / rule），FTS5 全文搜索 + 向量语义搜索，写入前安全扫描，容量 500 条，90 天衰减 |
 | 📋 | **自定义文件** | SOUL.md（人格，不可压缩）+ AGENT.md（行为准则）+ USER.md（用户画像），工作空间优先，内置默认 fallback |
-| 🎯 | **技能自动生成 v1.1** | 工具调用链自动提取 → 语义匹配 → 参数自优化 → 未使用衰减 → 技能链合并，越用越精准 |
 | 🌐 | **MCP 协议扩展** | JSON-RPC 2.0 over stdio，动态工具发现，Shadowing 防护 |
 | 🔍 | **联网搜索（双模式）** | SearXNG 元搜索引擎 JSON API（70+引擎聚合）/ 四引擎 HTML 解析（Bing+百度+搜狗+360），双模式可切换；web_fetch 支持反爬+UA切换+浏览器回退 |
 | 🌏 | **浏览器控制** | 打开网页 · 截图 · 执行 JS · 提取内容 · 点击 · 输入 · 滚动 · 关闭 |
@@ -138,12 +137,10 @@
 </details>
 
 <details>
-<summary><strong>📊 技能 / 会话 / 子代理（5 个）</strong></summary>
+<summary><strong>📊 会话 / 子代理（3 个）</strong></summary>
 
 | 工具 | 功能 |
 |------|------|
-| `skill_list` | 列出已生成的技能 |
-| `skill_view` | 查看技能详情 |
 | `session_list` | 列出历史会话 |
 | `session_read` | 读取会话内容 |
 | `spawn_task` | 委派子代理（独立上下文 + 超时保护） |
@@ -173,11 +170,9 @@
               ↓
          记忆检索 (FTS5 + 向量语义搜索) → 上下文注入
               ↓
-         技能匹配 (语义匹配 + 参数自优化 + 衰减 + 链合并)
-              ↓
          Ollama API (流式响应，num_ctx 自动检测)
               ↓
-         Tool Registry (44 内置 + MCP 动态)
+         Tool Registry (42 内置 + MCP 动态)
               ↓
          观察结果 → 反思 → 循环 / 最终回答
 ```
@@ -204,7 +199,7 @@ main.ts (入口)
 
 ### 🗄️ 数据库
 
-SQLite (sql.js WASM)，7 张表，WAL 模式 + FTS5 全文搜索：
+SQLite (sql.js WASM)，6 张表，WAL 模式 + FTS5 全文搜索：
 
 | 表 | 用途 |
 |---|---|
@@ -214,7 +209,6 @@ SQLite (sql.js WASM)，7 张表，WAL 模式 + FTS5 全文搜索：
 | `memories` | Agent 记忆（FTS5 + 向量嵌入） |
 | `settings` | 设置（JSON 序列化） |
 | `traces` | ReAct 执行轨迹 |
-| `skills` | 自动生成的技能 |
 
 ## 🔒 安全机制
 
@@ -245,7 +239,7 @@ npm start
 ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm run dist
 ```
 
-产出：`release/Metona Ollama Setup v0.11.10.exe`
+产出：`release/Metona Ollama Setup v0.11.11.exe`
 
 ## 🛠️ 常用命令
 
@@ -276,10 +270,9 @@ npm run dist           # 构建 Windows 安装包
 | | Feature | Description |
 |:---:|:---|:---|
 | 🤖 | **ReAct Agent Loop** | Always-on, only chat mode. Full Thought → Action → Observation → Reflection cycle, up to 85 iterations (configurable), auto-retry 2 times, tool dedup, parallel/chain execution |
-| 🔧 | **44 Built-in Tools** | File system · Command · Web search · Browser · Git · Memory · Skills · Sessions · Sub-agent · System |
+| 🔧 | **42 Built-in Tools** | File system · Command · Web search · Browser · Git · Memory · Sessions · Sub-agent · System |
 | 🧠 | **Smart Memory System** | Three types (fact / preference / rule), FTS5 + vector semantic search, pre-write security scan, 500 capacity, 90-day decay |
 | 📋 | **Custom Files** | SOUL.md (persona, never compressed) + AGENT.md (behavior rules) + USER.md (user profile), workspace-first with built-in defaults |
-| 🎯 | **Auto Skill Generation v1.1** | Tool chain extraction → semantic matching → parameter self-optimization → decay → chain merging |
 | 🌐 | **MCP Protocol Extension** | JSON-RPC 2.0 over stdio, dynamic tool discovery, Shadowing protection |
 | 🔍 | **Web Search (dual-mode)** | SearXNG meta-search JSON API (70+ engines) / quad-engine HTML parsing (Bing+Baidu+Sogou+360), switchable; web_fetch with auto-retry+mobile UA+SPA browser fallback |
 | 🌏 | **Browser Control** | Open pages · Screenshot · JS execution · Content extraction · Click · Type · Scroll · Close |
@@ -378,12 +371,10 @@ npm run dist           # 构建 Windows 安装包
 </details>
 
 <details>
-<summary><strong>📊 Skills / Sessions / Sub-agent (5)</strong></summary>
+<summary><strong>📊 Sessions / Sub-agent (3)</strong></summary>
 
 | Tool | Function |
 |------|------|
-| `skill_list` | List generated skills |
-| `skill_view` | View skill details |
 | `session_list` | List session history |
 | `session_read` | Read session content |
 | `spawn_task` | Delegate sub-agent (isolated context + timeout) |
@@ -413,7 +404,7 @@ User message → workspace SOUL.md (never compressed) → AGENT.md → USER.md
               ↓
          Ollama API (Streaming Response)
               ↓
-         Tool Registry (44 Built-in + MCP Dynamic)
+         Tool Registry (42 Built-in + MCP Dynamic)
               ↓
          Observation → Reflection → Loop / Final Answer
 ```
@@ -440,7 +431,7 @@ main.ts (Entry)
 
 ### 🗄️ Database
 
-SQLite (sql.js WASM), 7 tables, WAL mode + FTS5 full-text search:
+SQLite (sql.js WASM), 6 tables, WAL mode + FTS5 full-text search:
 
 | Table | Purpose |
 |---|---|
@@ -450,7 +441,6 @@ SQLite (sql.js WASM), 7 tables, WAL mode + FTS5 full-text search:
 | `memories` | Agent memories (FTS5 + vector embedding) |
 | `settings` | Settings (JSON serialization) |
 | `traces` | ReAct execution traces |
-| `skills` | Auto-generated skills |
 
 ## 🔒 Security
 
@@ -481,7 +471,7 @@ npm start
 ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm run dist
 ```
 
-Output: `release/Metona Ollama Setup v0.11.10.exe`
+Output: `release/Metona Ollama Setup v0.11.11.exe`
 
 ## 🛠️ Common Commands
 
