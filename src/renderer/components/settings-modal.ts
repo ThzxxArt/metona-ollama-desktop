@@ -267,12 +267,11 @@ export function initSettingsModal(): void {
     btnBrowseWorkspace.addEventListener('click', async () => {
       const bridge = window.metonaDesktop;
       if (!bridge?.isDesktop) return;
-      const paths = await bridge.dialog.openFile({
-        filters: [{ name: '文件夹', extensions: ['*'] }]
-      });
-      // Electron openFile 对话框不能直接选文件夹，这里用 saveFile 代替
-      // 或者让用户手动输入路径
-      showToast('请在输入框中直接修改路径', 'info');
+      const paths = await bridge.dialog.openDirectory();
+      if (paths && paths.length > 0) {
+        inputWorkspaceDir.value = paths[0];
+        inputWorkspaceDir.dispatchEvent(new Event('blur'));
+      }
     });
     // 双击输入框解锁编辑
     inputWorkspaceDir.addEventListener('dblclick', () => {

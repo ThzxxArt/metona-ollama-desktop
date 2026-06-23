@@ -19,7 +19,8 @@ contextBridge.exposeInMainWorld('metonaDesktop', {
   },
   dialog: {
     openFile: (options?: unknown) => ipcRenderer.invoke('dialog:openFile', options),
-    saveFile: (options?: unknown) => ipcRenderer.invoke('dialog:saveFile', options)
+    saveFile: (options?: unknown) => ipcRenderer.invoke('dialog:saveFile', options),
+    openDirectory: () => ipcRenderer.invoke('dialog:openDirectory')
   },
   fs: {
     readFile: (filePath: string) => ipcRenderer.invoke('fs:readFile', filePath),

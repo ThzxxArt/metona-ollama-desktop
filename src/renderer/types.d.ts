@@ -224,6 +224,7 @@ export interface MetonaDesktopAPI {
   dialog: {
     openFile: (options?: FileFilterOptions) => Promise<string[] | null>;
     saveFile: (options?: SaveFileOptions) => Promise<string | null>;
+    openDirectory: () => Promise<string[] | null>;
   };
   fs: {
     readFile: (filePath: string) => Promise<{ success: boolean; content?: string; name?: string; error?: string }>;

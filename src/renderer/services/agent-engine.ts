@@ -12,7 +12,6 @@ import {
   needsConfirmation,
   initPlanTracker,
   getPlanTracker,
-  savePlanTracker,
   formatPlanStatus,
   clearPlanTracker,
 } from './tool-registry.js';
@@ -679,50 +678,19 @@ function truncateByTokenBudget(text: string, maxTokens: number): string {
 function extractPlanSteps(content: string): string[] {
   const steps: string[] = [];
   const stepRegex = /(?:^|\n)\s*(?:\d+[\.\)、]\s*|[-*]\s+)(.+)/g;
+  // 过滤项：阶段标题、HTML 标记、纯格式描述
+  const filterPatterns = [/^\*\*.*阶段.*\*\*/, /\*\*第[一二三]|\*\*Phase/, /^```/, /^<\/?/, /^Stage/i];
+  // 动作动词：步骤必须包含至少一个表示"要做什么"的词
+  const ACTION_VERBS = /搜索|查找|检索|抓取|fetch|写入|write|创建|生成|运行|执行|打开|浏览|读取|下载|提交|推送|编译|压缩|解压|截图|提取|设计|构建|编码|HTML|CSS|组织|整理|归类|搜集|汇总/;
   let match;
   while ((match = stepRegex.exec(content)) !== null) {
     const step = match[1].trim();
-    if (step.length > 5 && step.length < 200) {
-      steps.push(step);
-    }
+    if (step.length < 5 || step.length > 200) continue;
+    if (filterPatterns.some(p => p.test(step))) continue;
+    if (!ACTION_VERBS.test(step)) continue; // 纯描述无动词，跳过
+    steps.push(step);
   }
-  return steps.length > 0 ? steps.slice(0, 10) : ['执行任务计划（详见上方描述）'];
-}
-
-/** Plan Mode 自动追踪：工具执行成功后，匹配 Plan 步骤并自动标记完成 */
-function autoTrackPlanStep(toolName: string): void {
-  const tracker = getPlanTracker();
-  if (!tracker.active || tracker.steps.length === 0) return;
-
-  // 工具名 → 计划步骤关键词映射（用于自动匹配）
-  const TOOL_STEP_KEYWORDS: Record<string, string[]> = {
-    web_search: ['搜索', '查找', '检索', 'search', '查询'],
-    web_fetch: ['抓取', 'fetch', '获取', '浏览', '提取内容'],
-    read_file: ['读取', 'read', '查看', '检查'],
-    write_file: ['写入', 'write', '生成', '创建.*文件', '保存', '输出'],
-    edit_file: ['编辑', '修改', 'edit'],
-    list_directory: ['列出', 'list', '浏览.*目录', '查看.*结构'],
-    tree: ['目录树', 'tree', '结构'],
-    run_command: ['运行', '执行', 'run', '命令', '编译', '测试'],
-    git: ['git', '提交', '推送', '暂存', 'commit'],
-    browser_open: ['打开.*网页', '浏览器', 'browser'],
-  };
-
-  const keywords = TOOL_STEP_KEYWORDS[toolName] || [];
-  if (keywords.length === 0) return;
-
-  for (const step of tracker.steps) {
-    if (step.done) continue;
-    for (const kw of keywords) {
-      if (new RegExp(kw, 'i').test(step.label)) {
-        step.done = true;
-        tracker.done = tracker.steps.filter(s => s.done).length;
-        savePlanTracker(tracker);
-        logInfo(`Plan 自动追踪: ${toolName} → 步骤${step.index} "${step.label}" 已自动标记完成 (${tracker.done}/${tracker.total})`);
-        return; // 一个工具只标记一个步骤
-      }
-    }
-  }
+  return steps.length > 0 ? steps.slice(0, 6) : ['执行任务计划（详见上方描述）'];
 }
 
 /**
@@ -1005,13 +973,17 @@ async function handleThinking(
       });
       logInfo('待办追踪: 注入未完成任务提醒', pending.join(', '));
     } else if (allMentioned.length > 0) {
-      // 全部待办已完成 → 注入正面确认信号，防止模型"遗忘"已完成的写入操作
-      ctx.messages.push({
-        role: 'user',
-        content: `✅ 待办检测：用户请求中的全部操作已实际执行完成（${allMentioned.join('、')}）。如果检索到的信息已经足够，请直接给出最终回答，不要再重复调用已执行过的工具。`,
-        ephemeral: true,
-      });
-      logInfo('待办追踪: 全部完成，注入完成确认', allMentioned.join(', '));
+      // 全部待办已完成 → 注入 system 级别确认信号（去重：不重复注入）
+      const alreadySignaled = ctx.messages.slice(-3).some(
+        m => m.role === 'system' && m.content?.includes('待办检测：用户请求中的全部操作已实际执行完成')
+      );
+      if (!alreadySignaled) {
+        ctx.messages.push({
+          role: 'system',
+          content: `✅ 待办检测：用户请求中的全部操作已实际执行完成（${allMentioned.join('、')}）。不要再调用工具，直接输出最终回答。`,
+        });
+        logInfo('待办追踪: 全部完成，注入完成确认', allMentioned.join(', '));
+      }
     }
   }
 
@@ -1287,8 +1259,17 @@ async function handleExecuting(
     callbacks.onToolCallStart(call);
     logToolStart(call.function.name, JSON.stringify(call.function.arguments));
 
-    // ── pre_tool Hook ──
-    await executeHooks('pre_tool', ctx, { toolName: call.function.name, toolArgs: call.function.arguments });
+    // ── pre_tool Hook（可阻断）──
+    const hookResult = await executeHooks('pre_tool', ctx, { toolName: call.function.name, toolArgs: call.function.arguments });
+    if (!hookResult.allPassed) {
+      const reasons = hookResult.results.filter(r => !r.passed).map(r => r.message).join('; ');
+      logWarn(`pre_tool Hook 阻断: ${call.function.name}`, reasons);
+      return [{
+        name: call.function.name, arguments: call.function.arguments,
+        result: { success: true, error: '', message: reasons },
+        status: 'success' as const, timestamp: Date.now()
+      }, null];
+    }
 
     await new Promise(r => requestAnimationFrame(r));
 
@@ -1368,10 +1349,6 @@ async function handleExecuting(
       }
       // ── post_tool Hook ──
       executeHooks('post_tool', ctx, { toolName: record.name, toolArgs: record.arguments, toolResult: record.result! });
-      // ── Plan Mode 自动追踪 — 工具执行成功后自动匹配 Plan 步骤标记完成 ──
-      if (record.status === 'success' && ctx.mode === 'plan') {
-        autoTrackPlanStep(record.name);
-      }
       if (record.status === 'success') {
         callbacks.onToolCallResult(record.name, record.result!, batch.find(c => c.function.name === record.name)!);
       } else if (record.status === 'cancelled') {
@@ -1513,7 +1490,13 @@ async function handleReflecting(
   // ── 异常1: 空响应 + 有工具历史 → 模型可能困惑 → 注入提示 ──
   if (ctx.toolCalls.length === 0 && !ctx.content.trim() && ctx.loopCount > 1 && ctx.allToolRecords.length > 0) {
     logWarn('模型返回空内容（有未处理的工具结果），注入继续提示');
-    ctx.messages.pop();
+    // 精准移除最后一条 assistant 消息（而非盲目 pop）
+    for (let i = ctx.messages.length - 1; i >= 0; i--) {
+      if (ctx.messages[i].role === 'assistant') {
+        ctx.messages.splice(i, 1);
+        break;
+      }
+    }
     ctx.messages.push({
       role: 'user',
       content: '请根据上面的工具调用结果继续回答。如果需要更多信息，可以继续调用工具。如果已有足够信息，请给出最终回答。'
@@ -1537,7 +1520,6 @@ async function handleReflecting(
             content: '已达到最大计划重试次数。请基于当前计划直接开始执行任务。',
             ephemeral: true,
           });
-          ctx.loopCount = 0;
           transition(ctx, S.THINKING);
           return;
         }
@@ -1547,7 +1529,6 @@ async function handleReflecting(
           content: '请基于反馈重新规划。调整你的方案后再次输出计划。',
           ephemeral: true,
         });
-        ctx.loopCount = 0;
         transition(ctx, S.THINKING);
         return;
       }
@@ -1603,9 +1584,25 @@ async function handleReflecting(
       if (gateResult.critical) {
         // 阻断级失败：强制模型重新回答
         logWarn(`Completion Gate 🔴阻断: ${gateResult.reason}`);
+        // 检测是否所有待办任务已完成 — 若是，则只要求修改措辞；若待办中仍有被 Gate 拦截的操作，则明确要求调用工具
+        const firstUserMsg = ctx.messages.find(m => m.role === 'user');
+        const userText = firstUserMsg?.content || '';
+        const stillPending = detectPendingActions(userText, ctx.allToolRecords);
+        const gateReason = gateResult.reason || '';
+        let retryMsg: string;
+        if (stillPending.length === 0) {
+          retryMsg = `⚠️ 完成检查发现问题: ${gateReason}\n注意：你的所有工具调用已经实际完成。请只修改文字措辞消除上述问题，**绝对不要**调用任何新工具。直接重新输出修正后的文字即可。`;
+        } else if (gateReason.includes('写入') && stillPending.some(p => p.includes('写入'))) {
+          // 关键：模型声称写了文件但实际没调 write_file → 明确要求调用工具
+          retryMsg = `⚠️ 你还没有实际调用 write_file 工具写入文件，但回复中声称已写入。\n请**立即调用 write_file** 工具将内容写入工作空间，不要只在文字中描述。\n待完成任务: ${stillPending.join('、')}`;
+        } else if (gateReason.includes('搜索') && stillPending.some(p => p.includes('搜索'))) {
+          retryMsg = `⚠️ 你还没有实际调用 web_search 工具，但回复中声称已搜索。\n请**立即调用 web_search** 工具执行搜索。\n待完成任务: ${stillPending.join('、')}`;
+        } else {
+          retryMsg = `⚠️ 完成检查发现问题: ${gateReason}\n请修正后重新给出回答。待完成任务: ${stillPending.join('、')}`;
+        }
         ctx.messages.push({
           role: 'user',
-          content: `⚠️ 完成检查发现严重问题: ${gateResult.reason}\n请修正后重新给出回答。`,
+          content: retryMsg,
           ephemeral: true,
         });
         transition(ctx, S.THINKING);

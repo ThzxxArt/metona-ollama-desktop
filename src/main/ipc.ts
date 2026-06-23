@@ -130,6 +130,14 @@ export async function setupIPC(): Promise<void> {
     return result.filePath;
   });
 
+  ipcMain.handle('dialog:openDirectory', async () => {
+    const result = await dialog.showOpenDialog(mainWindow!, {
+      properties: ['openDirectory']
+    });
+    if (result.canceled) return null;
+    return result.filePaths;
+  });
+
   ipcMain.handle('fs:readFile', async (_, filePath: string) => {
     try {
       const check = checkPathAllowed(path.resolve(filePath), 'read');

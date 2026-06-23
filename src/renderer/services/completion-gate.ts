@@ -144,9 +144,9 @@ const toolHallucinationCheck: CompletionCheck = {
       { patterns: [/已写入文件/, /已创建文件/, /文件已生成/, /已保存到/, /已成功创建/, /成功写入/,
                    /文件.*已.*创建/, /文件.*已.*写入/, /生成.*文件/, /写入.*工作空间/],
         requiredTools: ['write_file'], label: '写入/创建文件' },
-      // 文件读取
-      { patterns: [/已读取文件/, /文件内容显示/, /读取了.*文件/, /文件.*内容.*如下/,
-                   /查看.*文件.*内容/, /打开文件.*看到/],
+      // 文件读取（仅匹配明确声称调用了 read_file 工具的场景）
+      { patterns: [/用read_file读取了/, /调用read_file.*读取/, /通过read_file工具/,
+                   /使用read_file.*查看了/, /read_file.*工具.*读取了/],
         requiredTools: ['read_file', 'read_multiple_files'], label: '读取文件' },
       // 文件编辑
       { patterns: [/已修改文件/, /已编辑文件/, /文件已更新/, /已替换.*内容/,
@@ -208,6 +208,10 @@ const toolHallucinationCheck: CompletionCheck = {
         if (pattern.test(content)) {
           const anyCalled = rule.requiredTools.some(t => calledTools.has(t));
           if (!anyCalled) {
+            // 写后读豁免：write_file 已调用时，read_file 的声称通常是读取写入结果的自然表述，不阻断
+            if (rule.label === '读取文件' && calledTools.has('write_file')) {
+              return { passed: true, reason: '' };
+            }
             const toolList = rule.requiredTools.join(' / ');
             return {
               passed: false,
