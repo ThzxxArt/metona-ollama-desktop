@@ -124,6 +124,23 @@ export function showPrompt(options: {
   });
 }
 
+/** 显示自定义 confirm（支持 HTML），返回 true/false */
+export function showHtmlConfirm(html: string, title = '确认', wide = false): Promise<boolean> {
+  ensureModal();
+
+  return new Promise((resolve) => {
+    resolveFn = (val) => resolve(val !== null);
+    titleEl!.textContent = title;
+    bodyEl!.innerHTML = `<div style="color:var(--text-secondary);font-size:13px;line-height:1.6;">${html}</div>`;
+    inputEl = null;
+    overlayEl!.style.display = '';
+    // 宽屏模式：Plan Mode 确认框需要更大空间
+    const modalEl = overlayEl!.querySelector('.modal') as HTMLElement;
+    if (modalEl) modalEl.style.maxWidth = wide ? '700px' : '';
+    okBtn!.focus();
+  });
+}
+
 /** 显示自定义 confirm，返回 true/false */
 export function showConfirm(message: string, title = '确认'): Promise<boolean> {
   ensureModal();

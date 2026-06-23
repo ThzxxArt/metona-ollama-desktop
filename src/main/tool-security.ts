@@ -21,15 +21,28 @@ let allowedDirs: string[] = [
 
 /** 永久禁止的目录 */
 const BLOCKED_DIRS: string[] = [
+  // Linux/macOS 系统目录
   '/etc', '/sys', '/proc', '/dev', '/boot', '/root',
-  'C:\\Windows', 'C:\\Program Files', 'C:\\ProgramData',
+  '/bin', '/sbin', '/usr/bin', '/usr/sbin', '/usr/lib',
+  '/var/log', '/var/run', '/var/spool', '/var/mail',
+  '/tmp/.X11-unix', '/tmp/.font-unix',
+  // Windows 系统目录
+  'C:\\Windows', 'C:\\Windows\\System32', 'C:\\Windows\\SysWOW64',
+  'C:\\Windows\\System', 'C:\\Windows\\WinSxS',
+  'C:\\Program Files', 'C:\\Program Files (x86)', 'C:\\ProgramData',
+  // 用户敏感目录
   path.join(HOME, '.ssh'),
   path.join(HOME, '.gnupg'),
   path.join(HOME, '.aws'),
+  path.join(HOME, '.azure'),
+  path.join(HOME, '.config'),
+  path.join(HOME, '.kube'),
+  path.join(HOME, 'AppData'),
 ];
 
 /** 命令黑名单 */
 const BLOCKED_COMMANDS: string[] = [
+  // POSIX 危险命令
   'rm -rf /', 'rm -rf /*', ':(){ :|:& };:',
   'mkfs', 'dd if=', 'wipefs', 'shred',
   'shutdown', 'reboot', 'poweroff', 'halt',
@@ -39,6 +52,15 @@ const BLOCKED_COMMANDS: string[] = [
   'systemctl enable', 'systemctl disable',
   'curl | sh', 'wget | sh', 'curl | bash', 'wget | bash',
   'eval', 'exec >',
+  // Windows 危险命令
+  'rmdir /s', 'del /f', 'del /s', 'del /q',
+  'format', 'diskpart',
+  'reg add', 'reg delete', 'reg import', 'reg export',
+  'sc stop', 'sc delete', 'sc config',
+  'net user', 'net localgroup', 'net share',
+  'icacls', 'takeown', 'cacls',
+  'bcdedit', 'wmic', 'rundll32',
+  'schtasks /create', 'schtasks /delete',
 ];
 
 export interface CheckResult {

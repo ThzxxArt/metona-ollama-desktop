@@ -631,6 +631,52 @@ html, body {
     background: var(--critical-bg);
 }
 
+/* ── Plan 按钮 (v0.12.0) ── */
+.plan-toggle {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    flex-shrink: 0;
+    user-select: none;
+}
+
+.plan-toggle input { display: none; }
+
+.plan-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: var(--radius-control);
+    background: var(--bg-card);
+    border: 1px solid var(--border-default);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: var(--transition);
+    color: var(--text-tertiary);
+}
+
+.plan-btn svg {
+    width: 18px;
+    height: 18px;
+}
+
+.plan-toggle:hover .plan-btn {
+    border-color: var(--border-strong);
+    color: var(--text-secondary);
+}
+
+.plan-toggle input:checked + .plan-btn {
+    background: rgba(71, 132, 143, 0.1);
+    border-color: #47848F;
+    color: #47848F;
+    box-shadow: 0 0 16px rgba(71, 132, 143, 0.2);
+}
+
+.plan-toggle input:checked + .plan-btn:hover {
+    background: rgba(71, 132, 143, 0.15);
+    box-shadow: 0 0 20px rgba(71, 132, 143, 0.3);
+}
+
 /* ── 开关控件 ── */
 .toggle-label {
     display: flex;
@@ -2449,8 +2495,8 @@ html, body {
    ═══════════════════════════════════════════════════════════════ */
 
 .workspace-panel {
-    width: 480px;
-    min-width: 480px;
+    width: 400px;
+    min-width: 400px;
     height: 100vh;
     display: flex;
     flex-direction: column;
@@ -3537,6 +3583,12 @@ html, body {
     color: var(--critical);
     background: var(--critical-bg);
     border: 1px solid rgba(217, 79, 92, 0.15);
+}
+
+.tool-card-badge.plan-mode {
+    color: var(--accent);
+    background: rgba(232, 115, 74, 0.08);
+    border: 1px solid rgba(232, 115, 74, 0.2);
 }
 
 .tool-card-desc {

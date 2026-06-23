@@ -142,7 +142,12 @@ export function killProcess(id: string): boolean {
     return false;
   }
   try {
-    proc.kill('SIGTERM');
+    // Windows 不支持 POSIX 信号，需用 taskkill 强制终止进程树
+    if (process.platform === 'win32' && proc.pid) {
+      spawn('taskkill', ['/PID', String(proc.pid), '/T', '/F']);
+    } else {
+      proc.kill('SIGTERM');
+    }
     activeProcesses.delete(id);
     sendLog('info', `🖥️ 进程已终止`, `ID: ${id}`);
     return true;
@@ -156,7 +161,13 @@ export function killProcess(id: string): boolean {
 /** 停止所有进程（窗口关闭时调用） */
 export function killAllProcesses(): void {
   for (const [id, proc] of activeProcesses) {
-    try { proc.kill('SIGTERM'); } catch { /* ignore */ }
+    try {
+      if (process.platform === 'win32' && proc.pid) {
+        spawn('taskkill', ['/PID', String(proc.pid), '/T', '/F']);
+      } else {
+        proc.kill('SIGTERM');
+      }
+    } catch { /* ignore */ }
   }
   activeProcesses.clear();
 }
@@ -166,8 +177,12 @@ export function listWorkspaceDir(dirPath?: string): { success: boolean; entries?
   try {
     const targetDir = dirPath ? path.resolve(dirPath) : _workspaceDir;
 
-    // 安全检查：必须在 workspace 范围内
-    if (!targetDir.startsWith(_workspaceDir) && !targetDir.startsWith(DEFAULT_WORKSPACE_DIR)) {
+    // 安全检查：必须在 workspace 范围内（Windows 路径大小写不敏感）
+    const isWin = process.platform === 'win32';
+    const targetCheck = isWin ? targetDir.toLowerCase() : targetDir;
+    const wsCheck = isWin ? _workspaceDir.toLowerCase() : _workspaceDir;
+    const defaultCheck = isWin ? DEFAULT_WORKSPACE_DIR.toLowerCase() : DEFAULT_WORKSPACE_DIR;
+    if (!targetCheck.startsWith(wsCheck) && !targetCheck.startsWith(defaultCheck)) {
       return { success: false, error: '只能浏览工作空间目录内的文件' };
     }
 

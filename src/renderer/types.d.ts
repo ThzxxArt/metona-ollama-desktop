@@ -324,7 +324,22 @@ export type StateKey =
   | 'runCommandMode'
   | 'memoryEnabled'
   | 'memoryEntries'
-  | 'embeddingModel';
+  | 'embeddingModel'
+  | '_defaultModel'
+  | '_lastSystemPrompt'
+  | '_currentEvalCount'
+  | '_abortToolRecords'
+  | '_loopState'
+  | '_loopContext'
+  | 'modelSupportsTools'
+  | 'maxTurns'
+  | 'streamTimeout'
+  | 'subAgentMaxLoops'
+  | 'subAgentTimeout'
+  | 'subAgentModel'
+  | 'agentMode'
+  | 'loopWatchdogMs'
+  | '_planTracker';
 
 // ═══════════════════════════════════════════════════════════
 // Tool Calling 类型
@@ -380,6 +395,139 @@ export interface ToolCallRecord {
 export type AgentState = 'idle' | 'sending' | 'accumulating' | 'executing' | 'confirming' | 'done';
 
 // ═══════════════════════════════════════════════════════════
+// Harness Engineering: Agent Loop 状态机 (v0.12.0)
+// ═══════════════════════════════════════════════════════════
+
+/** Agent Loop 状态枚举 */
+export type LoopState =
+  | 'INIT'           // 构建系统提示词、准备上下文
+  | 'THINKING'       // 调用 LLM 流式
+  | 'PARSING'        // 解析输出（tool_calls 提取 + 文本兜底）
+  | 'EXECUTING'      // 执行工具（按批次并行）
+  | 'OBSERVING'      // 收集工具结果、格式化
+  | 'REFLECTING'     // 反思：去重检测、过早停止检测、Final Answer 检测
+  | 'COMPRESSING'    // 触发上下文压缩
+  | 'TERMINATED';    // 终止
+
+/** Agent Loop 上下文（可序列化，支持暂停/恢复） */
+export interface LoopContext {
+  /** 状态机当前状态 */
+  state: LoopState;
+  /** 会话 ID */
+  sessionId: string;
+  /** 当前循环计数 */
+  loopCount: number;
+  /** 最大循环次数 */
+  maxLoops: number;
+  /** 当前轮模型输出内容 */
+  content: string;
+  /** 当前轮思考内容 */
+  thinking: string;
+  /** 本轮工具调用列表 */
+  toolCalls: ToolCall[];
+  /** 所有工具调用记录 */
+  allToolRecords: ToolCallRecord[];
+  /** 消息列表（Ollama 格式） */
+  messages: OllamaMessage[];
+  /** 累计 eval tokens */
+  totalEvalCount: number;
+  /** 累计 prompt_eval tokens */
+  totalPromptEvalCount: number;
+  /** 累计推理时间（纳秒） */
+  totalInferenceNs: number;
+  /** 本轮 eval tokens */
+  loopEvalCount: number;
+  /** 本轮 prompt_eval tokens */
+  loopPromptEvalCount: number;
+  /** 本轮推理时间 */
+  loopInferenceNs: number;
+  /** 上一轮成功工具调用的缓存键（用于去重） */
+  prevLoopSuccessKeys: string[];
+  /** 上一轮工具调用（用于 onNewIteration） */
+  prevToolCalls: ToolCall[];
+  /** Agent 模式：auto（直接执行）| plan（先规划后执行） */
+  mode: AgentMode;
+  /** Plan 模式下等待用户确认的 Promise resolve */
+  planApproved?: boolean;
+  /** Plan Mode 重试计数（防止无限循环） */
+  planRetries: number;
+  /** 循环开始时间 */
+  startTime: number;
+}
+
+/** Agent 运行模式 */
+export type AgentMode = 'auto' | 'plan';
+
+/** System Prompt 分区（支持 LLM Prefix Caching） */
+export interface SystemPromptZones {
+  /** 静态区：SOUL.md + 环境基础 → 利用 LLM Prefix Caching */
+  staticZone: string;
+  /** 动态区：记忆检索 + 工作空间 + 实时日期 */
+  dynamicZone: string;
+}
+
+/** Hook 阶段 */
+export type HookPhase = 'pre_tool' | 'post_tool' | 'post_iteration' | 'pre_completion';
+
+/** Hook 执行结果 */
+export interface HookResult {
+  /** 是否通过 */
+  passed: boolean;
+  /** 消息（通过/失败原因） */
+  message: string;
+  /** 附加数据 */
+  data?: Record<string, unknown>;
+}
+
+/** Harness Hook 接口 */
+export interface HarnessHook {
+  name: string;
+  phase: HookPhase;
+  priority: number;
+  handler: (ctx: LoopContext, data: HookData) => Promise<HookResult>;
+  enabled: boolean;
+}
+
+/** Hook 上下文数据 */
+export interface HookData {
+  toolName?: string;
+  toolArgs?: Record<string, unknown>;
+  toolResult?: ToolResult;
+  iterationIndex?: number;
+  [key: string]: unknown;
+}
+
+/** 完成门控检查项 */
+export interface CompletionCheck {
+  name: string;
+  description: string;
+  check: (ctx: LoopContext) => Promise<{ passed: boolean; reason: string }>;
+}
+
+/** Agent 度量指标 */
+export interface AgentMetrics {
+  totalSessions: number;
+  avgIterationsPerTask: number;
+  toolSuccessRate: number;
+  avgCompletionScore: number;
+  frequentErrors: Array<{ pattern: string; count: number }>;
+  tokenEfficiency: number;
+  collectedAt: number;
+}
+
+/** 渐进式披露：上下文层级 */
+export type ContextTier = 'index' | 'interface' | 'implementation';
+
+/** 项目索引摘要 */
+export interface ProjectIndex {
+  structure: string;
+  entryFiles: string[];
+  techStack: string[];
+  tokenCount: number;
+  generatedAt: number;
+}
+
+// ═══════════════════════════════════════════════════════════
 // ReAct Trace 类型 (v4.0)
 // ═══════════════════════════════════════════════════════════
 
@@ -392,6 +540,7 @@ export interface TraceEntry {
   actionInput: string;
   observation: string;
   loopCount: number;
+  errorPattern?: string;
   createdAt: number;
 }
 

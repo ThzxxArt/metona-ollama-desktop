@@ -20,13 +20,14 @@ import { estimateTokens } from '../services/context-manager.js';
 import { searchMemories, buildMemoryContext, markMemoryUsed, extractMemoriesFromConversation, isMemoryEnabled } from '../services/memory-manager.js';
 import { showToolConfirm } from './tool-confirm-modal.js';
 import { logInfo, logStream, logError, logSuccess, logWarn, resetVideoProgress, updateVideoProgress } from '../services/log-service.js';
-import type { ChatSession, ChatMessage, OllamaStreamChunk, FileContent, ChatFile, ToolCallRecord } from '../types.js';
+import type { ChatSession, ChatMessage, OllamaStreamChunk, FileContent, ChatFile, ToolCallRecord, AgentMode } from '../types.js';
 
 let chatInputEl: HTMLTextAreaElement;
 let btnSendEl: HTMLButtonElement;
 let imagePreviewEl: HTMLElement;
 let filePreviewEl: HTMLElement;
 let videoPreviewEl: HTMLElement;
+let planToggleCheckbox: HTMLInputElement;
 let pendingImages: Array<{ name: string; base64: string }> = [];
 let pendingFiles: Array<{ name: string; content: string; language: string; size: number }> = [];
 let pendingVideoFrames: Array<{ name: string; base64: string; timestampSeconds: number }> = [];
@@ -150,6 +151,21 @@ export function initInputArea(): void {
       renderFilePreviews();
     }
   });
+
+  // ── v0.12.0 Plan Mode 切换 ──
+  const planToggleEl = document.querySelector('#togglePlan') as HTMLInputElement;
+  if (planToggleEl) {
+    planToggleCheckbox = planToggleEl;
+    planToggleEl.addEventListener('change', () => {
+      const mode: AgentMode = planToggleEl.checked ? 'plan' : 'auto';
+      state.set('agentMode', mode);
+      // Plan Mode 切换时注册/移除 plan_track 工具
+      import('../services/tool-registry.js').then(({ setPlanModeActive }) => {
+        setPlanModeActive(mode === 'plan');
+      });
+      logInfo(`Agent 模式切换: ${mode === 'plan' ? 'Plan（先规划后执行）' : 'Auto（直接执行）'}`);
+    });
+  }
 }
 
 function autoResizeTextarea(): void {
@@ -211,13 +227,14 @@ function compressImage(base64: string): Promise<{ compressed: string; origBytes:
 
 async function handleImagePaths(paths: string[]): Promise<void> {
   const bridge = getBridge();
+  if (!bridge) return;
   const maxSize = 20 * 1024 * 1024;
 
   // 并行读取所有图片
   const results = await Promise.all(paths.map(async (filePath) => {
     const name = filePath.split(/[/\\]/).pop() || filePath;
     try {
-      const result = await bridge!.fs.readFileBase64(filePath);
+      const result = await bridge.fs.readFileBase64(filePath);
       if (!result.success) return { name, error: result.error };
       const size = result.size ?? 0;
       if (size > maxSize) return { name, error: `超过 20MB 限制` };
@@ -372,13 +389,14 @@ function renderImagePreviews(): void {
 
 async function handleTextFilePaths(paths: string[]): Promise<void> {
   const bridge = getBridge();
+  if (!bridge) return;
 
   // 并行读取所有文件
   const results = await Promise.all(paths.map(async (filePath) => {
     const name = filePath.split(/[/\\]/).pop() || filePath;
     if (!isTextFile(name)) return { name, error: `不是支持的文本/代码文件` };
     try {
-      const result = await bridge!.fs.readFile(filePath);
+      const result = await bridge.fs.readFile(filePath);
       if (!result.success) return { name, error: result.error };
       const content = result.content as string;
       const size = new TextEncoder().encode(content).length;
@@ -561,6 +579,19 @@ async function handleRetry(): Promise<void> {
           updateMessageToolRecord(name, 'error', { success: false, error });
         },
         onConfirmTool: async (call) => showToolConfirm(call),
+        onPlanReady: async (plan: string, steps: string[]) => {
+          try {
+            const { showHtmlConfirm } = await import('./prompt-modal.js');
+            const stepsHtml = steps.length > 0
+              ? '<br><br><strong>📋 执行步骤：</strong><br>' + steps.map((s: string, i: number) => `&nbsp;&nbsp;${i + 1}. ${s}`).join('<br>')
+              : '';
+            const html = `<div>${safeMarkdown(plan.slice(0, 1500))}${plan.length > 1500 ? '<br>…' : ''}${stepsHtml}</div>`;
+            return showHtmlConfirm(html, '📋 Plan Mode — 确认执行计划', true);
+          } catch (err) {
+            logWarn('Plan Mode: 弹窗加载失败，自动批准', (err as Error).message);
+            return true; // 加载失败时自动批准，不阻断执行
+          }
+        },
         onDone: async (finalContent, toolRecords, loopStats) => {
           retryContent = finalContent;
           if (retryIterations > 0) {
@@ -1236,6 +1267,24 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
       },
       onConfirmTool: async (call) => {
         return showToolConfirm(call);
+      },
+      /** v0.12.1: Plan Mode — 计划生成后等待用户确认（Markdown 渲染） */
+      onPlanReady: async (plan: string, steps: string[]) => {
+        try {
+          const { showHtmlConfirm } = await import('./prompt-modal.js');
+          const stepsHtml = steps.length > 0
+            ? '<br><br><strong>📋 执行步骤：</strong><br>' + steps.map((s, i) => `&nbsp;&nbsp;${i + 1}. ${s}`).join('<br>')
+            : '';
+          const html = `<div>${safeMarkdown(plan.slice(0, 1500))}${plan.length > 1500 ? '<br>…' : ''}${stepsHtml}</div>`;
+          const approved = await showHtmlConfirm(html, '📋 Plan Mode — 确认执行计划', true);
+          if (approved) {
+            logInfo('Plan Mode: 用户批准计划');
+          }
+          return approved;
+        } catch (err) {
+          logWarn('Plan Mode: 弹窗加载失败，自动批准', (err as Error).message);
+          return true; // 加载失败时自动批准，不阻断执行
+        }
       },
       onDone: async (finalContent, toolRecords, loopStats) => {
         assistantContent = finalContent;

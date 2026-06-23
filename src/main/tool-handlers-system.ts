@@ -375,7 +375,34 @@ export async function handleWebFetch(params: { url: string; max_chars?: number; 
         return { success: false, error: `页面过大 (${(parseInt(contentLength, 10) / 1024 / 1024).toFixed(1)}MB)，超过 10MB 限制` };
       }
 
-      let text = await resp.text();
+      // 无 content-length 头时，流式读取并限制最大体积（防 OOM）
+      const MAX_BODY_SIZE = 10 * 1024 * 1024; // 10MB
+      let text: string;
+      if (!contentLength && resp.body) {
+        const reader = resp.body.getReader();
+        const chunks: Uint8Array[] = [];
+        let totalSize = 0;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          totalSize += value.length;
+          if (totalSize > MAX_BODY_SIZE) {
+            reader.cancel();
+            return { success: false, error: `页面过大 (超过 10MB)，已中止下载` };
+          }
+          chunks.push(value);
+        }
+        const decoder = new TextDecoder();
+        text = decoder.decode(Buffer.concat(chunks));
+      } else if (!contentLength) {
+        // 无 body stream 回退，但仍需限制
+        text = await resp.text();
+        if (text.length > MAX_BODY_SIZE) {
+          return { success: false, error: `页面过大 (${(text.length / 1024 / 1024).toFixed(1)}MB)，超过 10MB 限制` };
+        }
+      } else {
+        text = await resp.text();
+      }
       const isHTML = contentType.includes('html');
       if (isHTML) {
         text = htmlToText(text);
@@ -1163,6 +1190,7 @@ export async function handleDownloadFile(params: { url: string; destination: str
 export async function handleCompress(params: { action: string; path: string; destination?: string; format?: string }): Promise<ToolResult> {
   try {
     const format = params.format || 'tar.gz';
+    const isWin = process.platform === 'win32';
 
     if (params.action === 'create') {
       const srcPath = resolvePath(params.path);
@@ -1176,13 +1204,28 @@ export async function handleCompress(params: { action: string; path: string; des
       if (!destCheck.ok) return { success: false, error: destCheck.reason };
 
       return new Promise((resolve) => {
-        const cmd = format === 'zip'
-          ? `zip -r "${destPath}" "${path.basename(srcPath)}"`
-          : `tar czf "${destPath}" "${path.basename(srcPath)}"`;
-        const proc = spawn('bash', ['-c', cmd], { cwd: path.dirname(srcPath), stdio: ['pipe', 'pipe', 'pipe'] });
+        let child;
+        const srcName = path.basename(srcPath);
+        const cwd = path.dirname(srcPath);
+
+        if (format === 'zip') {
+          if (isWin) {
+            // Windows: PowerShell Compress-Archive
+            child = spawn('powershell', [
+              '-NoProfile', '-Command',
+              `Compress-Archive -Path '${srcName}' -DestinationPath '${destPath}' -Force`
+            ], { cwd, stdio: ['pipe', 'pipe', 'pipe'] });
+          } else {
+            child = spawn('zip', ['-r', destPath, srcName], { cwd, stdio: ['pipe', 'pipe', 'pipe'] });
+          }
+        } else {
+          // tar.gz: Windows 10+ has tar, Unix has tar
+          child = spawn('tar', ['czf', destPath, srcName], { cwd, stdio: ['pipe', 'pipe', 'pipe'] });
+        }
+
         let stderr = '';
-        proc.stderr.on('data', (d: Buffer) => { stderr += d.toString(); });
-        proc.on('close', (code) => {
+        child.stderr.on('data', (d: Buffer) => { stderr += d.toString(); });
+        child.on('close', (code) => {
           if (code === 0) {
             fs.stat(destPath).then(s => {
               resolve({ success: true, action: 'create', archive: destPath, size: s.size });
@@ -1191,7 +1234,7 @@ export async function handleCompress(params: { action: string; path: string; des
             resolve({ success: false, error: stderr || `压缩失败 (exit ${code})` });
           }
         });
-        proc.on('error', (err) => resolve({ success: false, error: err.message }));
+        child.on('error', (err) => resolve({ success: false, error: err.message }));
       });
     } else {
       // extract
@@ -1206,20 +1249,31 @@ export async function handleCompress(params: { action: string; path: string; des
       await fs.mkdir(destDir, { recursive: true });
 
       return new Promise((resolve) => {
+        let child;
         const isZip = archivePath.endsWith('.zip');
-        const cmd = isZip
-          ? `unzip -o "${archivePath}" -d "${destDir}"`
-          : `tar xzf "${archivePath}" -C "${destDir}"`;
-        const proc = spawn('bash', ['-c', cmd], { stdio: ['pipe', 'pipe', 'pipe'] });
+
+        if (isZip) {
+          if (isWin) {
+            child = spawn('powershell', [
+              '-NoProfile', '-Command',
+              `Expand-Archive -Path '${archivePath}' -DestinationPath '${destDir}' -Force`
+            ], { stdio: ['pipe', 'pipe', 'pipe'] });
+          } else {
+            child = spawn('unzip', ['-o', archivePath, '-d', destDir], { stdio: ['pipe', 'pipe', 'pipe'] });
+          }
+        } else {
+          child = spawn('tar', ['xzf', archivePath, '-C', destDir], { stdio: ['pipe', 'pipe', 'pipe'] });
+        }
+
         let stderr = '';
-        proc.stderr.on('data', (d: Buffer) => { stderr += d.toString(); });
-        proc.on('close', (code) => {
+        child.stderr.on('data', (d: Buffer) => { stderr += d.toString(); });
+        child.on('close', (code) => {
           resolve(code === 0
             ? { success: true, action: 'extract', destination: destDir }
             : { success: false, error: stderr || `解压失败 (exit ${code})` }
           );
         });
-        proc.on('error', (err) => resolve({ success: false, error: err.message }));
+        child.on('error', (err) => resolve({ success: false, error: err.message }));
       });
     }
   } catch (err) {

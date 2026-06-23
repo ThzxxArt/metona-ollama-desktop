@@ -31,6 +31,8 @@ import { initWorkspacePanel, clearToolCardsExternal, clearTerminalExternal, swit
 import { initLogPanel, addLog } from './services/log-service.js';
 import { logInfo, logSuccess, logError, logDebug, logInit, logWarn } from './services/log-service.js';
 import { initSearxngModal, closeSearxngModal, loadSearxngConfig } from './components/searxng-modal.js';
+import { initHarnessHooks } from './services/hooks.js';
+import { initVerificationSystem } from './services/verification.js';
 import type { ChatSession } from './types.js';
 
 // ─── v4.0 数据迁移：IndexedDB → SQLite ───
@@ -346,7 +348,14 @@ async function init(): Promise<void> {
     await loadModels();
     await initMemoryManager();
     await loadSearxngConfig(db);
-    logInit('所有组件已就绪');
+
+    // ── v0.12.0: Harness Engineering 系统初始化 ──
+    initHarnessHooks();
+    initVerificationSystem();
+    // Agent Metrics 无需显式初始化（按需启动）
+    // Context Indexer 在 Agent INIT 状态按需构建
+
+    logInit('所有组件已就绪（含 Harness v0.12.0）');
 
     const savedModel = await db.getSetting('selectedModel', '');
     if (savedModel) {
@@ -409,6 +418,13 @@ async function init(): Promise<void> {
     (document.querySelector('#inputSubAgentMaxLoops') as HTMLInputElement).value = String(subAgentMaxLoops);
     (document.querySelector('#inputSubAgentTimeout') as HTMLInputElement).value = subAgentTimeout >= 0 ? String(subAgentTimeout) : '';
 
+    // ── v0.12.1 看门狗超时 ──
+    let loopWatchdogMs = await db.getSetting<number>('loopWatchdogMs', 1_800_000);
+    state.set('loopWatchdogMs', loopWatchdogMs);
+    const watchdogMin = loopWatchdogMs > 0 ? Math.round(loopWatchdogMs / 60_000) : loopWatchdogMs;
+    const elWatchdog = document.querySelector('#inputLoopWatchdog') as HTMLInputElement;
+    if (elWatchdog) elWatchdog.value = loopWatchdogMs > 0 ? String(watchdogMin) : (loopWatchdogMs === 0 ? '0' : '');
+
     // ── Tool Calling 设置（永久开启，不可关闭）──
     state.set('toolCallingEnabled', true);
     const runCommandMode = await db.getSetting('runCommandMode', 'confirm') as 'auto' | 'confirm' | 'disabled';
@@ -453,6 +469,8 @@ async function init(): Promise<void> {
     initTokenDashboard();
     initWorkspacePanel();
     setupDesktopIntegration();
+    initHarnessHooks();
+    initVerificationSystem();
     checkConnection().then(loadModels);
   }
 }

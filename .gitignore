@@ -7,6 +7,7 @@ build-resources/
 Thumbs.db
 *.log
 window-state.json
+nul
 
 # Build output (release for desktop)
 !release/*.exe

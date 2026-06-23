@@ -87,8 +87,14 @@ function persist(): void {
   try {
     const data = db.export();
     const buf = Buffer.from(data);
-    fs.writeFileSync(dbPath, buf);
-  } catch { /* 静默失败，不阻断主流程 */ }
+    // 先写临时文件再 rename，避免写一半崩溃导致数据库损坏
+    const tmpPath = dbPath + '.tmp';
+    fs.writeFileSync(tmpPath, buf);
+    fs.renameSync(tmpPath, dbPath);
+  } catch (err) {
+    // 记录到启动日志文件（console.error 会被 main.ts 的 uncaughtException 捕获）
+    console.error(`[SQLite persist] 写入失败: ${(err as Error).message}`);
+  }
 }
 
 /** 初始化数据库（异步，需加载 WASM） */
@@ -200,6 +206,7 @@ export async function initDatabase(): Promise<SQL.Database> {
       action_input TEXT,
       observation TEXT,
       loop_count INTEGER,
+      error_pattern TEXT,
       created_at INTEGER NOT NULL,
       FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
     );
@@ -210,7 +217,8 @@ export async function initDatabase(): Promise<SQL.Database> {
   // 兼容迁移：为已有 messages 表补充 attachments 列（文件/视频等附件 JSON）
   try { db.run('ALTER TABLE messages ADD COLUMN attachments TEXT'); } catch { /* 列已存在，忽略 */ }
 
-  // 兼容迁移：为已有 messages 表补充 prompt_eval_count 列
+  // 兼容迁移：v0.12.0 — 为已有 traces 表补充 error_pattern 列
+  try { db.run('ALTER TABLE traces ADD COLUMN error_pattern TEXT'); } catch { /* 列已存在，忽略 */ }
 
 
   // 尝试创建 FTS5 全文搜索（可选，sql.js 默认 WASM 可能不包含 FTS5）
@@ -305,6 +313,7 @@ export interface TraceRow {
   action_input: string | null;
   observation: string | null;
   loop_count: number | null;
+  error_pattern: string | null;
   created_at: number;
 }
 
@@ -481,9 +490,9 @@ export function getToolCallsBySession(sessionId: string): ToolCallRow[] {
 // ─── Traces CRUD ───
 
 export function saveTrace(trace: TraceRow): string {
-  runExec(getDb(), `INSERT OR REPLACE INTO traces (id, session_id, step_index, thought, action, action_input, observation, loop_count, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [trace.id, trace.session_id, trace.step_index, trace.thought, trace.action, trace.action_input, trace.observation, trace.loop_count, trace.created_at]
+  runExec(getDb(), `INSERT OR REPLACE INTO traces (id, session_id, step_index, thought, action, action_input, observation, loop_count, error_pattern, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [trace.id, trace.session_id, trace.step_index, trace.thought, trace.action, trace.action_input, trace.observation, trace.loop_count, trace.error_pattern, trace.created_at]
   );
   persist();
   return trace.id;

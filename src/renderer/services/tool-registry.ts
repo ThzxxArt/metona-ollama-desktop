@@ -465,6 +465,25 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     }
   },
   // ══════════════════════════════════════════════
+  // 新增工具：Plan Mode 执行追踪
+  // ══════════════════════════════════════════════
+  {
+    type: 'function',
+    function: {
+      name: 'plan_track',
+      description: 'Manage Plan Mode execution progress. Use this to mark plan steps as completed so you always know what remains. REQUIRED in Plan Mode — call plan_track after completing each step.',
+      parameters: {
+        type: 'object',
+        required: ['action'],
+        properties: {
+          action: { type: 'string', enum: ['status', 'mark_done', 'mark_all_done'], description: 'status=查看当前进度, mark_done=标记步骤完成, mark_all_done=全部完成' },
+          step_index: { type: 'integer', description: 'Step number (1-indexed) to mark as done. Required for mark_done.' },
+          step_label: { type: 'string', description: 'Optional: description of what was completed, for logging.' }
+        }
+      }
+    }
+  },
+  // ══════════════════════════════════════════════
   // v5.0 新增工具：浏览器控制
   // ══════════════════════════════════════════════
   // v5.1 Browser 控制工具（增强版）
@@ -717,7 +736,7 @@ let enabledTools: Set<string> = new Set([
   'memory_search', 'memory_add', 'memory_replace', 'memory_remove',
   'session_list', 'session_read', 'spawn_task',
   'browser_open', 'browser_screenshot', 'browser_evaluate', 'browser_extract',
-  'browser_click', 'browser_type', 'browser_scroll', 'browser_close',
+  'browser_click', 'browser_type', 'browser_scroll', 'browser_wait', 'browser_close',
   'datetime', 'calculator',
   'random', 'uuid', 'json_format', 'hash'
 ]);
@@ -725,6 +744,17 @@ let enabledTools: Set<string> = new Set([
 export function setToolEnabled(toolName: string, enabled: boolean): void {
   if (enabled) enabledTools.add(toolName);
   else enabledTools.delete(toolName);
+}
+
+/** Plan Mode 激活时注册 plan_track，关闭时移除 */
+export function setPlanModeActive(active: boolean): void {
+  if (active) {
+    enabledTools.add('plan_track');
+  } else {
+    enabledTools.delete('plan_track');
+    // 清除追踪器状态
+    state.set('_planTracker', null);
+  }
 }
 
 
@@ -879,6 +909,38 @@ export async function executeTool(toolName: string, args: Record<string, unknown
       return result;
     }
 
+    // plan_track — Plan Mode 执行追踪
+    if (toolName === 'plan_track') {
+      const action = args.action as string;
+      const stepIndex = args.step_index as number | undefined;
+      const stepLabel = (args.step_label as string) || '';
+      const tracker = getPlanTracker();
+      if (action === 'status') {
+        return { success: true, action: 'status', steps: tracker.steps, total: tracker.total, done: tracker.done };
+      }
+      if (action === 'mark_done' && typeof stepIndex === 'number' && stepIndex > 0) {
+        const idx = stepIndex - 1;
+        if (idx >= 0 && idx < tracker.steps.length) {
+          tracker.steps[idx].done = true;
+          tracker.done = tracker.steps.filter(s => s.done).length;
+          if (stepLabel) tracker.steps[idx].label = stepLabel;
+          savePlanTracker(tracker);
+          const remaining = tracker.total - tracker.done;
+          logToolResult('plan_track', true, `步骤 ${stepIndex} 已完成 (${tracker.done}/${tracker.total}${remaining > 0 ? `, 剩余 ${remaining}` : ', 全部完成!'})`);
+          return { success: true, action: 'mark_done', step: stepIndex, done: tracker.done, total: tracker.total, remaining };
+        }
+        return { success: false, error: `步骤 ${stepIndex} 不存在（共 ${tracker.total} 步）` };
+      }
+      if (action === 'mark_all_done') {
+        for (const s of tracker.steps) s.done = true;
+        tracker.done = tracker.total;
+        savePlanTracker(tracker);
+        logToolResult('plan_track', true, `全部 ${tracker.total} 步已完成`);
+        return { success: true, action: 'mark_all_done', done: tracker.total, total: tracker.total, remaining: 0 };
+      }
+      return { success: false, error: `未知操作: ${action}` };
+    }
+
     // run_command 走 workspace IPC
     if (toolName === 'run_command') {
       const command = args.command as string;
@@ -918,10 +980,68 @@ export function getToolIcon(name: string): string {
     git: '🔖', compress: '🗜️', web_search: '🔍',
     memory_search: '🧠', memory_add: '💾', memory_replace: '🔄', memory_remove: '🗑️',
     session_list: '📋', session_read: '📖', spawn_task: '🤖',
+    plan_track: '📋',
     browser_open: '🌐', browser_screenshot: '📸', browser_evaluate: '⚡', browser_extract: '📰',
     browser_click: '👆', browser_type: '⌨️', browser_scroll: '↕️', browser_close: '❌'
   };
   return icons[name] || '🔧';
+}
+
+/** ── Plan Mode 执行追踪器 ── */
+
+export interface PlanStep {
+  index: number;
+  label: string;
+  done: boolean;
+}
+
+export interface PlanTracker {
+  steps: PlanStep[];
+  total: number;
+  done: number;
+  active: boolean;
+}
+
+let _planTracker: PlanTracker = { steps: [], total: 0, done: 0, active: false };
+
+export function getPlanTracker(): PlanTracker {
+  // 每次读取时同步 state 中的最新状态
+  const saved = state.get<PlanTracker | null>('_planTracker', null);
+  if (saved) _planTracker = saved;
+  return _planTracker;
+}
+
+export function savePlanTracker(tracker: PlanTracker): void {
+  _planTracker = tracker;
+  state.set('_planTracker', tracker);
+}
+
+export function initPlanTracker(steps: string[]): PlanTracker {
+  const tracker: PlanTracker = {
+    steps: steps.map((label, i) => ({ index: i + 1, label, done: false })),
+    total: steps.length,
+    done: 0,
+    active: true,
+  };
+  savePlanTracker(tracker);
+  logInfo('Plan Tracker 已初始化', `${tracker.total} 个步骤`);
+  return tracker;
+}
+
+export function clearPlanTracker(): void {
+  _planTracker = { steps: [], total: 0, done: 0, active: false };
+  state.set('_planTracker', null);
+}
+
+export function formatPlanStatus(): string {
+  const t = getPlanTracker();
+  if (!t.active || t.steps.length === 0) return '';
+  const lines = t.steps.map(s => {
+    const icon = s.done ? '✅' : '⬜';
+    return `${icon} 步骤${s.index}: ${s.label}`;
+  });
+  const pct = t.total > 0 ? Math.round(t.done / t.total * 100) : 0;
+  return `[Plan Mode 执行进度: ${t.done}/${t.total} (${pct}%)]\n${lines.join('\n')}\n\n完成每一步后请调用 plan_track(action='mark_done', step_index=N) 标记已完成。`;
 }
 
 export function formatToolName(name: string): string {
@@ -935,6 +1055,7 @@ export function formatToolName(name: string): string {
     git: 'Git 操作', compress: '压缩/解压', web_search: '联网搜索',
     memory_search: '搜索记忆', memory_add: '添加记忆', memory_replace: '替换记忆', memory_remove: '删除记忆',
     session_list: '会话列表', session_read: '读取会话', spawn_task: '子代理委派',
+    plan_track: '计划追踪',
     browser_open: '打开网页', browser_screenshot: '浏览器截图', browser_evaluate: '执行JS', browser_extract: '提取内容',
     browser_click: '点击元素', browser_type: '输入文本', browser_scroll: '滚动页面', browser_close: '关闭浏览器'
   };

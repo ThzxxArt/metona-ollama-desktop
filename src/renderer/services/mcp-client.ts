@@ -151,8 +151,8 @@ export async function executeMCPTool(toolName: string, args: Record<string, unkn
     return { success: false, error: 'MCP API 不可用' };
   }
 
-  // 解析工具全名: mcp_{serverName}_{toolName}
-  const match = toolName.match(/^mcp_(.+?)_(.+)$/);
+  // 解析工具全名: mcp_{serverName}__{toolName}（双下划线分隔，避免 serverName/toolName 含下划线时歧义）
+  const match = toolName.match(/^mcp_(.+?)__(.+)$/);
   if (!match) {
     return { success: false, error: `无效的 MCP 工具名: ${toolName}` };
   }

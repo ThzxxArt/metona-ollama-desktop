@@ -149,37 +149,23 @@ export async function browserScreenshot(params: { full_page?: boolean; selector?
     }
 
     if (params.full_page) {
-      // 全页面截图：先滚动获取完整高度，截完恢复
+      // 全页面截图：一次性捕获整个页面矩形区域
       const pageSize = await win.webContents.executeJavaScript(`
         (() => {
           const w = Math.max(document.documentElement.scrollWidth, document.body.scrollWidth, window.innerWidth);
           const h = Math.max(document.documentElement.scrollHeight, document.body.scrollHeight, window.innerHeight);
-          const origScroll = { x: window.scrollX, y: window.scrollY };
-          window.scrollTo(0, 0);
-          return { width: w, height: h, origScroll };
+          return { width: w, height: h };
         })()
-      `, true) as { width: number; height: number; origScroll: { x: number; y: number } };
+      `, true) as { width: number; height: number };
 
-      // 分块截图拼接（超过窗口高度的页面）
-      const viewHeight = 800;
-      const chunks: Buffer[] = [];
-      for (let y = 0; y < pageSize.height; y += viewHeight) {
-        await win.webContents.executeJavaScript(`window.scrollTo(0, ${y})`, true);
-        await new Promise(r => setTimeout(r, 200));
-        const image = await win.webContents.capturePage({
-          x: 0, y: 0,
-          width: pageSize.width,
-          height: Math.min(viewHeight, pageSize.height - y)
-        });
-        chunks.push(image.toPNG());
-      }
-      // 恢复滚动位置
-      await win.webContents.executeJavaScript(`window.scrollTo(${pageSize.origScroll.x}, ${pageSize.origScroll.y})`, true);
-
-      // 拼接所有截图（简单合并 base64）
-      const fullPng = Buffer.concat(chunks).toString('base64');
-      sendLog('success', `🌐 browser 截图(全页)`, `${pageSize.width}x${pageSize.height}, ${fullPng.length} chars`);
-      return { success: true, png: fullPng, width: pageSize.width, height: pageSize.height };
+      const image = await win.webContents.capturePage({
+        x: 0, y: 0,
+        width: pageSize.width,
+        height: pageSize.height
+      });
+      const buffer = image.toPNG();
+      sendLog('success', `🌐 browser 截图(全页)`, `${pageSize.width}x${pageSize.height}, ${buffer.length} bytes`);
+      return { success: true, png: buffer.toString('base64'), width: pageSize.width, height: pageSize.height };
     }
 
     // 视口截图（默认）

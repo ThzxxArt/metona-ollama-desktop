@@ -182,11 +182,13 @@ export function initSettingsModal(): void {
   });
 
   document.querySelector('#btnReleaseVRAM')!.addEventListener('click', async () => {
-    const api = state.get<OllamaAPI>(KEYS.API);
-    const model = (document.querySelector('#modelSelect') as HTMLSelectElement).value;
+    const api = state.get<OllamaAPI | null>(KEYS.API, null);
+    if (!api) { showToast('Ollama API 未连接', 'warning'); return; }
+    const sel = document.querySelector('#modelSelect') as HTMLSelectElement | null;
+    const model = sel?.value || '';
     logInfo('释放显存', model || '所有模型');
     try {
-      await api!.chat({ model: model || 'any', messages: [], keep_alive: 0 });
+      await api.chat({ model: model || 'any', messages: [], keep_alive: 0 });
       showToast('显存已释放', 'success');
       logSuccess('显存已释放');
       updateRunningModels();
@@ -198,9 +200,10 @@ export function initSettingsModal(): void {
 
   document.querySelector('#btnClearAllHistory')!.addEventListener('click', async () => {
     const db = state.get<ChatDB | null>(KEYS.DB);
+    if (!db) { showToast('数据库未就绪', 'warning'); return; }
     if (await showConfirm('确定清空所有历史记录？此操作不可恢复！', '清空历史')) {
       logWarn('清空所有历史记录');
-      await db!.clearAll();
+      await db.clearAll();
       (document.querySelector('#btnNewChat') as HTMLElement).click();
       showToast('已清空所有历史记录', 'success');
       logSuccess('历史记录已清空');
@@ -305,6 +308,19 @@ export function openSettingsModal(): void {
   populateSubAgentModels();
   updateMemoryVectorStatus();
   loadTimeoutSettings();
+  loadWatchdogSetting();
+}
+
+/** 加载看门狗设置到输入框 */
+async function loadWatchdogSetting(): Promise<void> {
+  const db = state.get<ChatDB | null>(KEYS.DB);
+  if (!db) return;
+  const ms = await db.getSetting<number>('loopWatchdogMs', 1_800_000);
+  const el = document.querySelector('#inputLoopWatchdog') as HTMLInputElement;
+  if (!el) return;
+  if (ms === 0) el.value = '0';
+  else if (ms > 0) el.value = String(Math.round(ms / 60_000));
+  else el.value = '';
 }
 
 export function closeSettingsModal(): void {
@@ -494,6 +510,18 @@ const saveSubAgentTimeout = debounce(async () => {
 }, 500);
 document.querySelector('#inputSubAgentTimeout')!.addEventListener('input', saveSubAgentTimeout);
 
+// ── v0.12.1 看门狗超时（分钟，0=禁用）──
+const saveLoopWatchdog = debounce(async () => {
+  const db = state.get<ChatDB | null>(KEYS.DB);
+  const val = (document.querySelector('#inputLoopWatchdog') as HTMLInputElement).value.trim();
+  const minutes = val ? parseInt(val) : -1;
+  const ms = minutes > 0 ? minutes * 60_000 : (minutes === 0 ? 0 : 1_800_000); // 默认30分钟
+  state.set('loopWatchdogMs', ms);
+  if (db) await db.saveSetting('loopWatchdogMs', ms);
+  logSetting('看门狗超时', minutes >= 0 ? (minutes === 0 ? '已禁用' : `${minutes}分钟`) : '默认(30分钟)');
+}, 500);
+document.querySelector('#inputLoopWatchdog')!.addEventListener('input', saveLoopWatchdog);
+
 function updateMemoryVectorStatus(): void {
   const statusEl = document.querySelector('#memoryVectorStatus');
   if (!statusEl) return;
@@ -520,7 +548,8 @@ async function importSessions(filePath: string): Promise<void> {
 
   try {
     const bridge = window.metonaDesktop;
-    const result = await bridge!.fs.readFileBase64(filePath);
+    if (!bridge) { showToast('仅桌面端支持导入', 'warning'); return; }
+    const result = await bridge.fs.readFileBase64(filePath);
     if (!result.success) {
       showToast(`读取文件失败: ${result.error}`, 'error');
       return;

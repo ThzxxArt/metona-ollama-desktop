@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-v0.11.11-E8734A?style=flat-square" alt="version">
+  <img src="https://img.shields.io/badge/version-v0.12.3-E8734A?style=flat-square" alt="version">
   <img src="https://img.shields.io/badge/electron-33+-47848F?style=flat-square&logo=electron" alt="electron">
   <img src="https://img.shields.io/badge/typescript-5.7+-3178C6?style=flat-square&logo=typescript" alt="typescript">
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="license">
@@ -34,8 +34,10 @@
 
 | | 功能 | 说明 |
 |:---:|:---|:---|
-| 🤖 | **ReAct Agent Loop** | 始终开启的唯一对话模式。Thought → Action → Observation → Reflection 完整循环，最大 85 轮（可配置），自动重试 2 次，工具去重，并行/链式执行 |
-| 🔧 | **42 个内置工具** | 文件系统（16个） · 命令执行 · 联网搜索 · 浏览器控制（9个） · Git · 记忆 · 会话 · 子代理 · 系统工具 |
+| 🤖 | **ReAct Agent Loop** | 始终开启的唯一对话模式。8 状态机（INIT→THINKING→PARSING→EXECUTING→OBSERVING→REFLECTING→COMPRESSING→TERMINATED），最大 85 轮（可配置），自动重试 2 次，工具去重，并行/链式执行，看门狗超时保护 |
+| 🛡️ | **5 层抗幻觉系统** | 提示词加固 → 任务感知 → 中途检测（16 条规则覆盖全部工具类别）→ 进度锚点 → 完成闸门（6 项检查，幻觉/注入/文件/工具 4 类关键阻断） |
+| 📋 | **Plan Mode** | 开关切换，AI 首先生成执行计划（Markdown 渲染确认弹窗），批准后按步骤追踪执行，plan_track 工具标记完成状态 |
+| 🔧 | **42 个内置工具** | 文件系统（16个） · 命令执行 · 联网搜索 · 浏览器控制（9个） · Git · 记忆 · 会话 · 子代理 · 系统工具 · Plan Mode 追踪 |
 | 🧠 | **智能记忆系统** | 三类记忆（fact / preference / rule），FTS5 全文搜索 + 向量语义搜索，写入前安全扫描，容量 500 条，90 天衰减 |
 | 📋 | **自定义文件** | SOUL.md（人格，不可压缩）+ AGENT.md（行为准则）+ USER.md（用户画像），工作空间优先，内置默认 fallback |
 | 🌐 | **MCP 协议扩展** | JSON-RPC 2.0 over stdio，动态工具发现，Shadowing 防护 |
@@ -44,6 +46,8 @@
 | 🖥️ | **工作空间面板** | 终端（实时流式输出）+ 文件浏览器，命令安全检查 |
 | 🔢 | **上下文长度自动检测** | 切换模型时自动从 model_info 获取实际支持的上下文长度，无需手动配置 |
 | 🗜️ | **智能上下文管理** | 滑动窗口 + Token 自动校准 + 消息重要性评分 + LLM 结构化 JSON 压缩 |
+| ⏱️ | **看门狗超时** | Agent Loop 全局超时保护（可配，默认 30min），防止模型卡死无限循环 |
+| 🪝 | **Hook 系统** | 4 阶段生命周期钩子（pre_tool / post_tool / post_iteration / pre_completion），内置文件变更审计、工具结果校验 |
 | 👥 | **子代理委派** | spawn_task 工具，独立上下文 + 超时保护 |
 | 📈 | **Token 仪表盘** | 全局 + 会话统计，消耗趋势柱状图，2 秒刷新，输入/输出分色 |
 | 📋 | **系统提示词卡片** | 每条 AI 回复顶部折叠卡片，点击查看实际发送给模型的完整上下文 |
@@ -161,20 +165,31 @@
 
 </details>
 
+<details>
+<summary><strong>📋 Plan Mode（1 个，仅 Plan 模式激活）</strong></summary>
+
+| 工具 | 功能 |
+|------|------|
+| `plan_track` | Plan 模式执行进度追踪，标记步骤完成，自动统计剩余 |
+
+</details>
+
 ## 🏗️ 架构
 
 ```
 用户消息 → 扫描工作空间 SOUL.md（不可压缩层）→ AGENT.md → USER.md
               ↓
-         Agent Engine (ReAct Loop, ≤85轮)
-              ↓
          记忆检索 (FTS5 + 向量语义搜索) → 上下文注入
+              ↓
+         Agent Engine (8 状态机 ReAct Loop, ≤85 轮, 看门狗 30min)
+              ↓
+         5 层抗幻觉系统 (提示词 → 中途检测 → 进度锚 → 完成闸门 → 校验)
               ↓
          Ollama API (流式响应，num_ctx 自动检测)
               ↓
-         Tool Registry (42 内置 + MCP 动态)
+         Tool Registry (42 内置 + MCP 动态 + Plan Mode plan_track)
               ↓
-         观察结果 → 反思 → 循环 / 最终回答
+         Hook 系统 (pre/post tool/iteration/completion) → 观察结果 → 反思 → 循环 / 最终回答
 ```
 
 ### 🧩 UI 组件（原生 DOM）
@@ -184,15 +199,15 @@ main.ts (入口)
   ├── header.ts              # 顶部导航栏
   ├── model-bar.ts           # 模型选择栏
   ├── chat-area.ts           # 聊天消息区域
-  ├── input-area.ts          # 输入框 + 文件上传
-  ├── workspace-panel.ts     # 终端 + 文件浏览器
-  ├── settings-modal.ts      # 设置面板
+  ├── input-area.ts          # 输入框 + 文件上传 + Plan Mode 开关
+  ├── workspace-panel.ts     # 终端 + 文件浏览器 + 工具卡片
+  ├── settings-modal.ts      # 设置面板（含看门狗超时配置）
   ├── history-modal.ts       # 会话历史
   ├── memory-modal.ts        # 记忆管理
   ├── tools-modal.ts         # 工具列表
   ├── token-dashboard.ts     # Token 消耗仪表盘
   ├── tool-confirm-modal.ts  # 工具执行确认
-  ├── prompt-modal.ts        # 系统提示词查看
+  ├── prompt-modal.ts        # 系统提示词查看 + Plan 确认弹窗
   ├── toast.ts               # Toast 通知
   └── lightbox.ts            # 图片灯箱
 ```
@@ -214,13 +229,15 @@ SQLite (sql.js WASM)，6 张表，WAL 模式 + FTS5 全文搜索：
 
 | 层级 | 措施 |
 |------|------|
-| 📁 文件系统 | `checkPathAllowed()` — 路径黑名单 |
-| ⚡ 命令执行 | `checkCommandAllowed()` — 命令黑名单 + 三种模式 |
+| 📁 文件系统 | `checkPathAllowed()` — 路径黑名单（33 个系统/敏感目录，含 Linux + Windows） |
+| ⚡ 命令执行 | `checkCommandAllowed()` — 命令黑名单（30 条危险命令，含 POSIX + Windows）+ 三种模式 |
 | 🖥️ 前端渲染 | HTML 净化器（白名单标签 + URI 协议检查） |
-| 🔒 Electron | `contextIsolation: true` + IPC 白名单 |
+| 🔒 Electron | `contextIsolation: true` + IPC 白名单 + IPC fs 路径验证 |
 | 🔐 数据加密 | AES-256-GCM |
 | 🧠 记忆安全 | 写入前 Prompt Injection / 敏感信息检测 |
-| 🌐 MCP 安全 | Shadowing 防护 |
+| 🌐 MCP 安全 | Shadowing 防护 + 双下划线分隔防歧义 |
+| 🌐 网络安全 | `web_fetch` 流式体积限制（10MB）+ 无 content-length 时防 OOM |
+| ⚡ 进程安全 | Windows `taskkill` 强制终止 + 工作空间路径大小写不敏感校验 |
 
 ## 🚀 快速开始
 
@@ -239,7 +256,7 @@ npm start
 ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm run dist
 ```
 
-产出：`release/Metona Ollama Setup v0.11.11.exe`
+产出：`release/Metona Ollama Setup v0.12.3.exe`
 
 ## 🛠️ 常用命令
 
@@ -269,8 +286,10 @@ npm run dist           # 构建 Windows 安装包
 
 | | Feature | Description |
 |:---:|:---|:---|
-| 🤖 | **ReAct Agent Loop** | Always-on, only chat mode. Full Thought → Action → Observation → Reflection cycle, up to 85 iterations (configurable), auto-retry 2 times, tool dedup, parallel/chain execution |
-| 🔧 | **42 Built-in Tools** | File system · Command · Web search · Browser · Git · Memory · Sessions · Sub-agent · System |
+| 🤖 | **ReAct Agent Loop** | Always-on, only chat mode. 8-state machine (INIT→THINKING→PARSING→EXECUTING→OBSERVING→REFLECTING→COMPRESSING→TERMINATED), up to 85 iterations (configurable), auto-retry 2 times, tool dedup, parallel/chain execution, watchdog timeout protection |
+| 🛡️ | **5-Layer Anti-Hallucination** | Prompt hardening → task awareness → mid-task detection (16 rules covering all tool categories) → progress anchors → completion gate (6 checks: hallucination, injection, file, tool — 4 critical blocks) |
+| 📋 | **Plan Mode** | Toggle switch. AI first generates an execution plan (Markdown-rendered confirmation dialog), then tracks step-by-step execution, with plan_track tool marking completion |
+| 🔧 | **42 Built-in Tools** | File system · Command · Web search · Browser · Git · Memory · Sessions · Sub-agent · System · Plan Mode tracking |
 | 🧠 | **Smart Memory System** | Three types (fact / preference / rule), FTS5 + vector semantic search, pre-write security scan, 500 capacity, 90-day decay |
 | 📋 | **Custom Files** | SOUL.md (persona, never compressed) + AGENT.md (behavior rules) + USER.md (user profile), workspace-first with built-in defaults |
 | 🌐 | **MCP Protocol Extension** | JSON-RPC 2.0 over stdio, dynamic tool discovery, Shadowing protection |
@@ -279,6 +298,8 @@ npm run dist           # 构建 Windows 安装包
 | 🖥️ | **Workspace Panel** | Terminal (real-time streaming) + file browser, command security checks |
 | 🔢 | **Auto Context Length Detection** | Reads actual context_length from model metadata on model switch — no manual config needed |
 | 🗜️ | **Smart Context Manager** | Sliding window + Token auto-calibration + message importance scoring + LLM structured JSON compression |
+| ⏱️ | **Watchdog Timeout** | Global Agent Loop timeout protection (configurable, default 30min), prevents infinite loops from model stalls |
+| 🪝 | **Hook System** | 4-phase lifecycle hooks (pre_tool / post_tool / post_iteration / pre_completion), built-in file change audit and tool result verification |
 | 👥 | **Sub-agent Delegation** | spawn_task tool, isolated context + timeout protection |
 | 📈 | **Token Dashboard** | Global + session stats, consumption trend bar chart, 2s refresh, input/output color-coded |
 | 📋 | **System Prompt Card** | Collapsible card atop each AI reply — click to inspect the full context sent to the model |
@@ -395,6 +416,15 @@ npm run dist           # 构建 Windows 安装包
 
 </details>
 
+<details>
+<summary><strong>📋 Plan Mode (1, only active in Plan Mode)</strong></summary>
+
+| Tool | Function |
+|------|------|
+| `plan_track` | Plan Mode execution progress tracking, mark steps complete, auto tally remaining |
+
+</details>
+
 ## 🏗️ Architecture
 
 ```
@@ -402,11 +432,15 @@ User message → workspace SOUL.md (never compressed) → AGENT.md → USER.md
               ↓
          Memory Retrieval (FTS5 + Vector Semantic Search) → Context Injection
               ↓
+         Agent Engine (8-state ReAct Loop, ≤85 iter, watchdog 30min)
+              ↓
+         5-Layer Anti-Hallucination (prompt → mid-task detection → anchors → gate → verification)
+              ↓
          Ollama API (Streaming Response)
               ↓
-         Tool Registry (42 Built-in + MCP Dynamic)
+         Tool Registry (42 Built-in + MCP Dynamic + Plan Mode plan_track)
               ↓
-         Observation → Reflection → Loop / Final Answer
+         Hook System (pre/post tool/iteration/completion) → Observation → Reflection → Loop / Final Answer
 ```
 
 ### 🧩 UI Components (Native DOM)
@@ -416,15 +450,15 @@ main.ts (Entry)
   ├── header.ts              # Top navigation bar
   ├── model-bar.ts           # Model selector
   ├── chat-area.ts           # Chat message area
-  ├── input-area.ts          # Input box + file upload
-  ├── workspace-panel.ts     # Terminal + file browser
-  ├── settings-modal.ts      # Settings panel
+  ├── input-area.ts          # Input box + file upload + Plan Mode toggle
+  ├── workspace-panel.ts     # Terminal + file browser + tool cards
+  ├── settings-modal.ts      # Settings panel (with watchdog timeout config)
   ├── history-modal.ts       # Session history
   ├── memory-modal.ts        # Memory management
   ├── tools-modal.ts         # Tool list
   ├── token-dashboard.ts     # Token consumption dashboard
   ├── tool-confirm-modal.ts  # Tool execution confirmation
-  ├── prompt-modal.ts        # System prompt viewer
+  ├── prompt-modal.ts        # System prompt viewer + Plan confirm dialog
   ├── toast.ts               # Toast notifications
   └── lightbox.ts            # Image lightbox
 ```
@@ -446,13 +480,15 @@ SQLite (sql.js WASM), 6 tables, WAL mode + FTS5 full-text search:
 
 | Layer | Measure |
 |------|------|
-| 📁 File System | `checkPathAllowed()` — path blacklist |
-| ⚡ Command Execution | `checkCommandAllowed()` — command blacklist + three modes |
+| 📁 File System | `checkPathAllowed()` — path blacklist (33 system/sensitive dirs, Linux + Windows) |
+| ⚡ Command Execution | `checkCommandAllowed()` — command blacklist (30 dangerous commands, POSIX + Windows) + three modes |
 | 🖥️ Frontend Rendering | HTML sanitizer (whitelist tags + URI protocol check) |
-| 🔒 Electron | `contextIsolation: true` + IPC whitelist |
+| 🔒 Electron | `contextIsolation: true` + IPC whitelist + IPC fs path validation |
 | 🔐 Data Encryption | AES-256-GCM |
 | 🧠 Memory Security | Pre-write prompt injection / sensitive info detection |
-| 🌐 MCP Security | Shadowing protection |
+| 🌐 MCP Security | Shadowing protection + double-underscore delimiter disambiguation |
+| 🌐 Network Security | `web_fetch` streaming size limit (10MB) + OOM prevention without content-length |
+| ⚡ Process Security | Windows `taskkill` forced termination + case-insensitive workspace path validation |
 
 ## 🚀 Quick Start
 
@@ -471,7 +507,7 @@ npm start
 ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm run dist
 ```
 
-Output: `release/Metona Ollama Setup v0.11.11.exe`
+Output: `release/Metona Ollama Setup v0.12.3.exe`
 
 ## 🛠️ Common Commands
 

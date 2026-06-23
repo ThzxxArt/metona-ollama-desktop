@@ -277,7 +277,7 @@ export function getAllTools(): MCPToolInfo[] {
       tools.push({
         serverName,
         name: tool.name,
-        fullName: `mcp_${serverName}_${tool.name}`,
+        fullName: `mcp_${serverName}__${tool.name}`,
         description: `[MCP:${serverName}] ${tool.description || ''}`,
         inputSchema: tool.inputSchema
       });

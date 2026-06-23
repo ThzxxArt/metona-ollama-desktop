@@ -55,11 +55,12 @@ export function initHistoryModal(): void {
     const target = (e.target as HTMLElement).closest('[data-id]') as HTMLElement;
     if (!target) return;
     const sessionId = target.dataset.id!;
-    const db = state.get<ChatDB>(KEYS.DB);
+    const db = state.get<ChatDB | null>(KEYS.DB);
+    if (!db) return;
 
     if (target.classList.contains('btn-delete-session')) {
       if (await showConfirm('确定删除此会话？', '删除会话')) {
-        await db!.deleteSession(sessionId);
+        await db.deleteSession(sessionId);
         logSession('删除', sessionId);
         const currentSession = state.get<ChatSession | null>(KEYS.CURRENT_SESSION);
         if (currentSession && currentSession.id === sessionId) {
@@ -68,13 +69,13 @@ export function initHistoryModal(): void {
         loadHistory();
       }
     } else if (target.classList.contains('btn-export-md')) {
-      const session = await db!.getSession(sessionId);
+      const session = await db.getSession(sessionId);
       if (session) exportAsMarkdown(session);
     } else if (target.classList.contains('btn-export-html')) {
-      const session = await db!.getSession(sessionId);
+      const session = await db.getSession(sessionId);
       if (session) exportAsHtml(session);
     } else if (target.classList.contains('btn-export-txt')) {
-      const session = await db!.getSession(sessionId);
+      const session = await db.getSession(sessionId);
       if (session) exportAsTxt(session);
     } else if (target.classList.contains('history-info') || target.classList.contains('history-item')) {
       loadHistorySession(sessionId);

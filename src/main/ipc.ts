@@ -55,7 +55,7 @@ import {
 } from './tool-handlers.js';
 import { browserOpen, browserScreenshot, browserEvaluate, browserExtract, browserClick, browserType, browserScroll, browserClose, browserWait } from './browser.js';
 import { startServer, stopServer, stopAllServers, callTool, getAllTools, getServerStatuses, refreshTools, setMCPTimeout } from './mcp-manager.js';
-import { getAllowedDirs, getBlockedDirs, setAllowedDirs } from './tool-security.js';
+import { getAllowedDirs, getBlockedDirs, setAllowedDirs, checkPathAllowed } from './tool-security.js';
 import { startProcess, killProcess, getWorkspaceDir, setWorkspaceDir, listWorkspaceDir } from './workspace.js';
 import { setHTTPTimeout } from './tool-handlers-system.js';
 import { execFile } from 'child_process';
@@ -132,6 +132,8 @@ export async function setupIPC(): Promise<void> {
 
   ipcMain.handle('fs:readFile', async (_, filePath: string) => {
     try {
+      const check = checkPathAllowed(path.resolve(filePath), 'read');
+      if (!check.ok) return { success: false, error: check.reason };
       const content = await fs.promises.readFile(filePath, 'utf-8');
       return { success: true, content, name: path.basename(filePath) };
     } catch (err) {
@@ -141,6 +143,8 @@ export async function setupIPC(): Promise<void> {
 
   ipcMain.handle('fs:readFileBase64', async (_, filePath: string) => {
     try {
+      const check = checkPathAllowed(path.resolve(filePath), 'read');
+      if (!check.ok) return { success: false, error: check.reason };
       const buf = await fs.promises.readFile(filePath);
       return { success: true, content: buf.toString('base64'), size: buf.length, name: path.basename(filePath) };
     } catch (err) {
@@ -150,6 +154,8 @@ export async function setupIPC(): Promise<void> {
 
   ipcMain.handle('fs:writeFile', async (_, filePath: string, content: string, encoding?: string) => {
     try {
+      const check = checkPathAllowed(path.resolve(filePath), 'write');
+      if (!check.ok) return { success: false, error: check.reason };
       await fs.promises.writeFile(filePath, content, (encoding as BufferEncoding) || 'utf-8');
       return { success: true };
     } catch (err) {

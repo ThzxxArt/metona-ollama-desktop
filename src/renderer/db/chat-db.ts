@@ -12,7 +12,11 @@ function isDesktop(): boolean {
 
 /** 桌面端 DB 桥接（isDesktop 已检查，安全断言非空） */
 function dbBridge() {
-  return window.metonaDesktop!.db!;
+  const bridge = window.metonaDesktop;
+  if (!bridge?.db) {
+    throw new Error('DB bridge 不可用：非桌面环境或 SQLite 未初始化');
+  }
+  return bridge.db;
 }
 
 export class ChatDB {

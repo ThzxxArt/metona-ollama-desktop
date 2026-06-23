@@ -357,7 +357,8 @@ export async function handleSearchFiles(params: { path: string; query: string; s
       if (searchType === 'filename' || searchType === 'both') {
         const fileName = path.basename(filePath);
         const nameToCheck = caseSensitive ? fileName : fileName.toLowerCase();
-        if (nameToCheck.includes(query)) {
+        const queryToCheck = caseSensitive ? query : query.toLowerCase();
+        if (nameToCheck.includes(queryToCheck)) {
           results.push({ path: filePath, matches: [{ line: 0, text: `[文件名匹配] ${fileName}` }] });
           totalMatches++;
           continue;
@@ -471,6 +472,9 @@ export async function handleEditFile(params: { path: string; old_text: string; n
     if (!allowed.ok) return { success: false, error: allowed.reason };
 
     const content = await fs.readFile(filePath, 'utf-8');
+    if (content.length > 5 * 1024 * 1024) {
+      return { success: false, error: `文件过大 (${(content.length / 1024 / 1024).toFixed(1)}MB)，最大支持 5MB` };
+    }
 
     let replaceCount: number;
     let newContent: string;
