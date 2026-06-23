@@ -12,6 +12,7 @@ import {
   needsConfirmation,
   initPlanTracker,
   getPlanTracker,
+  savePlanTracker,
   formatPlanStatus,
   clearPlanTracker,
 } from './tool-registry.js';
@@ -538,9 +539,9 @@ async function handleInit(
     systemPromptParts.push(`[Plan Mode 执行规则]
 你当前处于 Plan Mode（先规划后执行）。重要规则：
 1. 第一轮回复必须是执行计划，不要直接调用工具。列出步骤、涉及工具和预期结果后，等待用户批准。
-2. 计划批准后，每一次完成一个步骤，必须调用 plan_track(action='mark_done', step_index=N) 标记该步骤已完成。
-3. 每轮思考前系统会自动注入当前执行进度。请对照进度确保所有步骤最终都被标记为完成。
-4. 所有步骤完成后调用 plan_track(action='mark_all_done') 或直接给出最终回答。`);
+2. 计划批准后，系统会自动追踪工具执行进度——你每完成一个步骤对应的工具调用，系统会自动标记该步骤为完成。
+3. 你也可以手动调用 plan_track(action='mark_done', step_index=N) 来更新进度。
+4. 所有步骤完成后直接给出最终回答。不需要手动调用 plan_track 来标记全部完成——系统会自动检测。`);
 
     // 将用户原始任务描述固化到系统提示词中（不会被压缩或清理）
     const taskDesc = userContent?.slice(0, 200) || '';
@@ -688,6 +689,42 @@ function extractPlanSteps(content: string): string[] {
   return steps.length > 0 ? steps.slice(0, 10) : ['执行任务计划（详见上方描述）'];
 }
 
+/** Plan Mode 自动追踪：工具执行成功后，匹配 Plan 步骤并自动标记完成 */
+function autoTrackPlanStep(toolName: string): void {
+  const tracker = getPlanTracker();
+  if (!tracker.active || tracker.steps.length === 0) return;
+
+  // 工具名 → 计划步骤关键词映射（用于自动匹配）
+  const TOOL_STEP_KEYWORDS: Record<string, string[]> = {
+    web_search: ['搜索', '查找', '检索', 'search', '查询'],
+    web_fetch: ['抓取', 'fetch', '获取', '浏览', '提取内容'],
+    read_file: ['读取', 'read', '查看', '检查'],
+    write_file: ['写入', 'write', '生成', '创建.*文件', '保存', '输出'],
+    edit_file: ['编辑', '修改', 'edit'],
+    list_directory: ['列出', 'list', '浏览.*目录', '查看.*结构'],
+    tree: ['目录树', 'tree', '结构'],
+    run_command: ['运行', '执行', 'run', '命令', '编译', '测试'],
+    git: ['git', '提交', '推送', '暂存', 'commit'],
+    browser_open: ['打开.*网页', '浏览器', 'browser'],
+  };
+
+  const keywords = TOOL_STEP_KEYWORDS[toolName] || [];
+  if (keywords.length === 0) return;
+
+  for (const step of tracker.steps) {
+    if (step.done) continue;
+    for (const kw of keywords) {
+      if (new RegExp(kw, 'i').test(step.label)) {
+        step.done = true;
+        tracker.done = tracker.steps.filter(s => s.done).length;
+        savePlanTracker(tracker);
+        logInfo(`Plan 自动追踪: ${toolName} → 步骤${step.index} "${step.label}" 已自动标记完成 (${tracker.done}/${tracker.total})`);
+        return; // 一个工具只标记一个步骤
+      }
+    }
+  }
+}
+
 /**
  * 中途幻觉检测 — 轻量级检查
  * 仅检查最关键的几类幻觉（文件写入、搜索、命令执行）
@@ -770,6 +807,30 @@ function detectPendingActions(
   }
 
   return pending;
+}
+
+/** 获取用户请求中提到的全部动作标签（不论是否完成），用于全部完成时生成确认信号 */
+function detectAllMentionedActions(userText: string): string[] {
+  const txt = userText.toLowerCase();
+  const mentioned: string[] = [];
+  const ACTION_MAP: Array<{ keywords: string[]; label: string }> = [
+    { keywords: ['搜索', '查找', '查一下', '搜一下', 'search', '检索', '查询'], label: '搜索/查找' },
+    { keywords: ['生成', '写入', '创建文件', '保存', '写.*文件', '生成.*文件', '存入', '输出'], label: '写入文件' },
+    { keywords: ['运行', '执行', 'run', '启动', '编译'], label: '执行命令' },
+    { keywords: ['下载', 'download'], label: '下载文件' },
+    { keywords: ['提交', 'commit', '推送', 'push'], label: 'Git 操作' },
+    { keywords: ['删除', '移除', 'delete', 'remove'], label: '删除文件' },
+    { keywords: ['移动', 'move', '重命名', 'rename'], label: '移动/重命名' },
+    { keywords: ['复制', 'copy'], label: '复制文件' },
+    { keywords: ['压缩', '解压', 'compress', 'zip', 'tar'], label: '压缩/解压' },
+    { keywords: ['打开网页', '浏览器', 'browser', '截图'], label: '浏览器操作' },
+  ];
+  for (const action of ACTION_MAP) {
+    if (action.keywords.some(kw => new RegExp(kw, 'i').test(txt))) {
+      mentioned.push(action.label);
+    }
+  }
+  return mentioned;
 }
 
 /**
@@ -934,6 +995,8 @@ async function handleThinking(
     const firstUserMsg = ctx.messages.find(m => m.role === 'user');
     const userText = firstUserMsg?.content || '';
     const pending = detectPendingActions(userText, ctx.allToolRecords);
+    // 同时获取用户提及的全部动作（用于判断是否全部完成）
+    const allMentioned = detectAllMentionedActions(userText);
     if (pending.length > 0) {
       ctx.messages.push({
         role: 'user',
@@ -941,6 +1004,14 @@ async function handleThinking(
         ephemeral: true,
       });
       logInfo('待办追踪: 注入未完成任务提醒', pending.join(', '));
+    } else if (allMentioned.length > 0) {
+      // 全部待办已完成 → 注入正面确认信号，防止模型"遗忘"已完成的写入操作
+      ctx.messages.push({
+        role: 'user',
+        content: `✅ 待办检测：用户请求中的全部操作已实际执行完成（${allMentioned.join('、')}）。如果检索到的信息已经足够，请直接给出最终回答，不要再重复调用已执行过的工具。`,
+        ephemeral: true,
+      });
+      logInfo('待办追踪: 全部完成，注入完成确认', allMentioned.join(', '));
     }
   }
 
@@ -1297,6 +1368,10 @@ async function handleExecuting(
       }
       // ── post_tool Hook ──
       executeHooks('post_tool', ctx, { toolName: record.name, toolArgs: record.arguments, toolResult: record.result! });
+      // ── Plan Mode 自动追踪 — 工具执行成功后自动匹配 Plan 步骤标记完成 ──
+      if (record.status === 'success' && ctx.mode === 'plan') {
+        autoTrackPlanStep(record.name);
+      }
       if (record.status === 'success') {
         callbacks.onToolCallResult(record.name, record.result!, batch.find(c => c.function.name === record.name)!);
       } else if (record.status === 'cancelled') {

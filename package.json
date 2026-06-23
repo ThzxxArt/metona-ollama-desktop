@@ -1,6 +1,6 @@
 {
   "name": "metona-ollama-desktop",
-  "version": "0.12.4",
+  "version": "0.12.5",
   "description": "Metona Ollama - TypeScript + Electron \u684c\u9762 AI \u804a\u5929\u5ba2\u6237\u7aef",
   "main": "dist/main/main.js",
   "author": "thzxx",

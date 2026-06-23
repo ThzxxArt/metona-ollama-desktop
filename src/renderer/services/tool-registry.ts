@@ -1041,7 +1041,8 @@ export function formatPlanStatus(): string {
     return `${icon} 步骤${s.index}: ${s.label}`;
   });
   const pct = t.total > 0 ? Math.round(t.done / t.total * 100) : 0;
-  return `[Plan Mode 执行进度: ${t.done}/${t.total} (${pct}%)]\n${lines.join('\n')}\n\n完成每一步后请调用 plan_track(action='mark_done', step_index=N) 标记已完成。`;
+  const hint = t.done >= t.total ? '✅ 全部步骤已完成，请给出最终回答。' : '';
+  return `[Plan Mode 执行进度: ${t.done}/${t.total} (${pct}%)]\n${lines.join('\n')}${hint ? '\n\n' + hint : ''}`;
 }
 
 export function formatToolName(name: string): string {
