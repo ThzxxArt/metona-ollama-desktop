@@ -1,6 +1,6 @@
 /**
- * Context Indexer — 渐进式披露模块 (v0.12.0)
- * Harness Engineering Phase 6: 三级上下文管理
+ * Context Indexer — 渐进式披露模块
+ * Harness Engineering: 三级上下文管理
  *
  * 索引层 (Index)   — 始终保留：项目结构树 + 入口文件地图 + 技术栈摘要
  * 接口层 (Interface) — 按需加载：模块 API 声明 + 类型定义 + 配置文件

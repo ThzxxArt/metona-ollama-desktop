@@ -1,6 +1,6 @@
 /**
- * Verification System — 验证系统模块 (v0.12.0)
- * Harness Engineering Phase 5: 计算性反馈管道
+ * Verification System — 验证系统模块
+ * Harness Engineering: 计算性反馈管道
  *
  * 在 Agent 修改文件后自动运行：
  * - Linter（代码风格检查）

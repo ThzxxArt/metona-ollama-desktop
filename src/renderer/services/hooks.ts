@@ -1,6 +1,6 @@
 /**
- * Harness Hook 系统 (v0.12.0)
- * Harness Engineering Phase 4: 可扩展的 Agent 执行钩子架构
+ * Harness Hook 系统
+ * Harness Engineering: 可扩展的 Agent 执行钩子架构
  *
  * 钩子阶段：
  * - pre_tool: 工具执行前（安全检查、缓存检查、权限验证）

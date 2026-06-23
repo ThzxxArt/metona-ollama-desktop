@@ -395,7 +395,7 @@ export interface ToolCallRecord {
 export type AgentState = 'idle' | 'sending' | 'accumulating' | 'executing' | 'confirming' | 'done';
 
 // ═══════════════════════════════════════════════════════════
-// Harness Engineering: Agent Loop 状态机 (v0.12.0)
+// Harness Engineering: Agent Loop 状态机
 // ═══════════════════════════════════════════════════════════
 
 /** Agent Loop 状态枚举 */

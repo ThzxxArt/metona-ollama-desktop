@@ -631,7 +631,7 @@ html, body {
     background: var(--critical-bg);
 }
 
-/* ── Plan 按钮 (v0.12.0) ── */
+/* ── Plan 按钮 ── */
 .plan-toggle {
     display: flex;
     align-items: center;

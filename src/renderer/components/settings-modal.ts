@@ -510,7 +510,7 @@ const saveSubAgentTimeout = debounce(async () => {
 }, 500);
 document.querySelector('#inputSubAgentTimeout')!.addEventListener('input', saveSubAgentTimeout);
 
-// ── v0.12.1 看门狗超时（分钟，0=禁用）──
+// ── 看门狗超时（分钟，0=禁用）──
 const saveLoopWatchdog = debounce(async () => {
   const db = state.get<ChatDB | null>(KEYS.DB);
   const val = (document.querySelector('#inputLoopWatchdog') as HTMLInputElement).value.trim();

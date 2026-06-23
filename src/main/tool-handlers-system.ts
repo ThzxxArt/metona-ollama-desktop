@@ -151,6 +151,27 @@ function cacheSet(query: string, entry: CacheEntry): void {
   _searchCache.set(query, entry);
 }
 
+// ── 浏览器回退结果缓存 ─────────────────────────────
+// 浏览器渲染耗时数秒，同一 URL 在多次搜索中可能被重复抓取
+interface BrowserCacheEntry { text: string; time: number; }
+const _browserFetchCache = new Map<string, BrowserCacheEntry>();
+const BROWSER_CACHE_MAX = 100;
+const BROWSER_CACHE_TTL = 10 * 60 * 1000; // 10 分钟
+
+function browserCacheGet(url: string): string | null {
+  const entry = _browserFetchCache.get(url);
+  if (!entry) return null;
+  if (Date.now() - entry.time > BROWSER_CACHE_TTL) { _browserFetchCache.delete(url); return null; }
+  return entry.text;
+}
+function browserCacheSet(url: string, text: string): void {
+  if (_browserFetchCache.size >= BROWSER_CACHE_MAX) {
+    const firstKey = _browserFetchCache.keys().next().value;
+    if (firstKey !== undefined) _browserFetchCache.delete(firstKey);
+  }
+  _browserFetchCache.set(url, { text, time: Date.now() });
+}
+
 // ── 反爬请求头 ────────────────────────────────────
 const UA_POOL = [
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
@@ -288,6 +309,8 @@ import { browserOpen, browserExtract, browserClose } from './browser.js';
 // ──────────────────────────────────────────────────
 const FETCH_MAX_RETRIES = 3;          // fetch 阶段最多重试 3 次
 const FETCH_RETRY_DELAYS = [2000, 4000, 6000]; // 指数退避 (ms)，由 jitter() 随机化
+/** 自动抓取最大条数硬上限 — 防止上下文爆炸 */
+const MAX_AUTO_FETCH = 8;
 /** fetch 全部失败后自动回退到浏览器渲染 */
 const BROWSER_FALLBACK_ENABLED = true;
 /** 内容过短阈值：小于此字符数且是 HTML 时，自动升级到浏览器渲染 */
@@ -297,6 +320,15 @@ const BROWSER_FALLBACK_STATUSES = new Set([403, 503, 429, 502]);
 
 /** 浏览器回退：打开 URL → 等待渲染 → 提取内容 */
 async function browserFallback(url: string, maxChars: number): Promise<{ text: string; method: string } | null> {
+  // 1) 检查浏览器回退缓存
+  const cached = browserCacheGet(url);
+  if (cached) {
+    let text = cached;
+    if (maxChars > 0 && text.length > maxChars) text = text.slice(0, maxChars);
+    sendLog('info', `🌐 browser 缓存命中`, url.slice(0, 60));
+    return { text, method: 'browser(cached)' };
+  }
+
   try {
     const openResult = await browserOpen(url);
     if (!openResult.success) return null;
@@ -306,6 +338,10 @@ async function browserFallback(url: string, maxChars: number): Promise<{ text: s
     if (extractResult.success && extractResult.text && extractResult.text.length > 0) {
       let text = extractResult.text;
       if (maxChars > 0 && text.length > maxChars) text = text.slice(0, maxChars);
+      // 写入浏览器回退缓存（缓存完整文本，下次命中时再截断）
+      if (extractResult.text.length >= 100) {
+        browserCacheSet(url, extractResult.text);
+      }
       return { text, method: 'browser' };
     }
     return null;
@@ -656,10 +692,10 @@ export async function handleWebSearch(params: { query: string; max_results?: num
     const maxResults = Math.min(params.max_results || 30, 30);
     const timeRange = params.time_range || '';
     const enhanceSnippets = params.enhance_snippets !== false;
-    const aiFetchTop = Math.max(3, params.fetch_top || 5);
+    const aiFetchTop = Math.min(Math.max(3, params.fetch_top || 5), MAX_AUTO_FETCH);
 
     // 内置引擎默认：使用 AI 指定条数 + 顺序抓取
-    let fetchTop = aiFetchTop;
+    let fetchTop = Math.min(aiFetchTop, MAX_AUTO_FETCH);
     let fetchMode: 'sequential' | 'random' = 'sequential';
 
     let result: ToolResult;
@@ -670,7 +706,7 @@ export async function handleWebSearch(params: { query: string; max_results?: num
       // SearXNG 模式下读取用户面板设置的抓取条数和类型
       const userFetchCount = getSetting<number>('fetch_count', 0);
       fetchMode = (getSetting<string>('fetch_mode', 'sequential') || 'sequential') as 'sequential' | 'random';
-      fetchTop = userFetchCount > 0 ? Math.max(3, userFetchCount) : aiFetchTop;
+      fetchTop = Math.min(userFetchCount > 0 ? Math.max(3, userFetchCount) : aiFetchTop, MAX_AUTO_FETCH);
       sendLog('info', `🔍 web_search → SearXNG 模式`, `"${query}" | 抓取=${fetchTop}条 ${fetchMode === 'random' ? '随机' : '顺序'}`);
       result = await handleWebSearchSearxng(query, maxResults, timeRange, enhanceSnippets);
     } else {
@@ -859,31 +895,96 @@ export async function handleWebSearch(params: { query: string; max_results?: num
 /** 对搜索结果的前 fetchTop 条自动调用 web_fetch 获取完整内容
  *  @param fetchMode 'sequential'=顺序抓取前N条 | 'random'=从结果中随机选取N条
  *  抓取失败时：先依赖 handleWebFetch 内置的浏览器回退，全部失败后随机选 1 条未抓取的补充抓取 */
+
+/** 计算搜索结果标题与搜索 query 的相关性得分
+ *  提取 query 中的关键词（CJK 字符取 2-4 字片段，英文取单词），
+ *  检查标题中是否包含这些关键词。返回 0-100 的得分 */
+function computeRelevance(query: string, title: string, snippet: string): number {
+  if (!query) return 50; // 无 query 信息时不做过滤
+  const q = query.toLowerCase();
+  const t = title.toLowerCase();
+  const s = (snippet || '').toLowerCase();
+  let score = 0;
+
+  // 1) 提取 query 中的 CJK 双/三字片段
+  const cjkTokens: string[] = [];
+  for (let i = 0; i < q.length; i++) {
+    if (/[\u4e00-\u9fff]/.test(q[i])) {
+      if (i + 1 < q.length && /[\u4e00-\u9fff]/.test(q[i + 1])) {
+        cjkTokens.push(q.slice(i, i + 2));
+        if (i + 2 < q.length && /[\u4e00-\u9fff]/.test(q[i + 2])) {
+          cjkTokens.push(q.slice(i, i + 3));
+        }
+      }
+    }
+  }
+  // 去重
+  const uniqueCJK = [...new Set(cjkTokens)];
+
+  // 2) 提取英文单词（≥2 个字符）
+  const enWords = q.match(/[a-z]{2,}/g) || [];
+
+  // 3) 标题匹配计分
+  for (const token of uniqueCJK) {
+    if (t.includes(token)) { score += 25; break; } // 命中一个 CJK 片段即可
+  }
+  for (const word of enWords) {
+    if (t.includes(word)) score += 15;
+  }
+  // 摘要匹配加成
+  for (const token of uniqueCJK.slice(0, 3)) {
+    if (s.includes(token)) score += 5;
+  }
+  for (const word of enWords.slice(0, 3)) {
+    if (s.includes(word)) score += 3;
+  }
+
+  return Math.min(100, score);
+}
+
 async function applyAutoFetch(result: ToolResult, fetchTop: number, fetchMode: 'sequential' | 'random' = 'sequential'): Promise<ToolResult> {
   const results = (result as any).results as Array<{ url: string; title: string; snippet: string }> | undefined;
   if (!results || results.length === 0) return result;
 
-  const count = Math.min(fetchTop, results.length);
+  const count = Math.min(fetchTop, results.length, MAX_AUTO_FETCH);
+
+  // ── 相关性过滤：只抓取标题与搜索词至少有部分匹配的结果 ──
+  // 从搜索结果中反向获取原始 query（若有）作为过滤依据
+  const searchQuery = (result as any).query as string || '';
+  const scoredResults = results.map((r, idx) => {
+    const relevance = computeRelevance(searchQuery, r.title, r.snippet);
+    return { ...r, _idx: idx, _relevance: relevance };
+  });
+  // 按相关性降序排列（相关性高的优先抓取）
+  scoredResults.sort((a, b) => b._relevance - a._relevance);
+  // 过滤掉明显无关的结果（相关性为 0）
+  const relevantResults = scoredResults.filter(r => r._relevance > 0);
+  const skippedCount = results.length - relevantResults.length;
+  if (skippedCount > 0) {
+    sendLog('info', `🔍 相关性过滤: ${skippedCount} 条无关结果已跳过`, 
+      results.filter((_, i) => !relevantResults.some(rr => rr._idx === i)).map(r => r.title.slice(0, 30)).join(', '));
+  }
+  const effectiveResults = relevantResults.length > 0 ? relevantResults : scoredResults; // fallback: 全部无关时仍抓取
 
   // ── 构建抓取列表 ──
   let fetchList: Array<{ url: string; title: string; originalIndex: number }>;
   if (fetchMode === 'random') {
     // Fisher-Yates 洗牌索引，取前 count 个
-    const indices = results.map((_, i) => i);
+    const indices = effectiveResults.slice(0, Math.min(count * 2, effectiveResults.length)).map((_, i) => i);
     for (let i = indices.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [indices[i], indices[j]] = [indices[j], indices[i]];
     }
     fetchList = indices.slice(0, count).map(idx => ({
-      url: results[idx].url,
-      title: results[idx].title,
-      originalIndex: idx,
+      url: effectiveResults[idx].url,
+      title: effectiveResults[idx].title,
+      originalIndex: effectiveResults[idx]._idx,
     }));
   } else {
-    fetchList = results.slice(0, count).map((r, i) => ({
+    fetchList = effectiveResults.slice(0, count).map((r) => ({
       url: r.url,
       title: r.title,
-      originalIndex: i,
+      originalIndex: r._idx,
     }));
   }
 

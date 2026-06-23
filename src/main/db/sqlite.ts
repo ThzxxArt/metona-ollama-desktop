@@ -217,7 +217,7 @@ export async function initDatabase(): Promise<SQL.Database> {
   // 兼容迁移：为已有 messages 表补充 attachments 列（文件/视频等附件 JSON）
   try { db.run('ALTER TABLE messages ADD COLUMN attachments TEXT'); } catch { /* 列已存在，忽略 */ }
 
-  // 兼容迁移：v0.12.0 — 为已有 traces 表补充 error_pattern 列
+  // 兼容迁移：为已有 traces 表补充 error_pattern 列
   try { db.run('ALTER TABLE traces ADD COLUMN error_pattern TEXT'); } catch { /* 列已存在，忽略 */ }
 
 

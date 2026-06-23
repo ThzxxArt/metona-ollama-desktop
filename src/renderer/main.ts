@@ -349,13 +349,13 @@ async function init(): Promise<void> {
     await initMemoryManager();
     await loadSearxngConfig(db);
 
-    // ── v0.12.0: Harness Engineering 系统初始化 ──
+    // ── Harness Engineering 系统初始化 ──
     initHarnessHooks();
     initVerificationSystem();
     // Agent Metrics 无需显式初始化（按需启动）
     // Context Indexer 在 Agent INIT 状态按需构建
 
-    logInit('所有组件已就绪（含 Harness v0.12.0）');
+    logInit('所有组件已就绪（含 Harness）');
 
     const savedModel = await db.getSetting('selectedModel', '');
     if (savedModel) {
@@ -418,7 +418,7 @@ async function init(): Promise<void> {
     (document.querySelector('#inputSubAgentMaxLoops') as HTMLInputElement).value = String(subAgentMaxLoops);
     (document.querySelector('#inputSubAgentTimeout') as HTMLInputElement).value = subAgentTimeout >= 0 ? String(subAgentTimeout) : '';
 
-    // ── v0.12.1 看门狗超时 ──
+    // ── 看门狗超时 ──
     let loopWatchdogMs = await db.getSetting<number>('loopWatchdogMs', 1_800_000);
     state.set('loopWatchdogMs', loopWatchdogMs);
     const watchdogMin = loopWatchdogMs > 0 ? Math.round(loopWatchdogMs / 60_000) : loopWatchdogMs;

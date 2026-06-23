@@ -152,7 +152,7 @@ export function initInputArea(): void {
     }
   });
 
-  // ── v0.12.0 Plan Mode 切换 ──
+  // ── Plan Mode 切换 ──
   const planToggleEl = document.querySelector('#togglePlan') as HTMLInputElement;
   if (planToggleEl) {
     planToggleCheckbox = planToggleEl;
@@ -1268,7 +1268,7 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
       onConfirmTool: async (call) => {
         return showToolConfirm(call);
       },
-      /** v0.12.1: Plan Mode — 计划生成后等待用户确认（Markdown 渲染） */
+      /** Plan Mode — 计划生成后等待用户确认（Markdown 渲染） */
       onPlanReady: async (plan: string, steps: string[]) => {
         try {
           const { showHtmlConfirm } = await import('./prompt-modal.js');

@@ -1,6 +1,6 @@
 /**
- * Agent Metrics — 治理与度量模块 (v0.12.0)
- * Harness Engineering Phase 8: 度量驱动的优化循环
+ * Agent Metrics — 治理与度量模块
+ * Harness Engineering: 度量驱动的优化循环
  *
  * 功能：
  * - 会话级度量采集（迭代效率、工具成功率、完成质量）
@@ -232,7 +232,7 @@ export function generateImprovementSuggestions(): ImprovementSuggestion[] {
 export function formatSuggestionsAsRules(suggestions: ImprovementSuggestion[]): string {
   if (suggestions.length === 0) return '';
 
-  let rules = '\n\n## 自动生成的改进规则 (v0.12.0)\n';
+  let rules = '\n\n## 自动生成的改进规则\n';
   rules += '> 以下规则由 Agent Metrics 系统根据历史错误模式自动生成\n\n';
 
   for (const s of suggestions) {

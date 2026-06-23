@@ -68,6 +68,29 @@ export interface CheckResult {
   reason?: string;
 }
 
+/** 路径安全豁免列表：这些路径即使匹配 BLOCKED_DIRS 也放行（如 app 自己的工作空间） */
+let blocklistExemptions: string[] = [];
+
+/** 注册路径为安全豁免（不受 BLOCKED_DIRS 限制）。主要用于注册工作空间目录 */
+export function addBlocklistExemptions(dirs: string[]): void {
+  for (const d of dirs) {
+    const resolved = path.resolve(d);
+    if (!blocklistExemptions.includes(resolved)) {
+      blocklistExemptions.push(resolved);
+    }
+  }
+}
+
+/** 检查路径是否在豁免列表中 */
+function isBlocklistExempt(resolved: string): boolean {
+  for (const exempt of blocklistExemptions) {
+    if (resolved === exempt || resolved.startsWith(exempt + path.sep)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function checkPathAllowed(targetPath: string, operation: 'read' | 'write'): CheckResult {
   const resolved = path.resolve(targetPath);
 
@@ -77,7 +100,10 @@ export function checkPathAllowed(targetPath: string, operation: 'read' | 'write'
 
   for (const blocked of BLOCKED_DIRS) {
     if (resolved === blocked || resolved.startsWith(blocked + path.sep)) {
-      return { ok: false, reason: `禁止访问受保护路径: ${blocked}` };
+      // 如果路径在安全豁免列表中（如 app 自己的工作空间），放行
+      if (!isBlocklistExempt(resolved)) {
+        return { ok: false, reason: `禁止访问受保护路径: ${blocked}` };
+      }
     }
   }
 

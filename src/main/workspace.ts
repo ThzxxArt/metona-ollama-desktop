@@ -8,7 +8,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { app } from 'electron';
 import { mainWindow } from './main.js';
-import { checkPathAllowed, checkCommandAllowed } from './tool-security.js';
+import { checkPathAllowed, checkCommandAllowed, addBlocklistExemptions } from './tool-security.js';
 
 /** 发送日志到渲染进程日志面板 */
 function sendLog(level: 'info' | 'success' | 'warn' | 'error' | 'debug', message: string, detail?: string): void {
@@ -26,6 +26,8 @@ export function ensureWorkspaceDir(): void {
     fs.mkdirSync(DEFAULT_WORKSPACE_DIR, { recursive: true });
     sendLog('info', `📁 创建默认工作空间目录`, DEFAULT_WORKSPACE_DIR);
   }
+  // 工作空间目录及其子目录不受安全黑名单限制
+  addBlocklistExemptions([DEFAULT_WORKSPACE_DIR]);
 }
 
 /** 获取当前工作空间目录（支持用户自定义） */
@@ -41,6 +43,8 @@ export function setWorkspaceDir(dir: string): void {
     fs.mkdirSync(resolved, { recursive: true });
   }
   _workspaceDir = resolved;
+  // 用户自定义的工作空间目录也需安全豁免
+  addBlocklistExemptions([resolved]);
 }
 
 /**

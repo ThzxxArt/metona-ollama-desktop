@@ -1,7 +1,7 @@
 /**
- * Agent Engine - ReAct Agent Loop 核心引擎 (v0.12.0 Harness Edition)
+ * Agent Engine - ReAct Agent Loop 核心引擎
  * ReAct 模式: Thought → Action → Observation → Reflection
- * v0.12.0: 状态机化架构 + Hook 系统 + Completion Gate + Plan Mode
+ * 状态机化架构 + Hook 系统 + Completion Gate + Plan Mode
  */
 
 import { OllamaAPI } from '../api/ollama.js';
@@ -38,7 +38,7 @@ import type {
 } from '../types.js';
 
 const MAX_RETRIES = 2;              // 工具错误自动重试次数
-const MAX_MESSAGES = 500;           // v0.12.1: 上下文硬上限，超过则强制压缩
+const MAX_MESSAGES = 500;           // 上下文硬上限，超过则强制压缩
 
 /** ── LoopState 常量 ── */
 const S = {
@@ -489,7 +489,7 @@ async function handleInit(
     } catch { /* ignore */ }
   }
   if (agentMdContent) {
-    // v0.12.0: Token 预算截断（限制 2000 tokens）
+    // Token 预算截断（限制 2000 tokens）
     const truncated = truncateByTokenBudget(agentMdContent, 2000);
     systemPromptParts.push(`[AGENT.md] ${truncated}`);
   }
@@ -541,9 +541,16 @@ async function handleInit(
 2. 计划批准后，每一次完成一个步骤，必须调用 plan_track(action='mark_done', step_index=N) 标记该步骤已完成。
 3. 每轮思考前系统会自动注入当前执行进度。请对照进度确保所有步骤最终都被标记为完成。
 4. 所有步骤完成后调用 plan_track(action='mark_all_done') 或直接给出最终回答。`);
+
+    // 将用户原始任务描述固化到系统提示词中（不会被压缩或清理）
+    const taskDesc = userContent?.slice(0, 200) || '';
+    if (taskDesc) {
+      systemPromptParts.push(`[当前任务] 用户要求：${taskDesc}
+⚠️ 以上是你需要完成的任务。即使上下文被压缩或清理，也必须记住并完成这个任务。`);
+    }
   }
 
-  // ── v0.12.0: 渐进式披露 — 项目索引（始终保留在上下文中）──
+  // ── 渐进式披露 — 项目索引（始终保留在上下文中）──
   if (workspaceDir) {
     try {
       const projectIndex = await buildProjectIndex(workspaceDir);
@@ -572,7 +579,7 @@ Shell: ${osInfo.shell}
 - 如果是 Linux/macOS，使用 Bash 命令（如 ls、cat、grep，路径用 /）
 - 严禁在 Windows 上执行 Linux 命令，严禁在 Linux 上执行 Windows 命令。`);
 
-  // ── v0.12.1: 反幻觉铁律（注入最高优先级）──
+  // ── 反幻觉铁律（注入最高优先级）──
   systemPromptParts.push(`[反幻觉铁律 — 最高优先级，不可违反]
 
 ⚠️ 以下规则高于一切其他指令，违反将导致任务失败：
@@ -645,7 +652,7 @@ Shell: ${osInfo.shell}
 
   logInfo(`ReAct Agent Loop 启动: ${model}`, `工具: ${useTools ? '开启' : '关闭'}, 记忆: ${isMemoryEnabled() ? '开启' : '关闭'}, 模式: ${ctx.mode}, tokens≈${estimateTokens(ctx.messages.map(m => m.content || '').join(''))}`);
 
-  // ── v0.12.0 Plan Mode: 如果是 plan 模式，先注入计划提示 ──
+  // ── Plan Mode: 如果是 plan 模式，先注入计划提示 ──
   if (ctx.mode === 'plan' && ctx.loopCount === 0) {
     ctx.messages.push({
       role: 'user' as const,
@@ -682,7 +689,7 @@ function extractPlanSteps(content: string): string[] {
 }
 
 /**
- * v0.12.1: 中途幻觉检测 — 轻量级检查
+ * 中途幻觉检测 — 轻量级检查
  * 仅检查最关键的几类幻觉（文件写入、搜索、命令执行）
  * 完整检查在 Completion Gate 中
  */
@@ -766,7 +773,7 @@ function detectPendingActions(
 }
 
 /**
- * v0.12.1: 通用工具结果核验 — 对所有写类工具执行后验证
+ * 通用工具结果核验 — 对所有写类工具执行后验证
  * 读取/搜索类工具已有返回结果作为验证，此处只核验会产生副作用的操作
  */
 const TOOLS_NEED_VERIFY = new Set([
@@ -903,7 +910,7 @@ async function handleThinking(
     }
   }
 
-  // ── v0.12.1: 任务感知 — 检测用户请求需要工具但模型尚未行动 ──
+  // ── 任务感知 — 检测用户请求需要工具但模型尚未行动 ──
   if (ctx.loopCount === 2 && ctx.allToolRecords.length === 0) {
     // 从用户第一条消息中检测是否需要工具
     const firstUserMsg = ctx.messages.find(m => m.role === 'user');
@@ -1209,7 +1216,7 @@ async function handleExecuting(
     callbacks.onToolCallStart(call);
     logToolStart(call.function.name, JSON.stringify(call.function.arguments));
 
-    // ── v0.12.0: pre_tool Hook ──
+    // ── pre_tool Hook ──
     await executeHooks('pre_tool', ctx, { toolName: call.function.name, toolArgs: call.function.arguments });
 
     await new Promise(r => requestAnimationFrame(r));
@@ -1284,11 +1291,11 @@ async function handleExecuting(
       if (cacheKey) toolResultCache.set(cacheKey, { result: record.result!, timestamp: Date.now() });
       // 记录度量
       recordToolCall(record.name, record.status, Date.now() - record.timestamp);
-      // ── v0.12.1: 通用工具结果核验 — 所有写类工具执行后验证 ──
+      // ── 通用工具结果核验 — 所有写类工具执行后验证 ──
       if (record.status === 'success') {
         verifyToolResult(record.name, record.arguments, record.result!);
       }
-      // ── v0.12.0: post_tool Hook ──
+      // ── post_tool Hook ──
       executeHooks('post_tool', ctx, { toolName: record.name, toolArgs: record.arguments, toolResult: record.result! });
       if (record.status === 'success') {
         callbacks.onToolCallResult(record.name, record.result!, batch.find(c => c.function.name === record.name)!);
@@ -1350,7 +1357,7 @@ async function handleObserving(
   // 记录本轮迭代度量
   recordIteration(ctx);
 
-  // ── v0.12.0: post_iteration Hook ──
+  // ── post_iteration Hook ──
   executeHooks('post_iteration', ctx, { iterationIndex: ctx.loopCount });
 
   // 增量工具结果截断 — 超过 10 轮的旧结果每 3 轮截断到 500 字符
@@ -1364,7 +1371,7 @@ async function handleObserving(
     }
   }
 
-  // ── v0.12.1: 进度锚定 — 每 5 轮注入机器生成的工具调用摘要 ──
+  // ── 进度锚定 — 每 5 轮注入机器生成的工具调用摘要 ──
   if (ctx.loopCount > 1 && ctx.loopCount % 5 === 0 && ctx.allToolRecords.length > 0) {
     const recentRecords = ctx.allToolRecords.slice(-10);
     const summary = recentRecords.map(r => {
@@ -1380,7 +1387,7 @@ async function handleObserving(
       logInfo('进度锚点已注入', `第 ${ctx.loopCount} 轮, ${recentRecords.length} 条记录`);
   }
 
-  // ── v0.12.1: 中途幻觉检测 — 每轮检查模型是否在无工具调用时声称完成了操作 ──
+  // ── 中途幻觉检测 — 每轮检查模型是否在无工具调用时声称完成了操作 ──
   const lastAssistantMsg = [...ctx.messages].reverse().find(m => m.role === 'assistant');
   if (lastAssistantMsg?.content) {
     const midHallucination = detectMidTaskHallucination(lastAssistantMsg.content, ctx.allToolRecords);
@@ -1395,13 +1402,21 @@ async function handleObserving(
   }
 
   // 每 10 轮清理累积的 ephemeral 消息
+  // 但如果上下文使用率已过高（>70%），跳过清理——压缩即将触发，
+  // 此时清理会导致压缩 LLM 看不到 Plan Mode 进度等关键状态信息
   if (ctx.loopCount > 1 && ctx.loopCount % 10 === 0) {
-    let removed = 0;
-    ctx.messages = ctx.messages.filter(m => {
-      if (m.ephemeral) { removed++; return false; }
-      return true;
-    });
-    if (removed > 0) logInfo(`ephemeral 清理: ${removed} 条临时消息已移除`);
+    const numCtx = state.get<number>(KEYS.NUM_CTX, 24576);
+    const usageRatio = numCtx > 0 ? estimateTokens(ctx.messages.map(m => m.content || '').join('')) / numCtx : 0;
+    if (usageRatio > 0.7) {
+      logInfo(`ephemeral 清理跳过: 上下文使用率 ${(usageRatio * 100).toFixed(0)}%, 压缩即将触发`);
+    } else {
+      let removed = 0;
+      ctx.messages = ctx.messages.filter(m => {
+        if (m.ephemeral) { removed++; return false; }
+        return true;
+      });
+      if (removed > 0) logInfo(`ephemeral 清理: ${removed} 条临时消息已移除`);
+    }
   }
 
   transition(ctx, S.REFLECTING);
@@ -1639,7 +1654,7 @@ export async function runAgentLoop(
 
     // Phase 2-7: THINKING → PARSING → EXECUTING → OBSERVING → REFLECTING → (COMPRESSING) → loop
     while (ctx.state !== S.TERMINATED) {
-      // ── v0.12.1: 看门狗 — 全局超时熔断（可通过设置 loopWatchdogMs 配置，0=禁用）──
+      // ── 看门狗 — 全局超时熔断（可通过设置 loopWatchdogMs 配置，0=禁用）──
       // 默认 30 分钟，用户强调不要随意加超时限制
       const WATCHDOG_MS = state.get<number>('loopWatchdogMs', 1_800_000);
       if (WATCHDOG_MS > 0 && Date.now() - ctx.startTime > WATCHDOG_MS) {
@@ -1654,7 +1669,7 @@ export async function runAgentLoop(
         break;
       }
 
-      // ── v0.12.1: 上下文硬上限 — 消息数超阈值强制压缩 ──
+      // ── 上下文硬上限 — 消息数超阈值强制压缩 ──
       if (ctx.messages.length > MAX_MESSAGES) {
         logWarn(`上下文硬上限触发: ${ctx.messages.length} 条消息 > ${MAX_MESSAGES}，强制压缩`);
         transition(ctx, S.COMPRESSING);

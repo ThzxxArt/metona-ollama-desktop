@@ -1,6 +1,6 @@
 /**
- * Completion Gate — 完成门控模块 (v0.12.0)
- * Harness Engineering Phase 3: 在 Agent 输出最终答案前进行结构化检查
+ * Completion Gate — 完成门控模块
+ * Harness Engineering: 在 Agent 输出最终答案前进行结构化检查
  *
  * 设计理念：
  * - 计算性反馈优先（规则驱动、毫秒级、100% 可靠）

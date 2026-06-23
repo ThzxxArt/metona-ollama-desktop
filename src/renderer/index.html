@@ -28,7 +28,7 @@
         <div class="header-left">
             <span class="logo">🦙</span>
             <span class="app-title">Metona Ollama</span>
-            <span class="app-version">v0.12.3</span>
+            <span class="app-version">v0.12.4</span>
             <button class="icon-btn help-btn" id="btnHelp" title="使用帮助">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
@@ -813,7 +813,7 @@
                 </div>
                 <div class="setting-group">
                     <label class="setting-label">自动抓取条数</label>
-                    <input class="setting-input" id="searxngFetchCount" type="number" min="0" step="1" placeholder="0=使用AI指定值" style="margin-bottom:0;">
+                    <input class="setting-input" id="searxngFetchCount" type="number" min="1" max="8" step="1" placeholder="留空=AI决定（最多8条）" style="margin-bottom:0;">
                 </div>
                 <div class="setting-group">
                     <label class="setting-label">抓取类型</label>
