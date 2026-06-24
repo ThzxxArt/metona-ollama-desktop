@@ -1489,18 +1489,19 @@ async function handleObserving(
       logInfo('进度锚点已注入', `第 ${ctx.loopCount} 轮, ${recentRecords.length} 条记录`);
   }
 
-  // ── 通用「同工具重复成功」检测 — 任何工具连续成功多次后自动提醒停止 ──
-  const recentSuccess = ctx.allToolRecords.filter(r => r.status === 'success').slice(-3);
-  if (recentSuccess.length >= 3) {
-    const allSameTool = recentSuccess.every(r => r.name === recentSuccess[0].name);
-    if (allSameTool) {
-      ctx.messages.push({
-        role: 'system',
-        content: `⚠️ 你已连续 ${recentSuccess.length} 次调用「${recentSuccess[0].name}」工具且全部成功。如果任务已完成，直接输出最终回答，不要再重复调用。`,
-      });
-      logInfo(`同工具重复检测: ${recentSuccess[0].name} ×${recentSuccess.length}，注入终止信号`);
-      ctx.maxLoops = Math.min(ctx.maxLoops, ctx.loopCount + 2);
-    }
+  // ── 通用重复调用检测：工具结果含去重信号 或 同工具连续成功 2+ 次 ──
+  const lastToolContents = ctx.messages.filter(m => m.role === 'tool').slice(-3).map(m => m.content || '');
+  const hasDedupSignal = lastToolContents.some(c => c.includes('⚠️ 重复添加') || c.includes('已跳过') || c.includes('duplicate'));
+  const recentSuccess = ctx.allToolRecords.filter(r => r.status === 'success').slice(-2);
+  const allSameTool = recentSuccess.length >= 2 && recentSuccess.every(r => r.name === recentSuccess[0].name);
+  if (hasDedupSignal || allSameTool) {
+    ctx.messages.push({
+      role: 'system',
+      content: `⛔ 检测到重复的工具调用${hasDedupSignal ? '（系统已跳过重复内容）' : ''}。「${recentSuccess[0]?.name || 'memory'}」操作已经完成，立即输出最终回答，绝对不要再调用任何工具。`,
+    });
+    logInfo(`重复调用检测: ${recentSuccess[0]?.name || 'memory'}${hasDedupSignal ? ' (去重信号)' : ''}，注入⛔终止信号`);
+    ctx.maxLoops = Math.min(ctx.maxLoops, ctx.loopCount + 1);
+    // 不要 transition 到 REFLECTING，直接在这里就已经注入了信号，下一轮 THINKING 会看到
   }
 
   // ── 中途幻觉检测 — 每轮检查模型是否在无工具调用时声称完成了操作 ──
