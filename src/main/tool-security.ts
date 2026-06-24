@@ -135,9 +135,10 @@ export function checkPathAllowed(targetPath: string, operation: 'read' | 'write'
   }
 
   if (operation === 'write') {
+    // 允许写入的目录：allowedDirs 白名单 + 黑名单豁免目录（工作空间等）
     const inAllowedDir = allowedDirs.some(dir =>
       resolved === dir || resolved.startsWith(dir + path.sep)
-    );
+    ) || isBlocklistExempt(resolved);
     if (!inAllowedDir) {
       return { ok: false, reason: `写操作被限制在允许的目录内。当前路径: ${resolved}` };
     }
