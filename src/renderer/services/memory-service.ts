@@ -440,12 +440,19 @@ export async function addEntry(
     entries = autoCleanEntries(entries);
   }
 
-  // 去重检查（前 50 字符相同视为重复）
+  // 去重检查（规范化后比较：全角→半角、统一空白、小写）
+  const normalizedNew = normalizeForDedup(content);
   const existing = entries.find(e => {
     if (e.type !== type) return false;
-    const prefixLen = Math.min(50, content.length, e.content.length);
-    if (prefixLen > 20 && content.slice(0, prefixLen) === e.content.slice(0, prefixLen)) return true;
-    return simpleSimilarity(e.content, content) > 0.8;
+    const normalizedExisting = normalizeForDedup(e.content);
+    // 1) 规范化前缀匹配（30 字符）
+    const prefixLen = Math.min(30, normalizedNew.length, normalizedExisting.length);
+    if (prefixLen > 10 && normalizedNew.slice(0, prefixLen) === normalizedExisting.slice(0, prefixLen)) return true;
+    // 2) 如果短文本，检查子串包含
+    if (normalizedNew.length < 40 && normalizedExisting.includes(normalizedNew)) return true;
+    if (normalizedExisting.length < 40 && normalizedNew.includes(normalizedExisting)) return true;
+    // 3) 词级相似度
+    return simpleSimilarity(normalizedExisting, normalizedNew) > 0.8;
   });
   if (existing) {
     logDebug('记忆去重: 已有相同条目', `${type}: ${content.slice(0, 40)}`);
@@ -572,6 +579,34 @@ function simpleSimilarity(a: string, b: string): number {
   }
   const union = aWords.size + bWords.size - intersection;
   return union === 0 ? 0 : intersection / union;
+}
+
+/**
+ * 规范化文本用于去重比较：全角→半角标点、统一空白
+ * 消除 AI 输出中常见的全角逗号/冒号/括号等差异
+ */
+function normalizeForDedup(text: string): string {
+  const FULLWIDTH_MAP: Record<string, string> = {
+    '\uff0c': ',',   // ，
+    '\uff1a': ':',   // ：
+    '\uff1b': ';',   // ；
+    '\uff08': '(',   // （
+    '\uff09': ')',   // ）
+    '\u300a': '<',   // 《
+    '\u300b': '>',   // 》
+    '\u201c': '"',   // "
+    '\u201d': '"',   // "
+    '\u2018': "'",   // '
+    '\u2019': "'",   // '
+    '\uff01': '!',   // ！
+    '\uff0f': '/',   // ／
+    '\u3001': ',',   // 、
+  };
+  let result = '';
+  for (const ch of text) {
+    result += FULLWIDTH_MAP[ch] || ch;
+  }
+  return result.replace(/\s+/g, ' ').trim().toLowerCase();
 }
 
 /**
@@ -736,12 +771,16 @@ ${conversationText.slice(0, 5000)}
         continue;
       }
 
-      // ── 过滤 5: 去重（与已有记忆比对）──
+      // ── 过滤 5: 去重（规范化后比较）──
+      const normalizedNew = normalizeForDedup(entry.content);
       const isDuplicate = existingEntries.some(e => {
         if (e.type !== entry.type) return false;
-        const prefixLen = Math.min(40, entry.content.length, e.content.length);
-        if (prefixLen > 15 && entry.content.slice(0, prefixLen) === e.content.slice(0, prefixLen)) return true;
-        return simpleSimilarity(e.content, entry.content) > 0.75;
+        const normalizedExisting = normalizeForDedup(e.content);
+        const prefixLen = Math.min(30, normalizedNew.length, normalizedExisting.length);
+        if (prefixLen > 10 && normalizedNew.slice(0, prefixLen) === normalizedExisting.slice(0, prefixLen)) return true;
+        if (normalizedNew.length < 40 && normalizedExisting.includes(normalizedNew)) return true;
+        if (normalizedExisting.length < 40 && normalizedNew.includes(normalizedExisting)) return true;
+        return simpleSimilarity(normalizedExisting, normalizedNew) > 0.75;
       });
       if (isDuplicate) {
         logDebug('自动记忆过滤: 重复', entry.content.slice(0, 40));
