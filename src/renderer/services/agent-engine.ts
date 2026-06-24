@@ -332,12 +332,39 @@ function formatToolResultForModel(toolName: string, result: ToolResult): string 
     }
 
     case 'memory': {
-      // 仅处理去重文字信号（触发 handleObserving 的⛔终止），
-      // 正常结果交给 default 分支保留全部字段（entries/total/results等）
+      // 去重文字信号（触发 handleObserving 的⛔终止）
       if ((result as any).duplicate) {
         return `⚠️ 重复添加: ${(result as any).message || '相同内容已存在'}\n✅ 记忆操作已全部完成，不要再调用 memory 工具，直接输出最终回答。`;
       }
-      // fall through to default
+      // read_all / search 结果用可读文本格式，确保模型不会"看漏"
+      if ((result as any).action === 'read_all') {
+        const entries = ((result as any).entries || []) as Array<{ id: string; type: string; content: string; importance: number; tags: string[] }>;
+        if (entries.length === 0) return '记忆为空，没有任何已保存的记忆条目。';
+        const grouped: Record<string, typeof entries> = {};
+        for (const e of entries) {
+          const t = e.type || 'fact';
+          (grouped[t] ||= []).push(e);
+        }
+        const lines: string[] = [`[记忆读取结果] 共 ${entries.length} 条记忆，按类型分组：`];
+        const typeLabels: Record<string, string> = { rule: '规则（必须遵守）', preference: '偏好', fact: '事实' };
+        for (const [t, items] of Object.entries(grouped)) {
+          lines.push(`\n--- ${typeLabels[t] || t} ---`);
+          for (const e of items) {
+            lines.push(`  • [${e.type}] ${e.content}（重要性:${e.importance}, 标签: ${(e.tags || []).join(', ') || '无'}）`);
+          }
+        }
+        return lines.join('\n');
+      }
+      if ((result as any).action === 'search') {
+        const results = ((result as any).results || []) as Array<{ id: string; type: string; content: string; importance: number; score: number }>;
+        if (results.length === 0) return '未找到匹配的记忆。';
+        const lines = [`[记忆搜索结果] 共 ${results.length} 条：`];
+        for (const r of results) {
+          lines.push(`  • [${r.type || 'fact'}] ${r.content}（重要性:${r.importance}, 匹配度:${(r.score || 0).toFixed(0)}）`);
+        }
+        return lines.join('\n');
+      }
+      // 其他 action（add/replace/remove）保留完整 JSON
     }
 
     default: {
