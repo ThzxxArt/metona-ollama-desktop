@@ -288,6 +288,8 @@ export function initSettingsModal(): void {
       if (result.success) {
         showToast('工作空间目录已更新', 'success');
         logSetting('工作空间目录', result.dir!);
+        // ── 通知工作空间面板刷新目录 ──
+        window.dispatchEvent(new CustomEvent('workspaceDirChanged', { detail: { dir: result.dir } }));
       } else {
         showToast(`设置失败: ${result.error!}`, 'error');
         // 恢复原值
@@ -308,6 +310,16 @@ export function openSettingsModal(): void {
   updateMemoryVectorStatus();
   loadTimeoutSettings();
   loadWatchdogSetting();
+  // 刷新工作空间目录显示
+  const bridge = window.metonaDesktop;
+  if (bridge?.isDesktop) {
+    const wsInput = document.querySelector('#inputWorkspaceDir') as HTMLInputElement;
+    if (wsInput) {
+      bridge.workspace.getDir().then((info: { dir: string }) => {
+        wsInput.value = info.dir;
+      }).catch(() => {});
+    }
+  }
 }
 
 /** 加载看门狗设置到输入框 */

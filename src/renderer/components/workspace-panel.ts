@@ -237,6 +237,26 @@ export async function initWorkspacePanel(): Promise<void> {
   // 绑定 UI 事件
   bindEvents();
 
+  // ── 监听工作空间目录变更（来自设置面板）──
+  window.addEventListener('workspaceDirChanged', ((e: CustomEvent) => {
+    const newDir = e.detail?.dir;
+    if (newDir && newDir !== workspaceDir) {
+      workspaceDir = newDir;
+      currentFileDir = newDir;
+      logInfo('工作空间目录已刷新', newDir);
+      // 如果当前在文件页签，立即重新加载
+      if (activeTab === 'files') {
+        loadFiles(newDir);
+      }
+      // 刷新终端空闲状态中的目录显示
+      if (activeTab === 'terminal') {
+        renderTerminal();
+      }
+      // 刷新文件页签（即使不在当前 tab，下次切过去就是新路径）
+      renderPanel();
+    }
+  }) as EventListener);
+
   // 创建唯一终端
   terminal = {
     id: genId(),

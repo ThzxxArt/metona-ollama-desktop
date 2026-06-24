@@ -279,12 +279,14 @@ export async function setupIPC(): Promise<void> {
     return { dir: getWorkspaceDir(), defaultDir: getWorkspaceDir() };
   });
 
-  // 设置工作空间目录
-  ipcMain.handle('workspace:setDir', (_, dir: string) => {
-    try {
-      setWorkspaceDir(dir);
-      return { success: true, dir: getWorkspaceDir() };
-    } catch (err) {
+	  // 设置工作空间目录
+	  ipcMain.handle('workspace:setDir', (_, dir: string) => {
+	    try {
+	      setWorkspaceDir(dir);
+	      // ── 持久化到 SQLite，重启后恢复 ──
+	      saveSetting('workspaceDir', getWorkspaceDir());
+	      return { success: true, dir: getWorkspaceDir() };
+	    } catch (err) {
       return { success: false, error: (err as Error).message };
     }
   });
@@ -343,6 +345,15 @@ export async function setupIPC(): Promise<void> {
   // 初始化数据库
   await initDatabase();
   sendLog('success', '📦 SQLite 数据库已初始化');
+
+  // ── 恢复工作空间目录 ──
+  try {
+    const savedWsDir = getSetting<string>('workspaceDir', '');
+    if (savedWsDir) {
+      setWorkspaceDir(savedWsDir);
+      sendLog('info', '📁 恢复工作空间目录', savedWsDir);
+    }
+  } catch { /* ignore */ }
 
   // Sessions
   ipcMain.handle('db:saveSession', (_, session) => {
