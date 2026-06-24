@@ -332,10 +332,12 @@ function formatToolResultForModel(toolName: string, result: ToolResult): string 
     }
 
     case 'memory': {
+      // 仅处理去重文字信号（触发 handleObserving 的⛔终止），
+      // 正常结果交给 default 分支保留全部字段（entries/total/results等）
       if ((result as any).duplicate) {
         return `⚠️ 重复添加: ${(result as any).message || '相同内容已存在'}\n✅ 记忆操作已全部完成，不要再调用 memory 工具，直接输出最终回答。`;
       }
-      return JSON.stringify({ success: true, action: result.action, type: (result as any).type, content: (result as any).content });
+      // fall through to default
     }
 
     default: {

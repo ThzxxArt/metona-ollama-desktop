@@ -988,7 +988,8 @@ function buildHistoryMessages(msgs: ChatMessage[], maxCount = 20): OllamaMessage
   const result: OllamaMessage[] = [];
 
   for (const msg of msgs) {
-    if (msg.role !== 'user' && msg.role !== 'assistant' && msg.role !== 'system') continue;
+    // 只注入 assistant 和 system 消息（用户消息仅当前发送的一条，由 runAgentLoop userContent 单独传入）
+    if (msg.role !== 'assistant' && msg.role !== 'system') continue;
     if (result.length >= maxCount) break;
 
     let content = msg.content || '';
@@ -999,19 +1000,7 @@ function buildHistoryMessages(msgs: ChatMessage[], maxCount = 20): OllamaMessage
       continue;
     }
 
-    if (msg.role === 'user') {
-      // 用户消息：注入文件内容
-      if (msg._fileContents?.length) {
-        const fileParts = buildFileContentParts(msg._fileContents);
-        content = content ? content + '\n\n---\n' + fileParts.join('\n\n---\n') : fileParts.join('\n\n---\n');
-      }
-      result.push({
-        role: 'user',
-        content,
-        ...(msg.images?.length && { images: msg.images }),
-        ...((msg as any)._videoFrames?.length && { images: [...(msg.images || []), ...(msg as any)._videoFrames.map((f: any) => f.base64)] }),
-      });
-    } else if (msg.role === 'assistant') {
+    if (msg.role === 'assistant') {
       // 构建 assistant 消息
       const assistantMsg: OllamaMessage = {
         role: 'assistant',
