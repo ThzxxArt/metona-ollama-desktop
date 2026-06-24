@@ -582,14 +582,11 @@ async function handleRetry(): Promise<void> {
         onPlanReady: async (plan: string, steps: string[]) => {
           try {
             const { showHtmlConfirm } = await import('./prompt-modal.js');
-            const stepsHtml = steps.length > 0
-              ? '<br><br><strong>📋 执行步骤：</strong><br>' + steps.map((s: string, i: number) => `&nbsp;&nbsp;${i + 1}. ${s}`).join('<br>')
-              : '';
-            const html = `<div>${safeMarkdown(plan.slice(0, 1500))}${plan.length > 1500 ? '<br>…' : ''}${stepsHtml}</div>`;
-            return showHtmlConfirm(html, '📋 Plan Mode — 确认执行计划', true);
+            const html = buildPlanConfirmHtml(plan, steps);
+            return showHtmlConfirm(html, '📋 执行计划确认', true);
           } catch (err) {
             logWarn('Plan Mode: 弹窗加载失败，自动批准', (err as Error).message);
-            return true; // 加载失败时自动批准，不阻断执行
+            return true;
           }
         },
         onDone: async (finalContent, toolRecords, loopStats) => {
@@ -866,10 +863,47 @@ function stripComments(content: string, language: string): string {
 }
 
 /**
- * 构建文件内容 Parts，带 token 预算感知
- * - 小文件直接嵌入，大文件按预算截断
- * - 代码文件自动剥离注释
- */
+	 * 构建文件内容 Parts，带 token 预算感知
+	 * - 小文件直接嵌入，大文件按预算截断
+	 * - 代码文件自动剥离注释
+	 */
+
+/** 构建 Plan Mode 确认弹窗 HTML */
+function buildPlanConfirmHtml(plan: string, steps: string[]): string {
+  const renderedPlan = safeMarkdown(plan.slice(0, 2000));
+  const truncated = plan.length > 2000;
+
+  const stepsHtml = steps.length > 0
+    ? `<div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border-subtle);">
+        <div style="font-size:12px;font-weight:700;color:var(--text-secondary);margin-bottom:10px;text-transform:uppercase;letter-spacing:0.5px;">
+          📌 执行步骤（共 ${steps.length} 步）
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          ${steps.map((s, i) => `
+            <div style="display:flex;align-items:flex-start;gap:10px;padding:8px 12px;background:var(--bg-layer);border-radius:var(--radius-control);border-left:3px solid var(--accent);">
+              <span style="flex-shrink:0;width:24px;height:24px;display:flex;align-items:center;justify-content:center;background:var(--accent-subtle);border-radius:50%;font-size:13px;font-weight:700;color:var(--accent);">${i + 1}</span>
+              <span style="font-size:13px;line-height:1.6;color:var(--text-primary);padding-top:2px;">${escapeHtml(s)}</span>
+            </div>
+          `).join('')}
+        </div>
+      </div>`
+    : '';
+
+  return `
+    <div style="font-size:13px;line-height:1.7;">
+      <div style="margin-bottom:12px;padding:10px 14px;background:var(--accent-subtle);border-radius:var(--radius-control);border:1px solid rgba(232,115,74,0.12);">
+        <span style="font-size:13px;font-weight:600;color:var(--accent);">🤖 AI 执行计划</span>
+        <span style="font-size:11px;color:var(--text-tertiary);margin-left:8px;">批准后 AI 将按步骤依次执行，每完成一步自动标记进度</span>
+      </div>
+      <div style="padding:4px 0;color:var(--text-primary);">
+        ${renderedPlan}
+        ${truncated ? '<div style="margin-top:8px;font-size:11px;color:var(--text-tertiary);">…（计划内容已截断）</div>' : ''}
+      </div>
+      ${stepsHtml}
+    </div>
+  `;
+}
+
 function buildFileContentParts(fileContents: Array<{ language: string; content: string }>): string[] {
   const numCtx = state.get<number>(KEYS.NUM_CTX, 24576);
   const fileBudget = Math.floor(numCtx * FILE_TOKEN_BUDGET_RATIO);
@@ -1056,9 +1090,9 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
       logInfo('📄 文件内容已注入', `${fileParts.length} 段, 共 ${fileContents.reduce((s, f) => s + f.content.length, 0)} 字符`);
     }
     if (pendingImages.length === 1) {
-      apiParts.push(`[图片: ${pendingImages[0].name}]`);
+      apiParts.push(`[已上传图片: ${pendingImages[0].name} — 此图片已随消息提供，你可以直接分析，无需去磁盘查找]`);
     } else if (pendingImages.length > 1) {
-      apiParts.push(`[${pendingImages.length} 张图片: ${pendingImages.map(img => img.name).join(', ')}]`);
+      apiParts.push(`[已上传 ${pendingImages.length} 张图片: ${pendingImages.map(img => img.name).join(', ')} — 这些图片已随消息提供，你可以直接分析，无需去磁盘查找]`);
     }
     let allVids: Array<{ name: string; count: number; dur: number; frames: Array<{ timestampSeconds: number; name: string; base64: string }> }> = [];
     if (hasVideos) {
@@ -1272,11 +1306,8 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
       onPlanReady: async (plan: string, steps: string[]) => {
         try {
           const { showHtmlConfirm } = await import('./prompt-modal.js');
-          const stepsHtml = steps.length > 0
-            ? '<br><br><strong>📋 执行步骤：</strong><br>' + steps.map((s, i) => `&nbsp;&nbsp;${i + 1}. ${s}`).join('<br>')
-            : '';
-          const html = `<div>${safeMarkdown(plan.slice(0, 1500))}${plan.length > 1500 ? '<br>…' : ''}${stepsHtml}</div>`;
-          const approved = await showHtmlConfirm(html, '📋 Plan Mode — 确认执行计划', true);
+          const html = buildPlanConfirmHtml(plan, steps);
+          const approved = await showHtmlConfirm(html, '📋 执行计划确认', true);
           if (approved) {
             logInfo('Plan Mode: 用户批准计划');
           }

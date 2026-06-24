@@ -537,10 +537,34 @@ async function handleInit(
   if (ctx.mode === 'plan') {
     systemPromptParts.push(`[Plan Mode 执行规则]
 你当前处于 Plan Mode（先规划后执行）。重要规则：
-1. 第一轮回复必须是执行计划，不要直接调用工具。列出步骤、涉及工具和预期结果后，等待用户批准。
-2. 计划批准后，系统会自动追踪工具执行进度——你每完成一个步骤对应的工具调用，系统会自动标记该步骤为完成。
-3. 你也可以手动调用 plan_track(action='mark_done', step_index=N) 来更新进度。
-4. 所有步骤完成后直接给出最终回答。不需要手动调用 plan_track 来标记全部完成——系统会自动检测。`);
+
+**输出格式（必须严格遵守）**：
+你的第一轮回复必须是一个清晰的执行计划，使用以下格式。不要输出其他无关内容。
+
+## 任务分析
+[1-2 句话概述任务，展示你的理解]
+
+## 执行计划
+1. **步骤名称** — 工具: tool_name — 简要描述这一步做什么，完成后预期结果是什么
+2. **步骤名称** — 无需工具 — 如果这一步只需推理/分析/总结，标注"无需工具"并描述分析要点
+...（根据任务复杂度，通常 2-6 步）
+
+## 预期结果
+[完成所有步骤后的最终产出]
+
+**关键规则**：
+- 需要调用工具的步骤：必须写"工具: xxx"（如 工具: web_search、工具: write_file）
+- 纯分析/推理/总结的步骤：写"无需工具"，描述你要分析和思考的要点
+- 禁止模糊描述如"分析需求"——即使是分析步骤，也要写清楚分析什么、关注什么
+- 如果用户已上传图片或文件，第一步必须是分析附件（写"无需工具"即可，图片你直接能看到）
+- 如果整个任务完全不需要工具（如纯翻译、润色、总结对话），可以全部步骤都是"无需工具"
+- 输出计划后等待用户批准，**不要**在输出计划的同时调用工具
+
+**计划批准后**：
+- 需要工具的步骤：调用对应工具完成任务
+- 无需工具的步骤：直接基于已有信息给出分析结论
+- 系统会自动追踪工具执行进度
+- 所有步骤完成后直接给出最终回答。`);
 
     // 将用户原始任务描述固化到系统提示词中（不会被压缩或清理）
     const taskDesc = userContent?.slice(0, 200) || '';
@@ -589,6 +613,9 @@ Shell: ${osInfo.shell}
 3. **搜索必须实际执行**：说"搜索结果显示"、"根据搜索结果"之前，必须先调用 web_search。搜索结果的 snippet 不可信，必须用 web_fetch 获取完整内容后才能引用。
 4. **信息不足时如实报告**：如果工具调用失败或返回了意外的结果，必须如实报告，不能编造替代信息。
 5. **完成标志**：当所有必需的工具调用已经实际执行完毕，且获得了足够的信息后，才能给出最终回答。最终回答中不要编造"文件已生成"等声明——除非你真的调用了对应工具。
+6. **用户上传的图片和文件已在当前消息中**：如果用户消息中包含图片附件标记（如 [已上传 N 张图片: ...]）或文件标记（如 [文件: xxx]），说明这些资源已随消息作为附件提供，你可以直接"看到"和分析它们。**严禁再用 read_file / search_files 等工具去磁盘上查找这些已上传的图片和文件**——它们不在磁盘上，就在当前消息里。不要浪费轮次去做无意义的文件搜索。
+7. **read_file 不能看图片**：read_file 返回的是文本或 base64 编码字符串，视觉模型无法处理。如果你需要分析图片内容，只有用户通过上传功能提供的图片才是可见的。不要尝试用 read_file mode=binary 去"读取"图片文件。
+8. **禁止在 Plan 模式下为已上传的附件规划文件查找步骤**：如果用户消息中已经有图片或文件附件，执行计划的第一步应该是直接分析这些附件，而不是"搜索工作空间中的图片文件"或"查找相关文件"。
 
 违反以上任何一条都是不可接受的错误。请逐条对照检查你的每一次回复。`);
 
@@ -656,7 +683,7 @@ Shell: ${osInfo.shell}
   if (ctx.mode === 'plan' && ctx.loopCount === 0) {
     ctx.messages.push({
       role: 'user' as const,
-      content: `[Plan Mode] 请先分析任务，列出执行计划（包括需要的工具、步骤和预期结果），然后等待我的确认。不要直接执行工具调用。`,
+      content: `[Plan Mode] 请按照 Plan Mode 执行规则中指定的格式输出执行计划。不要直接执行工具调用，先输出计划等待用户批准。`,
       ephemeral: true,
     });
   }
@@ -674,23 +701,49 @@ function truncateByTokenBudget(text: string, maxTokens: number): string {
   return text.slice(0, cutAt) + '\n\n... (已截断以控制 Token 预算)';
 }
 
-/** 从 Plan Mode 输出中提取步骤列表 */
+/** 从 Plan Mode 输出中提取步骤列表（兼容多种模型格式） */
 function extractPlanSteps(content: string): string[] {
   const steps: string[] = [];
-  const stepRegex = /(?:^|\n)\s*(?:\d+[\.\)、]\s*|[-*]\s+)(.+)/g;
-  // 过滤项：阶段标题、HTML 标记、纯格式描述
-  const filterPatterns = [/^\*\*.*阶段.*\*\*/, /\*\*第[一二三]|\*\*Phase/, /^```/, /^<\/?/, /^Stage/i];
-  // 动作动词：步骤必须包含至少一个表示"要做什么"的词
-  const ACTION_VERBS = /搜索|查找|检索|抓取|fetch|写入|write|创建|生成|运行|执行|打开|浏览|读取|下载|提交|推送|编译|压缩|解压|截图|提取|设计|构建|编码|HTML|CSS|组织|整理|归类|搜集|汇总/;
-  let match;
-  while ((match = stepRegex.exec(content)) !== null) {
-    const step = match[1].trim();
-    if (step.length < 5 || step.length > 200) continue;
-    if (filterPatterns.some(p => p.test(step))) continue;
-    if (!ACTION_VERBS.test(step)) continue; // 纯描述无动词，跳过
-    steps.push(step);
+
+  // 策略1: 精确匹配 "## 执行计划" 区块中的编号行
+  const planSection = content.match(/##\s*执行计划\s*\n([\s\S]*?)(?=\n##|\n---|\n\*\*关键|$)/);
+  if (planSection) {
+    const lines = planSection[1].split('\n');
+    for (const line of lines) {
+      // 匹配: 1. **步骤名** — 工具: xxx — 描述
+      const match = line.match(/^\d+[\.\)、]\s*(?:\*\*)?(.+?)(?:\*\*)?(?:\s*[—\-]\s*)/);
+      if (match) {
+        const step = match[0].trim();
+        if (step.length >= 5 && step.length <= 200) {
+          steps.push(step);
+          continue;
+        }
+      }
+      // 回退: 匹配任何编号行
+      const looseMatch = line.match(/^\d+[\.\)、]\s+(.+)/);
+      if (looseMatch) {
+        const step = looseMatch[1].trim();
+        if (step.length >= 5 && step.length <= 200) {
+          steps.push(step);
+        }
+      }
+    }
   }
-  return steps.length > 0 ? steps.slice(0, 6) : ['执行任务计划（详见上方描述）'];
+
+  // 策略2: 回退 — 全局匹配编号行（松动匹配，接受"无需工具"的步骤）
+  if (steps.length === 0) {
+    const stepRegex = /(?:^|\n)\s*(?:\d+[\.\)、]\s*|[-*]\s+)(.+)/g;
+    const filterPatterns = [/^\*\*.*阶段.*\*\*/, /\*\*第[一二三]|\*\*Phase/, /^```/, /^<\/?/, /^Stage/i];
+    let match;
+    while ((match = stepRegex.exec(content)) !== null) {
+      const step = match[1].trim();
+      if (step.length < 5 || step.length > 200) continue;
+      if (filterPatterns.some(p => p.test(step))) continue;
+      steps.push(step);
+    }
+  }
+
+  return steps.length > 0 ? steps.slice(0, 8) : ['执行任务计划（详见上方描述）'];
 }
 
 /**

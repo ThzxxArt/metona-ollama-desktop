@@ -25,11 +25,13 @@ function ensureModal(): void {
       <div class="modal-header">
         <h3 id="promptTitle">输入</h3>
       </div>
-      <div class="modal-body" id="promptBody"></div>
-      <div class="modal-actions" style="padding:12px 20px 16px;">
-        <div style="flex:1;"></div>
-        <button class="btn btn-outline" id="promptCancel">取消</button>
-        <button class="btn btn-primary" id="promptOk">确定</button>
+      <div class="modal-body" id="promptBody" style="max-height:60vh;overflow-y:auto;"></div>
+      <div class="modal-actions" style="padding:12px 20px 16px;border-top:1px solid var(--border-subtle);flex-shrink:0;">
+
+
+
+        <button class="btn btn-outline" id="promptCancel" style="padding:8px 20px;font-size:13px;">取消</button>
+        <button class="btn btn-primary" id="promptOk" style="padding:8px 20px;font-size:13px;">确定</button>
       </div>
     </div>
   `;
@@ -131,12 +133,16 @@ export function showHtmlConfirm(html: string, title = '确认', wide = false): P
   return new Promise((resolve) => {
     resolveFn = (val) => resolve(val !== null);
     titleEl!.textContent = title;
-    bodyEl!.innerHTML = `<div style="color:var(--text-secondary);font-size:13px;line-height:1.6;">${html}</div>`;
+    bodyEl!.innerHTML = html;
     inputEl = null;
     overlayEl!.style.display = '';
     // 宽屏模式：Plan Mode 确认框需要更大空间
     const modalEl = overlayEl!.querySelector('.modal') as HTMLElement;
-    if (modalEl) modalEl.style.maxWidth = wide ? '700px' : '';
+    if (modalEl) {
+      modalEl.style.maxWidth = wide ? '640px' : '420px';
+      modalEl.style.maxHeight = wide ? '85vh' : '';
+    }
+    okBtn!.textContent = wide ? '✅ 批准执行' : '确定';
     okBtn!.focus();
   });
 }
