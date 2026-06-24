@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-v0.13.4-E8734A?style=flat-square" alt="version">
+  <img src="https://img.shields.io/badge/version-v0.13.5-E8734A?style=flat-square" alt="version">
   <img src="https://img.shields.io/badge/electron-33+-47848F?style=flat-square&logo=electron" alt="electron">
   <img src="https://img.shields.io/badge/typescript-5.7+-3178C6?style=flat-square&logo=typescript" alt="typescript">
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="license">
@@ -39,7 +39,7 @@
 | 📋 | **Plan Mode** | 开关切换，AI 首先生成执行计划（Markdown 渲染确认弹窗），批准后按步骤追踪执行，plan_track 工具标记完成状态 |
 | 🔧 | **40 个内置工具** | 文件系统（16个） · 命令执行 · 联网搜索 · 浏览器控制（9个） · Git · 记忆 · 会话 · 子代理 · 系统工具 · Plan Mode 追踪 |
 | 🧠 | **智能记忆系统** | 三类记忆（fact / preference / rule），存储于工作空间 MEMORY.md 文件，受路径保护仅 memory 工具可访问，写入前安全扫描，容量 500 条，对话结束自动提取，严格格式校验 |
-| 📋 | **自定义文件** | SOUL.md（人格，不可压缩）+ AGENT.md（行为准则）+ USER.md（用户画像），工作空间优先，内置默认 fallback |
+| 📋 | **自定义文件** | SOUL.md（人格，不可压缩）+ AGENT.md（行为准则，内置 fallback）+ USER.md（用户画像，仅工作空间读取，不存在则不注入） |
 | 🌐 | **MCP 协议扩展** | JSON-RPC 2.0 over stdio，动态工具发现，Shadowing 防护 |
 | 🔍 | **联网搜索（双模式）** | SearXNG 元搜索引擎 JSON API（70+引擎聚合）/ 四引擎 HTML 解析（Bing+百度+搜狗+360），双模式可切换；web_fetch 支持反爬+UA切换+浏览器回退 |
 | 🌏 | **浏览器控制** | 打开网页 · 截图 · 执行 JS · 提取内容 · 点击 · 输入 · 滚动 · 关闭 |
@@ -174,7 +174,7 @@
 ## 🏗️ 架构
 
 ```
-用户消息 → 扫描工作空间 SOUL.md（不可压缩层）→ AGENT.md → USER.md
+用户消息 → 扫描工作空间 SOUL.md（不可压缩层）→ AGENT.md → USER.md（工作空间，不存在则跳过）
               ↓
          记忆检索 (MEMORY.md 关键词搜索) → 上下文注入
               ↓
@@ -252,7 +252,7 @@ npm start
 ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm run dist
 ```
 
-产出：`release/Metona Ollama Setup v0.13.4.exe`
+产出：`release/Metona Ollama Setup v0.13.5.exe`
 
 ## 🛠️ 常用命令
 
@@ -287,7 +287,7 @@ npm run dist           # 构建 Windows 安装包
 | 📋 | **Plan Mode** | Toggle switch. AI first generates an execution plan (Markdown-rendered confirmation dialog), then tracks step-by-step execution, with plan_track tool marking completion |
 | 🔧 | **40 Built-in Tools** | File system · Command · Web search · Browser · Git · Memory · Sessions · Sub-agent · System · Plan Mode tracking |
 | 🧠 | **Smart Memory System** | Three types (fact / preference / rule), stored in workspace MEMORY.md file, path-protected — only the memory tool can access it, pre-write security scan, 500 capacity, auto-extract on conversation end, strict format validation |
-| 📋 | **Custom Files** | SOUL.md (persona, never compressed) + AGENT.md (behavior rules) + USER.md (user profile), workspace-first with built-in defaults |
+| 📋 | **Custom Files** | SOUL.md (persona, never compressed) + AGENT.md (behavior rules, built-in fallback) + USER.md (user profile, workspace only, skipped if absent) |
 | 🌐 | **MCP Protocol Extension** | JSON-RPC 2.0 over stdio, dynamic tool discovery, Shadowing protection |
 | 🔍 | **Web Search (dual-mode)** | SearXNG meta-search JSON API (70+ engines) / quad-engine HTML parsing (Bing+Baidu+Sogou+360), switchable; web_fetch with auto-retry+mobile UA+SPA browser fallback |
 | 🌏 | **Browser Control** | Open pages · Screenshot · JS execution · Content extraction · Click · Type · Scroll · Close |
@@ -421,7 +421,7 @@ npm run dist           # 构建 Windows 安装包
 ## 🏗️ Architecture
 
 ```
-User message → workspace SOUL.md (never compressed) → AGENT.md → USER.md
+User message → workspace SOUL.md (never compressed) → AGENT.md → USER.md (workspace, skipped if absent)
               ↓
          Memory Retrieval (MEMORY.md keyword search) → Context Injection
               ↓
@@ -499,7 +499,7 @@ npm start
 ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm run dist
 ```
 
-Output: `release/Metona Ollama Setup v0.13.4.exe`
+Output: `release/Metona Ollama Setup v0.13.5.exe`
 
 ## 🛠️ Common Commands
 
