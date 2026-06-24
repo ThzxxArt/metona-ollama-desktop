@@ -440,10 +440,9 @@ export async function addEntry(
     entries = autoCleanEntries(entries);
   }
 
-  // 去重检查（规范化后比较：全角→半角、统一空白、小写）
+  // 去重检查（规范化后比较，不限类型：内容相同就是重复）
   const normalizedNew = normalizeForDedup(content);
   const existing = entries.find(e => {
-    if (e.type !== type) return false;
     const normalizedExisting = normalizeForDedup(e.content);
     // 1) 规范化前缀匹配（30 字符）
     const prefixLen = Math.min(30, normalizedNew.length, normalizedExisting.length);
@@ -451,7 +450,7 @@ export async function addEntry(
     // 2) 如果短文本，检查子串包含
     if (normalizedNew.length < 40 && normalizedExisting.includes(normalizedNew)) return true;
     if (normalizedExisting.length < 40 && normalizedNew.includes(normalizedExisting)) return true;
-    // 3) 词级相似度 — 阈值 0.65：宁愿少记也不重复
+    // 3) 词级相似度 — 阈值 0.65
     return simpleSimilarity(normalizedExisting, normalizedNew) > 0.65;
   });
   if (existing) {
@@ -774,7 +773,6 @@ ${conversationText.slice(0, 5000)}
       // ── 过滤 5: 去重（规范化后比较）──
       const normalizedNew = normalizeForDedup(entry.content);
       const isDuplicate = existingEntries.some(e => {
-        if (e.type !== entry.type) return false;
         const normalizedExisting = normalizeForDedup(e.content);
         const prefixLen = Math.min(30, normalizedNew.length, normalizedExisting.length);
         if (prefixLen > 10 && normalizedNew.slice(0, prefixLen) === normalizedExisting.slice(0, prefixLen)) return true;
