@@ -1489,18 +1489,17 @@ async function handleObserving(
       logInfo('进度锚点已注入', `第 ${ctx.loopCount} 轮, ${recentRecords.length} 条记录`);
   }
 
-  // ── 记忆去重检测 — 如果上一轮 memory add 返回了去重信号，强制终止循环 ──
-  const lastToolMsgs = ctx.messages.filter(m => m.role === 'tool').slice(-3);
-  for (const tm of lastToolMsgs) {
-    if (tm.content?.includes('"duplicate":true') || tm.content?.includes('duplicate')) {
+  // ── 通用「同工具重复成功」检测 — 任何工具连续成功多次后自动提醒停止 ──
+  const recentSuccess = ctx.allToolRecords.filter(r => r.status === 'success').slice(-3);
+  if (recentSuccess.length >= 3) {
+    const allSameTool = recentSuccess.every(r => r.name === recentSuccess[0].name);
+    if (allSameTool) {
       ctx.messages.push({
         role: 'system',
-        content: '✅ 去重检测：你的记忆操作已经全部完成（系统检测到重复添加，说明信息已存在）。还有未完成的操作请直接完成，不要再调用 memory 工具。如果全部操作已完成，立即给出最终回答。',
+        content: `⚠️ 你已连续 ${recentSuccess.length} 次调用「${recentSuccess[0].name}」工具且全部成功。如果任务已完成，直接输出最终回答，不要再重复调用。`,
       });
-      logInfo('记忆去重检测: 检测到重复添加，注入终止信号');
-      // 缩减剩余轮次到当前+1，强制即将结束
+      logInfo(`同工具重复检测: ${recentSuccess[0].name} ×${recentSuccess.length}，注入终止信号`);
       ctx.maxLoops = Math.min(ctx.maxLoops, ctx.loopCount + 2);
-      break;
     }
   }
 
