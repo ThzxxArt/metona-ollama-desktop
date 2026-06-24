@@ -1420,14 +1420,17 @@ async function handleExecuting(
         role: 'tool', tool_name: record.name,
         content: formatToolResultForModel(record.name, record.result!)
       });
-      // ── 关键工具结果加硬提示，防止模型忽略实际数据去用系统提示词编造 ──
-      if (record.name === 'memory' && record.status === 'success') {
-        const action = (record.result as any)?.action;
-        if (action === 'read_all' || action === 'search') {
-          ctx.messages.push({
-            role: 'system',
-            content: `⚠️ 以上 tool 消息中的内容是 memory 工具返回的实际记忆数据。你必须严格基于这些数据回答用户，不要编造、不要忽略、不要把系统提示词里的 SOUL/AGENT 内容当成记忆列出来。如果上面显示"记忆为空"才说没有。`,
-          });
+      // ── 读数据类工具结果加硬提示，防止模型忽略实际数据去用系统提示词编造 ──
+      if (record.status === 'success') {
+        const nudges: Record<string, string> = {
+          memory:    '以上 tool 消息是 memory 工具返回的实际记忆数据。严格基于这些数据回答，不要把系统提示词里的内容当成记忆列出来。',
+          session_read: '以上 tool 消息是 session_read 返回的实际历史会话内容。严格基于这些数据回答，不要编造。',
+          session_list: '以上 tool 消息是 session_list 返回的实际会话列表。严格基于这些数据回答，不要编造。',
+          spawn_task: '以上 tool 消息是 spawn_task 子代理返回的实际执行结果。严格基于这些数据回答，不要编造。',
+        };
+        const nudge = nudges[record.name];
+        if (nudge) {
+          ctx.messages.push({ role: 'system', content: `⚠️ ${nudge}` });
         }
       }
       if (cacheKey) toolResultCache.set(cacheKey, { result: record.result!, timestamp: Date.now() });
