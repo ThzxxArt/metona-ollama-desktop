@@ -73,7 +73,6 @@ function runTransaction(db: SQL.Database, fn: () => void): void {
 
 let db: SQL.Database | null = null;
 let dbPath: string | null = null;
-let _hasFTS5 = false;
 
 /** 获取数据库实例 */
 export function getDb(): SQL.Database {
@@ -171,24 +170,6 @@ export async function initDatabase(): Promise<SQL.Database> {
     );
     CREATE INDEX IF NOT EXISTS idx_tool_calls_session ON tool_calls(session_id, tool_name);
 
-    -- 记忆表
-    CREATE TABLE IF NOT EXISTS memories (
-      id TEXT PRIMARY KEY,
-      type TEXT NOT NULL,
-      content TEXT NOT NULL,
-      importance INTEGER DEFAULT 5,
-      tags TEXT,
-      source TEXT,
-      session_id TEXT,
-      use_count INTEGER DEFAULT 0,
-      embedding TEXT,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL,
-      last_used_at INTEGER NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_memories_type ON memories(type);
-    CREATE INDEX IF NOT EXISTS idx_memories_importance ON memories(importance DESC);
-
     -- 设置表
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,
@@ -220,21 +201,6 @@ export async function initDatabase(): Promise<SQL.Database> {
   // 兼容迁移：为已有 traces 表补充 error_pattern 列
   try { db.run('ALTER TABLE traces ADD COLUMN error_pattern TEXT'); } catch { /* 列已存在，忽略 */ }
 
-
-  // 尝试创建 FTS5 全文搜索（可选，sql.js 默认 WASM 可能不包含 FTS5）
-  try {
-    db.run(`
-      CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
-        content, tags, type,
-        content='memories',
-        content_rowid='rowid'
-      );
-    `);
-    _hasFTS5 = true;
-  } catch {
-    _hasFTS5 = false;
-    // FTS5 不可用时降级为 LIKE 搜索，状态通过 _hasFTS5 跟踪
-  }
 
   // 写入一次确保文件存在
   persist();
@@ -271,20 +237,6 @@ export interface MessageRow {
   created_at: number;
 }
 
-export interface MemoryRow {
-  id: string;
-  type: string;
-  content: string;
-  importance: number;
-  tags: string | null;
-  source: string | null;
-  session_id: string | null;
-  use_count: number;
-  embedding: string | null;
-  created_at: number;
-  updated_at: number;
-  last_used_at: number;
-}
 
 export interface SettingRow {
   key: string;
@@ -365,93 +317,6 @@ export function getMessagesBySession(sessionId: string): MessageRow[] {
   return queryAll(getDb(), 'SELECT * FROM messages WHERE session_id = ? ORDER BY created_at ASC', [sessionId]) as unknown as MessageRow[];
 }
 
-
-// ─── Memories CRUD ───
-
-export function saveMemory(entry: MemoryRow): string {
-  const d = getDb();
-  runExec(d, `INSERT OR REPLACE INTO memories (id, type, content, importance, tags, source, session_id, use_count, embedding, created_at, updated_at, last_used_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [entry.id, entry.type, entry.content, entry.importance, entry.tags,
-     entry.source, entry.session_id, entry.use_count, entry.embedding,
-     entry.created_at, entry.updated_at, entry.last_used_at]
-  );
-  // FTS 同步（仅在 FTS5 可用时）
-  if (_hasFTS5) {
-    try {
-      runExec(d, "DELETE FROM memories_fts WHERE rowid IN (SELECT rowid FROM memories WHERE id = ?)", [entry.id]);
-      runExec(d, "INSERT INTO memories_fts(rowid, content, tags, type) SELECT rowid, content, tags, type FROM memories WHERE id = ?", [entry.id]);
-    } catch { /* FTS 同步失败不影响主流程 */ }
-  }
-  persist();
-  return entry.id;
-}
-
-export function getMemory(id: string): MemoryRow | null {
-  return queryOne(getDb(), 'SELECT * FROM memories WHERE id = ?', [id]) as unknown as MemoryRow | null;
-}
-
-export function getAllMemories(): MemoryRow[] {
-  return queryAll(getDb(), 'SELECT * FROM memories ORDER BY importance DESC, updated_at DESC') as unknown as MemoryRow[];
-}
-
-export function getMemoriesByType(type: string): MemoryRow[] {
-  return queryAll(getDb(), 'SELECT * FROM memories WHERE type = ? ORDER BY importance DESC', [type]) as unknown as MemoryRow[];
-}
-
-export function deleteMemory(id: string): void {
-  const d = getDb();
-  if (_hasFTS5) {
-    try { runExec(d, "DELETE FROM memories_fts WHERE rowid IN (SELECT rowid FROM memories WHERE id = ?)", [id]); } catch { /* ignore */ }
-  }
-  runExec(d, 'DELETE FROM memories WHERE id = ?', [id]);
-  persist();
-}
-
-export function clearAllMemories(): void {
-  const d = getDb();
-  d.run('DELETE FROM memories');
-  if (_hasFTS5) {
-    try { d.run('DELETE FROM memories_fts'); } catch { /* ignore */ }
-  }
-  persist();
-}
-
-export function searchMemoriesFTS(query: string, limit = 10): MemoryRow[] {
-  const d = getDb();
-
-  // FTS5 不可用时直接走 LIKE
-  if (!_hasFTS5) {
-    const likeQ = `%${query.replace(/[^\w\u4e00-\u9fff]/g, '%')}%`;
-    return queryAll(d, `
-      SELECT * FROM memories
-      WHERE content LIKE ? OR tags LIKE ?
-      ORDER BY importance DESC
-      LIMIT ?
-    `, [likeQ, likeQ, limit]) as unknown as MemoryRow[];
-  }
-
-  try {
-    // FTS5 搜索
-    const ftsQuery = query.replace(/[^\w\u4e00-\u9fff\s]/g, ' ').split(/\s+/).filter(w => w.length > 0).map(w => `"${w}"*`).join(' OR ');
-    if (!ftsQuery) return [];
-    return queryAll(d, `
-      SELECT m.* FROM memories m
-      JOIN memories_fts f ON m.rowid = f.rowid
-      WHERE memories_fts MATCH ?
-      ORDER BY rank
-      LIMIT ?
-    `, [ftsQuery, limit]) as unknown as MemoryRow[];
-  } catch {
-    // FTS 失败回退到 LIKE 搜索
-    return queryAll(d, `
-      SELECT * FROM memories
-      WHERE content LIKE ? OR tags LIKE ?
-      ORDER BY importance DESC
-      LIMIT ?
-    `, [`%${query}%`, `%${query}%`, limit]) as unknown as MemoryRow[];
-  }
-}
 
 // ─── Settings CRUD ───
 
@@ -571,7 +436,6 @@ export function getAllSessionsTokenStats(): AllSessionsTokenStats {
 export interface ExportData {
   sessions: SessionRow[];
   messages: MessageRow[];
-  memories: MemoryRow[];
   settings: Array<{ key: string; value: unknown }>;
   exportedAt: number;
 }
@@ -580,10 +444,9 @@ export function exportAllSessions(): ExportData {
   const d = getDb();
   const sessions = queryAll(d, 'SELECT * FROM sessions') as unknown as SessionRow[];
   const messages = queryAll(d, 'SELECT * FROM messages') as unknown as MessageRow[];
-  const memories = queryAll(d, 'SELECT * FROM memories') as unknown as MemoryRow[];
   const settingsRows = queryAll(d, 'SELECT * FROM settings') as unknown as SettingRow[];
   const settings = settingsRows.map(r => ({ key: r.key, value: (() => { try { return JSON.parse(r.value); } catch { return r.value; } })() }));
-  return { sessions, messages, memories, settings, exportedAt: Date.now() };
+  return { sessions, messages, settings, exportedAt: Date.now() };
 }
 
 export function importSessions(data: ExportData): { imported: number; skipped: number } {
@@ -601,10 +464,6 @@ export function importSessions(data: ExportData): { imported: number; skipped: n
     for (const msg of data.messages) {
       const sessionExists = queryOne(d, 'SELECT id FROM sessions WHERE id = ?', [msg.session_id]);
       if (sessionExists) saveMessage(msg);
-    }
-    for (const mem of data.memories) {
-      const existing = queryOne(d, 'SELECT id FROM memories WHERE id = ?', [mem.id]);
-      if (!existing) saveMemory(mem);
     }
     for (const s of data.settings) {
       saveSetting(s.key, s.value);

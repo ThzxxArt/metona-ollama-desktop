@@ -3,7 +3,7 @@
  * v4.0: 桌面端走 IPC → SQLite，Web 端仍用 IndexedDB
  */
 
-import type { ChatSession, MemoryEntry } from '../types.js';
+import type { ChatSession } from '../types.js';
 
 /** 检查是否在桌面环境 */
 function isDesktop(): boolean {
@@ -217,88 +217,7 @@ export class ChatDB {
     return this._idbGetSetting(key, defaultValue);
   }
 
-  // ── Memories ──
-
-  async saveMemory(entry: MemoryEntry): Promise<string> {
-    if (isDesktop()) {
-      const row = {
-        id: entry.id,
-        type: entry.type,
-        content: entry.content,
-        importance: entry.importance,
-        tags: entry.tags?.length ? JSON.stringify(entry.tags) : null,
-        source: entry.source || null,
-        session_id: entry.sessionId || null,
-        use_count: entry.useCount,
-        embedding: entry.embedding ? JSON.stringify(entry.embedding) : null,
-        created_at: entry.createdAt,
-        updated_at: entry.updatedAt,
-        last_used_at: entry.lastUsedAt
-      };
-      await dbBridge().saveMemory(row);
-      return entry.id;
-    }
-    return this._idbSaveMemory(entry);
-  }
-
-  async getMemory(id: string): Promise<MemoryEntry | null> {
-    if (isDesktop()) {
-      const row = await dbBridge().getMemory(id);
-      return row ? this._rowToMemory(row) : null;
-    }
-    return this._idbGetMemory(id);
-  }
-
-  async getAllMemories(): Promise<MemoryEntry[]> {
-    if (isDesktop()) {
-      const rows = await dbBridge().getAllMemories();
-      return rows.map((r: any) => this._rowToMemory(r));
-    }
-    return this._idbGetAllMemories();
-  }
-
-  async getMemoriesByType(type: string): Promise<MemoryEntry[]> {
-    if (isDesktop()) {
-      const rows = await dbBridge().getMemoriesByType(type);
-      return rows.map((r: any) => this._rowToMemory(r));
-    }
-    return this._idbGetMemoriesByType(type);
-  }
-
-  async deleteMemory(id: string): Promise<void> {
-    if (isDesktop()) {
-      await dbBridge().deleteMemory(id);
-      return;
-    }
-    return this._idbDeleteMemory(id);
-  }
-
-  async clearAllMemories(): Promise<void> {
-    if (isDesktop()) {
-      await dbBridge().clearAllMemories();
-      return;
-    }
-    return this._idbClearAllMemories();
-  }
-
   // ── Helpers ──
-
-  private _rowToMemory(row: any): MemoryEntry {
-    return {
-      id: row.id,
-      type: row.type,
-      content: row.content,
-      importance: row.importance,
-      tags: row.tags ? JSON.parse(row.tags) : [],
-      source: row.source || undefined,
-      sessionId: row.session_id || undefined,
-      useCount: row.use_count,
-      embedding: row.embedding ? JSON.parse(row.embedding) : undefined,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-      lastUsedAt: row.last_used_at
-    };
-  }
 
   // ═══════════════════════════════════════════
   // IndexedDB fallback methods (Web 端兼容)
@@ -389,61 +308,6 @@ export class ChatDB {
       const store = this._idbTx('settings');
       const req = store.get(key);
       req.onsuccess = () => resolve(req.result ? req.result.value : defaultValue);
-      req.onerror = () => reject(req.error);
-    });
-  }
-
-  private async _idbSaveMemory(entry: MemoryEntry): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const store = this._idbTx('memories', 'readwrite');
-      const req = store.put(entry);
-      req.onsuccess = () => resolve(entry.id);
-      req.onerror = () => reject(req.error);
-    });
-  }
-
-  private async _idbGetMemory(id: string): Promise<MemoryEntry | null> {
-    return new Promise((resolve, reject) => {
-      const store = this._idbTx('memories');
-      const req = store.get(id);
-      req.onsuccess = () => resolve(req.result || null);
-      req.onerror = () => reject(req.error);
-    });
-  }
-
-  private async _idbGetAllMemories(): Promise<MemoryEntry[]> {
-    return new Promise((resolve, reject) => {
-      const store = this._idbTx('memories');
-      const req = store.getAll();
-      req.onsuccess = () => resolve(req.result || []);
-      req.onerror = () => reject(req.error);
-    });
-  }
-
-  private async _idbGetMemoriesByType(type: string): Promise<MemoryEntry[]> {
-    return new Promise((resolve, reject) => {
-      const store = this._idbTx('memories');
-      const index = store.index('type');
-      const req = index.getAll(type);
-      req.onsuccess = () => resolve(req.result || []);
-      req.onerror = () => reject(req.error);
-    });
-  }
-
-  private async _idbDeleteMemory(id: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const store = this._idbTx('memories', 'readwrite');
-      const req = store.delete(id);
-      req.onsuccess = () => resolve();
-      req.onerror = () => reject(req.error);
-    });
-  }
-
-  private async _idbClearAllMemories(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const store = this._idbTx('memories', 'readwrite');
-      const req = store.clear();
-      req.onsuccess = () => resolve();
       req.onerror = () => reject(req.error);
     });
   }

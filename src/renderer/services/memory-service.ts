@@ -1,0 +1,809 @@
+/**
+ * Memory Service — 基于工作空间 MEMORY.md 的轻量记忆系统
+ * 
+ * MEMORY.md 格式:
+ * # METONA MEMORY
+ * > ⚠️ 此文件由 memory 工具自动管理，严禁手动编辑
+ * 
+ * ## fact | id: mem_YYYYMMDD_NNN | importance: 1-10 | tags: tag1, tag2
+ * 内容行
+ * 
+ * ## preference | id: mem_YYYYMMDD_NNN | importance: 1-10 | tags: tag1, tag2
+ * 内容行
+ * 
+ * ## rule | id: mem_YYYYMMDD_NNN | importance: 1-10 | tags: tag1, tag2
+ * 内容行
+ */
+
+import { logInfo, logWarn, logDebug, logMemory } from './log-service.js';
+
+// ═══════════════════════════════════════════════════════════════
+// 类型定义
+// ═══════════════════════════════════════════════════════════════
+
+export type MemoryType = 'fact' | 'preference' | 'rule';
+
+export interface MemoryEntry {
+  id: string;
+  type: MemoryType;
+  content: string;
+  importance: number;  // 1-10
+  tags: string[];
+}
+
+export interface MemorySearchResult extends MemoryEntry {
+  score: number;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 常量
+// ═══════════════════════════════════════════════════════════════
+
+const MEMORY_FILE_NAME = 'MEMORY.md';
+const MAX_ENTRIES = 500;
+
+/** 文件头部 */
+const FILE_HEADER = `# METONA MEMORY
+> ⚠️ 此文件由 memory 工具自动管理，严禁手动编辑
+> 元数据格式: ## [类型] | id: [ID] | importance: [1-10] | tags: [tag1, tag2, ...]
+> 条目内容紧跟元数据行，直到下一个 ## 或文件末尾
+
+`;
+
+/** 条目元数据正则: ## [类型] | id: [ID] | importance: [1-10] | tags: [tag1, tag2] */
+const ENTRY_HEADER_RE = /^##\s+(fact|preference|rule)\s*\|\s*id:\s*(mem_\d{8}_\d{3})\s*\|\s*importance:\s*(\d{1,2})\s*\|\s*tags:\s*(.+)$/i;
+
+const VALID_TYPES: MemoryType[] = ['fact', 'preference', 'rule'];
+
+// ═══════════════════════════════════════════════════════════════
+// 安全扫描
+// ═══════════════════════════════════════════════════════════════
+
+function scanMemorySecurity(content: string): { safe: boolean; reason: string } {
+  const injectionPatterns = [
+    /ignore\s+(all\s+)?previous/i,
+    /forget\s+(all\s+)?instructions/i,
+    /you\s+are\s+now\s+a/i,
+    /new\s+system\s*prompt/i,
+    /override\s+(your|the)\s+/i,
+    /disregard\s+(all|any|previous)/i,
+  ];
+  for (const p of injectionPatterns) {
+    if (p.test(content)) return { safe: false, reason: '疑似 prompt injection 攻击' };
+  }
+
+  const secretPatterns = [
+    /-----BEGIN\s+(RSA\s+)?PRIVATE\s+KEY-----/,
+    /sk-[a-zA-Z0-9]{20,}/,
+    /ghp_[a-zA-Z0-9]{36}/,
+    /AKIA[A-Z0-9]{16}/,
+    /\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b/,
+  ];
+  for (const p of secretPatterns) {
+    if (p.test(content)) return { safe: false, reason: '疑似包含敏感信息（密钥/密码/信用卡号）' };
+  }
+
+  if (/[\u200B-\u200F\u202A-\u202E\u2060-\u206F\uFEFF]/.test(content)) {
+    return { safe: false, reason: '包含不可见 Unicode 字符' };
+  }
+
+  return { safe: true, reason: '' };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// IPC 通信 — 通过专用通道访问 MEMORY.md
+// ═══════════════════════════════════════════════════════════════
+
+function getBridge() {
+  const bridge = window.metonaDesktop;
+  if (!bridge?.isDesktop) {
+    throw new Error('记忆系统仅支持桌面版');
+  }
+  return bridge;
+}
+
+/** 读取 MEMORY.md 原始内容（通过专用 IPC 通道） */
+async function readMemoryFile(): Promise<string> {
+  const bridge = getBridge();
+  const result = await bridge.memoryAccess!.read();
+  if (!result.success) {
+    // 文件不存在视为空
+    if (result.error?.includes('ENOENT') || result.error?.includes('not found') || result.error?.includes('不存在')) {
+      return '';
+    }
+    throw new Error(`读取 MEMORY.md 失败: ${result.error}`);
+  }
+  return result.content || '';
+}
+
+/** 写入 MEMORY.md（通过专用 IPC 通道） */
+async function writeMemoryFile(content: string): Promise<void> {
+  const bridge = getBridge();
+  const result = await bridge.memoryAccess!.write(content);
+  if (!result.success) {
+    throw new Error(`写入 MEMORY.md 失败: ${result.error}`);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 解析与序列化
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * 解析 MEMORY.md 内容为条目数组
+ */
+export function parseMemoryMd(content: string): MemoryEntry[] {
+  if (!content || !content.trim()) return [];
+
+  const entries: MemoryEntry[] = [];
+  const lines = content.split('\n');
+  let currentEntry: MemoryEntry | null = null;
+  let contentLines: string[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const headerMatch = line.match(ENTRY_HEADER_RE);
+
+    if (headerMatch) {
+      // 保存上一个条目
+      if (currentEntry) {
+        currentEntry.content = contentLines.join('\n').trim();
+        if (currentEntry.content) entries.push(currentEntry);
+      }
+
+      // 解析新条目元数据
+      const type = headerMatch[1].toLowerCase() as MemoryType;
+      const id = headerMatch[2];
+      const importance = parseInt(headerMatch[3], 10);
+      const tagsStr = headerMatch[4];
+      const tags = tagsStr.split(',').map(t => t.trim()).filter(t => t.length > 0);
+
+      currentEntry = { id, type, content: '', importance: Math.min(10, Math.max(1, importance)), tags };
+      contentLines = [];
+    } else if (currentEntry) {
+      contentLines.push(line);
+    }
+  }
+
+  // 最后一个条目
+  if (currentEntry) {
+    currentEntry.content = contentLines.join('\n').trim();
+    if (currentEntry.content) entries.push(currentEntry);
+  }
+
+  return entries;
+}
+
+/**
+ * 校验 MEMORY.md 格式
+ */
+export function validateMemoryMd(content: string): { valid: boolean; error?: string; line?: number } {
+  if (!content || !content.trim()) {
+    return { valid: false, error: '文件内容为空' };
+  }
+
+  const lines = content.split('\n');
+  const firstLine = lines[0]?.trim();
+
+  if (firstLine !== '# METONA MEMORY') {
+    return { valid: false, error: `文件必须以 "# METONA MEMORY" 开头，当前: "${firstLine?.slice(0, 50) || '(空)'}"`, line: 1 };
+  }
+
+  let entryCount = 0;
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i];
+
+    // 跳过注释行（以 > 开头）
+    if (line.trim().startsWith('>')) continue;
+    // 跳过空行
+    if (!line.trim()) continue;
+
+    const headerMatch = line.match(ENTRY_HEADER_RE);
+    if (!headerMatch) {
+      // 非元数据行的内容行（属于上一个条目）
+      continue;
+    }
+
+    entryCount++;
+
+    // 验证类型
+    const type = headerMatch[1].toLowerCase();
+    if (!VALID_TYPES.includes(type as MemoryType)) {
+      return { valid: false, error: `第 ${i + 1} 行: 无效的记忆类型 "${type}"，必须为 fact / preference / rule`, line: i + 1 };
+    }
+
+    // 验证 ID
+    const id = headerMatch[2];
+    if (!/^mem_\d{8}_\d{3}$/.test(id)) {
+      return { valid: false, error: `第 ${i + 1} 行: 无效的 ID 格式 "${id}"，必须为 mem_YYYYMMDD_NNN`, line: i + 1 };
+    }
+
+    // 验证 importance
+    const importance = parseInt(headerMatch[3], 10);
+    if (isNaN(importance) || importance < 1 || importance > 10) {
+      return { valid: false, error: `第 ${i + 1} 行: importance 必须为 1-10 的整数，当前: "${headerMatch[3]}"`, line: i + 1 };
+    }
+
+    // 验证 tags
+    const tagsStr = headerMatch[4]?.trim();
+    if (!tagsStr) {
+      return { valid: false, error: `第 ${i + 1} 行: tags 不能为空`, line: i + 1 };
+    }
+    const tags = tagsStr.split(',').map(t => t.trim()).filter(t => t.length > 0);
+    if (tags.length === 0) {
+      return { valid: false, error: `第 ${i + 1} 行: tags 至少需要一个标签`, line: i + 1 };
+    }
+  }
+
+  if (entryCount === 0 && content.includes('## ')) {
+    // 有 ## 但没匹配到，格式可能有问题
+  }
+
+  return { valid: true };
+}
+
+/**
+ * 将条目数组序列化为 MEMORY.md 内容
+ */
+export function serializeMemoryMd(entries: MemoryEntry[]): string {
+  let content = FILE_HEADER;
+
+  for (const entry of entries) {
+    if (!entry.content.trim()) continue;
+    const tagsStr = entry.tags.join(', ');
+    content += `## ${entry.type} | id: ${entry.id} | importance: ${entry.importance} | tags: ${tagsStr}\n`;
+    content += entry.content.trim() + '\n\n';
+  }
+
+  return content;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 搜索
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * 关键词搜索记忆
+ */
+export function searchMemory(entries: MemoryEntry[], query: string, limit = 8): MemorySearchResult[] {
+  if (!query || entries.length === 0) return [];
+
+  const queryLower = query.toLowerCase();
+  const queryWords = queryLower.split(/[\s,，。！？、；：""''（）\[\]{}<>`~@#$%^&*+=|\\/.]+/).filter(w => w.length > 1);
+
+  // rule 和 preference 类型的记忆全局生效，始终注入
+  const alwaysInclude: MemorySearchResult[] = [];
+  const scored: MemorySearchResult[] = [];
+
+  for (const entry of entries) {
+    if (entry.type === 'rule' || entry.type === 'preference') {
+      alwaysInclude.push({ ...entry, score: 100 + entry.importance });
+      continue;
+    }
+
+    let score = 0;
+    const contentLower = entry.content.toLowerCase();
+    const tagsLower = entry.tags.map(t => t.toLowerCase());
+
+    if (contentLower.includes(queryLower)) score += 50;
+    for (const tag of tagsLower) {
+      if (queryLower.includes(tag) || tag.includes(queryLower)) score += 30;
+      for (const word of queryWords) {
+        if (tag.includes(word)) score += 15;
+      }
+    }
+    for (const word of queryWords) {
+      if (contentLower.includes(word)) score += 10;
+    }
+
+    score *= (0.5 + entry.importance / 20);
+    if (score > 0) scored.push({ ...entry, score });
+  }
+
+  // 去重 + 排序
+  const seen = new Set<string>();
+  const merged: MemorySearchResult[] = [];
+  for (const item of [...alwaysInclude, ...scored.sort((a, b) => b.score - a.score)]) {
+    if (!seen.has(item.id)) {
+      seen.add(item.id);
+      merged.push(item);
+    }
+  }
+
+  return merged.slice(0, limit);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 上下文格式化
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * 将搜索结果格式化为系统提示词注入用的上下文文本
+ */
+export function formatMemoryContext(memories: MemorySearchResult[]): string {
+  if (memories.length === 0) return '';
+
+  const grouped: Record<string, MemorySearchResult[]> = {};
+  for (const m of memories) {
+    if (!grouped[m.type]) grouped[m.type] = [];
+    grouped[m.type].push(m);
+  }
+
+  let context = '';
+
+  // 规则类：强制约束，放在最前面
+  if (grouped['rule']) {
+    context += '【必须严格遵守的规则】\n以下规则是用户明确要求的，必须无条件执行：\n';
+    for (const item of grouped['rule']) {
+      context += `  - ${item.content}\n`;
+    }
+    context += '\n';
+    delete grouped['rule'];
+  }
+
+  // 偏好类：用户偏好
+  if (grouped['preference']) {
+    context += '【用户偏好】\n在回答时请遵循以下偏好：\n';
+    for (const item of grouped['preference']) {
+      context += `  - ${item.content}\n`;
+    }
+    context += '\n';
+    delete grouped['preference'];
+  }
+
+  // 事实类：参考信息
+  if (grouped['fact']) {
+    context += '【关于用户的参考信息】\n以下信息供参考，与当前对话无关时可忽略：\n';
+    for (const item of grouped['fact']) {
+      context += `  - ${item.content}\n`;
+    }
+    context += '\n';
+  }
+
+  context += '请自然地利用以上信息，不要生硬地列举。';
+
+  return context;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CRUD 操作（全部通过专用 IPC 通道读写 MEMORY.md）
+// ═══════════════════════════════════════════════════════════════
+
+/** 生成新 ID */
+function generateMemoryId(): string {
+  const now = new Date();
+  const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+  const seq = String(Math.floor(Math.random() * 1000)).padStart(3, '0');
+  return `mem_${dateStr}_${seq}`;
+}
+
+/** 加载全部条目 */
+export async function loadAllEntries(): Promise<MemoryEntry[]> {
+  const content = await readMemoryFile();
+  if (!content.trim()) return [];
+  return parseMemoryMd(content);
+}
+
+/** 搜索记忆（读取 MEMORY.md → 解析 → 搜索） */
+export async function search(query: string, limit = 8): Promise<MemorySearchResult[]> {
+  try {
+    const entries = await loadAllEntries();
+    return searchMemory(entries, query, limit);
+  } catch (err) {
+    logWarn('记忆搜索失败', (err as Error).message);
+    return [];
+  }
+}
+
+/** 添加记忆条目 */
+export async function addEntry(
+  type: MemoryType,
+  content: string,
+  importance = 5,
+  tags: string[] = []
+): Promise<MemoryEntry> {
+  if (!content || content.length < 2) {
+    throw new Error('记忆内容不能为空且至少 2 个字符');
+  }
+  if (!VALID_TYPES.includes(type)) {
+    throw new Error(`无效的记忆类型: ${type}，必须为 fact / preference / rule`);
+  }
+
+  // 安全扫描
+  const securityCheck = scanMemorySecurity(content);
+  if (!securityCheck.safe) {
+    throw new Error(`记忆内容被安全规则拦截: ${securityCheck.reason}`);
+  }
+
+  // 自动提取标签
+  if (tags.length === 0) {
+    tags = extractTags(content);
+  }
+
+  // 读取现有条目
+  let entries = await loadAllEntries();
+
+  // 容量检查
+  if (entries.length >= MAX_ENTRIES) {
+    entries = autoCleanEntries(entries);
+  }
+
+  // 去重检查（前 50 字符相同视为重复）
+  const existing = entries.find(e => {
+    if (e.type !== type) return false;
+    const prefixLen = Math.min(50, content.length, e.content.length);
+    if (prefixLen > 20 && content.slice(0, prefixLen) === e.content.slice(0, prefixLen)) return true;
+    return simpleSimilarity(e.content, content) > 0.8;
+  });
+  if (existing) return existing;
+
+  const entry: MemoryEntry = {
+    id: generateMemoryId(),
+    type,
+    content: content.trim(),
+    importance: Math.min(10, Math.max(1, importance)),
+    tags: tags.slice(0, 5),
+  };
+
+  entries.push(entry);
+
+  const fileContent = serializeMemoryMd(entries);
+  const validation = validateMemoryMd(fileContent);
+  if (!validation.valid) {
+    throw new Error(`序列化后校验失败: ${validation.error}`);
+  }
+
+  await writeMemoryFile(fileContent);
+  logMemory(`新增: ${type}`, content.slice(0, 60));
+  return entry;
+}
+
+/** 替换记忆（子串匹配） */
+export async function replaceEntry(oldText: string, newContent: string): Promise<{ success: boolean; message: string }> {
+  if (!oldText || oldText.length < 2) {
+    return { success: false, message: 'old_text 不能为空且至少 2 个字符' };
+  }
+  if (!newContent || newContent.length < 2) {
+    return { success: false, message: 'new_content 不能为空且至少 2 个字符' };
+  }
+
+  const securityCheck = scanMemorySecurity(newContent);
+  if (!securityCheck.safe) {
+    return { success: false, message: `新内容被安全规则拦截: ${securityCheck.reason}` };
+  }
+
+  const entries = await loadAllEntries();
+  const matches = entries.filter(e => e.content.includes(oldText));
+
+  if (matches.length === 0) {
+    return { success: false, message: `未找到包含 "${oldText.slice(0, 50)}" 的记忆` };
+  }
+  if (matches.length > 1) {
+    return { success: false, message: `匹配到 ${matches.length} 条记忆，请使用更精确的 old_text` };
+  }
+
+  const target = matches[0];
+  target.content = newContent.trim();
+  // 自动刷新标签
+  if (target.tags.length === 0) {
+    target.tags = extractTags(newContent);
+  }
+
+  const fileContent = serializeMemoryMd(entries);
+  const validation = validateMemoryMd(fileContent);
+  if (!validation.valid) {
+    return { success: false, message: `序列化后校验失败: ${validation.error}` };
+  }
+
+  await writeMemoryFile(fileContent);
+  logMemory('替换记忆', `${target.id}: ${oldText.slice(0, 30)} → ${newContent.slice(0, 30)}`);
+  return { success: true, message: `已替换记忆: ${target.id}` };
+}
+
+/** 删除记忆（子串匹配） */
+export async function removeEntry(oldText: string): Promise<{ success: boolean; message: string }> {
+  if (!oldText || oldText.length < 2) {
+    return { success: false, message: 'old_text 不能为空且至少 2 个字符' };
+  }
+
+  const entries = await loadAllEntries();
+  const matches = entries.filter(e => e.content.includes(oldText));
+
+  if (matches.length === 0) {
+    return { success: false, message: `未找到包含 "${oldText.slice(0, 50)}" 的记忆` };
+  }
+  if (matches.length > 1) {
+    return { success: false, message: `匹配到 ${matches.length} 条记忆，请使用更精确的 old_text` };
+  }
+
+  const newEntries = entries.filter(e => e.id !== matches[0].id);
+  const fileContent = newEntries.length > 0 ? serializeMemoryMd(newEntries) : '';
+
+  if (fileContent) {
+    await writeMemoryFile(fileContent);
+  } else {
+    // 清空文件（写入空内容让主进程删除或留空）
+    await writeMemoryFile('');
+  }
+
+  logMemory('删除记忆', `${matches[0].id}: ${oldText.slice(0, 50)}`);
+  return { success: true, message: `已删除记忆: ${matches[0].id}` };
+}
+
+/** 清空所有记忆 */
+export async function clearAll(): Promise<void> {
+  await writeMemoryFile('');
+  logMemory('清空', '所有记忆已删除');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 工具函数
+// ═══════════════════════════════════════════════════════════════
+
+function extractTags(text: string): string[] {
+  const words = text
+    .replace(/[^\w\u4e00-\u9fff\s]/g, ' ')
+    .split(/\s+/)
+    .filter(w => w.length > 1);
+  return [...new Set(words)].slice(0, 5);
+}
+
+function simpleSimilarity(a: string, b: string): number {
+  const aWords = new Set(a.toLowerCase().split(/\s+/));
+  const bWords = new Set(b.toLowerCase().split(/\s+/));
+  let intersection = 0;
+  for (const w of aWords) {
+    if (bWords.has(w)) intersection++;
+  }
+  const union = aWords.size + bWords.size - intersection;
+  return union === 0 ? 0 : intersection / union;
+}
+
+/**
+ * 自动清理低价值条目（容量超限时）
+ * rule 类型受保护不被清理
+ * @returns 清理后的条目数组
+ */
+function autoCleanEntries(entries: MemoryEntry[]): MemoryEntry[] {
+  const now = Date.now();
+  const SEVEN_DAYS = 7 * 24 * 3600 * 1000;
+
+  // 计算评分（没有 useCount/lastUsedAt 等字段，只按 importance）
+  const scored = entries
+    .map(entry => ({
+      entry,
+      score: entry.importance * 2,
+    }))
+    .filter(s => s.entry.type !== 'rule')
+    .sort((a, b) => a.score - b.score);
+
+  const evictCount = Math.max(1, Math.floor(entries.length * 0.2));
+  const evictIds = new Set(scored.slice(0, evictCount).map(s => s.entry.id));
+
+  logMemory('容量清理', `清理 ${evictIds.size} 条低价值记忆（上限 ${MAX_ENTRIES}）`);
+  return entries.filter(e => !evictIds.has(e.id));
+}
+
+/**
+ * 检查记忆系统是否可用（桌面环境且工作空间已设置）
+ */
+export function isMemoryAvailable(): boolean {
+  const bridge = window.metonaDesktop;
+  return !!(bridge?.isDesktop && bridge?.memoryAccess);
+}
+
+/**
+ * 自动提取并保存记忆（对话结束时调用）
+ * 
+ * 多层质量管控：
+ * 1. 前置条件：对话 >= 5 轮，用户消息 >= 3 条
+ * 2. LLM 提取：严格 prompt，最多 2 条，importance >= 7
+ * 3. 后置过滤：去重、内容质量、类型校验
+ * 4. 静默失败：任何环节失败不阻塞主流程
+ * 
+ * @returns 成功保存的条目数
+ */
+export async function extractAndSaveMemories(
+  messages: Array<{ role: string; content: string }>,
+  api: any,
+  model: string,
+  abortSignal?: AbortSignal
+): Promise<number> {
+  // ── 前置条件：对话太短不提取 ──
+  const userMsgs = messages.filter(m => m.role === 'user');
+  const assistantMsgs = messages.filter(m => m.role === 'assistant');
+  if (userMsgs.length < 3 || assistantMsgs.length < 2) {
+    logDebug('自动记忆跳过: 对话轮次不足', `用户${userMsgs.length}条, AI${assistantMsgs.length}条`);
+    return 0;
+  }
+
+  // ── 前置条件：bridge 可用 ──
+  if (!isMemoryAvailable()) {
+    logDebug('自动记忆跳过: 非桌面环境');
+    return 0;
+  }
+
+  // ── 取最近 15 轮构建提取文本 ──
+  const recentMsgs = messages.slice(-30).filter(m => m.role === 'user' || m.role === 'assistant');
+  const conversationText = recentMsgs
+    .map(m => `[${m.role === 'user' ? '用户' : 'AI'}]: ${(m.content || '').slice(0, 800)}`)
+    .join('\n\n');
+
+  const extractPrompt = `分析以下对话，仅提取用户明确陈述的、有长期跨会话价值的个人信息。
+
+${conversationText.slice(0, 5000)}
+
+严格按此 JSON 返回（不要输出其他内容），最多 2 条，宁缺毋滥：
+\`\`\`json
+{
+  "entries": [
+    {"type": "fact", "content": "具体事实（不超过40字）", "importance": 8, "tags": ["关键词1", "关键词2"]}
+  ]
+}
+\`\`\`
+
+提取门槛（极高，必须全部满足）：
+1. 仅提取用户**明确陈述**的个人信息（项目名、技术栈、偏好、习惯），禁止推断
+2. 必须是**跨会话有用**的长期信息，临时需求不提取
+3. 每条内容 ≤40 字，精炼具体
+4. importance 7-10，只有真正重要的才给 7+
+5. tags 2-3 个精确关键词
+6. 禁止自动提取 rule 类型
+
+绝不提取的内容：
+- AI 的回答或建议
+- 泛泛表述（"用户喜欢编程"）
+- 一次性任务描述（"帮我写个函数"）
+- 临时查询或请求
+- 可以从对话上下文轻易推断的信息
+
+如果没有值得长期记忆的内容，返回 {"entries": []}`;
+
+  try {
+    // ── 调用 LLM 提取 ──
+    const response = await api.chat({
+      model,
+      messages: [{ role: 'user', content: extractPrompt }],
+      think: false,
+      options: { num_ctx: 8192, temperature: 0.1 }
+    });
+
+    // 检查中止信号
+    if (abortSignal?.aborted) {
+      logDebug('自动记忆提取已中止');
+      return 0;
+    }
+
+    const content = (response as { message?: { content?: string } })?.message?.content || '';
+    const jsonMatch = content.match(/```json\s*([\s\S]*?)\s*```/) || content.match(/\{[\s\S]*"entries"[\s\S]*\}/);
+    if (!jsonMatch) return 0;
+
+    const parsed: { entries?: Array<{ type: string; content: string; importance: number; tags: string[] }> } =
+      JSON.parse(jsonMatch[1] || jsonMatch[0]);
+    if (!parsed.entries?.length) return 0;
+
+    // ── 加载已有记忆用于去重 ──
+    const existingEntries = await loadAllEntries();
+
+    let count = 0;
+    const MAX_PER_EXTRACT = 2;
+
+    for (const entry of parsed.entries) {
+      if (count >= MAX_PER_EXTRACT) break;
+
+      // ── 过滤 1: 类型校验（仅 fact / preference，禁止 rule）──
+      if (!['fact', 'preference'].includes(entry.type)) {
+        logDebug('自动记忆过滤: 无效类型', entry.type);
+        continue;
+      }
+
+      // ── 过滤 2: 内容质量 ──
+      if (!entry.content || entry.content.length < 8 || entry.content.length > 100) {
+        logDebug('自动记忆过滤: 内容长度不符', `${entry.content?.length || 0}字符`);
+        continue;
+      }
+
+      // ── 过滤 3: 泛化检测（过于宽泛的表述）──
+      const genericPatterns = [
+        /^用户是/, /^用户喜欢/, /^用户正在/, /^用户需要/,
+        /^用户想要/, /^用户希望/, /^用户使用/, /^用户做/,
+      ];
+      const isGeneric = genericPatterns.some(p => p.test(entry.content)) && entry.content.length < 15;
+      if (isGeneric) {
+        logDebug('自动记忆过滤: 过于泛化', entry.content);
+        continue;
+      }
+
+      // ── 过滤 4: importance 门槛（>= 7）──
+      const importance = Math.min(10, Math.max(1, entry.importance || 5));
+      if (importance < 7) {
+        logDebug('自动记忆过滤: importance 不足', `${importance}`);
+        continue;
+      }
+
+      // ── 过滤 5: 去重（与已有记忆比对）──
+      const isDuplicate = existingEntries.some(e => {
+        if (e.type !== entry.type) return false;
+        const prefixLen = Math.min(40, entry.content.length, e.content.length);
+        if (prefixLen > 15 && entry.content.slice(0, prefixLen) === e.content.slice(0, prefixLen)) return true;
+        return simpleSimilarity(e.content, entry.content) > 0.75;
+      });
+      if (isDuplicate) {
+        logDebug('自动记忆过滤: 重复', entry.content.slice(0, 40));
+        continue;
+      }
+
+      // ── 保存 ──
+      try {
+        await addEntry(
+          entry.type as MemoryType,
+          entry.content.trim(),
+          importance,
+          (entry.tags || []).slice(0, 3)
+        );
+        existingEntries.push({
+          id: '', type: entry.type as MemoryType, content: entry.content.trim(),
+          importance, tags: (entry.tags || []).slice(0, 3),
+        });
+        count++;
+      } catch (err) {
+        logDebug('自动记忆保存失败', (err as Error).message);
+      }
+    }
+
+    if (count > 0) {
+      logInfo('🧠 自动记忆提取完成', `从对话中提取了 ${count} 条有价值记忆`);
+    }
+    return count;
+  } catch (err) {
+    logDebug('自动记忆提取异常', (err as Error).message);
+    return 0;
+  }
+}
+
+/**
+ * 初始化 MEMORY.md 文件
+ * - 文件不存在 → 创建符合格式的空模板
+ * - 文件存在但格式不符合 → 备份为 .bak，然后创建空模板
+ * - 文件存在且格式正确 → 不做任何操作
+ * 
+ * 应在应用启动和工作空间变更时调用
+ */
+export async function initMemoryFile(): Promise<{ action: string; existed: boolean; valid: boolean; backedUp?: string }> {
+  const bridge = window.metonaDesktop;
+  if (!bridge?.isDesktop || !bridge?.memoryAccess) {
+    logWarn('记忆初始化跳过', '非桌面环境或 bridge 不可用');
+    return { action: 'skipped', existed: false, valid: false };
+  }
+
+  try {
+    const result = await bridge.memoryAccess.init();
+    if (!result.success) {
+      logWarn('MEMORY.md 初始化失败', result.error || '未知错误');
+      return { action: 'failed', existed: false, valid: false };
+    }
+
+    // 日志已由主进程打印，渲染进程补充简要汇总
+    switch (result.action) {
+      case 'created':
+        logInfo('🧠 MEMORY.md 已创建（文件不存在，自动初始化）');
+        break;
+      case 'recreated':
+        logWarn('🧠 MEMORY.md 格式错误已修复', `原文件备份至: ${result.backedUp || 'MEMORY.md.bak'}`);
+        break;
+      case 'valid':
+        logInfo('🧠 MEMORY.md 格式校验通过', result.existed ? '文件已存在' : '');
+        break;
+    }
+
+    return {
+      action: result.action,
+      existed: result.existed,
+      valid: result.valid,
+      backedUp: result.backedUp,
+    };
+  } catch (err) {
+    logWarn('MEMORY.md 初始化异常', (err as Error).message);
+    return { action: 'failed', existed: false, valid: false };
+  }
+}

@@ -23,7 +23,6 @@ import { initHistoryModal, closeHistoryModal } from './components/history-modal.
 import { initMemoryModal } from './components/memory-modal.js';
 import { initToolsModal, closeToolsModal } from './components/tools-modal.js';
 import { initTokenDashboard, closeTokenDashboard } from './components/token-dashboard.js';
-import { initMemoryManager } from './services/memory-manager.js';
 import { setToolEnabled, setRunCommandMode, refreshMCPTools } from './services/tool-registry.js';
 import { startAllMCPServers } from './services/mcp-client.js';
 import { initToolConfirmModal } from './components/tool-confirm-modal.js';
@@ -321,7 +320,6 @@ async function init(): Promise<void> {
     // ── 防御性重置：确保首次启动不会遗留脏状态 ──
     state.set('toolCallingEnabled', true);
     state.set('runCommandMode', 'confirm');  // 默认需确认
-    state.set('memoryEnabled', true);
     state.set('thinkEnabled', false);
 
     initLogPanel();  // ← 日志面板最先初始化，确保后续 init 日志能显示
@@ -346,8 +344,12 @@ async function init(): Promise<void> {
 
     await checkConnection();
     await loadModels();
-    await initMemoryManager();
     await loadSearxngConfig(db);
+
+    // ── MEMORY.md 初始化 ──
+    import('./services/memory-service.js').then(({ initMemoryFile }) => {
+      initMemoryFile().catch(() => {});
+    });
 
     // ── Harness Engineering 系统初始化 ──
     initHarnessHooks();
@@ -435,9 +437,6 @@ async function init(): Promise<void> {
     await startAllMCPServers();
     await refreshMCPTools();
 
-    // ── Agent 记忆设置 ──
-    const memoryEnabled = await db.getSetting('memoryEnabled', true);
-    state.set('memoryEnabled', memoryEnabled);
 
     (document.querySelector('#chatInput') as HTMLElement)?.focus();
 
@@ -471,6 +470,10 @@ async function init(): Promise<void> {
     setupDesktopIntegration();
     initHarnessHooks();
     initVerificationSystem();
+    // ── MEMORY.md 初始化（fallback 路径）──
+    import('./services/memory-service.js').then(({ initMemoryFile }) => {
+      initMemoryFile().catch(() => {});
+    });
     checkConnection().then(loadModels);
   }
 }

@@ -138,7 +138,7 @@ const toolHallucinationCheck: CompletionCheck = {
     const calledTools = new Set(ctx.allToolRecords.map(r => r.name));
     const content = ctx.content;
 
-    // ── 统一的"声称 → 必需工具"映射表（覆盖全部 42 个工具）──
+    // ── 统一的"声称 → 必需工具"映射表（覆盖全部 40 个工具）──
     const CLAIM_RULES: Array<{ patterns: RegExp[]; requiredTools: string[]; label: string }> = [
       // 文件写入
       { patterns: [/已写入文件/, /已创建文件/, /文件已生成/, /已保存到/, /已成功创建/, /成功写入/,
@@ -191,7 +191,7 @@ const toolHallucinationCheck: CompletionCheck = {
         requiredTools: ['get_file_info'], label: '获取文件信息' },
       // 内存/记忆操作
       { patterns: [/已记住/, /已添加记忆/, /记忆已保存/, /已更新记忆/, /已删除记忆/],
-        requiredTools: ['memory_add', 'memory_replace', 'memory_remove'], label: '记忆操作' },
+        requiredTools: ['memory'], label: '记忆操作' },
       // 会话操作
       { patterns: [/历史会话.*显示/, /已读取.*会话/, /会话.*内容.*如下/],
         requiredTools: ['session_list', 'session_read'], label: '会话操作' },

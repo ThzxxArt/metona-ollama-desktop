@@ -961,7 +961,7 @@ function renderToolCalls(): void {
         </div>
         <div class="ws-idle-divider"></div>
         <div class="ws-idle-desc">AI 对话中自动调用工具，结果在此展示</div>
-        <div class="ws-idle-hint">共 44 个内置工具 · MCP 动态扩展</div>
+        <div class="ws-idle-hint">共 40 个内置工具 · MCP 动态扩展</div>
       </div>
     `;
     return;
@@ -983,7 +983,7 @@ function getToolDisplayName(name: string): string {
     edit_file: '编辑文件', get_file_info: '文件信息', tree: '目录树', download_file: '下载文件',
     diff_files: '文件对比', replace_in_files: '批量替换', read_multiple_files: '批量读取',
     git: 'Git 操作', compress: '压缩/解压', web_search: '联网搜索',
-    memory_search: '搜索记忆', memory_add: '添加记忆', memory_replace: '替换记忆', memory_remove: '删除记忆',
+    memory: '记忆管理',
 
     session_list: '会话列表', session_read: '读取会话', spawn_task: '子代理委派', plan_track: '计划追踪',
     browser_open: '打开网页', browser_screenshot: '浏览器截图', browser_evaluate: '执行JS', browser_extract: '提取内容',
@@ -1000,7 +1000,7 @@ function getToolIcon(name: string): string {
     edit_file: '✂️', get_file_info: 'ℹ️', tree: '🌳', download_file: '⬇️',
     diff_files: '🔀', replace_in_files: '🔄', read_multiple_files: '📚',
     git: '🔖', compress: '🗜️', web_search: '🔍',
-    memory_search: '🧠', memory_add: '💾', memory_replace: '✏️', memory_remove: '🗑️',
+    memory: '🧠',
 
     session_list: '📋', session_read: '📖', spawn_task: '🤖', plan_track: '📋',
     browser_open: '🌐', browser_screenshot: '📸', browser_evaluate: '⚡', browser_extract: '📰',

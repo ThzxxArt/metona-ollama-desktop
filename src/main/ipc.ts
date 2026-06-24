@@ -11,7 +11,6 @@ import { showNotification } from './utils.js';
 import {
   initDatabase, saveSession, getSession, getAllSessions, deleteSession, clearAllSessions,
   saveMessage, getMessagesBySession,
-  saveMemory, getMemory, getAllMemories, getMemoriesByType, deleteMemory, clearAllMemories, searchMemoriesFTS,
   saveSetting, getSetting,
   saveToolCall, getToolCallsBySession,
   saveTrace, getTracesBySession,
@@ -387,36 +386,6 @@ export async function setupIPC(): Promise<void> {
     catch { return []; }
   });
 
-  // Memories
-  ipcMain.handle('db:saveMemory', (_, entry) => {
-    try { return { success: true, id: saveMemory(entry) }; }
-    catch (err) { return { success: false, error: (err as Error).message }; }
-  });
-  ipcMain.handle('db:getMemory', (_, id) => {
-    try { return getMemory(id); }
-    catch { return null; }
-  });
-  ipcMain.handle('db:getAllMemories', () => {
-    try { return getAllMemories(); }
-    catch { return []; }
-  });
-  ipcMain.handle('db:getMemoriesByType', (_, type) => {
-    try { return getMemoriesByType(type); }
-    catch { return []; }
-  });
-  ipcMain.handle('db:deleteMemory', (_, id) => {
-    try { deleteMemory(id); return { success: true }; }
-    catch (err) { return { success: false, error: (err as Error).message }; }
-  });
-  ipcMain.handle('db:clearAllMemories', () => {
-    try { clearAllMemories(); return { success: true }; }
-    catch (err) { return { success: false, error: (err as Error).message }; }
-  });
-  ipcMain.handle('db:searchMemories', (_, query: string, limit?: number) => {
-    try { return searchMemoriesFTS(query, limit ?? 10); }
-    catch { return []; }
-  });
-
   // Settings
   ipcMain.handle('db:saveSetting', (_, key: string, value: unknown) => {
     try { saveSetting(key, value); return { success: true }; }
@@ -463,6 +432,110 @@ export async function setupIPC(): Promise<void> {
     catch (err) { sendLog('error', '获取全局 Token 统计失败', (err as Error).message); return null; }
   });
 
+  // ── Memory 文件访问（专用通道，绕过 checkPathAllowed，仅限 MEMORY.md）──
+  ipcMain.handle('memory:read', async () => {
+    const wsDir = getWorkspaceDir();
+    const memoryPath = path.join(wsDir, 'MEMORY.md');
+    try {
+      if (!fs.existsSync(memoryPath)) {
+        return { success: true, content: '' };
+      }
+      const content = await fs.promises.readFile(memoryPath, 'utf-8');
+      return { success: true, content };
+    } catch (err) {
+      return { success: false, error: (err as Error).message };
+    }
+  });
+
+  ipcMain.handle('memory:write', async (_, content: string) => {
+    const wsDir = getWorkspaceDir();
+    const memoryPath = path.join(wsDir, 'MEMORY.md');
+    try {
+      // 确保工作空间目录存在
+      if (!fs.existsSync(wsDir)) {
+        await fs.promises.mkdir(wsDir, { recursive: true });
+      }
+      if (content === '' || content.trim() === '') {
+        // 空内容 → 删除文件（让下次读取返回空）
+        if (fs.existsSync(memoryPath)) {
+          await fs.promises.unlink(memoryPath);
+        }
+        sendLog('info', '🧠 memory:write', 'MEMORY.md 已清空');
+        return { success: true };
+      }
+      await fs.promises.writeFile(memoryPath, content, 'utf-8');
+      sendLog('success', '🧠 memory:write', `MEMORY.md 已写入 (${content.length} 字符)`);
+      return { success: true };
+    } catch (err) {
+      sendLog('error', '🧠 memory:write 失败', (err as Error).message);
+      return { success: false, error: (err as Error).message };
+    }
+  });
+
+  /** MEMORY.md 初始化：检查 → 校验 → 备份(如格式错误) → 重建 */
+  ipcMain.handle('memory:init', async () => {
+    const wsDir = getWorkspaceDir();
+    const memoryPath = path.join(wsDir, 'MEMORY.md');
+    const result: { action: string; existed: boolean; valid: boolean; backedUp?: string } = {
+      action: '', existed: false, valid: false,
+    };
+
+    try {
+      // 确保工作空间目录存在
+      if (!fs.existsSync(wsDir)) {
+        await fs.promises.mkdir(wsDir, { recursive: true });
+        sendLog('info', '🧠 memory:init', `工作空间目录已创建: ${wsDir}`);
+      }
+
+      const exists = fs.existsSync(memoryPath);
+      result.existed = exists;
+
+      if (!exists) {
+        // 文件不存在 → 创建符合格式的空模板
+        const template = `# METONA MEMORY
+> ⚠️ 此文件由 memory 工具自动管理，严禁手动编辑
+> 元数据格式: ## [类型] | id: [ID] | importance: [1-10] | tags: [tag1, tag2, ...]
+> 条目内容紧跟元数据行，直到下一个 ## 或文件末尾
+
+`;
+        await fs.promises.writeFile(memoryPath, template, 'utf-8');
+        result.action = 'created';
+        sendLog('success', '🧠 MEMORY.md 已创建', `路径: ${memoryPath}`);
+      } else {
+        // 文件存在 → 校验格式
+        const content = await fs.promises.readFile(memoryPath, 'utf-8');
+        const valid = validateMemoryContent(content);
+        result.valid = valid;
+
+        if (!valid) {
+          // 格式不符合 → 备份为 .bak，然后重建
+          const bakPath = memoryPath + '.bak';
+          await fs.promises.copyFile(memoryPath, bakPath);
+          result.backedUp = bakPath;
+
+          const template = `# METONA MEMORY
+> ⚠️ 此文件由 memory 工具自动管理，严禁手动编辑
+> 元数据格式: ## [类型] | id: [ID] | importance: [1-10] | tags: [tag1, tag2, ...]
+> 条目内容紧跟元数据行，直到下一个 ## 或文件末尾
+
+`;
+          await fs.promises.writeFile(memoryPath, template, 'utf-8');
+          result.action = 'recreated';
+          sendLog('warn', '🧠 MEMORY.md 格式不符合规范，已备份并重建',
+            `原文件 → ${bakPath} | 新文件已创建: ${memoryPath}`);
+        } else {
+          result.action = 'valid';
+          sendLog('info', '🧠 MEMORY.md 格式校验通过', `路径: ${memoryPath} | ${content.split('\n').filter(l => /^## (fact|preference|rule)/i.test(l)).length} 条记忆`);
+        }
+      }
+
+      return { success: true, ...result };
+    } catch (err) {
+      sendLog('error', '🧠 memory:init 失败', (err as Error).message);
+      return { success: false, error: (err as Error).message, ...result };
+    }
+  });
+
   // ── MCP IPC ──
   ipcMain.handle('mcp:startServer', async (_, config) => {
     return startServer(config);
@@ -506,6 +579,32 @@ export async function setupIPC(): Promise<void> {
 
     return extractVideoFrames(filePath, maxFrames, maxWidth);
   });
+}
+
+/** 校验 MEMORY.md 内容格式 */
+function validateMemoryContent(content: string): boolean {
+  if (!content || !content.trim()) return false;
+  const lines = content.split('\n');
+  const firstLine = lines[0]?.trim();
+  if (firstLine !== '# METONA MEMORY') return false;
+
+  // 检查是否有 ## 条目头，且格式正确
+  let entryCount = 0;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('>')) continue;
+    const match = trimmed.match(/^##\s+(fact|preference|rule)\s*\|\s*id:\s*(mem_\d{8}_\d{3})\s*\|\s*importance:\s*(\d{1,2})\s*\|\s*tags:\s*(.+)$/i);
+    if (match) {
+      entryCount++;
+      const importance = parseInt(match[3], 10);
+      if (importance < 1 || importance > 10) return false;
+      const tagsStr = match[4]?.trim();
+      if (!tagsStr) return false;
+    }
+  }
+
+  // 允许空文件（只有头部没有条目），也允许有条目的文件
+  return true;
 }
 
 // ── 视频帧提取 (ffmpeg) ──

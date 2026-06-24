@@ -28,7 +28,7 @@
         <div class="header-left">
             <span class="logo">🦙</span>
             <span class="app-title">Metona Ollama</span>
-            <span class="app-version">v0.12.11</span>
+            <span class="app-version">v0.13.0</span>
             <button class="icon-btn help-btn" id="btnHelp" title="使用帮助">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
@@ -341,27 +341,13 @@
                 <p class="text-muted" style="margin-top:4px;font-size:11px;">工作空间用于存放 AI 执行命令时的工作文件。命令行默认在此目录执行。</p>
             </div>
             <div class="setting-group">
-                <label class="setting-label">
-                    🧠 Agent 记忆系统
-                    <label class="toggle-label" style="margin-left:auto;display:inline-flex;">
-                        <input type="checkbox" id="toggleMemoryEnabled" checked>
-                        <span class="toggle-slider"></span>
-                    </label>
-                </label>
-                <p class="text-muted" style="font-size:11px;">启用后，AI 会自动从对话中提取关键信息（事实、偏好、规则）并跨会话记住。发送消息时自动检索相关记忆注入上下文。</p>
+                <label class="setting-label">🧠 Agent 记忆系统</label>
+                <p class="text-muted" style="font-size:11px;">记忆存储在<strong>工作空间 MEMORY.md</strong> 文件中。新对话时自动检索注入上下文，对话结束时 AI 自动提取保存（多层质量过滤，宁缺毋滥）。受路径保护，仅 <code>memory</code> 工具可读写。</p>
                 <div class="tool-list" style="margin-top:8px;">
                     <div class="tool-item"><span>📌 事实</span><span class="text-muted">项目信息、身份背景</span></div>
                     <div class="tool-item"><span>⚙️ 偏好</span><span class="text-muted">语言风格、技术栈偏好</span></div>
                     <div class="tool-item"><span>📏 规则</span><span class="text-muted">编码规范、输出格式要求</span></div>
                 </div>
-            </div>
-            <div class="setting-group">
-                <label class="setting-label">🧠 向量记忆引擎</label>
-                <p class="text-muted" style="font-size:11px;margin-bottom:8px;">选择嵌入模型以启用向量语义记忆。未选择时仅使用关键词匹配。</p>
-                <select class="setting-input" id="selectMemoryEmbedModel">
-                    <option value="">未选择（仅关键词模式）</option>
-                </select>
-                <div id="memoryVectorStatus" class="text-muted" style="font-size:11px;margin-top:4px;"></div>
             </div>
             <div class="setting-group">
                 <label class="setting-label">🤖 子代理默认模型</label>
@@ -371,18 +357,23 @@
                 </select>
             </div>
             <div class="setting-group">
-                <label class="setting-label">🤖 子代理参数</label>
-                <p class="text-muted" style="font-size:11px;margin-bottom:8px;">最大轮次（留空=10轮）和超时（留空=300s，填0=禁用）</p>
-                <div style="display:flex;gap:16px;align-items:center;">
-                    <span style="font-size:13px;">最大轮次</span>
-                    <input type="number" id="inputSubAgentMaxLoops" class="setting-input" placeholder="10" min="1" max="100" step="1" style="width:80px;">
-                    <span style="font-size:13px;">超时(秒)</span>
-                    <input type="number" id="inputSubAgentTimeout" class="setting-input" placeholder="300" min="0" max="3600" step="30" style="width:80px;">
-                </div>
-                <div style="display:flex;gap:16px;align-items:center;margin-top:8px;">
-                    <span style="font-size:13px;">看门狗(分)</span>
-                    <input type="number" id="inputLoopWatchdog" class="setting-input" placeholder="30" min="0" max="120" step="5" style="width:80px;">
-                    <span class="text-muted" style="font-size:11px;">0=禁用，默认30分钟</span>
+                <label class="setting-label">🤖 子代理 & 看门狗参数</label>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                    <div>
+                        <label style="font-size:12px;color:var(--text-secondary);" for="inputSubAgentMaxLoops">🔄 子代理最大轮次</label>
+                        <input class="setting-input" id="inputSubAgentMaxLoops" type="number" min="1" max="100" step="1" placeholder="10" style="margin-bottom:0;">
+                        <p class="text-muted" style="font-size:10px;">spawn_task 子代理的最大工具调用轮次</p>
+                    </div>
+                    <div>
+                        <label style="font-size:12px;color:var(--text-secondary);" for="inputSubAgentTimeout">⏱️ 子代理超时（秒）</label>
+                        <input class="setting-input" id="inputSubAgentTimeout" type="number" min="0" max="3600" step="30" placeholder="300" style="margin-bottom:0;">
+                        <p class="text-muted" style="font-size:10px;">子代理单次任务最大执行时间，0=禁用</p>
+                    </div>
+                    <div style="grid-column:1/-1;">
+                        <label style="font-size:12px;color:var(--text-secondary);" for="inputLoopWatchdog">🐕 看门狗超时（分钟）</label>
+                        <input class="setting-input" id="inputLoopWatchdog" type="number" min="0" max="120" step="5" placeholder="30" style="margin-bottom:0;">
+                        <p class="text-muted" style="font-size:10px;">Agent Loop 全局超时保护，超过后强制终止。0=禁用，默认30分钟</p>
+                    </div>
                 </div>
             </div>
             <div class="setting-group">
@@ -448,8 +439,8 @@
         <div class="modal-body">
             <div class="help-section"><h4>🚀 快速开始</h4><ol><li>确保 Ollama 已启动（默认 <code>http://127.0.0.1:11434</code>，可在设置中修改）</li><li>顶部模型栏选择一个模型，右侧会显示模型能力徽章（🧠 Think / 👁️ Vision / 🔧 Tools）</li><li>输入消息，按 <kbd>Enter</kbd> 发送，<kbd>Shift+Enter</kbd> 换行</li></ol></div>
             <div class="help-section"><h4>💬 聊天功能</h4><ul><li><strong>流式回复</strong> — 实时打字效果，随时点 ■ 停止</li><li><strong>Think 推理</strong> — 下方 Think 按钮切换，让模型展示深度思考过程（需模型支持，如 Qwen3）</li><li><strong>上下文长度自动检测</strong> — 切换模型时自动从模型元数据获取实际支持的上下文长度（如 Qwen3.6 27B = 262,144 tokens），无需手动配置</li><li><strong>多模态</strong> — 上传图片或视频（≤10MB），模型需支持 Vision。图片自动压缩，视频 1fps 提取帧序列带时序标注</li><li><strong>文件分析</strong> — 支持 50+ 种文本/代码格式，单文件 ≤500KB，自动剥离注释并按上下文预算智能截断</li><li><strong>AI 回复顶部</strong> — 每条 AI 回复上方展示 📋 系统提示词折叠卡片，可点击查看实际发送给模型的完整上下文</li></ul></div>
-            <div class="help-section"><h4>🔧 Tool Calling（始终开启）</h4><ul><li>所有消息均通过 <strong>Agent Loop 自主调用本地工具</strong>，像一个本地 Agent，无普通聊天模式</li><li><strong>42+1 个工具</strong>，分为 9 类：<ul><li><strong>文件系统</strong>（16 个）：read_file / write_file / list_directory / search_files / create_directory / delete_file / move_file / copy_file / edit_file / get_file_info / tree / download_file / diff_files / replace_in_files / read_multiple_files / compress</li><li><strong>命令执行</strong>（1 个）：run_command（实时流式输出，支持自动/需确认/禁用三种模式，可配置超时）</li><li><strong>联网搜索</strong>（2 个）：web_search（支持 SearXNG 元搜索引擎 JSON API / 四引擎 HTML 解析，双模式可切换）/ web_fetch（反爬headers+UA自动切换+自动回退浏览器渲染）</li><li><strong>Git</strong>（1 个）：git（17 个子操作，push/pull/clone 内置60-120s超时保护）</li><li><strong>浏览器控制</strong>（9 个）：browser_open / browser_screenshot / browser_evaluate / browser_extract / browser_click / browser_type / browser_scroll / browser_wait / browser_close</li><li><strong>记忆 & 会话</strong>（6 个）：memory_search / memory_add / memory_replace / memory_remove / session_list / session_read</li><li><strong>子代理</strong>（1 个）：spawn_task</li><li><strong>系统工具</strong>（6 个）：datetime / calculator / random / uuid / json_format / hash</li></ul></li><li>read_file 支持 binary模式读取/base64解码/字节分页/2000行默认+截断hint自动续读</li><li>write_file 支持 base64写二进制文件/mode(overwrite+append)合并append_file功能/10MB</li><li>edit_file 支持 use_regex 正则替换</li><li>search_files 支持正则表达式搜索（use_regex=true）</li><li>browser_screenshot 支持全页面截图+元素截图</li><li>browser_extract 支持CSS选择器提取特定区域</li><li>new browser_wait 等待元素出现或定时等待</li><li>仅 <code>run_command</code> 支持三模式切换：自动/需确认/禁用</li><li>危险命令（<code>rm -rf</code>、<code>mkfs</code>、反弹 shell 等）和系统路径（<code>/etc</code>、<code>~/.ssh</code> 等）被自动拦截</li><li>工具调用以<strong>可视化卡片</strong>展示状态（pending → running → success/error），在工作空间🔧工具页签中显示</li><li>默认最大 <strong>85 轮</strong>工具调用循环，上下文使用率>80%时自动缩减到3轮</li><li>独立工具自动<strong>并行执行</strong>（16个只读工具加入并行白名单），有依赖关系的工具串行执行</li></ul></div>
-            <div class="help-section"><h4>🧠 Agent 记忆系统</h4><ul><li>设置中开启后，AI 从对话中<strong>自动提取关键信息</strong>（事实/偏好/规则），跨会话持续积累</li><li><strong>增量提取</strong>：长对话中每 20 轮自动触发轻量级记忆提取，不等到对话结束</li><li>对话结束时自动触发完整记忆提取</li><li>新对话时自动检索相关记忆注入上下文，让 AI "记住"你</li><li>点击顶部 🧠 按钮打开记忆面板：搜索、筛选、编辑、删除</li><li><strong>记忆容量上限 500 条</strong>，超限时自动清理低价值条目（规则类型受保护）</li><li><strong>向量语义搜索</strong>：在设置中选择嵌入模型后，支持语义级别记忆检索（更精准）</li><li>未选择嵌入模型时，使用关键词匹配检索记忆</li><li>AI 可通过 memory 工具主动管理记忆</li><li>记忆写入前自动安全扫描（prompt injection / 敏感信息 / 不可见字符检测）</li><li>记忆存储在本地 SQLite，不会上传到任何服务器</li></ul></div>
+            <div class="help-section"><h4>🔧 Tool Calling（始终开启）</h4><ul><li>所有消息均通过 <strong>Agent Loop 自主调用本地工具</strong>，像一个本地 Agent，无普通聊天模式</li><li><strong>40+1 个工具</strong>，分为 9 类：<ul><li><strong>文件系统</strong>（16 个）：read_file / write_file / list_directory / search_files / create_directory / delete_file / move_file / copy_file / edit_file / get_file_info / tree / download_file / diff_files / replace_in_files / read_multiple_files / compress</li><li><strong>命令执行</strong>（1 个）：run_command（实时流式输出，支持自动/需确认/禁用三种模式，可配置超时）</li><li><strong>联网搜索</strong>（2 个）：web_search（支持 SearXNG 元搜索引擎 JSON API / 四引擎 HTML 解析，双模式可切换）/ web_fetch（反爬headers+UA自动切换+自动回退浏览器渲染）</li><li><strong>Git</strong>（1 个）：git（17 个子操作，push/pull/clone 内置60-120s超时保护）</li><li><strong>浏览器控制</strong>（9 个）：browser_open / browser_screenshot / browser_evaluate / browser_extract / browser_click / browser_type / browser_scroll / browser_wait / browser_close</li><li><strong>记忆 & 会话</strong>（5 个）：memory（统一记忆管理，5 个 action）/ session_list / session_read / spawn_task / plan_track</li><li><strong>系统工具</strong>（6 个）：datetime / calculator / random / uuid / json_format / hash</li></ul></li><li>read_file 支持 binary模式读取/base64解码/字节分页/2000行默认+截断hint自动续读</li><li>write_file 支持 base64写二进制文件/mode(overwrite+append)合并append_file功能/10MB</li><li>edit_file 支持 use_regex 正则替换</li><li>search_files 支持正则表达式搜索（use_regex=true）</li><li>browser_screenshot 支持全页面截图+元素截图</li><li>browser_extract 支持CSS选择器提取特定区域</li><li>new browser_wait 等待元素出现或定时等待</li><li>仅 <code>run_command</code> 支持三模式切换：自动/需确认/禁用</li><li>危险命令（<code>rm -rf</code>、<code>mkfs</code>、反弹 shell 等）和系统路径（<code>/etc</code>、<code>~/.ssh</code> 等）被自动拦截</li><li>工具调用以<strong>可视化卡片</strong>展示状态（pending → running → success/error），在工作空间🔧工具页签中显示</li><li>默认最大 <strong>85 轮</strong>工具调用循环，上下文使用率>80%时自动缩减到3轮</li><li>独立工具自动<strong>并行执行</strong>（16个只读工具加入并行白名单），有依赖关系的工具串行执行</li></ul></div>
+            <div class="help-section"><h4>🧠 Agent 记忆系统</h4><ul><li>记忆存储在工作空间 <strong>MEMORY.md</strong> 文件，受严格路径保护，仅 <code>memory</code> 工具可读写</li><li>新对话时自动检索相关记忆注入 AI 上下文，让 AI "记住"你</li><li>对话结束时 AI 自动提取有价值的用户信息保存（多层质量过滤，宁缺毋滥）</li><li><strong>memory 工具</strong>（5 个 action）：search（关键词搜索）/ add（添加）/ replace（替换）/ remove（删除）/ read_all（读取全部）</li><li>点击顶部 🧠 按钮打开记忆面板：查看、添加、删除记忆条目</li><li><strong>记忆容量上限 500 条</strong>，超限时自动清理低价值条目（规则类型受保护）</li><li>写入前自动安全扫描（prompt injection / 敏感信息 / 不可见字符检测）</li><li>应用启动时自动校验 MEMORY.md 格式，格式错误自动备份重建</li></ul></div>
             <div class="help-section"><h4>📋 Plan Mode（计划模式）</h4><ul><li>点击输入框上方 📋 按钮开启 <strong>Plan Mode</strong>（开关式）</li><li>开启后，AI <strong>先生成执行计划</strong>（Markdown 渲染弹窗），用户批准后才开始执行</li><li>计划批准后自动初始化追踪器，每个步骤完成后调用 <code>plan_track</code> 工具标记进度</li><li>系统提示词自动注入当前进度状态，AI 始终知道还剩多少步未完成</li><li><strong>多步骤任务防遗忘</strong>：自动检测用户请求中的动作动词，对比已完成步骤，注入提醒</li><li>关闭 Plan Mode 后恢复正常 Agent Loop 模式</li><li><strong>仅 Plan 模式</strong> 下 plan_track 工具可见，避免污染普通模式的工具列表</li></ul></div>
             <div class="help-section"><h4>🛡️ 抗幻觉 & 稳定性</h4><ul><li><strong>5 层防御体系</strong>：系统提示词加固 → 中途幻觉检测（16 条规则覆盖全部工具类别）→ 进度锚点 → 完成闸门（6 项检查）→ 钩子校验</li><li><strong>完成闸门</strong>：对话结束前自动审查 AI 回复，检测 4 类关键问题（工具幻觉/注入/文件操作/遗漏），阻断有问题的回复</li><li><strong>16 条幻觉检测规则</strong>：覆盖文件编辑、浏览器操作、Git、记忆、压缩等所有工具类别，防止 AI 声称执行了未调用的工具</li><li><strong>看门狗超时</strong>：设置面板可配置全局超时（默认 30 分钟），AI 卡死或无限循环时自动中止</li><li><strong>中止保护</strong>：所有状态处理器 + 重试循环均检查中止信号，点击 ■ 按钮立即生效</li><li><strong>上下文硬上限</strong>：消息数超过阈值时强制触发压缩，防止 OOM</li></ul></div>
             <div class="help-section"><h4>🤖 Agent Loop 增强</h4><ul><li><strong>🎬 视频上传</strong>：支持上传 .mp4/.avi/.mov/.mkv/.webm 等视频（≤10MB），自动 1fps 提取帧序列（带时间戳），多模态模型原生理解视频时序关系</li><li><strong>8 状态机</strong>：INIT→THINKING→PARSING→EXECUTING→OBSERVING→REFLECTING→COMPRESSING→TERMINATED，每个状态独立的中止检查和处理</li><li><strong>智能上下文压缩</strong>：滑动窗口 + LLM结构化JSON摘要，超过50%上下文窗口自动触发</li><li><strong>流式调用超时保护</strong>：可配置超时（默认300s），Ollama 卡死不再永久阻塞</li><li><strong>HTTP/MCP 超时可配</strong>：设置面板可分别调整 HTTP（默认30s）和 MCP（默认60s）超时</li><li><strong>Final Answer 智能检测</strong>：多模式匹配（Final Answer/最终答案/最终回答/总结），避免漏检或误触</li><li><strong>Token 感知迭代预算</strong>：上下文使用率>80%时自动缩减剩余轮次到3轮</li><li><strong>工具缓存 TTL</strong>：搜索5分钟/网页10分钟/文件30分钟，过期自动刷新</li><li><strong>自动子任务拆解</strong>：检测"同时/分别/以及"等并行关键词，自动 spawn 子代理并行处理</li><li><strong>旧工具结果自动截断</strong>：超过10轮的工具结果自动截断到500字符，控制上下文膨胀</li></ul></div>
@@ -468,7 +459,7 @@
 <div class="modal-overlay" id="toolsModal" style="display:none;">
     <div class="modal">
         <div class="modal-header">
-            <h3>🔧 工具面板（42 个 + 1 Plan 专属）</h3>
+            <h3>🔧 工具面板（40 个 + 1 Plan 专属）</h3>
             <button class="icon-btn" id="btnCloseTools">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
@@ -567,20 +558,8 @@
                     <div class="tool-card-desc">SearXNG JSON API / 四引擎并行，默认30条</div>
                 </div>
                 <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">🧠</span><span class="tool-card-name">memory_search</span><span class="tool-card-badge auto">自动</span></div>
-                    <div class="tool-card-desc">语义搜索 Agent 记忆，检索相关历史信息</div>
-                </div>
-                <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">💾</span><span class="tool-card-name">memory_add</span><span class="tool-card-badge auto">自动</span></div>
-                    <div class="tool-card-desc">添加记忆条目（事实/偏好/规则），跨会话积累</div>
-                </div>
-                <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">🔄</span><span class="tool-card-name">memory_replace</span><span class="tool-card-badge auto">自动</span></div>
-                    <div class="tool-card-desc">替换已有记忆内容（子串匹配 old_text，替换为 new_content）</div>
-                </div>
-                <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">🗑️</span><span class="tool-card-name">memory_remove</span><span class="tool-card-badge auto">自动</span></div>
-                    <div class="tool-card-desc">删除记忆条目（子串匹配 old_text）</div>
+                    <div class="tool-card-header"><span class="tool-card-icon">🧠</span><span class="tool-card-name">memory</span><span class="tool-card-badge auto">自动</span></div>
+                    <div class="tool-card-desc">统一记忆管理（5 action）：search 关键词搜索 / add 添加 / replace 子串替换 / remove 子串删除 / read_all 读取全部。MEMORY.md 受路径保护</div>
                 </div>
                 <div class="tool-card">
                     <div class="tool-card-header"><span class="tool-card-icon">📋</span><span class="tool-card-name">session_list</span><span class="tool-card-badge auto">自动</span></div>

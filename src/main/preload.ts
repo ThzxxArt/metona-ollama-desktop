@@ -63,13 +63,6 @@ contextBridge.exposeInMainWorld('metonaDesktop', {
     clearAllSessions: () => ipcRenderer.invoke('db:clearAllSessions'),
     saveMessage: (msg: unknown) => ipcRenderer.invoke('db:saveMessage', msg),
     getMessages: (sessionId: string) => ipcRenderer.invoke('db:getMessages', sessionId),
-    saveMemory: (entry: unknown) => ipcRenderer.invoke('db:saveMemory', entry),
-    getMemory: (id: string) => ipcRenderer.invoke('db:getMemory', id),
-    getAllMemories: () => ipcRenderer.invoke('db:getAllMemories'),
-    getMemoriesByType: (type: string) => ipcRenderer.invoke('db:getMemoriesByType', type),
-    deleteMemory: (id: string) => ipcRenderer.invoke('db:deleteMemory', id),
-    clearAllMemories: () => ipcRenderer.invoke('db:clearAllMemories'),
-    searchMemories: (query: string, limit?: number) => ipcRenderer.invoke('db:searchMemories', query, limit),
     saveSetting: (key: string, value: unknown) => ipcRenderer.invoke('db:saveSetting', key, value),
     getSetting: (key: string, defaultValue?: unknown) => ipcRenderer.invoke('db:getSetting', key, defaultValue),
     saveToolCall: (tc: unknown) => ipcRenderer.invoke('db:saveToolCall', tc),
@@ -129,5 +122,10 @@ contextBridge.exposeInMainWorld('metonaDesktop', {
     removeProgressListener: () => {
       ipcRenderer.removeAllListeners('video:progress');
     }
+  },
+  memoryAccess: {
+    read: () => ipcRenderer.invoke('memory:read'),
+    write: (content: string) => ipcRenderer.invoke('memory:write', content),
+    init: () => ipcRenderer.invoke('memory:init'),
   }
 });

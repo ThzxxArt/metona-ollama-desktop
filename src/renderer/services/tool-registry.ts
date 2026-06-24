@@ -351,72 +351,33 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     }
   },
   // ══════════════════════════════════════════════
-  // v4.0 新增工具：记忆和会话管理
+  // 记忆工具（统一入口，读写工作空间 MEMORY.md）
   // ══════════════════════════════════════════════
   {
     type: 'function',
     function: {
-      name: 'memory_search',
-      description: 'Search agent memories by semantic similarity or keywords. Returns relevant memories about the user, preferences, rules, and past conversations.',
+      name: 'memory',
+      description: 'Manage agent memories stored in MEMORY.md in the workspace. Supports: search (keyword search across all entries), add (append new entry with auto-generated ID), replace (substring match replace), remove (substring match delete), read_all (read all entries). Memories are automatically injected into system prompt on new conversations.',
       parameters: {
         type: 'object',
-        required: ['query'],
+        required: ['action'],
         properties: {
-          query: { type: 'string', description: 'Search query for memories.' },
-          limit: { type: 'integer', description: 'Max results to return. Default: 8.' },
-          type: { type: 'string', enum: ['fact', 'preference', 'rule'], description: 'Filter by memory type.' }
+          action: { type: 'string', enum: ['search', 'add', 'replace', 'remove', 'read_all'], description: 'Action: search=keyword match search, add=append entry, replace=find by old_text and replace, remove=find by old_text and delete, read_all=return all entries.' },
+          query: { type: 'string', description: 'Search query for search action.' },
+          limit: { type: 'integer', description: 'Max results for search. Default: 8.' },
+          type: { type: 'string', enum: ['fact', 'preference', 'rule'], description: 'Memory type for add. fact=about user, preference=user preference, rule=must follow.' },
+          content: { type: 'string', description: 'Memory content for add. Concise and specific.' },
+          importance: { type: 'integer', description: 'Importance 1-10 for add. Default: 5.' },
+          tags: { type: 'array', items: { type: 'string' }, description: 'Tags for add. 2-5 keywords for search matching.' },
+          old_text: { type: 'string', description: 'Unique substring to find the entry for replace/remove.' },
+          new_content: { type: 'string', description: 'New content for replace action.' }
         }
       }
     }
   },
-  {
-    type: 'function',
-    function: {
-      name: 'memory_add',
-      description: 'Add a new memory entry for future reference. Use when you learn something important about the user, their preferences, or rules they want you to follow.',
-      parameters: {
-        type: 'object',
-        required: ['type', 'content'],
-        properties: {
-          type: { type: 'string', enum: ['fact', 'preference', 'rule'], description: 'Memory type: fact (about user), preference (user preference), rule (must follow).' },
-          content: { type: 'string', description: 'The memory content. Be concise and specific.' },
-          importance: { type: 'integer', description: 'Importance 1-10. Higher = more important. Default: 5.' },
-          tags: { type: 'array', items: { type: 'string' }, description: 'Tags for search matching. 2-5 keywords.' }
-        }
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'memory_replace',
-      description: 'Replace an existing memory entry with updated content. Uses substring matching to find the entry to replace.',
-      parameters: {
-        type: 'object',
-        required: ['target', 'old_text', 'new_content'],
-        properties: {
-          target: { type: 'string', enum: ['memory', 'user'], description: 'Target store: memory (agent notes) or user (user profile).' },
-          old_text: { type: 'string', description: 'Unique substring that identifies the entry to replace.' },
-          new_content: { type: 'string', description: 'The new content to replace the old entry with.' }
-        }
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'memory_remove',
-      description: 'Remove a memory entry. Uses substring matching to find the entry to remove.',
-      parameters: {
-        type: 'object',
-        required: ['target', 'old_text'],
-        properties: {
-          target: { type: 'string', enum: ['memory', 'user'], description: 'Target store: memory (agent notes) or user (user profile).' },
-          old_text: { type: 'string', description: 'Unique substring that identifies the entry to remove.' }
-        }
-      }
-    }
-  },
+  // ══════════════════════════════════════════════
+  // 会话管理工具
+  // ══════════════════════════════════════════════
   {
     type: 'function',
     function: {
@@ -733,7 +694,7 @@ let enabledTools: Set<string> = new Set([
   'move_file', 'copy_file', 'web_fetch', 'web_search', 'edit_file',
   'get_file_info', 'tree', 'download_file', 'diff_files', 'replace_in_files',
   'read_multiple_files', 'git', 'compress',
-  'memory_search', 'memory_add', 'memory_replace', 'memory_remove',
+  'memory',
   'session_list', 'session_read', 'spawn_task',
   'browser_open', 'browser_screenshot', 'browser_evaluate', 'browser_extract',
   'browser_click', 'browser_type', 'browser_scroll', 'browser_wait', 'browser_close',
@@ -809,46 +770,51 @@ export async function executeTool(toolName: string, args: Record<string, unknown
   }
 
   try {
-    // 内存工具（不走 IPC，直接处理）
-    if (toolName === 'memory_search') {
-      const { searchMemories } = await import('./memory-manager.js');
-      const query = args.query as string;
-      const limit = (args.limit as number) || 8;
-      const type = args.type as string | undefined;
-      let results = searchMemories(query, limit);
-      if (type) results = results.filter(r => r.type === type);
-      logToolResult('memory_search', true, `${results.length} 条结果`);
-      return { success: true, results, total: results.length };
-    }
-    if (toolName === 'memory_add') {
-      const { addMemory } = await import('./memory-manager.js');
-      const type = args.type as 'fact' | 'preference' | 'rule';
-      const content = args.content as string;
-      const importance = (args.importance as number) || 5;
-      const tags = (args.tags as string[]) || [];
-      if (!content || content.length < 2) {
-        return { success: false, error: 'content 不能为空且至少 2 个字符' };
+    // 内存工具（不走 IPC，直接处理 MEMORY.md）
+    if (toolName === 'memory') {
+      const { search, addEntry, replaceEntry, removeEntry, loadAllEntries } = await import('./memory-service.js');
+      const action = args.action as string;
+      switch (action) {
+        case 'search': {
+          const query = args.query as string;
+          const limit = (args.limit as number) || 8;
+          if (!query) return { success: false, error: '缺少 query 参数' };
+          const results = await search(query, limit);
+          logToolResult('memory', true, `${results.length} 条结果`);
+          return { success: true, action, results, total: results.length };
+        }
+        case 'add': {
+          const type = args.type as 'fact' | 'preference' | 'rule';
+          const content = args.content as string;
+          const importance = (args.importance as number) || 5;
+          const tags = (args.tags as string[]) || [];
+          if (!type) return { success: false, error: '缺少 type 参数 (fact/preference/rule)' };
+          if (!content || content.length < 2) return { success: false, error: 'content 不能为空且至少 2 个字符' };
+          const entry = await addEntry(type, content, importance, tags);
+          logToolResult('memory', true, `${type}: ${content.slice(0, 50)}`);
+          return { success: true, action, id: entry.id, type: entry.type, content: entry.content };
+        }
+        case 'replace': {
+          const oldText = String(args.old_text || '');
+          const newContent = String(args.new_content || '');
+          const result = await replaceEntry(oldText, newContent);
+          logToolResult('memory', result.success, result.message);
+          return { success: result.success, action, ...(result.success ? {} : { error: result.message }), message: result.message };
+        }
+        case 'remove': {
+          const oldText = String(args.old_text || '');
+          const result = await removeEntry(oldText);
+          logToolResult('memory', result.success, result.message);
+          return { success: result.success, action, ...(result.success ? {} : { error: result.message }), message: result.message };
+        }
+        case 'read_all': {
+          const entries = await loadAllEntries();
+          logToolResult('memory', true, `${entries.length} 条记忆`);
+          return { success: true, action, entries, total: entries.length };
+        }
+        default:
+          return { success: false, error: `未知操作: ${action}。支持: search / add / replace / remove / read_all` };
       }
-      const entry = await addMemory({ type, content, importance, tags });
-      logToolResult('memory_add', true, `${type}: ${content.slice(0, 50)}`);
-      return { success: true, id: entry.id, type: entry.type, content: entry.content };
-    }
-    if (toolName === 'memory_replace') {
-      const { replaceMemoryByContent } = await import('./memory-manager.js');
-      const target = String(args.target || 'memory') as 'memory' | 'user';
-      const oldText = String(args.old_text || '');
-      const newContent = String(args.new_content || '');
-      const result = await replaceMemoryByContent(target, oldText, newContent);
-      logToolResult('memory_replace', result.success, result.message);
-      return result;
-    }
-    if (toolName === 'memory_remove') {
-      const { removeMemoryByContent } = await import('./memory-manager.js');
-      const target = String(args.target || 'memory') as 'memory' | 'user';
-      const oldText = String(args.old_text || '');
-      const result = await removeMemoryByContent(target, oldText);
-      logToolResult('memory_remove', result.success, result.message);
-      return result;
     }
     if (toolName === 'session_list') {
       const bridge = window.metonaDesktop;
@@ -978,7 +944,7 @@ export function getToolIcon(name: string): string {
     edit_file: '✂️', get_file_info: 'ℹ️', tree: '🌳', download_file: '⬇️',
     diff_files: '🔀', replace_in_files: '🔄', read_multiple_files: '📚',
     git: '🔖', compress: '🗜️', web_search: '🔍',
-    memory_search: '🧠', memory_add: '💾', memory_replace: '🔄', memory_remove: '🗑️',
+    memory: '🧠',
     session_list: '📋', session_read: '📖', spawn_task: '🤖',
     plan_track: '📋',
     browser_open: '🌐', browser_screenshot: '📸', browser_evaluate: '⚡', browser_extract: '📰',
@@ -1054,7 +1020,7 @@ export function formatToolName(name: string): string {
     get_file_info: '文件信息', tree: '目录树', download_file: '下载文件',
     diff_files: '文件对比', replace_in_files: '批量替换', read_multiple_files: '批量读取',
     git: 'Git 操作', compress: '压缩/解压', web_search: '联网搜索',
-    memory_search: '搜索记忆', memory_add: '添加记忆', memory_replace: '替换记忆', memory_remove: '删除记忆',
+    memory: '记忆管理',
     session_list: '会话列表', session_read: '读取会话', spawn_task: '子代理委派',
     plan_track: '计划追踪',
     browser_open: '打开网页', browser_screenshot: '浏览器截图', browser_evaluate: '执行JS', browser_extract: '提取内容',

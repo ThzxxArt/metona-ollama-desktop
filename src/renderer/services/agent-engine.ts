@@ -15,7 +15,8 @@ import {
   formatPlanStatus,
   clearPlanTracker,
 } from './tool-registry.js';
-import { searchMemories, buildMemoryContext, markMemoryUsed, isMemoryEnabled } from './memory-manager.js';
+import { search, formatMemoryContext, loadAllEntries } from './memory-service.js';
+
 import { showToast } from '../components/toast.js';
 import { logInfo, logWarn, logSuccess, logError, logToolStart, logToolResult, logAgentLoop, logModelResponse, logStreamProgress, resetStreamProgress } from './log-service.js';
 import { getWorkspaceDirPath } from '../components/workspace-panel.js';
@@ -126,7 +127,7 @@ const VALID_TOOL_NAMES = new Set([
   'delete_file', 'run_command', 'move_file', 'copy_file', 'web_fetch', 'web_search',
   'edit_file', 'get_file_info', 'tree', 'download_file', 'diff_files',
   'replace_in_files', 'read_multiple_files', 'git', 'compress',
-  'memory_search', 'memory_add', 'memory_replace', 'memory_remove', 'session_list', 'session_read',
+  'memory', 'session_list', 'session_read',
   'datetime', 'calculator',
   'random', 'uuid', 'json_format', 'hash'
 ]);
@@ -518,12 +519,13 @@ async function handleInit(
   }
 
   // 注入记忆上下文
-  if (isMemoryEnabled() && userContent) {
-    const relevantMemories = searchMemories(userContent, 6);
-    if (relevantMemories.length > 0) {
-      systemPromptParts.push(buildMemoryContext(relevantMemories));
-      for (const m of relevantMemories) { await markMemoryUsed(m.id); }
-    }
+  if (userContent) {
+    try {
+      const relevantMemories = await search(userContent, 6);
+      if (relevantMemories.length > 0) {
+        systemPromptParts.push(formatMemoryContext(relevantMemories));
+      }
+    } catch { /* 记忆搜索失败不影响主流程 */ }
   }
 
   // 注入工作空间上下文
@@ -677,7 +679,7 @@ Shell: ${osInfo.shell}
     }
   }
 
-  logInfo(`ReAct Agent Loop 启动: ${model}`, `工具: ${useTools ? '开启' : '关闭'}, 记忆: ${isMemoryEnabled() ? '开启' : '关闭'}, 模式: ${ctx.mode}, tokens≈${estimateTokens(ctx.messages.map(m => m.content || '').join(''))}`);
+  logInfo(`ReAct Agent Loop 启动: ${model}`, `工具: ${useTools ? '开启' : '关闭'}, 模式: ${ctx.mode}, tokens≈${estimateTokens(ctx.messages.map(m => m.content || '').join(''))}`);
 
   // ── Plan Mode: 如果是 plan 模式，先注入计划提示 ──
   if (ctx.mode === 'plan' && ctx.loopCount === 0) {
@@ -1444,18 +1446,6 @@ async function handleObserving(
     .filter(r => r.status === 'success')
     .map(r => getToolCacheKey(r.name, r.arguments));
 
-  // 增量记忆提取 — 每 20 轮
-  if (isMemoryEnabled() && ctx.loopCount > 1 && ctx.loopCount % 20 === 0 && ctx.messages.length >= 10) {
-    import('./memory-manager.js').then(({ extractMemoriesFromConversation }) => {
-      const recentMsgs = ctx.messages.slice(-30).filter(m => m.role === 'user' || m.role === 'assistant');
-      extractMemoriesFromConversation(
-        recentMsgs.map(m => ({ role: m.role, content: m.content })),
-        currentSession?.title
-      ).then(() => logInfo('增量记忆提取完成', `第 ${ctx.loopCount} 轮`))
-       .catch(() => {});
-    }).catch(() => {});
-  }
-
   // 保存本轮工具调用
   ctx.prevToolCalls = [...ctx.toolCalls];
 
@@ -1670,14 +1660,21 @@ async function handleReflecting(
 
   logInfo('模型停止工具调用 → ReAct Agent Loop 结束');
   clearPlanTracker();
-  if (isMemoryEnabled() && ctx.messages.length >= 10) {
-    try {
-      const { extractMemoriesFromConversation } = await import('./memory-manager.js');
-      await extractMemoriesFromConversation(
-        ctx.messages.filter(m => m.role === 'user' || m.role === 'assistant').map(m => ({ role: m.role, content: m.content })),
-        currentSession?.title
-      );
-    } catch { /* 不阻塞 */ }
+
+  // ── 自动记忆提取（异步，不阻塞用户看到回复）──
+  const abortController = state.get<AbortController | null>(KEYS.ABORT_CONTROLLER);
+  if (!abortController?.signal.aborted) {
+    const _api = state.get<OllamaAPI>(KEYS.API);
+    const _model = state.get<string>('_defaultModel', '');
+    const msgsForMemory = ctx.messages
+      .filter(m => m.role === 'user' || m.role === 'assistant')
+      .map(m => ({ role: m.role, content: m.content || '' }));
+    // 使用 setTimeout 延迟执行，确保 onDone 先触发，用户先看到回复
+    setTimeout(() => {
+      import('./memory-service.js').then(({ extractAndSaveMemories }) => {
+        extractAndSaveMemories(msgsForMemory, _api, _model).catch(() => {});
+      }).catch(() => {});
+    }, 500);
   }
 
   callbacks.onDone(ctx.content || '（模型未返回内容）', ctx.allToolRecords.length > 0 ? ctx.allToolRecords : undefined, makeStats(ctx));

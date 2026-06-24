@@ -19,7 +19,7 @@ const SUB_AGENT_TOOL_WHITELIST = new Set([
   'read_file', 'list_directory', 'search_files',
   'web_search', 'web_fetch',
   'browser_extract', 'browser_screenshot',
-  'memory_search',
+  'memory',
   'session_list', 'session_read',
 ]);
 

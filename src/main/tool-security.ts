@@ -71,6 +71,9 @@ export interface CheckResult {
 /** 路径安全豁免列表：这些路径即使匹配 BLOCKED_DIRS 也放行（如 app 自己的工作空间） */
 let blocklistExemptions: string[] = [];
 
+/** 工作空间下受保护的文件名：任何工具都禁止直接读写，只能通过专用通道访问 */
+const BLOCKED_FILES = new Set(['MEMORY.md']);
+
 /** 注册路径为安全豁免（不受 BLOCKED_DIRS 限制）。主要用于注册工作空间目录 */
 export function addBlocklistExemptions(dirs: string[]): void {
   for (const d of dirs) {
@@ -91,11 +94,35 @@ function isBlocklistExempt(resolved: string): boolean {
   return false;
 }
 
+/** 检查文件是否在工作空间下且属于受保护文件（MEMORY.md 等） */
+export function isBlockedFile(targetPath: string): boolean {
+  try {
+    const resolved = path.resolve(targetPath);
+    const basename = path.basename(resolved);
+    if (!BLOCKED_FILES.has(basename)) return false;
+    // 只保护工作空间下的 MEMORY.md（其他目录下的同名文件不保护）
+    for (const exempt of blocklistExemptions) {
+      if (resolved === path.join(exempt, basename) || resolved.startsWith(exempt + path.sep)) {
+        return true;
+      }
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 export function checkPathAllowed(targetPath: string, operation: 'read' | 'write'): CheckResult {
   const resolved = path.resolve(targetPath);
 
   if (targetPath.split(path.sep).filter(s => s === '..').length > 5) {
     return { ok: false, reason: '路径遍历深度过大' };
+  }
+
+  // ── 文件级保护：MEMORY.md 等受保护文件禁止所有工具直接访问 ──
+  if (isBlockedFile(resolved)) {
+    const basename = path.basename(resolved);
+    return { ok: false, reason: `禁止直接访问 ${basename}。此文件只能通过 memory 工具操作，其他任何工具都无权读写。` };
   }
 
   for (const blocked of BLOCKED_DIRS) {

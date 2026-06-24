@@ -133,67 +133,6 @@ export interface ChatSession {
   updatedAt: number;
 }
 
-// ── Agent 记忆系统类型 ──
-
-export type MemoryType = 'fact' | 'preference' | 'rule';
-
-export interface MemoryEntry {
-  id: string;
-  type: MemoryType;
-  content: string;
-  importance: number;      // 1-10，越高越重要
-  tags: string[];          // 用于快速匹配
-  source?: string;         // 来源描述（如会话标题）
-  sessionId?: string;      // 关联的会话 ID
-  embedding?: number[];    // 向量嵌入
-  createdAt: number;
-  updatedAt: number;
-  lastUsedAt: number;      // 最后一次被回忆的时间
-  useCount: number;        // 被回忆的次数
-}
-
-export interface MemorySearchResult extends MemoryEntry {
-  score: number;           // 相关性得分
-}
-
-export interface MemoryExtractionResult {
-  entries: Array<{
-    type: MemoryType;
-    content: string;
-    importance: number;
-    tags: string[];
-  }>;
-}
-
-// ── 向量存储类型（用于记忆向量索引）──
-
-export interface VectorCollection {
-  id: string;
-  name: string;
-  embeddingModel: string;
-  docCount: number;
-  chunkCount: number;
-  createdAt: number;
-  updatedAt: number;
-}
-
-export interface VectorItem {
-  id: string;
-  collectionId: string;
-  docId: string;
-  filename: string;
-  chunkIndex: number;
-  text: string;
-  charCount: number;
-  embedding: number[];
-}
-
-export interface SearchResult extends VectorItem {
-  score: number;
-}
-
-
-
 // ── 桌面 Bridge 类型 ──
 
 export interface WorkspaceFileEntry {
@@ -287,6 +226,11 @@ export interface MetonaDesktopAPI {
     onProgress: (callback: (data: { current: number }) => void) => void;
     removeProgressListener: () => void;
   };
+  memoryAccess?: {
+    read: () => Promise<{ success: boolean; content?: string; error?: string }>;
+    write: (content: string) => Promise<{ success: boolean; error?: string }>;
+    init: () => Promise<{ success: boolean; action: string; existed: boolean; valid: boolean; backedUp?: string; error?: string }>;
+  };
 }
 
 export interface AppInfo {
@@ -323,9 +267,6 @@ export type StateKey =
   | 'thinkEnabled'
   | 'toolCallingEnabled'
   | 'runCommandMode'
-  | 'memoryEnabled'
-  | 'memoryEntries'
-  | 'embeddingModel'
   | '_defaultModel'
   | '_lastSystemPrompt'
   | '_currentEvalCount'
@@ -574,21 +515,6 @@ export interface MessageRow {
   created_at: number;
 }
 
-export interface MemoryRow {
-  id: string;
-  type: string;
-  content: string;
-  importance: number;
-  tags: string | null;
-  source: string | null;
-  session_id: string | null;
-  use_count: number;
-  embedding: string | null;
-  created_at: number;
-  updated_at: number;
-  last_used_at: number;
-}
-
 export interface DBAPI {
   saveSession: (session: SessionRow) => Promise<{ success: boolean; id?: string; error?: string }>;
   getSession: (id: string) => Promise<SessionRow | null>;
@@ -597,13 +523,6 @@ export interface DBAPI {
   clearAllSessions: () => Promise<{ success: boolean; error?: string }>;
   saveMessage: (msg: MessageRow) => Promise<{ success: boolean; id?: string; error?: string }>;
   getMessages: (sessionId: string) => Promise<MessageRow[]>;
-  saveMemory: (entry: MemoryRow) => Promise<{ success: boolean; id?: string; error?: string }>;
-  getMemory: (id: string) => Promise<MemoryRow | null>;
-  getAllMemories: () => Promise<MemoryRow[]>;
-  getMemoriesByType: (type: string) => Promise<MemoryRow[]>;
-  deleteMemory: (id: string) => Promise<{ success: boolean; error?: string }>;
-  clearAllMemories: () => Promise<{ success: boolean; error?: string }>;
-  searchMemories: (query: string, limit?: number) => Promise<MemoryRow[]>;
   saveSetting: (key: string, value: unknown) => Promise<{ success: boolean; error?: string }>;
   getSetting: <T = unknown>(key: string, defaultValue?: T) => Promise<T>;
   saveToolCall: (tc: unknown) => Promise<{ success: boolean; id?: string; error?: string }>;

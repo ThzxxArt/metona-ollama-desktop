@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-v0.12.11-E8734A?style=flat-square" alt="version">
+  <img src="https://img.shields.io/badge/version-v0.13.0-E8734A?style=flat-square" alt="version">
   <img src="https://img.shields.io/badge/electron-33+-47848F?style=flat-square&logo=electron" alt="electron">
   <img src="https://img.shields.io/badge/typescript-5.7+-3178C6?style=flat-square&logo=typescript" alt="typescript">
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="license">
@@ -37,8 +37,8 @@
 | 🤖 | **ReAct Agent Loop** | 始终开启的唯一对话模式。8 状态机（INIT→THINKING→PARSING→EXECUTING→OBSERVING→REFLECTING→COMPRESSING→TERMINATED），最大 85 轮（可配置），自动重试 2 次，工具去重，并行/链式执行，看门狗超时保护 |
 | 🛡️ | **5 层抗幻觉系统** | 提示词加固 → 任务感知 → 中途检测（16 条规则覆盖全部工具类别）→ 进度锚点 → 完成闸门（6 项检查，幻觉/注入/文件/工具 4 类关键阻断） |
 | 📋 | **Plan Mode** | 开关切换，AI 首先生成执行计划（Markdown 渲染确认弹窗），批准后按步骤追踪执行，plan_track 工具标记完成状态 |
-| 🔧 | **42 个内置工具** | 文件系统（16个） · 命令执行 · 联网搜索 · 浏览器控制（9个） · Git · 记忆 · 会话 · 子代理 · 系统工具 · Plan Mode 追踪 |
-| 🧠 | **智能记忆系统** | 三类记忆（fact / preference / rule），FTS5 全文搜索 + 向量语义搜索，写入前安全扫描，容量 500 条，90 天衰减 |
+| 🔧 | **40 个内置工具** | 文件系统（16个） · 命令执行 · 联网搜索 · 浏览器控制（9个） · Git · 记忆 · 会话 · 子代理 · 系统工具 · Plan Mode 追踪 |
+| 🧠 | **智能记忆系统** | 三类记忆（fact / preference / rule），存储于工作空间 MEMORY.md 文件，受路径保护仅 memory 工具可访问，写入前安全扫描，容量 500 条，对话结束自动提取，严格格式校验 |
 | 📋 | **自定义文件** | SOUL.md（人格，不可压缩）+ AGENT.md（行为准则）+ USER.md（用户画像），工作空间优先，内置默认 fallback |
 | 🌐 | **MCP 协议扩展** | JSON-RPC 2.0 over stdio，动态工具发现，Shadowing 防护 |
 | 🔍 | **联网搜索（双模式）** | SearXNG 元搜索引擎 JSON API（70+引擎聚合）/ 四引擎 HTML 解析（Bing+百度+搜狗+360），双模式可切换；web_fetch 支持反爬+UA切换+浏览器回退 |
@@ -129,14 +129,11 @@
 </details>
 
 <details>
-<summary><strong>🧠 记忆管理（4 个）</strong></summary>
+<summary><strong>🧠 记忆管理（1 个）</strong></summary>
 
 | 工具 | 功能 |
 |------|------|
-| `memory_search` | 搜索记忆（FTS5 + 向量语义） |
-| `memory_add` | 添加记忆（自动安全扫描） |
-| `memory_replace` | 修改记忆 |
-| `memory_remove` | 删除记忆 |
+| `memory` | 统一记忆管理（5 个 action：search 搜索 / add 添加 / replace 替换 / remove 删除 / read_all 读取全部）。工作空间 MEMORY.md 受路径保护，仅此工具可访问 |
 
 </details>
 
@@ -179,7 +176,7 @@
 ```
 用户消息 → 扫描工作空间 SOUL.md（不可压缩层）→ AGENT.md → USER.md
               ↓
-         记忆检索 (FTS5 + 向量语义搜索) → 上下文注入
+         记忆检索 (MEMORY.md 关键词搜索) → 上下文注入
               ↓
          Agent Engine (8 状态机 ReAct Loop, ≤85 轮, 看门狗 30min)
               ↓
@@ -214,14 +211,13 @@ main.ts (入口)
 
 ### 🗄️ 数据库
 
-SQLite (sql.js WASM)，6 张表，WAL 模式 + FTS5 全文搜索：
+SQLite (sql.js WASM)，5 张表，WAL 模式：
 
 | 表 | 用途 |
 |---|---|
 | `sessions` | 会话（parent_id 父子关系） |
 | `messages` | 消息（外键级联删除） |
 | `tool_calls` | 工具调用记录 |
-| `memories` | Agent 记忆（FTS5 + 向量嵌入） |
 | `settings` | 设置（JSON 序列化） |
 | `traces` | ReAct 执行轨迹 |
 
@@ -234,7 +230,7 @@ SQLite (sql.js WASM)，6 张表，WAL 模式 + FTS5 全文搜索：
 | 🖥️ 前端渲染 | HTML 净化器（白名单标签 + URI 协议检查） |
 | 🔒 Electron | `contextIsolation: true` + IPC 白名单 + IPC fs 路径验证 |
 | 🔐 数据加密 | AES-256-GCM |
-| 🧠 记忆安全 | 写入前 Prompt Injection / 敏感信息检测 |
+| 🧠 记忆安全 | 写入前 Prompt Injection / 敏感信息检测，多层级去重过滤 |
 | 🌐 MCP 安全 | Shadowing 防护 + 双下划线分隔防歧义 |
 | 🌐 网络安全 | `web_fetch` 流式体积限制（10MB）+ 无 content-length 时防 OOM |
 | ⚡ 进程安全 | Windows `taskkill` 强制终止 + 工作空间路径大小写不敏感校验 |
@@ -256,7 +252,7 @@ npm start
 ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm run dist
 ```
 
-产出：`release/Metona Ollama Setup v0.12.11.exe`
+产出：`release/Metona Ollama Setup v0.13.0.exe`
 
 ## 🛠️ 常用命令
 
@@ -289,8 +285,8 @@ npm run dist           # 构建 Windows 安装包
 | 🤖 | **ReAct Agent Loop** | Always-on, only chat mode. 8-state machine (INIT→THINKING→PARSING→EXECUTING→OBSERVING→REFLECTING→COMPRESSING→TERMINATED), up to 85 iterations (configurable), auto-retry 2 times, tool dedup, parallel/chain execution, watchdog timeout protection |
 | 🛡️ | **5-Layer Anti-Hallucination** | Prompt hardening → task awareness → mid-task detection (16 rules covering all tool categories) → progress anchors → completion gate (6 checks: hallucination, injection, file, tool — 4 critical blocks) |
 | 📋 | **Plan Mode** | Toggle switch. AI first generates an execution plan (Markdown-rendered confirmation dialog), then tracks step-by-step execution, with plan_track tool marking completion |
-| 🔧 | **42 Built-in Tools** | File system · Command · Web search · Browser · Git · Memory · Sessions · Sub-agent · System · Plan Mode tracking |
-| 🧠 | **Smart Memory System** | Three types (fact / preference / rule), FTS5 + vector semantic search, pre-write security scan, 500 capacity, 90-day decay |
+| 🔧 | **40 Built-in Tools** | File system · Command · Web search · Browser · Git · Memory · Sessions · Sub-agent · System · Plan Mode tracking |
+| 🧠 | **Smart Memory System** | Three types (fact / preference / rule), stored in workspace MEMORY.md file, path-protected — only the memory tool can access it, pre-write security scan, 500 capacity, auto-extract on conversation end, strict format validation |
 | 📋 | **Custom Files** | SOUL.md (persona, never compressed) + AGENT.md (behavior rules) + USER.md (user profile), workspace-first with built-in defaults |
 | 🌐 | **MCP Protocol Extension** | JSON-RPC 2.0 over stdio, dynamic tool discovery, Shadowing protection |
 | 🔍 | **Web Search (dual-mode)** | SearXNG meta-search JSON API (70+ engines) / quad-engine HTML parsing (Bing+Baidu+Sogou+360), switchable; web_fetch with auto-retry+mobile UA+SPA browser fallback |
@@ -380,14 +376,11 @@ npm run dist           # 构建 Windows 安装包
 </details>
 
 <details>
-<summary><strong>🧠 Memory Management (4)</strong></summary>
+<summary><strong>🧠 Memory Management (1)</strong></summary>
 
 | Tool | Function |
 |------|------|
-| `memory_search` | Search memories (FTS5 + vector semantic) |
-| `memory_add` | Add memory (auto security scan) |
-| `memory_replace` | Modify memory |
-| `memory_remove` | Delete memory |
+| `memory` | Unified memory management (5 actions: search / add / replace / remove / read_all). Workspace MEMORY.md is path-protected, only this tool can access it |
 
 </details>
 
@@ -430,7 +423,7 @@ npm run dist           # 构建 Windows 安装包
 ```
 User message → workspace SOUL.md (never compressed) → AGENT.md → USER.md
               ↓
-         Memory Retrieval (FTS5 + Vector Semantic Search) → Context Injection
+         Memory Retrieval (MEMORY.md keyword search) → Context Injection
               ↓
          Agent Engine (8-state ReAct Loop, ≤85 iter, watchdog 30min)
               ↓
@@ -465,14 +458,13 @@ main.ts (Entry)
 
 ### 🗄️ Database
 
-SQLite (sql.js WASM), 6 tables, WAL mode + FTS5 full-text search:
+SQLite (sql.js WASM), 5 tables, WAL mode:
 
 | Table | Purpose |
 |---|---|
 | `sessions` | Sessions (parent_id hierarchy) |
 | `messages` | Messages (cascade delete) |
 | `tool_calls` | Tool call records |
-| `memories` | Agent memories (FTS5 + vector embedding) |
 | `settings` | Settings (JSON serialization) |
 | `traces` | ReAct execution traces |
 
@@ -485,7 +477,7 @@ SQLite (sql.js WASM), 6 tables, WAL mode + FTS5 full-text search:
 | 🖥️ Frontend Rendering | HTML sanitizer (whitelist tags + URI protocol check) |
 | 🔒 Electron | `contextIsolation: true` + IPC whitelist + IPC fs path validation |
 | 🔐 Data Encryption | AES-256-GCM |
-| 🧠 Memory Security | Pre-write prompt injection / sensitive info detection |
+| 🧠 Memory Security | Pre-write prompt injection / sensitive info detection, multi-layer dedup filtering |
 | 🌐 MCP Security | Shadowing protection + double-underscore delimiter disambiguation |
 | 🌐 Network Security | `web_fetch` streaming size limit (10MB) + OOM prevention without content-length |
 | ⚡ Process Security | Windows `taskkill` forced termination + case-insensitive workspace path validation |
@@ -507,7 +499,7 @@ npm start
 ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm run dist
 ```
 
-Output: `release/Metona Ollama Setup v0.12.11.exe`
+Output: `release/Metona Ollama Setup v0.13.0.exe`
 
 ## 🛠️ Common Commands
 
