@@ -27,9 +27,7 @@ function ensureModal(): void {
       </div>
       <div class="modal-body" id="promptBody" style="max-height:60vh;overflow-y:auto;"></div>
       <div class="modal-actions" style="padding:12px 20px 16px;border-top:1px solid var(--border-subtle);flex-shrink:0;">
-
-
-
+        <div style="flex:1;"></div>
         <button class="btn btn-outline" id="promptCancel" style="padding:8px 20px;font-size:13px;">取消</button>
         <button class="btn btn-primary" id="promptOk" style="padding:8px 20px;font-size:13px;">确定</button>
       </div>
