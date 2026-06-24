@@ -451,8 +451,8 @@ export async function addEntry(
     // 2) 如果短文本，检查子串包含
     if (normalizedNew.length < 40 && normalizedExisting.includes(normalizedNew)) return true;
     if (normalizedExisting.length < 40 && normalizedNew.includes(normalizedExisting)) return true;
-    // 3) 词级相似度
-    return simpleSimilarity(normalizedExisting, normalizedNew) > 0.8;
+    // 3) 词级相似度 — 阈值 0.65：宁愿少记也不重复
+    return simpleSimilarity(normalizedExisting, normalizedNew) > 0.65;
   });
   if (existing) {
     logDebug('记忆去重: 已有相同条目', `${type}: ${content.slice(0, 40)}`);
@@ -780,7 +780,7 @@ ${conversationText.slice(0, 5000)}
         if (prefixLen > 10 && normalizedNew.slice(0, prefixLen) === normalizedExisting.slice(0, prefixLen)) return true;
         if (normalizedNew.length < 40 && normalizedExisting.includes(normalizedNew)) return true;
         if (normalizedExisting.length < 40 && normalizedNew.includes(normalizedExisting)) return true;
-        return simpleSimilarity(normalizedExisting, normalizedNew) > 0.75;
+        return simpleSimilarity(normalizedExisting, normalizedNew) > 0.6;
       });
       if (isDuplicate) {
         logDebug('自动记忆过滤: 重复', entry.content.slice(0, 40));
