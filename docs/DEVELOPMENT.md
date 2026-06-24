@@ -61,8 +61,7 @@ src/
 │   ├── index.html                     # 入口 HTML（三栏布局 + 全部模态框）
 │   ├── public/
 │   │   ├── AGENT.md                   # 内置 Agent 行为准则文档
-│   │   ├── SOUL.md                    # 内置 AI 人格定义
-│   │   └── USER.md                    # 内置用户画像模板
+│   │   ├── SOUL.md                    # AI 人格定义（内置 fallback）
 │   ├── api/
 │   │   └── ollama.ts                  # Ollama REST API 客户端（流式 + 模型管理）
 │   ├── components/                    # 15 个 UI 组件（原生 DOM）
@@ -195,7 +194,7 @@ INIT → THINKING → PARSING → EXECUTING → OBSERVING → REFLECTING → (CO
 
 | 状态 | 处理器 | 职责 |
 |------|--------|------|
-| INIT | `handleInit()` | 构建系统提示词、加载 SOUL/AGENT/USER.md、记忆检索、上下文压缩检测 |
+| INIT | `handleInit()` | 构建系统提示词、加载 SOUL/AGENT/USER.md（USER.md 仅工作空间）、记忆检索、上下文压缩检测 |
 | THINKING | `handleThinking()` | 调用 Ollama 流式 API、工具缓存检查、任务感知注入、Token 预算警告 |
 | PARSING | `handleParsing()` | 解析模型输出、提取 tool_calls、文本兜底解析 |
 | EXECUTING | `handleExecuting()` | 按批次并行执行工具、重试（最多 2 次）、去重检测、Hook 触发 |
@@ -285,7 +284,7 @@ Hook 异步并行执行，失败不阻塞主流程。可动态注册/移除。
 - **安全豁免**：工作空间目录通过 `addBlocklistExemptions()` 注册，不受路径黑名单限制
 - 终端：命令无超时限制，实时流式输出，支持终止
 - 文件浏览：限工作空间内，支持上级导航、文件预览
-- 自定义文件：`SOUL.md`（人格，不可压缩）、`AGENT.md`（行为准则）、`USER.md`（用户画像）
+- 自定义文件：`SOUL.md`（人格，不可压缩）、`AGENT.md`（行为准则）、`USER.md`（用户画像，仅工作空间）
 
 ---
 

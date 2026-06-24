@@ -502,27 +502,18 @@ async function handleInit(
     systemPromptParts.push(`[AGENT.md] ${truncated}`);
   }
 
-  // ── 扫描工作空间 USER.md ──
-  let userMdContent = '';
+  // ── 扫描工作空间 USER.md（仅工作空间，无内置 fallback）──
   if (workspaceDir) {
     try {
       const userResult = await window.metonaDesktop?.workspace.readFile(
         workspaceDir.replace(/[\\/]+$/, '') + '/USER.md'
       );
       if (userResult?.success && userResult.content) {
-        userMdContent = userResult.content;
+        const userMdContent = userResult.content;
+        systemPromptParts.push(`[USER.md] ${userMdContent}`);
         logInfo('USER.md 已从工作空间加载', `${userResult.lines || 0} 行`);
       }
     } catch { /* ignore */ }
-  }
-  if (!userMdContent) {
-    try {
-      const resp = await fetch('./USER.md');
-      if (resp.ok) { userMdContent = await resp.text(); logInfo('USER.md 已从内置加载', `${userMdContent.length} 字符`); }
-    } catch { /* ignore */ }
-  }
-  if (userMdContent) {
-    systemPromptParts.push(`[USER.md] ${userMdContent}`);
   }
 
   // 注入记忆上下文
