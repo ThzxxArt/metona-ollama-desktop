@@ -367,7 +367,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
 CRITICAL: For add action, you MUST include both "type" (fact/preference/rule) and "content" fields. If you omit them, the call will fail.`,
       parameters: {
         type: 'object',
-        required: ['action', 'type'],
+        required: ['action'],
         properties: {
           action: { type: 'string', enum: ['search', 'add', 'replace', 'remove', 'read_all'], description: 'Which operation to perform.' },
           query: { type: 'string', description: '[search] Keywords to search for.' },
@@ -791,12 +791,11 @@ export async function executeTool(toolName: string, args: Record<string, unknown
           return { success: true, action, results, total: results.length };
         }
         case 'add': {
-          const type = args.type as 'fact' | 'preference' | 'rule';
+          const type = (args.type as 'fact' | 'preference' | 'rule') || 'fact';  // 兜底默认 fact
           const content = args.content as string;
           const importance = (args.importance as number) || 5;
           const tags = (args.tags as string[]) || [];
-          if (!type) return { success: false, error: 'add 操作缺少 type 参数，必须指定 fact / preference / rule 之一。示例: {"action":"add","type":"fact","content":"用户的信息","importance":8,"tags":["标签1"]}' };
-          if (!content || content.length < 2) return { success: false, error: 'add 操作缺少 content 参数或内容太短（至少 2 个字符）。示例: {"action":"add","type":"fact","content":"具体的记忆内容"}' };
+          if (!content || content.length < 2) return { success: false, error: 'add 操作缺少 content 参数或内容太短。示例: {"action":"add","type":"fact","content":"具体的记忆内容"}' };
           const entry = await addEntry(type, content, importance, tags);
           logToolResult('memory', true, `${type}: ${content.slice(0, 50)}`);
           return { success: true, action, id: entry.id, type: entry.type, content: entry.content };
