@@ -194,7 +194,7 @@ app.on('window-all-closed', () => {
   }
 });
 
-app.on('before-quit', () => {
+app.on('before-quit', async () => {
   isQuitting = true;
   // 清理浏览器
   browserClose();
@@ -204,4 +204,25 @@ app.on('before-quit', () => {
   killAllProcesses();
   // 通知渲染进程释放显存
   mainWindow?.webContents.send('app-quit');
+  // 主进程直接调用 Ollama API 释放显存（更可靠，不依赖渲染进程）
+  try {
+    const OLlama_URL = 'http://127.0.0.1:11434';
+    const psResp = await fetch(`${OLlama_URL}/api/ps`);
+    if (psResp.ok) {
+      const psData = await psResp.json() as { models?: Array<{ name: string }> };
+      const models = psData.models || [];
+      for (const m of models) {
+        try {
+          await fetch(`${OLlama_URL}/api/generate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model: m.name, keep_alive: 0 }),
+          });
+        } catch { /* 忽略单个模型释放失败 */ }
+      }
+      if (models.length > 0) {
+        console.log(`[before-quit] 已释放 ${models.length} 个模型显存`);
+      }
+    }
+  } catch { /* 释放显存失败不影响退出 */ }
 });

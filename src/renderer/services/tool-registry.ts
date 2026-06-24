@@ -367,7 +367,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
 CRITICAL: For add action, you MUST include both "type" (fact/preference/rule) and "content" fields. If you omit them, the call will fail.`,
       parameters: {
         type: 'object',
-        required: ['action'],
+        required: ['action', 'type'],
         properties: {
           action: { type: 'string', enum: ['search', 'add', 'replace', 'remove', 'read_all'], description: 'Which operation to perform.' },
           query: { type: 'string', description: '[search] Keywords to search for.' },
