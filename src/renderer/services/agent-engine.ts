@@ -1240,6 +1240,10 @@ async function handleExecuting(
       .some(r => r.status !== 'success');
     if (!hasFailedInPrev) {
       logWarn('检测到连续两轮工具调用完全相同且全部成功，注入提醒而非终止');
+      // ── 取消工具卡片：卡片已在 THINKING 阶段设为 pending，这里需要收尾 ──
+      for (const call of ctx.toolCalls) {
+        callbacks.onToolCallError(call.function.name, '系统跳过（与上一轮完全相同）', call);
+      }
       ctx.messages.push({
         role: 'user',
         content: '⚠️ 检测到你连续调用了与上一轮完全相同的工具。请基于已有结果给出最终回答，或者调用不同的工具获取新信息。如果任务已完成，请给出最终回答。'
