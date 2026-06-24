@@ -779,7 +779,7 @@ export async function executeTool(toolName: string, args: Record<string, unknown
   try {
     // 内存工具（不走 IPC，直接处理 MEMORY.md）
     if (toolName === 'memory') {
-      const { search, addEntry, replaceEntry, removeEntry, loadAllEntries } = await import('./memory-service.js');
+      const { search, addEntry, replaceEntry, removeEntry, loadAllEntries, DuplicateEntryError } = await import('./memory-service.js');
       const action = args.action as string;
       switch (action) {
         case 'search': {
@@ -796,9 +796,17 @@ export async function executeTool(toolName: string, args: Record<string, unknown
           const importance = (args.importance as number) || 5;
           const tags = (args.tags as string[]) || [];
           if (!content || content.length < 2) return { success: false, error: 'add 操作缺少 content 参数或内容太短。示例: {"action":"add","type":"fact","content":"具体的记忆内容"}' };
-          const entry = await addEntry(type, content, importance, tags);
-          logToolResult('memory', true, `${type}: ${content.slice(0, 50)}`);
-          return { success: true, action, id: entry.id, type: entry.type, content: entry.content };
+          try {
+            const entry = await addEntry(type, content, importance, tags);
+            logToolResult('memory', true, `${type}: ${content.slice(0, 50)}`);
+            return { success: true, action, id: entry.id, type: entry.type, content: entry.content };
+          } catch (err) {
+            if (err instanceof DuplicateEntryError) {
+              logToolResult('memory', true, `重复跳过: ${(err as DuplicateEntryError).existingPreview}`);
+              return { success: true, action, duplicate: true, existing_id: (err as DuplicateEntryError).existingId, message: `已跳过: 相同内容的记忆已存在 (${(err as DuplicateEntryError).existingPreview})。不要再重复添加，任务已完成。` };
+            }
+            throw err;
+          }
         }
         case 'replace': {
           const oldText = String(args.old_text || '');

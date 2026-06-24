@@ -3,7 +3,7 @@
  * 基于工作空间 MEMORY.md 文件
  */
 
-import { loadAllEntries, addEntry, removeEntry, type MemoryEntry, type MemoryType } from '../services/memory-service.js';
+import { loadAllEntries, addEntry, removeEntry, DuplicateEntryError, type MemoryEntry, type MemoryType } from '../services/memory-service.js';
 import { showToast } from './toast.js';
 import { showPrompt, showConfirm } from './prompt-modal.js';
 import { escapeHtml, formatTime } from '../utils/utils.js';
@@ -170,6 +170,10 @@ async function openAddDialog(): Promise<void> {
     await renderList();
     showToast('记忆已添加', 'success', 1500);
   } catch (err) {
-    showToast(`添加失败: ${(err as Error).message}`, 'error');
+    if (err instanceof DuplicateEntryError) {
+      showToast('该记忆已存在，无需重复添加', 'info', 2000);
+    } else {
+      showToast(`添加失败: ${(err as Error).message}`, 'error');
+    }
   }
 }

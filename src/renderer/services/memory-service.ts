@@ -21,6 +21,18 @@ import { logInfo, logWarn, logDebug, logMemory } from './log-service.js';
 // 类型定义
 // ═══════════════════════════════════════════════════════════════
 
+/** 重复条目错误：记忆已存在时抛出，告诉调用方无需重复添加 */
+export class DuplicateEntryError extends Error {
+  existingId: string;
+  existingPreview: string;
+  constructor(id: string, preview: string) {
+    super(`重复条目: ${preview}... (ID: ${id})`);
+    this.name = 'DuplicateEntryError';
+    this.existingId = id;
+    this.existingPreview = preview;
+  }
+}
+
 export type MemoryType = 'fact' | 'preference' | 'rule';
 
 export interface MemoryEntry {
@@ -435,7 +447,10 @@ export async function addEntry(
     if (prefixLen > 20 && content.slice(0, prefixLen) === e.content.slice(0, prefixLen)) return true;
     return simpleSimilarity(e.content, content) > 0.8;
   });
-  if (existing) return existing;
+  if (existing) {
+    logDebug('记忆去重: 已有相同条目', `${type}: ${content.slice(0, 40)}`);
+    throw new DuplicateEntryError(existing.id, existing.content.slice(0, 60));
+  }
 
   const entry: MemoryEntry = {
     id: generateMemoryId(),
