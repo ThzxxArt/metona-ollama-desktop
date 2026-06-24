@@ -19,7 +19,7 @@ import { runAgentLoop } from '../services/agent-engine.js';
 import { estimateTokens } from '../services/context-manager.js';
 import { showToolConfirm } from './tool-confirm-modal.js';
 import { logInfo, logStream, logError, logSuccess, logWarn, resetVideoProgress, updateVideoProgress } from '../services/log-service.js';
-import type { ChatSession, ChatMessage, OllamaStreamChunk, FileContent, ChatFile, ToolCallRecord, AgentMode } from '../types.js';
+import type { ChatSession, ChatMessage, OllamaStreamChunk, OllamaMessage, FileContent, ChatFile, ToolCallRecord, AgentMode } from '../types.js';
 
 let chatInputEl: HTMLTextAreaElement;
 let btnSendEl: HTMLButtonElement;
@@ -489,18 +489,13 @@ async function handleRetry(): Promise<void> {
   updateSendButton(true);
 
   // 始终走 Agent Loop
-  const historyMessages = currentSession.messages
+  // ── 构建历史消息（不含最后一条用户消息，因为它是重试目标）──
+  const historyMessages = buildHistoryMessages(
+    currentSession.messages
       .filter(m => m.role === 'user' || m.role === 'assistant')
-      .slice(0, -1) // 不包含刚保留的最后一条 user 消息
-      .slice(-20)
-      .map(m => {
-        let content = m.content || '';
-        if (m._fileContents?.length) {
-          const fileParts = buildFileContentParts(m._fileContents);
-          content = content ? content + '\n\n---\n' + fileParts.join('\n\n---\n') : fileParts.join('\n\n---\n');
-        }
-        return { role: m.role, content, ...(m.images?.length && { images: m.images }), ...((m as any)._videoFrames?.length && { images: [...(m.images || []), ...(m as any)._videoFrames.map((f: any) => f.base64)] }) };
-      });
+      .slice(0, -1), // 不包含刚保留的最后一条 user 消息
+    30
+  );
 
     let retryMonitor: ReturnType<typeof setInterval> | null = null;
 
@@ -620,6 +615,16 @@ async function handleRetry(): Promise<void> {
             updateLastAssistantMessage(finalContent, retryThinkContent || null, loopStats || null, getSelectedModel(), Date.now(), toolRecords?.length ? toolRecords : undefined);
           }
           renderMessages();
+          // ── 保存 Plan Mode 最终进度到会话（供下一轮 Loop 注入）──
+          const lastPlanStatus = state.get<string>('_lastPlanStatus', '');
+          if (lastPlanStatus) {
+            state.set('_lastPlanStatus', '');
+            state.update(KEYS.CURRENT_SESSION, (s: any) => ({
+              ...s,
+              messages: [...s.messages, { role: 'system', content: lastPlanStatus, timestamp: Date.now() }],
+              updatedAt: Date.now()
+            }));
+          }
           await saveCurrentSession();
           if (loopStats?.prompt_eval_count) updateCtxRemain(loopStats.prompt_eval_count);
         }
@@ -974,6 +979,86 @@ function buildApiMessages(messages: ChatMessage[]): Array<{ role: string; conten
   });
 }
 
+/**
+ * 从会话消息构建 Ollama 格式的历史消息列表。
+ * 正确注入 tool_calls 和 role:'tool' 结果消息，
+ * 确保 AI 在新 Agent Loop 中能看到上一轮已执行的工具及其结果。
+ */
+function buildHistoryMessages(msgs: ChatMessage[], maxCount = 20): OllamaMessage[] {
+  const result: OllamaMessage[] = [];
+
+  for (const msg of msgs) {
+    if (msg.role !== 'user' && msg.role !== 'assistant' && msg.role !== 'system') continue;
+    if (result.length >= maxCount) break;
+
+    let content = msg.content || '';
+
+    if (msg.role === 'system') {
+      // 系统消息（Plan Mode 进度状态等）
+      result.push({ role: 'system', content });
+      continue;
+    }
+
+    if (msg.role === 'user') {
+      // 用户消息：注入文件内容
+      if (msg._fileContents?.length) {
+        const fileParts = buildFileContentParts(msg._fileContents);
+        content = content ? content + '\n\n---\n' + fileParts.join('\n\n---\n') : fileParts.join('\n\n---\n');
+      }
+      result.push({
+        role: 'user',
+        content,
+        ...(msg.images?.length && { images: msg.images }),
+        ...((msg as any)._videoFrames?.length && { images: [...(msg.images || []), ...(msg as any)._videoFrames.map((f: any) => f.base64)] }),
+      });
+    } else if (msg.role === 'assistant') {
+      // 构建 assistant 消息
+      const assistantMsg: OllamaMessage = {
+        role: 'assistant',
+        content,
+        ...(msg.think && { thinking: msg.think }),
+        ...(msg.images?.length && { images: msg.images }),
+      };
+
+      // ── 注入 tool_calls（Ollama 格式）──
+      if (msg.toolCalls?.length) {
+        assistantMsg.tool_calls = msg.toolCalls.map(tc => ({
+          type: 'function' as const,
+          function: {
+            name: tc.name,
+            arguments: tc.arguments,
+          },
+        }));
+      }
+
+      result.push(assistantMsg);
+
+      // ── 注入 tool 结果消息（role: 'tool'）──
+      if (msg.toolCalls?.length) {
+        for (const tc of msg.toolCalls) {
+          if (!tc.result) continue;
+          if (result.length >= maxCount) break; // 避免截断处产生孤立 tool 消息
+          const resultContent = tc.status === 'success'
+            ? JSON.stringify(tc.result)
+            : JSON.stringify({ success: false, error: tc.result.error || '工具执行失败' });
+          result.push({
+            role: 'tool',
+            tool_name: tc.name,
+            content: resultContent,
+          });
+        }
+      }
+    }
+  }
+
+  // 如果超过 maxCount，从尾部截取（保留最新消息）
+  if (result.length > maxCount) {
+    return result.slice(-maxCount);
+  }
+
+  return result;
+}
+
 export async function sendMessage(): Promise<void> {
   const text = chatInputEl.value.trim();
 
@@ -1182,22 +1267,11 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
   updateSendButton(true);
 
   // 构建历史消息
-  const historyMessages = freshSession.messages
-    .filter(m => m.role === 'user' || m.role === 'assistant')
-    .slice(-20)
-    .map(m => {
-      let content = m.content || '';
-      if (m._fileContents && m._fileContents.length > 0) {
-        const fileParts = buildFileContentParts(m._fileContents);
-        content = content ? content + '\n\n---\n' + fileParts.join('\n\n---\n') : fileParts.join('\n\n---\n');
-      }
-      return {
-        role: m.role,
-        content,
-        ...(m.images?.length && { images: m.images }),
-        ...((m as any)._videoFrames?.length && { images: [...(m.images || []), ...(m as any)._videoFrames.map((f: any) => f.base64)] })
-      };
-    });
+  // ── 构建历史消息（含工具调用和结果，消除跨 Loop 上下文断裂）──
+  const historyMessages = buildHistoryMessages(
+    freshSession.messages.filter(m => m.role === 'user' || m.role === 'assistant'),
+    30  // 预留空间给 tool 结果消息，实际有效轮次仍约 20 轮
+  );
 
   let assistantContent = '';
   let thinkContent = '';
@@ -1362,6 +1436,16 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
           updateLastAssistantMessage(assistantContent, thinkContent || null, loopStats || null, getSelectedModel(), Date.now(), toolRecords?.length ? toolRecords : undefined);
         }
         renderMessages();
+        // ── 保存 Plan Mode 最终进度到会话（供下一轮 Loop 注入）──
+        const lastPlanStatus2 = state.get<string>('_lastPlanStatus', '');
+        if (lastPlanStatus2) {
+          state.set('_lastPlanStatus', '');
+          state.update(KEYS.CURRENT_SESSION, (session: any) => ({
+            ...session,
+            messages: [...session.messages, { role: 'system', content: lastPlanStatus2, timestamp: Date.now() }],
+            updatedAt: Date.now()
+          }));
+        }
         await saveCurrentSession();
         // 更新剩余上下文
         if (loopStats?.prompt_eval_count) updateCtxRemain(loopStats.prompt_eval_count);

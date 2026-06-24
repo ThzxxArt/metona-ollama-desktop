@@ -440,7 +440,7 @@ async function handleInit(
   callbacks: AgentCallbacks,
   userContent: string,
   images: string[],
-  historyMessages: Array<{ role: string; content: string; images?: string[] }>,
+  historyMessages: OllamaMessage[],
   currentSession: ChatSession | null,
 ): Promise<void> {
   // 新一轮对话，清空工具缓存
@@ -646,13 +646,18 @@ Shell: ${osInfo.shell}
     .join('\n\n');
   state.set('_lastSystemPrompt', allSystemContent || fullSystemPrompt);
 
-  // 添加历史消息
+  // 添加历史消息（含工具调用和结果）
   for (const msg of historyMessages) {
-    ctx.messages.push({
-      role: msg.role as 'user' | 'assistant',
+    const ollamaMsg: OllamaMessage = {
+      role: msg.role as 'user' | 'assistant' | 'system' | 'tool',
       content: msg.content,
-      ...(msg.images?.length && { images: msg.images })
-    });
+      ...(msg.images?.length && { images: msg.images }),
+      ...(msg.thinking && { thinking: msg.thinking }),
+      ...(msg.tool_calls?.length && { tool_calls: msg.tool_calls }),
+      ...(msg.tool_name && { tool_name: msg.tool_name }),
+      ...(msg.compressed && { compressed: msg.compressed }),
+    };
+    ctx.messages.push(ollamaMsg);
   }
 
   // 用户消息
@@ -1681,6 +1686,13 @@ async function handleReflecting(
   } catch { /* Gate 异常不影响主流程 */ }
 
   logInfo('模型停止工具调用 → ReAct Agent Loop 结束');
+  // ── 保存 Plan Mode 最终进度到状态，供下一轮 Loop 注入历史 ──
+  if (ctx.mode === 'plan') {
+    const tracker = getPlanTracker();
+    if (tracker.active && tracker.steps.length > 0) {
+      state.set('_lastPlanStatus', formatPlanStatus());
+    }
+  }
   clearPlanTracker();
 
   // ── 自动记忆提取（异步，不阻塞用户看到回复）──
@@ -1745,7 +1757,7 @@ function makeStats(ctx: LoopContext) {
 export async function runAgentLoop(
   userContent: string,
   images: string[],
-  historyMessages: Array<{ role: string; content: string; images?: string[] }>,
+  historyMessages: OllamaMessage[],
   callbacks: AgentCallbacks
 ): Promise<void> {
   const api = state.get<OllamaAPI>(KEYS.API);
@@ -1893,6 +1905,13 @@ export async function runAgentLoop(
     }
     transition(ctx, S.TERMINATED);
   } finally {
+    // ── 保存 Plan Mode 进度（中止/异常路径也保留）──
+    if (ctx.mode === 'plan') {
+      const tracker = getPlanTracker();
+      if (tracker.active && tracker.steps.length > 0) {
+        state.set('_lastPlanStatus', formatPlanStatus());
+      }
+    }
     clearPlanTracker();
     endSessionMetrics();
   }
