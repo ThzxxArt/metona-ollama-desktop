@@ -1420,6 +1420,16 @@ async function handleExecuting(
         role: 'tool', tool_name: record.name,
         content: formatToolResultForModel(record.name, record.result!)
       });
+      // ── 关键工具结果加硬提示，防止模型忽略实际数据去用系统提示词编造 ──
+      if (record.name === 'memory' && record.status === 'success') {
+        const action = (record.result as any)?.action;
+        if (action === 'read_all' || action === 'search') {
+          ctx.messages.push({
+            role: 'system',
+            content: `⚠️ 以上 tool 消息中的内容是 memory 工具返回的实际记忆数据。你必须严格基于这些数据回答用户，不要编造、不要忽略、不要把系统提示词里的 SOUL/AGENT 内容当成记忆列出来。如果上面显示"记忆为空"才说没有。`,
+          });
+        }
+      }
       if (cacheKey) toolResultCache.set(cacheKey, { result: record.result!, timestamp: Date.now() });
       // 记录度量
       recordToolCall(record.name, record.status, Date.now() - record.timestamp);
