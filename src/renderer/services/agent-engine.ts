@@ -1030,8 +1030,6 @@ async function handleThinking(
     const firstUserMsg = ctx.messages.find(m => m.role === 'user');
     const userText = firstUserMsg?.content || '';
     const pending = detectPendingActions(userText, ctx.allToolRecords);
-    // 同时获取用户提及的全部动作（用于判断是否全部完成）
-    const allMentioned = detectAllMentionedActions(userText);
     if (pending.length > 0) {
       ctx.messages.push({
         role: 'user',
@@ -1039,19 +1037,10 @@ async function handleThinking(
         ephemeral: true,
       });
       logInfo('待办追踪: 注入未完成任务提醒', pending.join(', '));
-    } else if (allMentioned.length > 0) {
-      // 全部待办已完成 → 注入 system 级别确认信号（去重：不重复注入）
-      const alreadySignaled = ctx.messages.slice(-3).some(
-        m => m.role === 'system' && m.content?.includes('待办检测：用户请求中的全部操作已实际执行完成')
-      );
-      if (!alreadySignaled) {
-        ctx.messages.push({
-          role: 'system',
-          content: `✅ 待办检测：用户请求中的全部操作已实际执行完成（${allMentioned.join('、')}）。不要再调用工具，直接输出最终回答。`,
-        });
-        logInfo('待办追踪: 全部完成，注入完成确认', allMentioned.join(', '));
-      }
     }
+    // 注：不再注入"全部完成"确认信号。工具调用数量≠任务完成度，
+    // 例如"删除3个文件"调用1次 delete_file 不能算完成。
+    // AI 应根据工具返回的实际结果自行判断任务是否完成。
   }
 
   // Token 预算警告
