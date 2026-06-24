@@ -357,20 +357,27 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'memory',
-      description: 'Manage agent memories stored in MEMORY.md in the workspace. Supports: search (keyword search across all entries), add (append new entry with auto-generated ID), replace (substring match replace), remove (substring match delete), read_all (read all entries). Memories are automatically injected into system prompt on new conversations.',
+      description: `Manage agent memories stored in MEMORY.md. Usage by action:
+- search: {"action":"search","query":"keywords","limit":8}
+- add: {"action":"add","type":"fact","content":"the memory content","importance":8,"tags":["tag1","tag2"]}  ← type and content are REQUIRED for add!
+- replace: {"action":"replace","old_text":"unique substring","new_content":"replacement"}
+- remove: {"action":"remove","old_text":"unique substring"}
+- read_all: {"action":"read_all"}
+
+CRITICAL: For add action, you MUST include both "type" (fact/preference/rule) and "content" fields. If you omit them, the call will fail.`,
       parameters: {
         type: 'object',
         required: ['action'],
         properties: {
-          action: { type: 'string', enum: ['search', 'add', 'replace', 'remove', 'read_all'], description: 'Action: search=keyword match search, add=append entry, replace=find by old_text and replace, remove=find by old_text and delete, read_all=return all entries.' },
-          query: { type: 'string', description: 'Search query for search action.' },
-          limit: { type: 'integer', description: 'Max results for search. Default: 8.' },
-          type: { type: 'string', enum: ['fact', 'preference', 'rule'], description: 'Memory type for add. fact=about user, preference=user preference, rule=must follow.' },
-          content: { type: 'string', description: 'Memory content for add. Concise and specific.' },
-          importance: { type: 'integer', description: 'Importance 1-10 for add. Default: 5.' },
-          tags: { type: 'array', items: { type: 'string' }, description: 'Tags for add. 2-5 keywords for search matching.' },
-          old_text: { type: 'string', description: 'Unique substring to find the entry for replace/remove.' },
-          new_content: { type: 'string', description: 'New content for replace action.' }
+          action: { type: 'string', enum: ['search', 'add', 'replace', 'remove', 'read_all'], description: 'Which operation to perform.' },
+          query: { type: 'string', description: '[search] Keywords to search for.' },
+          limit: { type: 'integer', description: '[search] Max results. Default: 8.' },
+          type: { type: 'string', enum: ['fact', 'preference', 'rule'], description: '[add REQUIRED] Memory type. fact=user info, preference=user preference, rule=behavior rule.' },
+          content: { type: 'string', description: '[add REQUIRED, replace] Memory text. Keep it concise (8-100 chars).' },
+          importance: { type: 'integer', description: '[add] Priority 1-10. Default: 5. Use 8+ for critical info.' },
+          tags: { type: 'array', items: { type: 'string' }, description: '[add] 2-5 keywords for search matching.' },
+          old_text: { type: 'string', description: '[replace, remove REQUIRED] Unique substring to identify the entry.' },
+          new_content: { type: 'string', description: '[replace REQUIRED] New text to replace with.' }
         }
       }
     }
@@ -788,8 +795,8 @@ export async function executeTool(toolName: string, args: Record<string, unknown
           const content = args.content as string;
           const importance = (args.importance as number) || 5;
           const tags = (args.tags as string[]) || [];
-          if (!type) return { success: false, error: '缺少 type 参数 (fact/preference/rule)' };
-          if (!content || content.length < 2) return { success: false, error: 'content 不能为空且至少 2 个字符' };
+          if (!type) return { success: false, error: 'add 操作缺少 type 参数，必须指定 fact / preference / rule 之一。示例: {"action":"add","type":"fact","content":"用户的信息","importance":8,"tags":["标签1"]}' };
+          if (!content || content.length < 2) return { success: false, error: 'add 操作缺少 content 参数或内容太短（至少 2 个字符）。示例: {"action":"add","type":"fact","content":"具体的记忆内容"}' };
           const entry = await addEntry(type, content, importance, tags);
           logToolResult('memory', true, `${type}: ${content.slice(0, 50)}`);
           return { success: true, action, id: entry.id, type: entry.type, content: entry.content };
