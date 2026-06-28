@@ -247,9 +247,9 @@ export const fileWriteDedupHook: HarnessHook = {
 };
 
 /**
- * PlanAutoTrackHook — Plan Mode 步骤自动追踪（post_tool 非阻断级）
- * 工具执行成功后自动匹配 Plan 步骤标记完成，不再依赖模型手动调用 plan_track。
- * write_file 成功后还会自动标记所有"设计/构建/编码"类步骤。
+ * PlanAutoTrackHook — Plan Mode 步骤追踪（post_tool 非阻断级）
+ * 不自动标记步骤（避免模糊匹配误标），仅由 AI 通过 plan_track 工具精确标记。
+ * 此处只维护 write_file 路径记录供 FileWriteDedupHook 使用。
  */
 export const planAutoTrackHook: HarnessHook = {
   name: 'PlanAutoTrack',
@@ -260,63 +260,9 @@ export const planAutoTrackHook: HarnessHook = {
     if (ctx.mode !== 'plan') return { passed: true, message: '' };
     const toolName = data.toolName || '';
     const toolResult = data.toolResult as Record<string, unknown> | undefined;
-    if (!toolResult?.success) return { passed: true, message: '' };
-
-    // 延迟导入避免循环依赖
-    const { getPlanTracker, savePlanTracker } = await import('./tool-registry.js');
-    const tracker = getPlanTracker();
-    if (!tracker.active || tracker.steps.length === 0) return { passed: true, message: '' };
-
-    // 工具名 → 计划步骤关键词映射
-    const TOOL_STEP_KEYWORDS: Record<string, string[]> = {
-      web_search: ['搜索', '查找', '检索', 'search', '查询'],
-      web_fetch: ['抓取', 'fetch', '获取', '浏览', '提取内容'],
-      read_file: ['读取', 'read', '查看', '检查'],
-      write_file: ['写入', 'write', '生成.*文件', '创建.*文件', '文件.*生成', '保存.*文件', '输出.*文件'],
-      edit_file: ['编辑', '修改', 'edit'],
-      list_directory: ['列出', 'list', '浏览.*目录', '查看.*结构'],
-      tree: ['目录树', 'tree', '结构'],
-      run_command: ['运行', '执行', 'run', '命令', '编译', '测试'],
-      git: ['git', '提交', '推送', '暂存', 'commit'],
-      browser_open: ['打开.*网页', '浏览器', 'browser'],
-    };
-
-    const keywords = TOOL_STEP_KEYWORDS[toolName] || [];
-    let matched = false;
-
-    if (keywords.length > 0) {
-      for (const step of tracker.steps) {
-        if (step.done) continue;
-        for (const kw of keywords) {
-          if (new RegExp(kw, 'i').test(step.label)) {
-            step.done = true;
-            tracker.done = tracker.steps.filter(s => s.done).length;
-            savePlanTracker(tracker);
-            logInfo(`Plan 自动追踪: ${toolName} → 步骤${step.index} "${step.label.slice(0, 40)}" (${tracker.done}/${tracker.total})`);
-            matched = true;
-            break;
-          }
-        }
-        if (matched) break;
-      }
-    }
-
-    // write_file 成功后，自动标记所有"设计/构建/编码"类步骤
-    if (toolName === 'write_file') {
-      const DESIGN_KEYWORDS = /HTML|CSS|构建|编码|设计|代码|前端|布局|排版|样式|视觉|coding|design|style/i;
-      for (const step of tracker.steps) {
-        if (step.done) continue;
-        if (DESIGN_KEYWORDS.test(step.label)) {
-          step.done = true;
-          tracker.done = tracker.steps.filter(s => s.done).length;
-          savePlanTracker(tracker);
-          logInfo(`Plan 自动追踪: write_file → 设计步骤${step.index} "${step.label.slice(0, 40)}" (${tracker.done}/${tracker.total})`);
-        }
-      }
-    }
 
     // write_file 成功后记录文件路径，供 FileWriteDedupHook 拦截
-    if (toolName === 'write_file' && data.toolArgs?.path) {
+    if (toolName === 'write_file' && toolResult?.success && data.toolArgs?.path) {
       _writtenFilesThisSession.add(String(data.toolArgs.path));
     }
 

@@ -909,55 +909,50 @@ function buildPlanConfirmHtml(plan: string, steps: string[]): string {
   `;
 }
 
+/** Base64 编码（支持 UTF-8） */
+function base64Encode(str: string): string {
+  const bytes = new TextEncoder().encode(str);
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
 function buildFileContentParts(fileContents: Array<{ language: string; content: string }>): string[] {
   const numCtx = state.get<number>(KEYS.NUM_CTX, 24576);
   const fileBudget = Math.floor(numCtx * FILE_TOKEN_BUDGET_RATIO);
   let usedTokens = 0;
-  const maxSingleFileTokens = Math.floor(fileBudget * 0.5); // 单文件不超过预算的50%
+  const maxSingleFileTokens = Math.floor(fileBudget * 0.5);
 
   return fileContents.map((f, i) => {
-    const lang = f.language || '';
-    const rawTokens = estimateTokens(f.content);
-    const total = fileContents.length;
+    const lang = f.language || 'text';
+    let text = f.content;
+    const rawTokens = estimateTokens(text);
 
-    // 文件足够小，直接全量（不剥离注释，保持完整性）
-    if (rawTokens <= 500 && usedTokens + rawTokens <= fileBudget) {
-      usedTokens += rawTokens;
-      return `📄 文件 ${i + 1}/${total}：\n\n\`\`\`${lang}\n${f.content}\n\`\`\``;
-    }
-
-    // 大文件：剥离注释 + token 预算截断
-    const remaining = fileBudget - usedTokens;
-    if (remaining <= 0) {
-      return `⚠️ 文件 ${i + 1}/${total} 因 token 预算耗尽被跳过 (${f.content.length} 字符)`;
-    }
-
-    let text = stripComments(f.content, lang);
-    let truncated = false;
-
-    // 如果剥离注释后仍然超预算，截断到剩余预算
-    const strippedTokens = estimateTokens(text);
-    if (strippedTokens > maxSingleFileTokens) {
-      // 按比例截取字符：预算 / 估算tokens * 长度
-      const ratio = Math.min(1, maxSingleFileTokens / strippedTokens);
-      const cutAt = Math.floor(text.length * ratio);
-      text = text.slice(0, cutAt);
-      truncated = true;
+    // 小文件直接使用，大文件剥离注释后截断
+    if (rawTokens > 500) {
+      const stripped = stripComments(text, lang);
+      const strippedTokens = estimateTokens(stripped);
+      if (strippedTokens > maxSingleFileTokens) {
+        const ratio = Math.min(1, maxSingleFileTokens / strippedTokens);
+        text = stripped.slice(0, Math.floor(stripped.length * ratio));
+      } else {
+        text = stripped;
+      }
     }
 
     const finalTokens = estimateTokens(text);
-    if (usedTokens + finalTokens > fileBudget) {
-      const ratio = Math.min(1, remaining / finalTokens);
-      const cutAt = Math.floor(text.length * ratio);
-      text = text.slice(0, cutAt);
-      truncated = true;
-    }
+    if (usedTokens + finalTokens > fileBudget) return '';
+    usedTokens += finalTokens;
 
-    usedTokens += estimateTokens(text);
-    const label = strippedTokens !== rawTokens ? ' (已剥离注释)' : '';
-    const truncLabel = truncated ? ' [已截断]' : '';
-    return `📄 文件 ${i + 1}/${total}${label}${truncLabel}：\n\n\`\`\`${lang}\n${text}\n\`\`\``;
-  });
+    return JSON.stringify({
+      file_name: `文件 ${i + 1}/${fileContents.length}`,
+      file_type: lang,
+      context_encode: 'base64',
+      context: base64Encode(text),
+    });
+  }).filter(Boolean);
 }
 
 function buildApiMessages(messages: ChatMessage[]): Array<{ role: string; content: string; images?: string[] }> {
@@ -982,27 +977,25 @@ function buildApiMessages(messages: ChatMessage[]): Array<{ role: string; conten
 
 /**
  * 从会话消息构建 Ollama 格式的历史消息列表。
- * 正确注入 tool_calls 和 role:'tool' 结果消息，
- * 确保 AI 在新 Agent Loop 中能看到上一轮已执行的工具及其结果。
+ * 注入 assistant + user（含 _apiContent）+ tool_calls + role:'tool' 结果。
+ * 不注入 system 消息——保证传给 API 时始终只有 1 条 system 且排在首位。
  */
 function buildHistoryMessages(msgs: ChatMessage[], maxCount = 20): OllamaMessage[] {
   const result: OllamaMessage[] = [];
 
   for (const msg of msgs) {
-    // 只注入 assistant 和 system 消息（用户消息仅当前发送的一条，由 runAgentLoop userContent 单独传入）
-    if (msg.role !== 'assistant' && msg.role !== 'system') continue;
+    if (msg.role !== 'assistant' && msg.role !== 'user') continue;
     if (result.length >= maxCount) break;
 
-    let content = msg.content || '';
-
-    if (msg.role === 'system') {
-      // 系统消息（Plan Mode 进度状态等）
-      result.push({ role: 'system', content });
+    if (msg.role === 'user') {
+      // 用 _apiContent（含附件 JSON 结构化数据），没有则回退 content
+      const content = (msg as any)._apiContent || msg.content || '';
+      result.push({ role: 'user', content, ...(msg.images?.length && { images: msg.images }) });
       continue;
     }
 
     if (msg.role === 'assistant') {
-      // 构建 assistant 消息
+      const content = msg.content || '';
       const assistantMsg: OllamaMessage = {
         role: 'assistant',
         content,
@@ -1027,7 +1020,7 @@ function buildHistoryMessages(msgs: ChatMessage[], maxCount = 20): OllamaMessage
       if (msg.toolCalls?.length) {
         for (const tc of msg.toolCalls) {
           if (!tc.result) continue;
-          if (result.length >= maxCount) break; // 避免截断处产生孤立 tool 消息
+          if (result.length >= maxCount) break;
           const resultContent = tc.status === 'success'
             ? JSON.stringify(tc.result)
             : JSON.stringify({ success: false, error: tc.result.error || '工具执行失败' });
@@ -1041,7 +1034,7 @@ function buildHistoryMessages(msgs: ChatMessage[], maxCount = 20): OllamaMessage
     }
   }
 
-  // 如果超过 maxCount，从尾部截取（保留最新消息）
+  // 超过 maxCount 从尾部截取
   if (result.length > maxCount) {
     return result.slice(-maxCount);
   }
@@ -1138,20 +1131,15 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
     // ── 聊天卡片：只显示用户自己的文字 + 附件视觉预览（缩略图/文件卡片/视频帧），不含代码生成的文本标记 ──
     const displayContent = text || '';
 
-    // ── Ollama API 用：完整描述（文字 + 文件内容 + 视频帧序列 + 图片提示）──
+    // ── Ollama API 用：附件 JSON 结构化数据在前，用户文字消息始终在最后 ──
     const apiParts: string[] = [];
-    if (text) apiParts.push(text);
     if (userFiles.length > 0) {
       const fileContents = pendingFiles.map(f => ({ language: f.language, content: f.content }));
       const fileParts = buildFileContentParts(fileContents);
       apiParts.push(...fileParts);
       logInfo('📄 文件内容已注入', `${fileParts.length} 段, 共 ${fileContents.reduce((s, f) => s + f.content.length, 0)} 字符`);
     }
-    if (pendingImages.length === 1) {
-      apiParts.push(`[已上传图片: ${pendingImages[0].name}]`);
-    } else if (pendingImages.length > 1) {
-      apiParts.push(`[已上传 ${pendingImages.length} 张图片: ${pendingImages.map(img => img.name).join(', ')}]`);
-    }
+    // 视频：帧图片通过 images[] 传递，元数据用 JSON 结构化（与文件格式一致）
     let allVids: Array<{ name: string; count: number; dur: number; frames: Array<{ timestampSeconds: number; name: string; base64: string }> }> = [];
     if (hasVideos) {
       if (pendingVideoMeta && pendingVideoFrames.length > 0) {
@@ -1160,14 +1148,30 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
       for (const v of completedVideos) {
         allVids.push({ name: v.fileName, count: v.frames.length, dur: v.duration, frames: v.frames });
       }
-      const parts: string[] = [];
+      // 计算每个视频在全局 images[] 中的起始索引（跳过用户上传的图片）
+      let imageStart = pendingImages.length;
       for (const v of allVids) {
-        const fl = v.frames.map(f => `  ${String(f.timestampSeconds).padStart(4, ' ')}s — ${f.name}`).join('\n');
-        parts.push(`[视频帧序列 · ${v.name} · ${v.count}帧 · 1fps · ${v.dur.toFixed(0)}s]\n${fl}`);
+        apiParts.push(JSON.stringify({
+          file_name: v.name,
+          file_type: v.name.split('.').pop() || 'video',
+          context_encode: 'base64',
+          context: base64Encode(JSON.stringify({
+            frame_count: v.count,
+            fps: 1,
+            duration: Math.round(v.dur),
+            image_start: imageStart,
+            image_end: imageStart + v.count - 1,
+            frames: v.frames.map((f, fi) => ({
+              timestamp: f.timestampSeconds,
+              image_index: imageStart + fi,
+            })),
+          })),
+        }));
+        imageStart += v.count;
       }
-      apiParts.push(parts.join('\n\n'));
-      apiParts.push('以上为视频帧序列，按时间顺序排列。');
     }
+    // 用户文字始终放最后
+    if (text) apiParts.push(text);
     apiContentForModel = apiParts.join('\n\n');
 
     const msg: ChatMessage = {
@@ -1371,12 +1375,11 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
         // 如果有多个迭代，最后一条消息已由 onNewIteration 保存，这里创建新消息保存最终回复
         if (agentModeIterations > 0) {
           if (assistantContent) {
-            // 最后一轮迭代的 stats（loopStats.eval_count 即为最后一轮的 token 数）
             const lastIterDuration = (Date.now() - lastIterationStartTime) * 1e6;
-
             const lastMsg: ChatMessage = {
               role: 'assistant',
               content: assistantContent,
+              model: getSelectedModel(),
               timestamp: Date.now(),
               ...(thinkContent && { think: thinkContent }),
               ...(toolRecords?.length && { toolCalls: toolRecords }),
@@ -1390,12 +1393,12 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
               updatedAt: Date.now()
             }));
           }
-          updateLastAssistantMessage(assistantContent, thinkContent || null, loopStats || null, getSelectedModel(), Date.now(), toolRecords?.length ? toolRecords : undefined);
         } else {
           // 单迭代模式：正常保存
           const assistantMsg: ChatMessage = {
             role: 'assistant',
             content: assistantContent || '',
+            model: getSelectedModel(),
             timestamp: Date.now(),
             ...(thinkContent && { think: thinkContent }),
             ...(toolRecords?.length && { toolCalls: toolRecords }),
@@ -1408,9 +1411,11 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
             messages: [...session.messages, assistantMsg],
             updatedAt: Date.now()
           }));
-          updateLastAssistantMessage(assistantContent, thinkContent || null, loopStats || null, getSelectedModel(), Date.now(), toolRecords?.length ? toolRecords : undefined);
         }
+        // 清掉流式 placeholder，统一从 session 渲染（单条消息，Markdown 格式）
+        clearMessagesDOM();
         renderMessages();
+
         // ── 保存 Plan Mode 最终进度到会话（供下一轮 Loop 注入）──
         const lastPlanStatus2 = state.get<string>('_lastPlanStatus', '');
         if (lastPlanStatus2) {

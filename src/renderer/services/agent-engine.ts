@@ -773,11 +773,8 @@ async function handleInit(
       savePlanTracker(tracker);
       // 清空恢复数据，避免重复恢复
       state.set('_planResumeData', null);
-      // 注入恢复状态提示
-      systemPromptParts.push(`[Plan Mode 断点续传] 上一轮计划未完成，已自动恢复。当前进度: ${tracker.done}/${tracker.total}。已完成步骤将继续保持完成状态。继续执行剩余步骤，跳过已完成的步骤。`);
-      logInfo(`Plan Mode 断点续传: ${tracker.done}/${tracker.total} 步骤已恢复，继续执行剩余 ${tracker.total - tracker.done} 步`);
-      // 跳过"输出计划"约束，直接告诉 AI 继续执行
-      systemPromptParts.push(`⚠️ 计划已在上一轮生成并批准，现在直接继续执行剩余步骤。不需要重新输出计划。`);
+      systemPromptParts.push(`[Plan Mode 断点续传] 上一轮计划未完成已自动恢复，当前进度 ${tracker.done}/${tracker.total}。直接继续执行剩余 ${tracker.total - tracker.done} 步，跳过已完成步骤，不要重新输出计划。`);
+      logInfo(`Plan Mode 断点续传: ${tracker.done}/${tracker.total}`);
     } else {
       // 清除可能的残留
       state.set('_planResumeData', null);
@@ -786,36 +783,12 @@ async function handleInit(
 
   // ── Plan Mode 系统提示词 — 告知 AI plan_track 工具和追踪规则 ──
   if (ctx.mode === 'plan') {
-    systemPromptParts.push(`[Plan Mode 执行规则]
-你当前处于 Plan Mode（先规划后执行）。重要规则：
+	    systemPromptParts.push(`[Plan Mode 执行规则]
+当前处于先规划后执行模式。核心规则：
 
-**输出格式（必须严格遵守）**：
-你的第一轮回复必须是一个清晰的执行计划，使用以下格式。不要输出其他无关内容。
-
-## 任务分析
-[1-2 句话概述任务，展示你的理解]
-
-## 执行计划
-1. **步骤名称** — 工具: tool_name — 简要描述这一步做什么，完成后预期结果是什么
-2. **步骤名称** — 无需工具 — 如果这一步只需推理/分析/总结，标注"无需工具"并描述分析要点
-...（根据任务复杂度，通常 2-6 步）
-
-## 预期结果
-[完成所有步骤后的最终产出]
-
-**关键规则**：
-- 需要调用工具的步骤：必须写"工具: xxx"（如 工具: web_search、工具: write_file）
-- 纯分析/推理/总结的步骤：写"无需工具"，描述你要分析和思考的要点
-- 禁止模糊描述如"分析需求"——即使是分析步骤，也要写清楚分析什么、关注什么
-- 如果用户已上传图片或文件，第一步必须是分析附件（写"无需工具"即可，图片你直接能看到）
-- 如果整个任务完全不需要工具（如纯翻译、润色、总结对话），可以全部步骤都是"无需工具"
-- 输出计划后等待用户批准，**不要**在输出计划的同时调用工具
-
-**计划批准后**：
-- 需要工具的步骤：调用对应工具完成任务
-- 无需工具的步骤：直接基于已有信息给出分析结论
-- 系统会自动追踪工具执行进度
-- 所有步骤完成后直接给出最终回答。`);
+1. 首轮必须先输出执行计划（Markdown 格式，每步标注是否需要工具），等待用户批准，**不要**同时调用工具。
+2. 批准后按计划逐步执行，每完成一步可调用 plan_track mark_done 标记进度。
+3. 全部完成后输出最终回答。`);
 
     // 将用户原始任务描述固化到系统提示词中（不会被压缩或清理）
     const taskDesc = userContent?.slice(0, 200) || '';
@@ -1145,13 +1118,17 @@ async function handleThinking(
   ctx.thinking = '';
   ctx.toolCalls.length = 0;
 
-  // ── Plan Mode 执行进度注入 — 每次思考前展示当前状态 ──
+  // ── Plan Mode 执行进度注入 — 仅在进度变化时注入，避免每轮重复 ──
   if (ctx.mode === 'plan' && ctx.loopCount >= 1) {
     const tracker = getPlanTracker();
     if (tracker.active && tracker.steps.length > 0) {
-      const status = formatPlanStatus();
-      if (status) {
-        ctx.messages.push({ role: 'user', content: status, ephemeral: true });
+      const lastDone = state.get<number>('_planLastInjectedDone', -1);
+      if (tracker.done !== lastDone) {
+        const status = formatPlanStatus();
+        if (status) {
+          ctx.messages.push({ role: 'user', content: status, ephemeral: true });
+          state.set('_planLastInjectedDone', tracker.done);
+        }
       }
     }
   }
