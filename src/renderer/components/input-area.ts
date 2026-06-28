@@ -529,7 +529,8 @@ async function handleRetry(): Promise<void> {
           });
         },
         onNewIteration: (toolCalls) => {
-          if (retryContent || toolCalls) {
+          const hasToolCalls = toolCalls && toolCalls.length > 0;
+          if (retryContent || hasToolCalls) {
             const now = Date.now();
             const toolCallRecords: ToolCallRecord[] | undefined = toolCalls?.map(tc => ({
               name: tc.function.name, arguments: tc.function.arguments,
@@ -1283,7 +1284,8 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
         if (oldPlaceholder) oldPlaceholder.remove();
 
         // 有文本内容 或 有工具调用 → 保存为独立消息
-        if (assistantContent || toolCalls) {
+        const hasToolCalls = toolCalls && toolCalls.length > 0;
+        if (assistantContent || hasToolCalls) {
           const now = Date.now();
           // 计算本轮迭代的 token 和时长
           const currentEvalCount = state.get<number>('_currentEvalCount', 0);
