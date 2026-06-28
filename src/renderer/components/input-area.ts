@@ -588,7 +588,7 @@ async function handleRetry(): Promise<void> {
           if (retryIterations > 0) {
             if (finalContent) {
               const lastMsg: ChatMessage = {
-                role: 'assistant', content: finalContent, timestamp: Date.now(),
+                role: 'assistant', content: finalContent, model: getSelectedModel(), timestamp: Date.now(),
                 ...(retryThinkContent && { think: retryThinkContent }),
                 ...(toolRecords?.length && { toolCalls: toolRecords }),
                 ...(loopStats?.eval_count && { eval_count: loopStats.eval_count }),
@@ -599,10 +599,9 @@ async function handleRetry(): Promise<void> {
                 ...s, messages: [...s.messages, lastMsg], updatedAt: Date.now()
               }));
             }
-            updateLastAssistantMessage(finalContent, retryThinkContent || null, loopStats || null, getSelectedModel(), Date.now(), toolRecords?.length ? toolRecords : undefined);
           } else {
             const assistantMsg: ChatMessage = {
-              role: 'assistant', content: finalContent || '', timestamp: Date.now(),
+              role: 'assistant', content: finalContent || '', model: getSelectedModel(), timestamp: Date.now(),
               ...(retryThinkContent && { think: retryThinkContent }),
               ...(toolRecords?.length && { toolCalls: toolRecords }),
               ...(loopStats?.eval_count && { eval_count: loopStats.eval_count }),
@@ -612,8 +611,9 @@ async function handleRetry(): Promise<void> {
             state.update(KEYS.CURRENT_SESSION, (s: any) => ({
               ...s, messages: [...s.messages, assistantMsg], updatedAt: Date.now()
             }));
-            updateLastAssistantMessage(finalContent, retryThinkContent || null, loopStats || null, getSelectedModel(), Date.now(), toolRecords?.length ? toolRecords : undefined);
           }
+          // renderMessages 统一渲染 session 数据，先清掉流式 placeholder 避免 DOM 重复
+          clearMessagesDOM();
           renderMessages();
           // ── 保存 Plan Mode 最终进度到会话（供下一轮 Loop 注入）──
           const lastPlanStatus = state.get<string>('_lastPlanStatus', '');
@@ -1135,26 +1135,10 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
   const hasAttachments = pendingImages.length > 0 || hasVideos || userFiles.length > 0;
 
   if (hasAttachments) {
-    // 聊天卡片显示用的简短描述
-    const displayParts: string[] = [];
-    if (text) displayParts.push(text);
-    if (pendingVideoMeta && pendingVideoFrames.length > 0) {
-      displayParts.push(`[视频: ${pendingVideoMeta.fileName}, ${pendingVideoFrames.length}帧, 1fps]`);
-    }
-    for (const v of completedVideos) {
-      displayParts.push(`[视频: ${v.fileName}, ${v.frames.length}帧, 1fps]`);
-    }
-    if (pendingImages.length === 1) {
-      displayParts.push(`[图片: ${pendingImages[0].name}]`);
-    } else if (pendingImages.length > 1) {
-      displayParts.push(`[${pendingImages.length} 张图片]`);
-    }
-    for (const f of userFiles) {
-      displayParts.push(`[文件: ${f.name}]`);
-    }
-    const displayContent = displayParts.join('\n');
+    // ── 聊天卡片：只显示用户自己的文字 + 附件视觉预览（缩略图/文件卡片/视频帧），不含代码生成的文本标记 ──
+    const displayContent = text || '';
 
-    // Ollama API 用的完整描述（文字 + 文件 + 视频帧序列 + 图片提示）
+    // ── Ollama API 用：完整描述（文字 + 文件内容 + 视频帧序列 + 图片提示）──
     const apiParts: string[] = [];
     if (text) apiParts.push(text);
     if (userFiles.length > 0) {
@@ -1164,9 +1148,9 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
       logInfo('📄 文件内容已注入', `${fileParts.length} 段, 共 ${fileContents.reduce((s, f) => s + f.content.length, 0)} 字符`);
     }
     if (pendingImages.length === 1) {
-      apiParts.push(`[已上传图片: ${pendingImages[0].name} — 此图片已随消息提供，你可以直接分析，无需去磁盘查找]`);
+      apiParts.push(`[已上传图片: ${pendingImages[0].name}]`);
     } else if (pendingImages.length > 1) {
-      apiParts.push(`[已上传 ${pendingImages.length} 张图片: ${pendingImages.map(img => img.name).join(', ')} — 这些图片已随消息提供，你可以直接分析，无需去磁盘查找]`);
+      apiParts.push(`[已上传 ${pendingImages.length} 张图片: ${pendingImages.map(img => img.name).join(', ')}]`);
     }
     let allVids: Array<{ name: string; count: number; dur: number; frames: Array<{ timestampSeconds: number; name: string; base64: string }> }> = [];
     if (hasVideos) {
@@ -1190,6 +1174,7 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
       role: 'user',
       content: displayContent,
       images: [...pendingImages.map(img => img.base64)],
+      _apiContent: apiContentForModel, // 给模型的完整内容，不显示给用户
       timestamp: now
     };
     if (allVids.length > 0) {

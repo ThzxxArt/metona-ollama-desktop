@@ -122,6 +122,8 @@ export interface ChatMessage {
   compressed?: boolean;
   /** 实际发送给模型的完整系统提示词（调试用） */
   _systemPrompt?: string;
+  /** 实际发送给模型的用户消息内容（含文件/图片/视频帧描述，不显示给用户） */
+  _apiContent?: string;
 }
 
 export interface ChatSession {
