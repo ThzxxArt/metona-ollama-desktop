@@ -14,7 +14,7 @@ import { generateId } from './utils/utils.js';
 import { initToast, showToast } from './components/toast.js';
 import { initLightbox, closeLightbox } from './components/lightbox.js';
 import { initHeader, checkConnection } from './components/header.js';
-import { initModelBar, loadModels, setSelectedModel } from './components/model-bar.js';
+import { initModelBar, loadModels, setSelectedModel, updateCtxTotalExternal } from './components/model-bar.js';
 import { initChatArea, renderMessages, clearMessages, enableAutoScroll } from './components/chat-area.js';
 import { initInputArea } from './components/input-area.js';
 import { clearCtxRemain } from './components/input-area.js';
@@ -315,7 +315,7 @@ async function init(): Promise<void> {
     state.set(KEYS.CURRENT_SESSION, createNewSession());
     state.set(KEYS.IS_STREAMING, false);
     state.set(KEYS.IS_HISTORY_VIEW, false);
-    state.set(KEYS.NUM_CTX, 24576);
+    state.set(KEYS.NUM_CTX, 131072); // 默认 128K
 
     // ── 防御性重置：确保首次启动不会遗留脏状态 ──
     state.set('toolCallingEnabled', true);
@@ -366,11 +366,23 @@ async function init(): Promise<void> {
       await db.saveSetting('selectedModel', savedModel);
     }
 
-    const numCtx = await db.getSetting('numCtx', 24576);
+    const numCtx = await db.getSetting<number>('numCtx', 131072);
     const temperature = await db.getSetting('temperature', 0.7);
+
+    // 如果首次使用（数据库中无此设置），保存默认 128K
+    const hasNumCtx = await db.getSetting<number | null>('numCtx', null);
+    if (hasNumCtx === null) {
+      await db.saveSetting('numCtx', 131072);
+    }
 
     state.set(KEYS.NUM_CTX, numCtx);
     state.set('temperature', temperature);
+
+    // 反显设置面板的下拉框
+    const ctxSelect = document.querySelector('#selectContextLength') as HTMLSelectElement;
+    if (ctxSelect) ctxSelect.value = String(numCtx);
+    // 更新模型栏上下文显示
+    updateCtxTotalExternal(numCtx);
 
     (document.querySelector('#inputTemperature') as HTMLInputElement).value = String(temperature);
     document.querySelector('#tempValue')!.textContent = parseFloat(String(temperature)).toFixed(1);

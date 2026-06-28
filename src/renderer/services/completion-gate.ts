@@ -10,6 +10,7 @@
 
 import { logWarn, logInfo } from './log-service.js';
 import { estimateTokens } from './context-manager.js';
+import { HALLUCINATION_RULES } from './agent-engine.js';
 import type { LoopContext, CompletionCheck } from '../types.js';
 
 // ═══════════════════════════════════════════════════════════════
@@ -138,78 +139,12 @@ const toolHallucinationCheck: CompletionCheck = {
     const calledTools = new Set(ctx.allToolRecords.map(r => r.name));
     const content = ctx.content;
 
-    // ── 统一的"声称 → 必需工具"映射表（覆盖全部 40 个工具）──
-    const CLAIM_RULES: Array<{ patterns: RegExp[]; requiredTools: string[]; label: string }> = [
-      // 文件写入
-      { patterns: [/已写入文件/, /已创建文件/, /文件已生成/, /已保存到/, /已成功创建/, /成功写入/,
-                   /文件.*已.*创建/, /文件.*已.*写入/, /生成.*文件/, /写入.*工作空间/],
-        requiredTools: ['write_file'], label: '写入/创建文件' },
-      // 文件读取（仅匹配明确声称调用了 read_file 工具的场景）
-      { patterns: [/用read_file读取了/, /调用read_file.*读取/, /通过read_file工具/,
-                   /使用read_file.*查看了/, /read_file.*工具.*读取了/],
-        requiredTools: ['read_file', 'read_multiple_files'], label: '读取文件' },
-      // 文件编辑
-      { patterns: [/已修改文件/, /已编辑文件/, /文件已更新/, /已替换.*内容/,
-                   /修改了.*文件/, /更新了.*文件/],
-        requiredTools: ['edit_file', 'write_file'], label: '编辑/修改文件' },
-      // 文件删除
-      { patterns: [/已删除文件/, /已移除文件/, /文件已清除/, /删除了.*文件/],
-        requiredTools: ['delete_file'], label: '删除文件' },
-      // 文件移动/复制/重命名
-      { patterns: [/已移动文件/, /已复制文件/, /已重命名/, /文件.*已.*移动/, /文件.*已.*复制/],
-        requiredTools: ['move_file', 'copy_file'], label: '移动/复制文件' },
-      // 目录浏览
-      { patterns: [/目录包含/, /列出.*目录/, /目录.*结构/, /文件列表.*如下/, /目录.*内容/],
-        requiredTools: ['list_directory', 'tree'], label: '列出目录' },
-      // 文件搜索
-      { patterns: [/搜索到.*文件/, /找到.*匹配/, /搜索.*结果.*文件/],
-        requiredTools: ['search_files'], label: '搜索文件' },
-      // 搜索/抓取
-      { patterns: [/搜索结果显示/, /根据搜索/, /抓取了.*网页/, /从.*搜索.*得到/,
-                   /查询到/, /检索到/, /搜索到/, /网络.*显示/, /实时.*数据.*显示/],
-        requiredTools: ['web_search', 'web_fetch'], label: '搜索/抓取网页' },
-      // 浏览器
-      { patterns: [/浏览器截图显示/, /打开网页.*看到/, /页面显示/, /浏览器.*打开/,
-                   /点击了.*按钮/, /输入了.*文本/, /页面.*截图/],
-        requiredTools: ['browser_open', 'browser_screenshot', 'browser_extract', 'browser_click', 'browser_type'], label: '浏览器操作' },
-      // 命令执行
-      { patterns: [/运行.*命令/, /执行.*脚本/, /命令.*输出/, /运行结果/, /命令.*返回/,
-                   /执行.*结果/, /终端.*显示/],
-        requiredTools: ['run_command'], label: '执行命令' },
-      // Git 操作
-      { patterns: [/已提交/, /已推送/, /已暂存/, /已创建分支/, /已合并/, /已克隆/,
-                   /git.*commit/, /git.*push/, /git.*add/, /提交了.*代码/],
-        requiredTools: ['git'], label: 'Git 操作' },
-      // 下载文件
-      { patterns: [/已下载文件/, /下载完成/, /文件.*已.*下载/, /从.*下载/],
-        requiredTools: ['download_file'], label: '下载文件' },
-      // 压缩/解压
-      { patterns: [/已压缩/, /已解压/, /压缩完成/, /解压完成/, /归档.*已.*创建/],
-        requiredTools: ['compress'], label: '压缩/解压' },
-      // 文件信息
-      { patterns: [/文件.*大小.*字节/, /文件.*权限.*为/, /文件.*修改日期/],
-        requiredTools: ['get_file_info'], label: '获取文件信息' },
-      // 内存/记忆操作
-      { patterns: [/已记住/, /已添加记忆/, /记忆已保存/, /已更新记忆/, /已删除记忆/],
-        requiredTools: ['memory'], label: '记忆操作' },
-      // 会话操作
-      { patterns: [/历史会话.*显示/, /已读取.*会话/, /会话.*内容.*如下/],
-        requiredTools: ['session_list', 'session_read'], label: '会话操作' },
-      // 子代理
-      { patterns: [/子代理.*完成/, /子任务.*已.*执行/, /spawn.*task.*完成/],
-        requiredTools: ['spawn_task'], label: '子代理委派' },
-      // 系统工具
-      { patterns: [/计算.*结果.*为/, /哈希.*值.*为/, /UUID.*生成/, /随机.*生成.*为/],
-        requiredTools: ['calculator', 'hash', 'uuid', 'random'], label: '系统工具' },
-    ];
-
-    for (const rule of CLAIM_RULES) {
+    for (const rule of HALLUCINATION_RULES) {
       for (const pattern of rule.patterns) {
         if (pattern.test(content)) {
           const anyCalled = rule.requiredTools.some(t => calledTools.has(t));
           if (!anyCalled) {
-            // 写后读豁免：write_file 已调用时，read_file 的声称通常是读取写入结果的自然表述，不阻断
-            if (rule.label === '读取文件' && calledTools.has('write_file')) {
+            if (rule.label.includes('读取') && calledTools.has('write_file')) {
               return { passed: true, reason: '' };
             }
             const toolList = rule.requiredTools.join(' / ');
@@ -218,7 +153,7 @@ const toolHallucinationCheck: CompletionCheck = {
               reason: `回复声称进行了"${rule.label}"操作，但 ${toolList} 工具从未被调用。请实际调用 ${toolList} 来完成任务，不要编造结果。`
             };
           }
-          break; // 该类别匹配到了且工具已调用，跳出
+          break;
         }
       }
     }

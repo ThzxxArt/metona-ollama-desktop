@@ -107,7 +107,7 @@ export async function loadModels(): Promise<void> {
   }
 }
 
-/** 根据能力为下拉框选项添加图标标记 */
+/** 根据能力为下拉框选项添加图标标记 + 模型自身上下文长度 */
 function updateOptionIcons(): void {
   for (const opt of Array.from(modelSelectEl.options)) {
     const caps = modelCapabilityCache.get(opt.value);
@@ -118,7 +118,9 @@ function updateOptionIcons(): void {
     if (caps.think) icons.push('🧠');
     if (caps.vision) icons.push('👁️');
     if (caps.tools) icons.push('🔧');
-    opt.textContent = icons.length > 0 ? `${base}  ${icons.join('')}` : base;
+    // 显示模型自身的上下文长度
+    const modelCtx = caps.contextLength > 0 ? ` [${formatCtxLen(caps.contextLength)}]` : '';
+    opt.textContent = `${base}${modelCtx}${icons.length > 0 ? '  ' + icons.join('') : ''}`;
   }
 }
 
@@ -132,22 +134,22 @@ async function filterEmbedModels(models: Array<{ name: string }>): Promise<void>
       const caps = info.capabilities || [];
       const isCompletion = caps.includes('completion');
 
-      // 从 model_info 提取上下文长度
-      let contextLength = 2048;
-      for (const key of Object.keys(info.model_info || {})) {
-        if (key.endsWith('.context_length')) {
-          contextLength = Number(info.model_info![key]) || 2048;
-          break;
-        }
-      }
+	// 从 model_info 提取上下文长度（仅用于显示，不再覆盖用户设置）
+	let contextLength = 2048;
+	for (const key of Object.keys(info.model_info || {})) {
+	  if (key.endsWith('.context_length')) {
+	    contextLength = Number(info.model_info![key]) || 2048;
+	    break;
+	  }
+	}
 
-      modelCapabilityCache.set(m.name, {
-        think: caps.includes('thinking'),
-        vision: caps.includes('vision'),
-        tools: caps.includes('tools'),
-        completion: isCompletion,
-        contextLength,
-      });
+	modelCapabilityCache.set(m.name, {
+	  think: caps.includes('thinking'),
+	  vision: caps.includes('vision'),
+	  tools: caps.includes('tools'),
+	  completion: isCompletion,
+	  contextLength,
+	});
       if (!isCompletion) {
         const opt = modelSelectEl.querySelector(`option[value="${CSS.escape(m.name)}"]`);
         if (opt) opt.remove();
@@ -173,8 +175,6 @@ async function checkModelCapability(modelName: string): Promise<void> {
 
   if (modelCapabilityCache.has(modelName)) {
     const cached = modelCapabilityCache.get(modelName)!;
-    state.set(KEYS.NUM_CTX, cached.contextLength);
-    updateCtxTotal(cached.contextLength);
     applyCapability(modelName, cached);
     return;
   }
@@ -205,14 +205,6 @@ async function checkModelCapability(modelName: string): Promise<void> {
     };
     modelCapabilityCache.set(modelName, caps);
     logDebug(`能力检测: ${modelName}`, `ctx: ${contextLength}, ` + capabilities.join(', '));
-
-    // 自动设置上下文长度为模型实际支持的值
-    state.set(KEYS.NUM_CTX, contextLength);
-    const db = state.get<any>(KEYS.DB);
-    if (db) await db.saveSetting('numCtx', contextLength);
-
-    // 更新模型栏上下文长度显示
-    updateCtxTotal(contextLength);
 
     applyCapability(modelName, caps);
   } catch (err) {
@@ -296,15 +288,21 @@ export function isToolCallingSupported(): boolean {
   return caps?.tools === true;
 }
 
-function formatCtx(n: number): string {
+export function formatCtxLen(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1024) return `${(n / 1024).toFixed(0)}K`;
   return String(n);
 }
 
+/** 更新模型栏上下文长度显示（显示用户配置的值，而非模型自身值） */
 function updateCtxTotal(contextLength: number): void {
   const el = document.querySelector('#ctxTotal') as HTMLElement;
   if (!el) return;
   el.style.display = 'inline-flex';
-  el.textContent = formatCtx(contextLength);
+  el.textContent = formatCtxLen(contextLength);
+}
+
+/** 外部调用：更新上下文长度显示 */
+export function updateCtxTotalExternal(contextLength: number): void {
+  updateCtxTotal(contextLength);
 }

@@ -261,3 +261,55 @@ export function formatMetricsReport(metrics: AgentMetrics): string {
     `高频错误:         ${metrics.frequentErrors.length > 0 ? metrics.frequentErrors.map(e => `${e.pattern}(${e.count}次)`).join(', ') : '无'}`,
   ].join('\n');
 }
+
+/** P3-14: 导出结构化指标（JSON 格式，兼容 Prometheus/OpenTelemetry 采集器） */
+export function exportMetricsJSON(): string {
+  const metrics = aggregateMetrics();
+  return JSON.stringify({
+    timestamp: new Date().toISOString(),
+    application: 'metona-ollama-desktop',
+    version: '0.13.8',
+    metrics: {
+      sessions_total: metrics.totalSessions,
+      avg_iterations_per_task: metrics.avgIterationsPerTask,
+      tool_success_rate: parseFloat(metrics.toolSuccessRate.toFixed(4)),
+      completion_gate_pass_rate: parseFloat(metrics.avgCompletionScore.toFixed(4)),
+      token_efficiency: parseFloat(metrics.tokenEfficiency.toFixed(4)),
+      top_errors: metrics.frequentErrors.slice(0, 5),
+      improvement_suggestions: generateImprovementSuggestions().slice(0, 3).map(s => ({
+        pattern: s.pattern,
+        severity: s.severity,
+        suggestion: s.suggestion,
+      })),
+    },
+    collected_at: metrics.collectedAt,
+  }, null, 2);
+}
+
+/** P3-14: 导出 Prometheus 文本格式（用于 /metrics 端点） */
+export function exportMetricsPrometheus(): string {
+  const metrics = aggregateMetrics();
+  const lines: string[] = [];
+  lines.push('# HELP metona_sessions_total Total number of sessions');
+  lines.push('# TYPE metona_sessions_total gauge');
+  lines.push(`metona_sessions_total ${metrics.totalSessions}`);
+  lines.push('# HELP metona_avg_iterations Average iterations per task');
+  lines.push('# TYPE metona_avg_iterations gauge');
+  lines.push(`metona_avg_iterations ${metrics.avgIterationsPerTask}`);
+  lines.push('# HELP metona_tool_success_rate Tool call success rate (0-1)');
+  lines.push('# TYPE metona_tool_success_rate gauge');
+  lines.push(`metona_tool_success_rate ${metrics.toolSuccessRate.toFixed(4)}`);
+  lines.push('# HELP metona_completion_gate_pass_rate Completion gate pass rate (0-1)');
+  lines.push('# TYPE metona_completion_gate_pass_rate gauge');
+  lines.push(`metona_completion_gate_pass_rate ${metrics.avgCompletionScore.toFixed(4)}`);
+  lines.push('# HELP metona_token_efficiency Token output/input efficiency ratio');
+  lines.push('# TYPE metona_token_efficiency gauge');
+  lines.push(`metona_token_efficiency ${metrics.tokenEfficiency.toFixed(4)}`);
+  for (const err of metrics.frequentErrors.slice(0, 5)) {
+    const safeName = err.pattern.replace(/[^a-zA-Z0-9_]/g, '_');
+    lines.push(`# HELP metona_error_${safeName} Frequency of error pattern`);
+    lines.push(`# TYPE metona_error_${safeName} counter`);
+    lines.push(`metona_error_${safeName} ${err.count}`);
+  }
+  return lines.join('\n') + '\n';
+}

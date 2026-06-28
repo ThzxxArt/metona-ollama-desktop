@@ -133,7 +133,7 @@ export interface ContextBuildOptions {
 const DEFAULT_OPTIONS: Required<ContextBuildOptions> = {
   windowSize: 20,
   summaryBatchSize: 20,
-  maxTokens: 24576,
+  maxTokens: 131072,
   memoryContext: '',
   workspaceContext: ''
 };
@@ -354,11 +354,19 @@ export async function compressWithLLM(
   // 保留已压缩的中间消息 + 新摘要
   const alreadyCompressed = middle.filter(m => m.compressed);
 
+  // 合并所有 system 消息为一条，避免多条 system 消息触发 Qwen3 等模型 400 错误
+  const mergedSystemContent = [
+    ...systemMsgs.map(m => m.content || ''),
+    ...alreadyCompressed.filter(m => m.role === 'system').map(m => m.content || ''),
+    summaryMsg.content || '',
+  ].filter(Boolean).join('\n\n');
+
+  const nonSystemCompressed = alreadyCompressed.filter(m => m.role !== 'system');
+
   const result: OllamaMessage[] = [
-    ...systemMsgs,
+    { role: 'system', content: mergedSystemContent },
     ...head,
-    ...alreadyCompressed,
-    summaryMsg,
+    ...nonSystemCompressed,
     ...tail
   ];
 

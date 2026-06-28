@@ -108,6 +108,9 @@ export function resetAutoScroll(): void {
   if (scrollBtnEl) scrollBtnEl.style.display = 'none';
 }
 
+/** P1-1: 已渲染消息索引集合，用于稳定增量 diff（替代 DOM querySelectorAll 计数） */
+const _renderedMsgIndices = new Set<number>();
+
 export function renderMessages(): void {
   const currentSession = state.get<ChatSession | null>(KEYS.CURRENT_SESSION);
   const msgs = currentSession ? currentSession.messages : [];
@@ -115,22 +118,32 @@ export function renderMessages(): void {
   if (msgs.length === 0) {
     emptyStateEl.style.display = '';
     messagesContainerEl.style.display = 'none';
+    _renderedMsgIndices.clear();
     return;
   }
 
   emptyStateEl.style.display = 'none';
   messagesContainerEl.style.display = '';
 
-  // 只计算已渲染的 .message 元素（排除 loading placeholder 和其他非消息元素）
-  const existingCount = messagesContainerEl.querySelectorAll('.message:not(.loading)').length;
-  const isNewMessage = existingCount > 0 && existingCount < msgs.length;
-  for (let i = existingCount; i < msgs.length; i++) {
-    appendMessageDOM(msgs[i], i);
+  // P1-1: 基于 Set 的稳定增量 diff
+  const wasExisting = _renderedMsgIndices.size > 0;
+  let isNewMessage = false;
+  for (let i = 0; i < msgs.length; i++) {
+    if (!_renderedMsgIndices.has(i)) {
+      appendMessageDOM(msgs[i], i);
+      _renderedMsgIndices.add(i);
+      isNewMessage = true;
+    }
+  }
+
+  // 清理超出范围的索引（消息被 undo/retry 移除时）
+  for (const idx of _renderedMsgIndices) {
+    if (idx >= msgs.length) _renderedMsgIndices.delete(idx);
   }
 
   if (isNewMessage) {
     scrollToBottom();
-  } else if (msgs.length > 0) {
+  } else if (msgs.length > 0 && !wasExisting) {
     chatAreaEl.scrollTop = chatAreaEl.scrollHeight;
   }
 }
@@ -314,6 +327,8 @@ export function updateLastAssistantMessage(
   const lastMsg = currentPlaceholder;
   if (!lastMsg) return;
 
+  const isFinal = toolCalls !== undefined || timestamp !== undefined;
+
   if (lastMsg.classList.contains('loading')) {
     lastMsg.classList.remove('loading');
     const loadingDots = lastMsg.querySelector('.loading-dots');
@@ -351,7 +366,12 @@ export function updateLastAssistantMessage(
   const contentDiv = lastMsg.querySelector('.msg-content');
   const safeContent = (content != null) ? String(content) : '';
   if (contentDiv && safeContent) {
-    contentDiv.innerHTML = safeMarkdown(safeContent);
+    // P0-1: 流式期间纯文本追加（避免每 chunk 全量 Markdown + DOMPurify），最终渲染时才做 Markdown
+    if (isFinal) {
+      contentDiv.innerHTML = safeMarkdown(safeContent);
+    } else {
+      contentDiv.textContent = safeContent;
+    }
   }
 
   let thinkBlock = lastMsg.querySelector('.think-block');
@@ -484,11 +504,13 @@ export function appendSystemMessage(text: string, tempClass?: string): void {
 /** v4.1: 清除所有消息 DOM 元素（用于 undo/compress 后强制重建） */
 export function clearMessagesDOM(): void {
   messagesContainerEl.innerHTML = '';
+  _renderedMsgIndices.clear(); // P1-1: 重置 diff 状态
 }
 
 export function clearMessages(): void {
   messagesContainerEl.innerHTML = '';
   currentPlaceholder = null;
+  _renderedMsgIndices.clear(); // P1-1: 重置 diff 状态
 }
 
 /** 清理 currentPlaceholder 引用（当 placeholder 从外部被移除时调用） */

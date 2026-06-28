@@ -47,6 +47,10 @@ let currentFileDir = '';
 let fileTree: FileNode[] = [];
 let previewFile: { name: string; content: string; path: string } | null = null;
 let _counter = 0;
+/** P0-2: 终端增量渲染 — 记录已渲染行数，避免全量重建 */
+let _termRenderedCount = 0;
+/** 终端容器 DOM 缓存，避免重复 querySelector */
+let _termContainer: HTMLElement | null = null;
 
 // ── 空闲状态轮转贴士 ──
 const IDLE_TIPS = [
@@ -78,6 +82,8 @@ export function clearTerminalExternal(): void {
     terminal.running = false;
   }
   currentAiCommand = null;
+  _termRenderedCount = 0; // P0-2: 重置增量计数器
+  if (_termContainer) _termContainer.innerHTML = '';
   if (activeTab === 'terminal') renderTerminal();
   updateStopBtnState();
   updateHint();
@@ -107,85 +113,55 @@ const ANSI_COLORS: Record<string, string> = {
 
 
 function ansiToHtml(raw: string): string {
-  // 先转义 HTML
+  // P1-2: 正则批量替换 ANSI，代替逐字遍历
   let text = escapeHtml(raw);
+  
+  // 处理 \r 进度覆盖：删除 \r 前到上一换行之间的内容
+  text = text.replace(/\r(?!\n)/g, (match, offset) => {
+    const prevNewline = text.lastIndexOf('\n', offset);
+    return prevNewline >= 0 ? '\n' : '';
+  });
 
-  // 处理 ANSI 转义序列
-  // \x1b[XXm 颜色, \x1b[0m 重置, \x1b[1m 加粗, \x1b[K 清除行尾
+  // 批量替换 ANSI 序列为 span（连续同色合并）
   let result = '';
-  let openSpan = false;
   let i = 0;
+  const seqRe = /\x1b\[([\d;]*)m/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
 
-  while (i < text.length) {
-    // 匹配 \x1b[...m 或 \x1b[...K
-    if (text[i] === '\x1b' && text[i + 1] === '[') {
-      const end = text.indexOf('m', i + 2);
-      const endK = text.indexOf('K', i + 2);
-      const seqEnd = end !== -1 && (endK === -1 || end < endK) ? end : endK;
+  while ((match = seqRe.exec(text)) !== null) {
+    // 输出序列之前的文本
+    result += text.slice(lastIndex, match.index);
+    const codes = match[1].split(';');
+    
+    // 关闭之前的 span（如果有）
+    // 简化：每个颜色序列独立包裹，不复用 span
+    // 查找对应的文本片段：从当前位置到下一个 ANSI 序列或文本末尾
+    const nextSeq = seqRe.exec(text);
+    const contentStart = match.index + match[0].length;
+    const contentEnd = nextSeq ? nextSeq.index : text.length;
+    seqRe.lastIndex = nextSeq ? nextSeq.index : contentEnd; // 回退
 
-      if (seqEnd !== -1 && seqEnd - i < 20) {
-        const codes = text.substring(i + 2, seqEnd).split(';');
+    const content = text.slice(contentStart, contentEnd);
+    if (!content) { lastIndex = contentEnd; continue; }
 
-        // 忽略 \x1b[K (清除行)
-        if (text[seqEnd] === 'K') {
-          i = seqEnd + 1;
-          continue;
-        }
-
-        if (openSpan) {
-          result += '</span>';
-          openSpan = false;
-        }
-
-        // 检查是否有颜色代码
-        let color = '';
-        let bold = false;
-        for (const code of codes) {
-          if (code === '0' || code === '') {
-            // reset
-          } else if (code === '1') {
-            bold = true;
-          } else if (ANSI_COLORS[code]) {
-            color = ANSI_COLORS[code];
-          }
-        }
-
-        if (color || bold) {
-          const styles: string[] = [];
-          if (color) styles.push(`color:${color}`);
-          if (bold) styles.push('font-weight:bold');
-          result += `<span style="${styles.join(';')}">`;
-          openSpan = true;
-        }
-
-        i = seqEnd + 1;
-        continue;
-      }
+    let color = '';
+    let bold = false;
+    for (const code of codes) {
+      if (code === '1') bold = true;
+      else if (code === '0' || code === '') { /* reset */ }
+      else if (ANSI_COLORS[code]) color = ANSI_COLORS[code];
     }
 
-    // 处理回车符（ollama pull 等用 \r 更新进度）
-    if (text[i] === '\r' && text[i + 1] !== '\n') {
-      // \r 后面不是 \n → 进度更新，忽略之前的内容
-      // 找到上一个 \n 或开头
-      const lastNewline = result.lastIndexOf('\n');
-      if (lastNewline !== -1) {
-        result = result.substring(0, lastNewline + 1);
-      } else {
-        // 清除当前行（通过移除到最后一个 <span> 之后的内容太复杂，简化处理）
-        const spanStart = result.lastIndexOf('><');
-        if (spanStart !== -1) {
-          // 不处理，保留
-        }
-      }
-      i++;
-      continue;
+    if (color || bold) {
+      const style = [color ? `color:${color}` : '', bold ? 'font-weight:bold' : ''].filter(Boolean).join(';');
+      result += `<span style="${style}">${content}</span>`;
+    } else {
+      result += content;
     }
-
-    result += text[i];
-    i++;
+    lastIndex = contentEnd;
   }
-
-  if (openSpan) result += '</span>';
+  result += text.slice(lastIndex);
   return result;
 }
 
@@ -346,9 +322,11 @@ function appendToolStreamOutput(command: string, type: 'stdout' | 'stderr', data
     }
   }
 
-  // 限制最大行数
+  // P1-3: 限制最大行数，但保留系统消息（命令头/退出状态等）
   if (session.lines.length > 3000) {
-    session.lines = session.lines.slice(-2000);
+    const systemLines = session.lines.filter(l => l.type === 'system');
+    const otherLines = session.lines.filter(l => l.type !== 'system');
+    session.lines = [...systemLines.slice(-10), ...otherLines.slice(-1990)];
   }
 
   renderTerminal();
@@ -405,9 +383,11 @@ function appendTerminalOutput(sessionId: string, type: 'stdout' | 'stderr', data
     }
   }
 
-  // 限制最大行数
+  // P1-3: 限制最大行数，保留系统消息
   if (session.lines.length > 3000) {
-    session.lines = session.lines.slice(-2000);
+    const systemLines = session.lines.filter(l => l.type === 'system');
+    const otherLines = session.lines.filter(l => l.type !== 'system');
+    session.lines = [...systemLines.slice(-10), ...otherLines.slice(-1990)];
   }
 
   renderTerminal();
@@ -465,6 +445,8 @@ function clearTerminal(): void {
   const session = getActiveSession();
   if (!session) return;
   session.lines = [];
+  _termRenderedCount = 0; // P0-2: 重置增量计数器
+  if (_termContainer) _termContainer.innerHTML = '';
   renderTerminal();
 }
 
@@ -544,17 +526,20 @@ export function renderPanel(): void {
 }
 
 function renderTerminal(): void {
-  const container = document.querySelector('#wsTermOutput') as HTMLElement;
+  if (!_termContainer) _termContainer = document.querySelector('#wsTermOutput') as HTMLElement;
+  const container = _termContainer;
   if (!container) return;
 
   const session = getActiveSession();
   if (!session) {
     container.innerHTML = '<div class="ws-term-placeholder">无终端会话</div>';
+    _termRenderedCount = 0;
     return;
   }
 
   // 空闲状态：显示 Logo + 信息 + 贴士
   if (session.lines.length === 0 && !session.running) {
+    _termRenderedCount = 0;
     renderIdleState(container);
     startTipRotation(container);
     return;
@@ -563,28 +548,49 @@ function renderTerminal(): void {
   // 有内容时停止贴士轮转
   stopTipRotation();
 
-  // 使用 DocumentFragment 优化渲染
-  const wrapper = document.createElement('div');
-
-  for (const line of session.lines) {
-    const div = document.createElement('div');
-    div.className = `ws-term-line ws-term-${line.type}`;
-    div.innerHTML = ansiToHtml(line.text);
-    wrapper.appendChild(div);
+  // ── P0-2: 终端增量渲染 — 只追加新行，不重建已有 DOM ──
+  // 检测重置（行数骤减说明被清空）
+  if (_termRenderedCount > session.lines.length) {
+    container.innerHTML = '';
+    _termRenderedCount = 0;
   }
 
-  container.innerHTML = wrapper.innerHTML;
+  // 增量追加新行
+  const fragment = document.createDocumentFragment();
+  for (let i = _termRenderedCount; i < session.lines.length; i++) {
+    const line = session.lines[i];
+    const div = document.createElement('div');
+    div.className = `ws-term-line ws-term-${line.type}`;
+    div.innerHTML = ansiToHtml(line.text); // P1-2: ANSI 颜色，正则批量替换
+    fragment.appendChild(div);
+  }
+  if (fragment.childNodes.length > 0) {
+    container.appendChild(fragment);
+    _termRenderedCount = session.lines.length;
+  }
+
+  // 行数超限时清理旧 DOM 节点并同步计数
+  if (container.children.length > 3000) {
+    const excess = container.children.length - 2000;
+    for (let i = 0; i < excess && container.firstChild; i++) {
+      container.removeChild(container.firstChild);
+    }
+    _termRenderedCount = 2000;
+  }
 
   // 自动滚动到底部
   if (session.autoScroll) {
     container.scrollTop = container.scrollHeight;
   }
 
-  // 监听滚动事件
-  container.onscroll = () => {
-    const atBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 50;
-    session.autoScroll = atBottom;
-  };
+  // 监听滚动事件（只绑定一次）
+  if (!(container as any)._scrollBound) {
+    (container as any)._scrollBound = true;
+    container.addEventListener('scroll', () => {
+      const atBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 50;
+      session.autoScroll = atBottom;
+    });
+  }
 }
 
 /** 渲染空闲状态 */
@@ -1066,9 +1072,11 @@ function renderToolCard(tc: ToolCallRecord): string {
       } else if (tc.name === 'create_directory') {
         resultHtml = `<div class="tool-result-entry">✅ 已创建 ${escapeHtml(String(r.path || ''))}</div>`;
       } else {
-        // 通用成功显示
-        const summary = JSON.stringify(r).slice(0, 300);
-        resultHtml = `<pre class="tool-result-content">${escapeHtml(summary)}${JSON.stringify(r).length > 300 ? '\n...' : ''}</pre>`;
+        // P2-1: 通用成功显示，统一截断到 500 字符
+        const maxResultChars = 500;
+        const raw = JSON.stringify(r);
+        const summary = raw.length > maxResultChars ? raw.slice(0, maxResultChars) : raw;
+        resultHtml = `<pre class="tool-result-content">${escapeHtml(summary)}${raw.length > maxResultChars ? `\n... (${raw.length - maxResultChars} 字符已截断)` : ''}</pre>`;
       }
     } else {
       resultHtml = `<div class="tool-result-error">${escapeHtml(String(r.error || '未知错误'))}</div>`;

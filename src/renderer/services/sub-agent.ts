@@ -61,7 +61,7 @@ export async function executeSubAgent(
 
   // 如果子代理使用了不同于主 AI 的模型，获取该模型的实际上下文长度
   const defaultModel = state.get<string>('_defaultModel', '');
-  let numCtx = state.get<number>(KEYS.NUM_CTX, 24576);
+  let numCtx = state.get<number>(KEYS.NUM_CTX, 131072);
   if (model !== defaultModel) {
     try {
       const detail = await api.showModel(model);

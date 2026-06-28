@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-v0.13.8-E8734A?style=flat-square" alt="version">
+  <img src="https://img.shields.io/badge/version-v0.14.0-E8734A?style=flat-square" alt="version">
   <img src="https://img.shields.io/badge/electron-33+-47848F?style=flat-square&logo=electron" alt="electron">
   <img src="https://img.shields.io/badge/typescript-5.7+-3178C6?style=flat-square&logo=typescript" alt="typescript">
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="license">
@@ -34,26 +34,27 @@
 
 | | 功能 | 说明 |
 |:---:|:---|:---|
-| 🤖 | **ReAct Agent Loop** | 始终开启的唯一对话模式。8 状态机（INIT→THINKING→PARSING→EXECUTING→OBSERVING→REFLECTING→COMPRESSING→TERMINATED），最大 85 轮（可配置），自动重试 2 次，工具去重，并行/链式执行，看门狗超时保护 |
-| 🛡️ | **5 层抗幻觉系统** | 提示词加固 → 任务感知 → 中途检测（16 条规则覆盖全部工具类别）→ 进度锚点 → 完成闸门（6 项检查，幻觉/注入/文件/工具 4 类关键阻断） |
-| 📋 | **Plan Mode** | 开关切换，AI 首先生成执行计划（Markdown 渲染确认弹窗），批准后按步骤追踪执行，plan_track 工具标记完成状态 |
+| 🤖 | **ReAct Agent Loop** | 始终开启的唯一对话模式。8 状态机（INIT→THINKING→PARSING→EXECUTING→OBSERVING→REFLECTING→COMPRESSING→TERMINATED），最大 85 轮（可配置），智能重试（永久错误立即返回、瞬态错误指数退避），工具去重，智能路径依赖串行化，看门狗超时保护 |
+| 🛡️ | **5 层抗幻觉系统** | 提示词加固 → 任务感知 → 中途检测（中英双语规则覆盖全部工具类别）→ 进度锚点 → 完成闸门（6 项检查，幻觉/注入 → 阻断，质量/效率 → 咨询） |
+| 📋 | **Plan Mode** | 开关切换，AI 首先生成执行计划（Markdown 渲染确认弹窗），批准后按步骤追踪执行，plan_track 工具标记完成状态，**支持断点续传**（中止后可恢复未完成计划） |
 | 🔧 | **40 个内置工具** | 文件系统（16个） · 命令执行 · 联网搜索 · 浏览器控制（9个） · Git · 记忆 · 会话 · 子代理 · 系统工具 · Plan Mode 追踪 |
 | 🧠 | **智能记忆系统** | 三类记忆（fact / preference / rule），存储于工作空间 MEMORY.md 文件，受路径保护仅 memory 工具可访问，写入前安全扫描，容量 500 条，对话结束自动提取，严格格式校验 |
 | 📋 | **自定义文件** | SOUL.md（人格，不可压缩）+ AGENT.md（行为准则，内置 fallback）+ USER.md（用户画像，仅工作空间读取，不存在则不注入） |
 | 🌐 | **MCP 协议扩展** | JSON-RPC 2.0 over stdio，动态工具发现，Shadowing 防护 |
 | 🔍 | **联网搜索（双模式）** | SearXNG 元搜索引擎 JSON API（70+引擎聚合）/ 四引擎 HTML 解析（Bing+百度+搜狗+360），双模式可切换；web_fetch 支持反爬+UA切换+浏览器回退 |
 | 🌏 | **浏览器控制** | 打开网页 · 截图 · 执行 JS · 提取内容 · 点击 · 输入 · 滚动 · 关闭 |
-| 🖥️ | **工作空间面板** | 终端（实时流式输出）+ 文件浏览器，命令安全检查 |
-| 🔢 | **上下文长度自动检测** | 切换模型时自动从 model_info 获取实际支持的上下文长度，无需手动配置 |
-| 🗜️ | **智能上下文管理** | 滑动窗口 + Token 自动校准 + 消息重要性评分 + LLM 结构化 JSON 压缩 |
-| ⏱️ | **看门狗超时** | Agent Loop 全局超时保护（可配，默认 30min），防止模型卡死无限循环 |
-| 🪝 | **Hook 系统** | 4 阶段生命周期钩子（pre_tool / post_tool / post_iteration / pre_completion），内置文件变更审计、工具结果校验 |
+| 🖥️ | **工作空间面板** | 终端（增量流式输出）+ 文件浏览器，命令安全检查 |
+| 🔢 | **上下文长度手动控制** | 设置面板下拉选择（128K / 256K / 512K / 1M），默认 128K，模型栏显示当前配置值，下拉框中显示每个模型自身的上下文长度 |
+| 🗜️ | **智能上下文管理** | 滑动窗口 + Token 自动校准 + 消息重要性评分 + LLM 结构化 JSON 压缩，智能触发（120 条增量压缩 + 200 条硬上限） |
+| ⏱️ | **智能超时保护** | Agent Loop 看门狗（可配，默认 30min）+ 流式分级超时（空闲 30s + 总 300s）+ 工具 HTTP/MCP 超时可配 |
+| 🪝 | **Hook 系统** | 4 阶段生命周期钩子（pre_tool / post_tool / post_iteration / pre_completion），内置安全检查、文件去重、自动计划追踪、变更审计、结果校验 |
 | 👥 | **子代理委派** | spawn_task 工具，独立上下文 + 超时保护 |
 | 📈 | **Token 仪表盘** | 全局 + 会话统计，消耗趋势柱状图，2 秒刷新，输入/输出分色 |
 | 📋 | **系统提示词卡片** | 每条 AI 回复顶部折叠卡片，点击查看实际发送给模型的完整上下文 |
-| 🎨 | **暖色调 UI** | 奶白 `#FAF7F2` + 珊瑚橙 `#E8734A`，长时间使用不疲劳 |
+| 🎨 | **暖色调 UI** | 奶白 `#FAF7F2` + 珊瑚橙 `#E8734A`，长时间使用不疲劳，流式渲染优化 |
 | 🔔 | **系统托盘** | 原生托盘集成 |
 | 🔐 | **AES-256-GCM** | 数据加密支持 |
+| 🧪 | **可观测性** | 执行轨迹缓冲批量写入 SQLite + Agent Metrics JSON/Prometheus 双格式导出 |
 
 ## 🔧 工具清单
 
@@ -178,13 +179,13 @@
               ↓
          记忆检索 (MEMORY.md 关键词搜索) → 上下文注入
               ↓
-         Agent Engine (8 状态机 ReAct Loop, ≤85 轮, 看门狗 30min)
+         Agent Engine (8 状态机 ReAct Loop, ≤85 轮, 智能重试, 路径依赖串行化, 看门狗+分级超时)
               ↓
-         5 层抗幻觉系统 (提示词 → 中途检测 → 进度锚 → 完成闸门 → 校验)
+         5 层抗幻觉系统（中英双语规则）(提示词 → 中途检测 → 进度锚 → 完成闸门 → 校验)
               ↓
-         Ollama API (流式响应，num_ctx 自动检测)
+         Ollama API (流式响应，num_ctx 用户可配 128K/256K/512K/1M)
               ↓
-         Tool Registry (42 内置 + MCP 动态 + Plan Mode plan_track)
+         Tool Registry (40 内置 + MCP 动态 + Plan Mode plan_track)
               ↓
          Hook 系统 (pre/post tool/iteration/completion) → 观察结果 → 反思 → 循环 / 最终回答
 ```
@@ -252,7 +253,7 @@ npm start
 ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm run dist
 ```
 
-产出：`release/Metona Ollama Setup v0.13.8.exe`
+产出：`release/Metona Ollama Setup v0.14.0.exe`
 
 ## 🛠️ 常用命令
 
@@ -282,26 +283,27 @@ npm run dist           # 构建 Windows 安装包
 
 | | Feature | Description |
 |:---:|:---|:---|
-| 🤖 | **ReAct Agent Loop** | Always-on, only chat mode. 8-state machine (INIT→THINKING→PARSING→EXECUTING→OBSERVING→REFLECTING→COMPRESSING→TERMINATED), up to 85 iterations (configurable), auto-retry 2 times, tool dedup, parallel/chain execution, watchdog timeout protection |
-| 🛡️ | **5-Layer Anti-Hallucination** | Prompt hardening → task awareness → mid-task detection (16 rules covering all tool categories) → progress anchors → completion gate (6 checks: hallucination, injection, file, tool — 4 critical blocks) |
-| 📋 | **Plan Mode** | Toggle switch. AI first generates an execution plan (Markdown-rendered confirmation dialog), then tracks step-by-step execution, with plan_track tool marking completion |
+| 🤖 | **ReAct Agent Loop** | Always-on, only chat mode. 8-state machine, up to 85 iterations (configurable), smart retry (permanent errors return immediately, transient errors use exponential backoff), tool dedup, path-aware dependency serialization, watchdog + tiered timeout protection |
+| 🛡️ | **5-Layer Anti-Hallucination** | Prompt hardening → task awareness → mid-task detection (bilingual CN/EN rules covering all tool categories) → progress anchors → completion gate (6 checks: hallucination/injection → block, quality/efficiency → advisory) |
+| 📋 | **Plan Mode** | Toggle switch. AI first generates an execution plan (Markdown-rendered confirmation dialog), then tracks step-by-step execution, **supports resume** (interrupted plans restore on next session) |
 | 🔧 | **40 Built-in Tools** | File system · Command · Web search · Browser · Git · Memory · Sessions · Sub-agent · System · Plan Mode tracking |
 | 🧠 | **Smart Memory System** | Three types (fact / preference / rule), stored in workspace MEMORY.md file, path-protected — only the memory tool can access it, pre-write security scan, 500 capacity, auto-extract on conversation end, strict format validation |
 | 📋 | **Custom Files** | SOUL.md (persona, never compressed) + AGENT.md (behavior rules, built-in fallback) + USER.md (user profile, workspace only, skipped if absent) |
 | 🌐 | **MCP Protocol Extension** | JSON-RPC 2.0 over stdio, dynamic tool discovery, Shadowing protection |
 | 🔍 | **Web Search (dual-mode)** | SearXNG meta-search JSON API (70+ engines) / quad-engine HTML parsing (Bing+Baidu+Sogou+360), switchable; web_fetch with auto-retry+mobile UA+SPA browser fallback |
 | 🌏 | **Browser Control** | Open pages · Screenshot · JS execution · Content extraction · Click · Type · Scroll · Close |
-| 🖥️ | **Workspace Panel** | Terminal (real-time streaming) + file browser, command security checks |
-| 🔢 | **Auto Context Length Detection** | Reads actual context_length from model metadata on model switch — no manual config needed |
-| 🗜️ | **Smart Context Manager** | Sliding window + Token auto-calibration + message importance scoring + LLM structured JSON compression |
-| ⏱️ | **Watchdog Timeout** | Global Agent Loop timeout protection (configurable, default 30min), prevents infinite loops from model stalls |
-| 🪝 | **Hook System** | 4-phase lifecycle hooks (pre_tool / post_tool / post_iteration / pre_completion), built-in file change audit and tool result verification |
+| 🖥️ | **Workspace Panel** | Terminal (incremental streaming) + file browser, command security checks |
+| 🔢 | **Manual Context Length** | Settings dropdown (128K / 256K / 512K / 1M), default 128K. Model bar shows configured value, dropdown shows per-model context length |
+| 🗜️ | **Smart Context Manager** | Sliding window + Token auto-calibration + message importance scoring + LLM structured JSON compression, smart triggers (120 msg incremental + 200 msg hard limit) |
+| ⏱️ | **Smart Timeout Protection** | Agent Loop watchdog (configurable, default 30min) + tiered stream timeout (idle 30s + total 300s) + configurable HTTP/MCP timeouts |
+| 🪝 | **Hook System** | 4-phase lifecycle hooks (pre_tool / post_tool / post_iteration / pre_completion), built-in security check, file dedup, auto plan tracking, change audit, result validation |
 | 👥 | **Sub-agent Delegation** | spawn_task tool, isolated context + timeout protection |
 | 📈 | **Token Dashboard** | Global + session stats, consumption trend bar chart, 2s refresh, input/output color-coded |
 | 📋 | **System Prompt Card** | Collapsible card atop each AI reply — click to inspect the full context sent to the model |
-| 🎨 | **Warm-tone UI** | Cream `#FAF7F2` + coral `#E8734A`, fatigue-free for extended use |
+| 🎨 | **Warm-tone UI** | Cream `#FAF7F2` + coral `#E8734A`, fatigue-free for extended use, streaming render optimized |
 | 🔔 | **System Tray** | Native tray integration |
 | 🔐 | **AES-256-GCM** | Data encryption support |
+| 🧪 | **Observability** | Buffered trace persistence to SQLite + Agent Metrics JSON/Prometheus dual-format export |
 
 ## 🔧 Tool List
 
@@ -425,13 +427,13 @@ User message → workspace SOUL.md (never compressed) → AGENT.md → USER.md (
               ↓
          Memory Retrieval (MEMORY.md keyword search) → Context Injection
               ↓
-         Agent Engine (8-state ReAct Loop, ≤85 iter, watchdog 30min)
+         Agent Engine (8-state ReAct Loop, ≤85 iter, smart retry, path-aware serialization, watchdog+tiered timeout)
               ↓
-         5-Layer Anti-Hallucination (prompt → mid-task detection → anchors → gate → verification)
+         5-Layer Anti-Hallucination (bilingual CN/EN rules) (prompt → mid-task detection → anchors → gate → verification)
               ↓
-         Ollama API (Streaming Response)
+         Ollama API (Streaming Response, num_ctx user-configurable 128K/256K/512K/1M)
               ↓
-         Tool Registry (42 Built-in + MCP Dynamic + Plan Mode plan_track)
+         Tool Registry (40 Built-in + MCP Dynamic + Plan Mode plan_track)
               ↓
          Hook System (pre/post tool/iteration/completion) → Observation → Reflection → Loop / Final Answer
 ```
@@ -499,7 +501,7 @@ npm start
 ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm run dist
 ```
 
-Output: `release/Metona Ollama Setup v0.13.8.exe`
+Output: `release/Metona Ollama Setup v0.14.0.exe`
 
 ## 🛠️ Common Commands
 

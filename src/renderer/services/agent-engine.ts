@@ -39,7 +39,8 @@ import type {
 } from '../types.js';
 
 const MAX_RETRIES = 2;              // 工具错误自动重试次数
-const MAX_MESSAGES = 500;           // 上下文硬上限，超过则强制压缩
+const MAX_MESSAGES = 200;           // 上下文硬上限，超过则强制压缩（P0-4: 从500降到200，防止Ollama context超限）
+const INCREMENTAL_COMPRESS_AT = 120;// 增量压缩触发点：到达此数量后在 handleObserving 中触发 COMPRESSING
 
 /** ── LoopState 常量 ── */
 const S = {
@@ -108,9 +109,6 @@ const TOOL_MAX_RESULT_SIZE: Record<string, number> = {
   browser_evaluate: 8000,
 };
 
-/** v4.1: 工具并行执行 — 依赖检测。只有确实依赖前序工具输出结果的才串行 */
-const TOOLS_WITH_DATA_DEPS = new Set(['web_fetch']);
-
 /** 始终可并行的只读/独立工具 */
 const ALWAYS_PARALLEL = new Set([
   'read_file', 'list_directory', 'search_files', 'get_file_info', 'tree',
@@ -120,6 +118,105 @@ const ALWAYS_PARALLEL = new Set([
   'datetime', 'calculator',
   'random', 'uuid', 'json_format', 'hash',
 ]);
+
+/** P0-2: 检测工具调用之间是否存在路径依赖（写入 → 读取/写入同一路径） */
+function hasPathDependency(call: ToolCall, prevBatch: ToolCall[]): boolean {
+  const callPath = extractWritePath(call);
+  if (!callPath) return false; // 非写操作，无依赖
+  for (const prev of prevBatch) {
+    const prevPath = extractAffectedPath(prev);
+    if (prevPath && pathsConflict(callPath, prevPath)) {
+      logInfo(`串行化: ${prev.function.name}(${prevPath}) → ${call.function.name}(${callPath})`);
+      return true;
+    }
+  }
+  return false;
+}
+
+/** 提取工具写入的目标路径（会修改文件系统的操作） */
+function extractWritePath(call: ToolCall): string | null {
+  const args = call.function.arguments;
+  switch (call.function.name) {
+    case 'write_file': return String(args.path || '');
+    case 'edit_file': return String(args.path || '');
+    case 'delete_file': return String(args.path || '');
+    case 'create_directory': return String(args.path || '');
+    case 'move_file': return String(args.destination || args.source || '');
+    case 'copy_file': return String(args.destination || '');
+    case 'download_file': return String(args.destination || '');
+    case 'compress': return String(args.destination || args.path || '');
+    default: return null;
+  }
+}
+
+/** 提取工具可能影响或读取的路径 */
+function extractAffectedPath(call: ToolCall): string | null {
+  const args = call.function.arguments;
+  switch (call.function.name) {
+    case 'read_file': return String(args.path || '');
+    case 'write_file': return String(args.path || '');
+    case 'edit_file': return String(args.path || '');
+    case 'delete_file': return String(args.path || '');
+    case 'list_directory': return String(args.path || '');
+    case 'search_files': return String(args.path || '');
+    case 'create_directory': return String(args.path || '');
+    case 'move_file': return String(args.source || '');
+    case 'copy_file': return String(args.source || '');
+    case 'get_file_info': return String(args.path || '');
+    case 'tree': return String(args.path || '');
+    case 'diff_files': return String(args.file1 || args.file2 || '');
+    case 'replace_in_files': return String(args.path || '');
+    case 'read_multiple_files': return null; // 多文件，难以精确判断
+    case 'download_file': return null; // 下载不依赖本地文件
+    case 'compress': return String(args.path || '');
+    default: return null;
+  }
+}
+
+/** 两个路径是否冲突（相同、父子、重叠） */
+function pathsConflict(a: string, b: string): boolean {
+  if (!a || !b) return false;
+  const na = a.replace(/\\/g, '/').replace(/\/+$/, '');
+  const nb = b.replace(/\\/g, '/').replace(/\/+$/, '');
+  // 完全相同或互为前缀（父子目录/文件）
+  return na === nb || na.startsWith(nb + '/') || nb.startsWith(na + '/');
+}
+
+/** P0-1: 判断错误是否为永久性（不应重试） */
+function isPermanentError(errorMsg: string): boolean {
+  const lower = errorMsg.toLowerCase();
+  const permanentPatterns = [
+    /ENOENT/i, /no such file/i, /not found/i, /文件不存在/i, /找不到/i,
+    /EACCES/i, /permission denied/i, /权限/i,
+    /EINVAL/i, /invalid/i, /参数.*错误/i,
+    /EISDIR/i, /ENOTDIR/i,
+    /ENOSPC/i, /disk.*full/i, /空间不足/i,
+    /超出.*限制/i, /超过.*限制/i, /too large/i, /过大/i,
+    /unsupported/i, /不支持/i, /not supported/i,
+    /syntax error/i, /parse error/i, /格式错误/i,
+    /禁止/i, /blocked/i, /拦截/i, /黑名单/i,
+  ];
+  return permanentPatterns.some(p => p.test(lower));
+}
+
+/** P1-7: 智能截断文本，优先在 JSON 边界处截断，避免破坏数据结构 */
+function smartTruncate(text: string, maxLen: number): string {
+  if (text.length <= maxLen) return text;
+  // 尝试在最后一个完整 JSON 块处截断
+  const lastBrace = text.lastIndexOf('}', maxLen);
+  const lastBracket = text.lastIndexOf(']', maxLen);
+  const boundary = Math.max(lastBrace, lastBracket);
+  if (boundary > maxLen * 0.5) {
+    return text.slice(0, boundary + 1) + `\n... (${text.length - boundary - 1}字符 已截断)`;
+  }
+  // 回退到换行边界
+  const lastNewline = text.lastIndexOf('\n', maxLen);
+  if (lastNewline > maxLen * 0.5) {
+    return text.slice(0, lastNewline) + `\n... (${text.length - lastNewline}字符 已截断)`;
+  }
+  // 最后手段：硬截断
+  return text.slice(0, maxLen) + `... (${text.length - maxLen}字符 已截断)`;
+}
 
 /** 工具名白名单：用于文本解析兜底时过滤非法工具名 */
 const VALID_TOOL_NAMES = new Set([
@@ -192,16 +289,23 @@ function parseToolCallsFromText(content: string): ToolCall[] {
 
 const toolResultCache = new Map<string, { result: ToolResult; timestamp: number }>();
 
-/** 工具缓存 TTL（毫秒），按工具类型设定 */
+/** 工具缓存 TTL（毫秒），按工具类型设定。P1-6: default 从 Infinity 改为 60s */
 const CACHE_TTL_MAP: Record<string, number> = {
   web_search: 5 * 60_000,
   web_fetch: 10 * 60_000,
   read_file: 30 * 60_000,
-  list_directory: 60_000,
-  search_files: 60_000,
+  list_directory: 2 * 60_000,
+  search_files: 2 * 60_000,
   browser_screenshot: 60_000,
   browser_extract: 5 * 60_000,
-  default: Infinity,
+  get_file_info: 2 * 60_000,
+  tree: 2 * 60_000,
+  git: 30_000,             // git status 30s 过期
+  datetime: 5_000,          // 时间 5s 过期
+  session_list: 60_000,
+  session_read: 60_000,
+  diff_files: 2 * 60_000,
+  default: 60_000,          // 默认 60s，不再永久缓存
 };
 
 /** 检查缓存是否过期 */
@@ -227,6 +331,20 @@ function isDuplicateCall(call: ToolCall, allCalls: ToolCall[]): boolean {
     if (idx === allCalls.length - 1) return false;
     return getToolCacheKey(prev.function.name, prev.function.arguments) === callKey;
   });
+}
+
+/** 格式化工具结果的通用默认路径 */
+function formatDefaultToolResult(toolName: string, result: ToolResult): string {
+  const clean: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(result)) {
+    if (k === 'success' || k === 'formatted' || k === 'content_type' ||
+        k === 'status' || k === 'length' || k === 'isDirectory') continue;
+    clean[k] = v;
+  }
+  let json = JSON.stringify(clean);
+  const maxLen = TOOL_MAX_RESULT_SIZE[toolName] || 15000;
+  if (json.length > maxLen) json = json.slice(0, maxLen) + '\n... (已截断)';
+  return json;
 }
 
 /**
@@ -364,20 +482,12 @@ function formatToolResultForModel(toolName: string, result: ToolResult): string 
         }
         return lines.join('\n');
       }
-      // 其他 action（add/replace/remove）保留完整 JSON
+      // 其他 action（add/replace/remove）→ 保留完整 JSON，走 default 逻辑
+      return formatDefaultToolResult(toolName, result);
     }
 
     default: {
-      const clean: Record<string, unknown> = {};
-      for (const [k, v] of Object.entries(result)) {
-        if (k === 'success' || k === 'formatted' || k === 'content_type' ||
-            k === 'status' || k === 'length' || k === 'isDirectory') continue;
-        clean[k] = v;
-      }
-      let json = JSON.stringify(clean);
-      const maxLen = TOOL_MAX_RESULT_SIZE[toolName] || 15000;
-      if (json.length > maxLen) json = json.slice(0, maxLen) + '\n... (已截断)';
-      return json;
+      return formatDefaultToolResult(toolName, result);
     }
   }
 }
@@ -396,13 +506,21 @@ export interface AgentCallbacks {
   onPlanReady?: (plan: string, steps: string[]) => Promise<boolean>;
 }
 
-/** 保存执行轨迹到 SQLite */
-async function saveTrace(trace: Record<string, any>): Promise<void> {
-  try {
-    const bridge = window.metonaDesktop;
-    if (!bridge?.db) return;
+/** P3-13: 带缓冲的轨迹保存 — 批量写入 SQLite，重试失败条目 */
+const _traceBuffer: Array<Record<string, any>> = [];
+const TRACE_FLUSH_INTERVAL = 5000;  // 5 秒刷新一次
+const TRACE_MAX_RETRIES = 3;
+let _traceFlushTimer: ReturnType<typeof setTimeout> | null = null;
+
+async function flushTraces(): Promise<void> {
+  if (_traceBuffer.length === 0) return;
+  const batch = _traceBuffer.splice(0, _traceBuffer.length);
+  const bridge = window.metonaDesktop;
+  if (!bridge?.db) return;
+
+  for (const trace of batch) {
     const entry = {
-      id: `trace_${generateId()}`,
+      id: String(trace.id || `trace_${generateId()}`),
       session_id: trace.sessionId,
       step_index: trace.stepIndex,
       thought: trace.thought,
@@ -413,8 +531,69 @@ async function saveTrace(trace: Record<string, any>): Promise<void> {
       error_pattern: trace.errorPattern || null,
       created_at: trace.createdAt
     };
-    await bridge.db.saveTrace(entry);
-  } catch { /* 不阻塞主流程 */ }
+    // 重试最多 TRACE_MAX_RETRIES 次
+    for (let attempt = 0; attempt < TRACE_MAX_RETRIES; attempt++) {
+      try {
+        await bridge.db.saveTrace(entry);
+        break;
+      } catch {
+        if (attempt < TRACE_MAX_RETRIES - 1) {
+          await new Promise(r => setTimeout(r, 200 * (attempt + 1)));
+        }
+      }
+    }
+  }
+}
+
+/** 保存执行轨迹到 SQLite（缓冲写入） */
+async function saveTrace(trace: Record<string, any>): Promise<void> {
+  _traceBuffer.push(trace);
+  if (!_traceFlushTimer) {
+    _traceFlushTimer = setTimeout(() => {
+      _traceFlushTimer = null;
+      flushTraces();
+    }, TRACE_FLUSH_INTERVAL);
+  }
+  // 缓冲区超过 20 条立即刷新
+  if (_traceBuffer.length >= 20) {
+    if (_traceFlushTimer) { clearTimeout(_traceFlushTimer); _traceFlushTimer = null; }
+    flushTraces();
+  }
+}
+
+/** 强制刷新所有待写入的轨迹（在 Agent Loop 结束时调用） */
+export async function flushAllTraces(): Promise<void> {
+  if (_traceFlushTimer) { clearTimeout(_traceFlushTimer); _traceFlushTimer = null; }
+  await flushTraces();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// P0-3: AbortController 集中管理 — 防泄漏、防竞态
+// ═══════════════════════════════════════════════════════════════
+
+/** 注册新的 AbortController，自动清理旧实例 */
+function registerAbortController(): AbortController {
+  const old = state.get<AbortController | null>(KEYS.ABORT_CONTROLLER);
+  if (old) {
+    try { old.abort(); } catch { /* ignore */ }
+  }
+  const ac = new AbortController();
+  state.set(KEYS.ABORT_CONTROLLER, ac);
+  return ac;
+}
+
+/** 检查当前是否已被中止 */
+function isAborted(): boolean {
+  return state.get<AbortController | null>(KEYS.ABORT_CONTROLLER)?.signal.aborted === true;
+}
+
+/** 清理 AbortController（在 finally 块中调用） */
+function cleanupAbortController(): void {
+  const ac = state.get<AbortController | null>(KEYS.ABORT_CONTROLLER);
+  if (ac) {
+    try { ac.abort(); } catch { /* ignore */ }
+    state.set(KEYS.ABORT_CONTROLLER, null);
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -459,6 +638,95 @@ function restoreLoopContext(_sessionId: string): Partial<LoopContext> | null {
 // Harness: 状态处理器
 // ═══════════════════════════════════════════════════════════════
 
+/** P2-11: 加载自定义文件（SOUL.md / AGENT.md / USER.md），返回 system prompt 片段 */
+async function loadCustomFiles(workspaceDir: string, systemPromptParts: string[]): Promise<void> {
+  // SOUL.md — 工作空间优先，内置 fallback，不可压缩
+  let soulMdContent = '';
+  if (workspaceDir) {
+    try {
+      const r = await window.metonaDesktop?.workspace.readFile(workspaceDir.replace(/[\\/]+$/, '') + '/SOUL.md');
+      if (r?.success && r.content) { soulMdContent = r.content; logInfo('SOUL.md 已从工作空间加载', `${r.lines || 0} 行`); }
+    } catch { /* ignore */ }
+  }
+  if (!soulMdContent) {
+    try {
+      const resp = await fetch('./SOUL.md');
+      if (resp.ok) { soulMdContent = await resp.text(); logInfo('SOUL.md 已从内置加载', `${soulMdContent.length} 字符`); }
+    } catch { /* ignore */ }
+  }
+  if (soulMdContent) systemPromptParts.unshift(`[SOUL.md] ${soulMdContent}`);
+
+  // AGENT.md — 工作空间优先，内置 fallback，Token 预算截断
+  let agentMdContent = '';
+  if (workspaceDir) {
+    try {
+      const r = await window.metonaDesktop?.workspace.readFile(workspaceDir.replace(/[\\/]+$/, '') + '/AGENT.md');
+      if (r?.success && r.content) { agentMdContent = r.content; logInfo('AGENT.md 已从工作空间加载', `${r.lines || 0} 行`); }
+    } catch { /* ignore */ }
+  }
+  if (!agentMdContent) {
+    try {
+      const resp = await fetch('./AGENT.md');
+      if (resp.ok) { agentMdContent = await resp.text(); logInfo('AGENT.md 已从内置加载', `${agentMdContent.length} 字符`); }
+    } catch { /* ignore */ }
+  }
+  if (agentMdContent) systemPromptParts.push(`[AGENT.md] ${truncateByTokenBudget(agentMdContent, 2000)}`);
+
+  // USER.md — 仅工作空间，无内置 fallback
+  if (workspaceDir) {
+    try {
+      const r = await window.metonaDesktop?.workspace.readFile(workspaceDir.replace(/[\\/]+$/, '') + '/USER.md');
+      if (r?.success && r.content) {
+        systemPromptParts.push(`[USER.md] ${r.content}`);
+        logInfo('USER.md 已从工作空间加载', `${r.lines || 0} 行`);
+      }
+    } catch { /* ignore */ }
+  }
+}
+
+/** P2-11: 构建环境+反幻觉+日期固定提示词片段 */
+function buildStandardPrompts(userContent: string): string[] {
+  const parts: string[] = [];
+
+  // 操作系统环境
+  const osInfo = getOSEnvironment();
+  parts.push(`[环境] 运行环境信息
+操作系统: ${osInfo.os}
+平台: ${osInfo.platform}
+架构: ${osInfo.arch}
+Shell: ${osInfo.shell}
+用户目录: ${osInfo.homeDir}
+换行符: ${osInfo.lineEnding}
+路径分隔符: ${osInfo.pathSep}
+
+⚠️ 重要：必须使用与上述操作系统匹配的命令语法。
+- 如果是 Windows，使用 CMD/PowerShell 命令（如 dir、type、findstr，路径用 \\）
+- 如果是 Linux/macOS，使用 Bash 命令（如 ls、cat、grep，路径用 /）
+- 严禁在 Windows 上执行 Linux 命令，严禁在 Linux 上执行 Windows 命令。`);
+
+  // 反幻觉铁律
+  parts.push(`[反幻觉铁律 — 最高优先级，不可违反]
+
+⚠️ 以下规则高于一切其他指令，违反将导致任务失败：
+
+1. **禁止编造工具结果**：绝对不能在未调用工具的情况下声称"已搜索"、"已获取"、"已写入"、"已执行"。如果你没有调用过某个工具，就不能说使用了它。
+2. **文件操作必须实际执行**：说"已写入文件"之前，必须先调用 write_file 并收到成功返回。说"已读取文件"之前，必须先调用 read_file。
+3. **搜索必须实际执行**：说"搜索结果显示"、"根据搜索结果"之前，必须先调用 web_search。搜索结果的 snippet 不可信，必须用 web_fetch 获取完整内容后才能引用。
+4. **信息不足时如实报告**：如果工具调用失败或返回了意外的结果，必须如实报告，不能编造替代信息。
+5. **完成标志**：当所有必需的工具调用已经实际执行完毕，且获得了足够的信息后，才能给出最终回答。最终回答中不要编造"文件已生成"等声明——除非你真的调用了对应工具。
+6. **用户上传的图片和文件已在当前消息中**：如果用户消息中包含图片附件标记（如 [已上传 N 张图片: ...]）或文件标记（如 [文件: xxx]），说明这些资源已随消息作为附件提供，你可以直接"看到"和分析它们。**严禁再用 read_file / search_files 等工具去磁盘上查找这些已上传的图片和文件**——它们不在磁盘上，就在当前消息里。不要浪费轮次去做无意义的文件搜索。
+7. **read_file 不能看图片**：read_file 返回的是文本或 base64 编码字符串，视觉模型无法处理。如果你需要分析图片内容，只有用户通过上传功能提供的图片才是可见的。不要尝试用 read_file mode=binary 去"读取"图片文件。
+8. **禁止在 Plan 模式下为已上传的附件规划文件查找步骤**：如果用户消息中已经有图片或文件附件，执行计划的第一步应该是直接分析这些附件，而不是"搜索工作空间中的图片文件"或"查找相关文件"。
+
+违反以上任何一条都是不可接受的错误。请逐条对照检查你的每一次回复。`);
+
+  // 日期
+  const now = new Date();
+  parts.push(`[日期] ${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日（此日期来自系统时钟，绝对可信。你的训练数据可能已过时，请以此日期为准构造所有搜索查询和时效性回答。绝对不要基于训练数据推断日期。）`);
+
+  return parts;
+}
+
 /**
  * INIT 状态：构建系统提示词、准备上下文、压缩检测
  */
@@ -481,69 +749,10 @@ async function handleInit(
 
   ctx.messages.length = 0;
   const systemPromptParts: string[] = [];
-
-  // ── 扫描工作空间 SOUL.md（静态区，不可压缩）──
-  let soulMdContent = '';
   const workspaceDir = getWorkspaceDirPath();
-  if (workspaceDir) {
-    try {
-      const soulResult = await window.metonaDesktop?.workspace.readFile(
-        workspaceDir.replace(/[\\/]+$/, '') + '/SOUL.md'
-      );
-      if (soulResult?.success && soulResult.content) {
-        soulMdContent = soulResult.content;
-        logInfo('SOUL.md 已从工作空间加载', `${soulResult.lines || 0} 行`);
-      }
-    } catch { /* ignore */ }
-  }
-  if (!soulMdContent) {
-    try {
-      const resp = await fetch('./SOUL.md');
-      if (resp.ok) { soulMdContent = await resp.text(); logInfo('SOUL.md 已从内置加载', `${soulMdContent.length} 字符`); }
-    } catch { /* ignore */ }
-  }
-  if (soulMdContent) {
-    ctx.messages.push({ role: 'system', content: `[SOUL.md] ${soulMdContent}` });
-  }
 
-  // ── 扫描工作空间 AGENT.md ──
-  let agentMdContent = '';
-  if (workspaceDir) {
-    try {
-      const agentResult = await window.metonaDesktop?.workspace.readFile(
-        workspaceDir.replace(/[\\/]+$/, '') + '/AGENT.md'
-      );
-      if (agentResult?.success && agentResult.content) {
-        agentMdContent = agentResult.content;
-        logInfo('AGENT.md 已从工作空间加载', `${agentResult.lines || 0} 行`);
-      }
-    } catch { /* ignore */ }
-  }
-  if (!agentMdContent) {
-    try {
-      const resp = await fetch('./AGENT.md');
-      if (resp.ok) { agentMdContent = await resp.text(); logInfo('AGENT.md 已从内置加载', `${agentMdContent.length} 字符`); }
-    } catch { /* ignore */ }
-  }
-  if (agentMdContent) {
-    // Token 预算截断（限制 2000 tokens）
-    const truncated = truncateByTokenBudget(agentMdContent, 2000);
-    systemPromptParts.push(`[AGENT.md] ${truncated}`);
-  }
-
-  // ── 扫描工作空间 USER.md（仅工作空间，无内置 fallback）──
-  if (workspaceDir) {
-    try {
-      const userResult = await window.metonaDesktop?.workspace.readFile(
-        workspaceDir.replace(/[\\/]+$/, '') + '/USER.md'
-      );
-      if (userResult?.success && userResult.content) {
-        const userMdContent = userResult.content;
-        systemPromptParts.push(`[USER.md] ${userMdContent}`);
-        logInfo('USER.md 已从工作空间加载', `${userResult.lines || 0} 行`);
-      }
-    } catch { /* ignore */ }
-  }
+  // P2-11: 加载自定义文件
+  await loadCustomFiles(workspaceDir || '', systemPromptParts);
 
   // 注入记忆上下文
   if (userContent) {
@@ -561,6 +770,36 @@ async function handleInit(
 当前工作空间目录: ${workspaceDir}
 你可以使用 run_command 工具在此目录下执行命令，所有命令通过工作空间进程管理执行，无超时限制。
 文件操作工具（read_file、write_file 等）的相对路径基于此目录解析。`);
+
+  // ── P1-8: Plan Mode 断点续传 — 检测上一轮未完成的计划 ──
+  if (ctx.mode === 'plan') {
+    const resumeData = state.get<{ steps: Array<{index:number;label:string;done:boolean}>; total: number; done: number; loopCount: number } | null>('_planResumeData', null);
+    if (resumeData && resumeData.steps.length > 0 && resumeData.done < resumeData.total) {
+      // 恢复追踪器状态
+      const { initPlanTracker } = await import('./tool-registry.js');
+      const steps = resumeData.steps.map(s => s.label);
+      const tracker = initPlanTracker(steps);
+      // 标记已完成的步骤
+      for (const s of resumeData.steps) {
+        if (s.done) {
+          tracker.steps[s.index - 1].done = true;
+          tracker.done++;
+        }
+      }
+      const { savePlanTracker } = await import('./tool-registry.js');
+      savePlanTracker(tracker);
+      // 清空恢复数据，避免重复恢复
+      state.set('_planResumeData', null);
+      // 注入恢复状态提示
+      systemPromptParts.push(`[Plan Mode 断点续传] 上一轮计划未完成，已自动恢复。当前进度: ${tracker.done}/${tracker.total}。已完成步骤将继续保持完成状态。继续执行剩余步骤，跳过已完成的步骤。`);
+      logInfo(`Plan Mode 断点续传: ${tracker.done}/${tracker.total} 步骤已恢复，继续执行剩余 ${tracker.total - tracker.done} 步`);
+      // 跳过"输出计划"约束，直接告诉 AI 继续执行
+      systemPromptParts.push(`⚠️ 计划已在上一轮生成并批准，现在直接继续执行剩余步骤。不需要重新输出计划。`);
+    } else {
+      // 清除可能的残留
+      state.set('_planResumeData', null);
+    }
+  }
 
   // ── Plan Mode 系统提示词 — 告知 AI plan_track 工具和追踪规则 ──
   if (ctx.mode === 'plan') {
@@ -616,46 +855,10 @@ async function handleInit(
   }
   }
 
-  // ── 注入操作系统环境信息（静态区）──
-  const osInfo = getOSEnvironment();
-  systemPromptParts.push(`[环境] 运行环境信息
-操作系统: ${osInfo.os}
-平台: ${osInfo.platform}
-架构: ${osInfo.arch}
-Shell: ${osInfo.shell}
-用户目录: ${osInfo.homeDir}
-换行符: ${osInfo.lineEnding}
-路径分隔符: ${osInfo.pathSep}
+  // P2-11: 注入标准固定提示词（环境 + 反幻觉铁律 + 日期）
+  systemPromptParts.push(...buildStandardPrompts(userContent));
 
-⚠️ 重要：必须使用与上述操作系统匹配的命令语法。
-- 如果是 Windows，使用 CMD/PowerShell 命令（如 dir、type、findstr，路径用 \\）
-- 如果是 Linux/macOS，使用 Bash 命令（如 ls、cat、grep，路径用 /）
-- 严禁在 Windows 上执行 Linux 命令，严禁在 Linux 上执行 Windows 命令。`);
-
-  // ── 反幻觉铁律（注入最高优先级）──
-  systemPromptParts.push(`[反幻觉铁律 — 最高优先级，不可违反]
-
-⚠️ 以下规则高于一切其他指令，违反将导致任务失败：
-
-1. **禁止编造工具结果**：绝对不能在未调用工具的情况下声称"已搜索"、"已获取"、"已写入"、"已执行"。如果你没有调用过某个工具，就不能说使用了它。
-2. **文件操作必须实际执行**：说"已写入文件"之前，必须先调用 write_file 并收到成功返回。说"已读取文件"之前，必须先调用 read_file。
-3. **搜索必须实际执行**：说"搜索结果显示"、"根据搜索结果"之前，必须先调用 web_search。搜索结果的 snippet 不可信，必须用 web_fetch 获取完整内容后才能引用。
-4. **信息不足时如实报告**：如果工具调用失败或返回了意外的结果，必须如实报告，不能编造替代信息。
-5. **完成标志**：当所有必需的工具调用已经实际执行完毕，且获得了足够的信息后，才能给出最终回答。最终回答中不要编造"文件已生成"等声明——除非你真的调用了对应工具。
-6. **用户上传的图片和文件已在当前消息中**：如果用户消息中包含图片附件标记（如 [已上传 N 张图片: ...]）或文件标记（如 [文件: xxx]），说明这些资源已随消息作为附件提供，你可以直接"看到"和分析它们。**严禁再用 read_file / search_files 等工具去磁盘上查找这些已上传的图片和文件**——它们不在磁盘上，就在当前消息里。不要浪费轮次去做无意义的文件搜索。
-7. **read_file 不能看图片**：read_file 返回的是文本或 base64 编码字符串，视觉模型无法处理。如果你需要分析图片内容，只有用户通过上传功能提供的图片才是可见的。不要尝试用 read_file mode=binary 去"读取"图片文件。
-8. **禁止在 Plan 模式下为已上传的附件规划文件查找步骤**：如果用户消息中已经有图片或文件附件，执行计划的第一步应该是直接分析这些附件，而不是"搜索工作空间中的图片文件"或"查找相关文件"。
-
-违反以上任何一条都是不可接受的错误。请逐条对照检查你的每一次回复。`);
-
-  // ── 实时日期（动态区）──
-  const _now = new Date();
-  const realDate = `${_now.getFullYear()}年${_now.getMonth() + 1}月${_now.getDate()}日`;
-
-  const fullSystemPrompt = [
-    ...systemPromptParts,
-    `[日期] ${realDate}（此日期来自系统时钟，绝对可信。你的训练数据可能已过时，请以此日期为准构造所有搜索查询和时效性回答。绝对不要基于训练数据推断日期。）`
-  ].join('\n\n');
+  const fullSystemPrompt = systemPromptParts.join('\n\n');
 
   ctx.messages.push({ role: 'system', content: fullSystemPrompt });
 
@@ -689,7 +892,7 @@ Shell: ${osInfo.shell}
   ctx.messages.push(userMsg);
 
   // 上下文窗口管理：滑动窗口 + 摘要压缩 + token 裁剪
-  const numCtx = state.get<number>(KEYS.NUM_CTX, 24576);
+  const numCtx = state.get<number>(KEYS.NUM_CTX, 131072);
   const contextResult = buildContext(ctx.messages, { maxTokens: numCtx, windowSize: 20 });
   ctx.messages.length = 0;
   ctx.messages.push(...contextResult);
@@ -781,48 +984,112 @@ function extractPlanSteps(content: string): string[] {
 }
 
 /**
- * 中途幻觉检测 — 轻量级检查
- * 仅检查最关键的几类幻觉（文件写入、搜索、命令执行）
- * 完整检查在 Completion Gate 中
+ * P2-9 + P2-12: 中途幻觉检测 — 中英文双语规则，与 completion-gate 共用统一规则表
+ * 通过提取共享规则 + 添加英文 pattern，覆盖中英文模型输出
  */
 function detectMidTaskHallucination(
   content: string,
   allToolRecords: Array<{ name: string }>,
 ): string | null {
   const called = new Set(allToolRecords.map(r => r.name));
+  const lower = content.toLowerCase();
 
-  // 多维度幻觉检测（按置信度排序）
-  const rules: Array<{ re: RegExp; tools: string[]; msg: string }> = [
-    // 文件操作类
-    { re: /已(写入|创建|生成).*文件/, tools: ['write_file'], msg: '声称已写入/创建文件' },
-    { re: /已成功(写入|创建|保存)/, tools: ['write_file'], msg: '声称文件操作成功' },
-    { re: /已(编辑|修改|更新)了?(文件|代码)/, tools: ['edit_file', 'replace_in_files'], msg: '声称编辑了文件' },
-    { re: /已(删除|移除)了?.*(文件|目录)/, tools: ['delete_file'], msg: '声称删除了文件' },
-    { re: /已(移动|重命名|复制)了?.*(文件|目录)/, tools: ['move_file', 'copy_file'], msg: '声称移动/复制了文件' },
-    { re: /已创建了?(目录|文件夹)/, tools: ['create_directory'], msg: '声称创建了目录' },
-    { re: /已(下载|获取)了?.*文件/, tools: ['download_file', 'web_fetch'], msg: '声称下载了文件' },
-    // 搜索类
-    { re: /搜索(结果|到|显示).*(条|个)/, tools: ['web_search', 'web_fetch'], msg: '声称获得了搜索结果' },
-    { re: /记忆.*(搜索到|找到|显示)/, tools: ['memory_search'], msg: '声称搜索了记忆' },
-    // 命令执行类
-    { re: /运行(了|的)?(命令|脚本).*(成功|输出|结果)/, tools: ['run_command'], msg: '声称执行了命令' },
-    { re: /(git|提交|推送|合并).*(成功|完成)/, tools: ['git'], msg: '声称执行了 Git 操作' },
-    // 浏览器类
-    { re: /(打开|浏览)了?.*(网页|页面|浏览器)/, tools: ['browser_open', 'browser_screenshot', 'browser_extract'], msg: '声称使用了浏览器' },
-    { re: /截图了?(页面|屏幕|网页)/, tools: ['browser_screenshot'], msg: '声称截取了页面' },
-    // 压缩类
-    { re: /(压缩|解压|打包).*(成功|完成)/, tools: ['compress'], msg: '声称执行了压缩/解压操作' },
-    // 记忆类
-    { re: /(已记住|保存了|存储了|添加到记忆)/, tools: ['memory_add', 'memory_replace'], msg: '声称保存了记忆' },
-  ];
-
-  for (const rule of rules) {
-    if (rule.re.test(content) && !rule.tools.some(t => called.has(t))) {
-      return `${rule.msg}但对应工具从未被实际调用。`;
+  // 统一规则表：单一定义，mid-task 和 completion-gate 共用
+  for (const rule of HALLUCINATION_RULES) {
+    for (const pattern of rule.patterns) {
+      if (pattern.test(content)) {
+        const anyCalled = rule.requiredTools.some(t => called.has(t));
+        if (anyCalled) break; // 工具已调用，跳过此类检测
+        // 写后读豁免
+        if (rule.label.includes('读取') && called.has('write_file')) break;
+        return `${rule.label}操作但对应工具从未被实际调用（应调用 ${rule.requiredTools.join(' / ')}）。`;
+      }
     }
   }
   return null;
 }
+
+/** P2-12: 统一幻觉检测规则表（中英文双语），completion-gate.ts 通过 import 共享此表 */
+interface HallucinationRule {
+  patterns: RegExp[];
+  requiredTools: string[];
+  label: string;
+}
+
+export const HALLUCINATION_RULES: HallucinationRule[] = [
+  // 文件写入 — 中英
+  { patterns: [/已写入文件/, /已创建文件/, /文件已生成/, /已保存到/, /已成功创建/, /成功写入/,
+               /文件.*已.*创建/, /文件.*已.*写入/, /生成.*文件/, /写入.*工作空间/,
+               /(?:have|has)\s+(?:written|created|saved|generated)\s+(?:the\s+)?file/i,
+               /file\s+(?:has been|was)\s+(?:written|created|saved|generated)/i,
+               /I(?:'ve|\s+have)\s+(?:written|created|saved)/i],
+    requiredTools: ['write_file'], label: '写入/创建文件' },
+  // 文件编辑
+  { patterns: [/已修改文件/, /已编辑文件/, /文件已更新/, /已替换.*内容/, /修改了.*文件/, /更新了.*文件/,
+               /(?:have|has)\s+(?:modified|edited|updated)\s+(?:the\s+)?file/i,
+               /I(?:'ve|\s+have)\s+(?:modified|edited|updated)\s+the\s+file/i],
+    requiredTools: ['edit_file', 'write_file'], label: '编辑/修改文件' },
+  // 文件删除
+  { patterns: [/已删除文件/, /已移除文件/, /文件已清除/, /删除了.*文件/,
+               /(?:have|has)\s+(?:deleted|removed)\s+(?:the\s+)?file/i],
+    requiredTools: ['delete_file'], label: '删除文件' },
+  // 文件移动/复制
+  { patterns: [/已移动文件/, /已复制文件/, /已重命名/, /文件.*已.*移动/, /文件.*已.*复制/,
+               /(?:have|has)\s+(?:moved|copied|renamed)\s+(?:the\s+)?file/i],
+    requiredTools: ['move_file', 'copy_file'], label: '移动/复制文件' },
+  // 目录创建
+  { patterns: [/已创建了?(目录|文件夹)/,
+               /(?:have|has)\s+created\s+(?:a\s+)?(?:directory|folder)/i],
+    requiredTools: ['create_directory'], label: '创建目录' },
+  // 搜索/抓取网页
+  { patterns: [/搜索(结果|到|显示).*(条|个)/, /根据搜索/, /抓取了.*网页/, /从.*搜索.*得到/,
+               /查询到/, /检索到/, /搜索到/, /网络.*显示/, /实时.*数据.*显示/,
+               /search\s+results\s+(?:show|indicate|suggest)/i, /according\s+to\s+(?:the\s+)?search/i,
+               /I\s+(?:found|discovered|searched)\s+(?:on|the\s+web|online)/i,
+               /based\s+on\s+(?:the\s+)?search\s+results/i],
+    requiredTools: ['web_search', 'web_fetch'], label: '搜索/抓取网页' },
+  // 浏览器
+  { patterns: [/浏览器截图显示/, /打开网页.*看到/, /页面显示/, /浏览器.*打开/,
+               /点击了.*按钮/, /输入了.*文本/, /页面.*截图/,
+               /browser\s+(?:screenshot|shows|displays)/i, /opened\s+(?:the\s+)?(?:page|url|website)/i,
+               /I\s+(?:opened|navigated|browsed)\s+(?:to\s+)?(?:the\s+)?/i],
+    requiredTools: ['browser_open', 'browser_screenshot', 'browser_extract', 'browser_click', 'browser_type'], label: '浏览器操作' },
+  // 命令执行
+  { patterns: [/运行.*命令/, /执行.*脚本/, /命令.*输出/, /运行结果/, /命令.*返回/, /执行.*结果/, /终端.*显示/,
+               /(?:ran|executed|run)\s+(?:the\s+)?command/i, /command\s+(?:output|result)/i,
+               /I(?:'ve|\s+have)\s+(?:run|executed)\s+(?:the\s+)?command/i],
+    requiredTools: ['run_command'], label: '执行命令' },
+  // Git 操作
+  { patterns: [/已提交/, /已推送/, /已暂存/, /已创建分支/, /已合并/, /已克隆/,
+               /git.*commit/, /git.*push/, /git.*add/, /提交了.*代码/,
+               /(?:have|has)\s+(?:committed|pushed|staged|merged|cloned)/i,
+               /I(?:'ve|\s+have)\s+(?:committed|pushed|staged)/i],
+    requiredTools: ['git'], label: 'Git 操作' },
+  // 下载
+  { patterns: [/已下载文件/, /下载完成/, /文件.*已.*下载/, /从.*下载/,
+               /(?:have|has)\s+downloaded\s+(?:the\s+)?file/i],
+    requiredTools: ['download_file'], label: '下载文件' },
+  // 压缩/解压
+  { patterns: [/已压缩/, /已解压/, /压缩完成/, /解压完成/, /归档.*已.*创建/,
+               /(?:have|has)\s+(?:compressed|extracted|archived)/i],
+    requiredTools: ['compress'], label: '压缩/解压' },
+  // 记忆操作
+  { patterns: [/已记住/, /已添加记忆/, /记忆已保存/, /已更新记忆/, /已删除记忆/,
+               /(?:have|has)\s+(?:remembered|memorized|saved\s+to\s+memory)/i],
+    requiredTools: ['memory'], label: '记忆操作' },
+  // 会话操作
+  { patterns: [/历史会话.*显示/, /已读取.*会话/, /会话.*内容.*如下/,
+               /(?:have|has)\s+(?:read|listed)\s+(?:the\s+)?session/i],
+    requiredTools: ['session_list', 'session_read'], label: '会话操作' },
+  // 子代理
+  { patterns: [/子代理.*完成/, /子任务.*已.*执行/, /spawn.*task.*完成/,
+               /sub[\s-]?agent\s+(?:has\s+)?(?:completed|finished)/i],
+    requiredTools: ['spawn_task'], label: '子代理委派' },
+  // 系统工具
+  { patterns: [/计算.*结果.*为/, /哈希.*值.*为/, /UUID.*生成/, /随机.*生成.*为/,
+               /(?:calculated|computed|hashed)\s+(?:the\s+)?(?:result|value)/i],
+    requiredTools: ['calculator', 'hash', 'uuid', 'random'], label: '系统工具' },
+];
 
 /**
  * 多步骤任务待办检测 — 解析用户请求中的动作动词，对比已完成的工具调用
@@ -1069,20 +1336,36 @@ async function handleThinking(
     const warning = remaining <= 2
       ? `\n⚠️ CRITICAL: You have only ${remaining} iteration(s) left. Stop using tools and provide your final answer NOW.`
       : `\n⚠️ WARNING: You have approximately ${remaining} iterations remaining. Start wrapping up and prepare your final answer.`;
-    ctx.messages.push({ role: 'system', content: warning, ephemeral: true });
-  }
+	    ctx.messages.push({ role: 'user', content: warning, ephemeral: true });
+	  }
 
-  const abortController = new AbortController();
-  state.set(KEYS.ABORT_CONTROLLER, abortController);
+	  const abortController = registerAbortController();
 
-  const STREAM_TIMEOUT_MS = state.get<number>('streamTimeout', 300_000);
-  let streamTimer: ReturnType<typeof setTimeout> | null = null;
+  // ── P1-5: 流式超时分级 ──
+  const STREAM_TIMEOUT_MS = state.get<number>('streamTimeout', 300_000);   // 总超时 300s
+  const IDLE_TIMEOUT_MS = 30_000;                                           // 空闲超时 30s（无新 token）
+
+  let totalTimer: ReturnType<typeof setTimeout> | null = null;
+  let idleTimer: ReturnType<typeof setTimeout> | null = null;
+  let lastContentTime = Date.now();
+
+  const resetIdleTimer = (): void => {
+    lastContentTime = Date.now();
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => {
+      const idleSec = Math.round((Date.now() - lastContentTime) / 1000);
+      logWarn(`流式空闲超时 (${idleSec}s 无新 token)，中止本轮`);
+      abortController.abort();
+    }, IDLE_TIMEOUT_MS);
+  };
+
   if (STREAM_TIMEOUT_MS > 0) {
-    streamTimer = setTimeout(() => {
-      logWarn(`流式调用超时 (${STREAM_TIMEOUT_MS / 1000}s)，中止本轮`);
+    totalTimer = setTimeout(() => {
+      logWarn(`流式总超时 (${STREAM_TIMEOUT_MS / 1000}s)，中止本轮`);
       abortController.abort();
     }, STREAM_TIMEOUT_MS);
   }
+  resetIdleTimer(); // 启动空闲超时
 
   let progressTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -1118,20 +1401,21 @@ async function handleThinking(
         stream: true,
         think: state.get<boolean>('thinkEnabled', false),
         options: {
-          num_ctx: state.get<number>(KEYS.NUM_CTX, 24576),
+          num_ctx: state.get<number>(KEYS.NUM_CTX, 131072),
           temperature: state.get<number>('temperature', 0.7)
         },
         ...(getEnabledToolDefinitions().length > 0 && { tools: getEnabledToolDefinitions() })
       },
-      (chunk: OllamaStreamChunk) => {
-        if (chunk.message?.thinking) {
-          ctx.thinking += chunk.message.thinking;
-          callbacks.onThinking(ctx.thinking);
-        }
-        if (chunk.message?.content) {
-          ctx.content += chunk.message.content;
-          callbacks.onContent(ctx.content);
-        }
+	      (chunk: OllamaStreamChunk) => {
+	        if (chunk.message?.thinking) {
+	          ctx.thinking += chunk.message.thinking;
+	          callbacks.onThinking(ctx.thinking);
+	        }
+	        if (chunk.message?.content) {
+	          ctx.content += chunk.message.content;
+	          callbacks.onContent(ctx.content);
+	          resetIdleTimer(); // P1-5: 收到内容 token → 重置空闲超时
+	        }
         if (chunk.eval_count) { ctx.loopEvalCount = chunk.eval_count; }
         if (chunk.prompt_eval_count) { ctx.loopPromptEvalCount = chunk.prompt_eval_count; }
         if (chunk.total_duration) { ctx.loopInferenceNs = chunk.total_duration; }
@@ -1196,13 +1480,15 @@ async function handleThinking(
     ctx.loopPromptEvalCount = 0;
     ctx.loopInferenceNs = 0;
 
-    if (streamTimer) { clearTimeout(streamTimer); streamTimer = null; }
+    if (totalTimer) { clearTimeout(totalTimer); totalTimer = null; }
+    if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
     if (progressTimer) clearInterval(progressTimer as unknown as number);
 
     transition(ctx, S.PARSING);
 
   } catch (err) {
-    if (streamTimer) { clearTimeout(streamTimer); streamTimer = null; }
+    if (totalTimer) { clearTimeout(totalTimer); totalTimer = null; }
+    if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
     if (progressTimer) clearInterval(progressTimer as unknown as number);
     if (abortController.signal.aborted) {
       logInfo('流式调用已中止');
@@ -1281,7 +1567,7 @@ async function handleExecuting(
     logInfo('检测到重复调用但上一轮有失败，允许重试');
   }
 
-  // ── 工具并行执行：批次划分 ──
+  // ── 工具并行执行：智能批次划分（P0修复：检测实际数据依赖）──
   const batches: ToolCall[][] = [];
   let currentBatch: ToolCall[] = [];
 
@@ -1290,16 +1576,12 @@ async function handleExecuting(
       currentBatch.push(call);
     } else if (ALWAYS_PARALLEL.has(call.function.name)) {
       currentBatch.push(call);
+    } else if (hasPathDependency(call, currentBatch)) {
+      // 存在路径依赖 → 新开批次（串行化）
+      batches.push(currentBatch);
+      currentBatch = [call];
     } else {
-      const needsPrevResult = currentBatch.some(prev =>
-        TOOLS_WITH_DATA_DEPS.has(call.function.name) && prev.function.name !== call.function.name
-      );
-      if (needsPrevResult) {
-        batches.push(currentBatch);
-        currentBatch = [call];
-      } else {
-        currentBatch.push(call);
-      }
+      currentBatch.push(call);
     }
   }
   if (currentBatch.length > 0) batches.push(currentBatch);
@@ -1308,7 +1590,7 @@ async function handleExecuting(
     logInfo(`工具并行执行: ${ctx.toolCalls.length} 个工具 → ${batches.length} 批次（首批 ${batches[0].length} 个并行）`);
   }
 
-  /** 执行单个工具（含重试） */
+  /** 执行单个工具（含智能重试：永久错误立即返回，瞬态错误最多重试 MAX_RETRIES 次） */
   const executeSingleTool = async (call: ToolCall): Promise<[ToolCallRecord, string | null]> => {
     const cacheKey = getToolCacheKey(call.function.name, call.function.arguments);
 
@@ -1335,7 +1617,8 @@ async function handleExecuting(
       toolResultCache.delete(cacheKey);
     }
 
-    await new Promise(r => requestAnimationFrame(r));
+    // P2-10 修复：queueMicrotask 替代 rAF，在隐藏窗口下不会降频
+    await new Promise<void>(r => { queueMicrotask(r); });
     callbacks.onToolCallStart(call);
     logToolStart(call.function.name, JSON.stringify(call.function.arguments));
 
@@ -1351,7 +1634,7 @@ async function handleExecuting(
       }, null];
     }
 
-    await new Promise(r => requestAnimationFrame(r));
+    await new Promise<void>(r => { queueMicrotask(r); });
 
     if (needsConfirmation(call.function.name)) {
       const confirmed = await callbacks.onConfirmTool(call);
@@ -1365,10 +1648,11 @@ async function handleExecuting(
       }
     }
 
+    // ── P0-1 修复：区分瞬态错误和永久错误 ──
     let lastError = '';
     for (let retry = 0; retry <= MAX_RETRIES; retry++) {
       // 重试前检查中止信号
-      if (state.get<AbortController | null>(KEYS.ABORT_CONTROLLER)?.signal.aborted) {
+      if (isAborted()) {
         return [{
           name: call.function.name, arguments: call.function.arguments,
           result: { success: false, error: '用户中止' },
@@ -1385,12 +1669,23 @@ async function handleExecuting(
         }, result.success ? cacheKey : null];
       } catch (err) {
         lastError = (err as Error).message;
+        // 永久性错误不重试：文件不存在、权限拒绝、路径不可达
+        if (isPermanentError(lastError)) {
+          logWarn(`工具永久错误（不重试）: ${call.function.name}`, lastError);
+          return [{
+            name: call.function.name, arguments: call.function.arguments,
+            result: { success: false, error: lastError },
+            status: 'error' as const, timestamp: Date.now()
+          }, null];
+        }
         if (retry < MAX_RETRIES) {
-          logWarn(`工具重试 ${retry + 1}/${MAX_RETRIES}: ${call.function.name}`, lastError);
-          await new Promise(r => setTimeout(r, 500));
+          // 瞬态错误：指数退避重试
+          const delay = 500 * Math.pow(2, retry);
+          logWarn(`工具重试 ${retry + 1}/${MAX_RETRIES}: ${call.function.name}（${delay}ms 后）`, lastError);
+          await new Promise(r => setTimeout(r, delay));
           continue;
         }
-        logError(`工具执行失败: ${call.function.name}`, lastError);
+        logError(`工具执行失败（已达最大重试）: ${call.function.name}`, lastError);
         return [{
           name: call.function.name, arguments: call.function.arguments,
           result: { success: false, error: lastError },
@@ -1429,9 +1724,9 @@ async function handleExecuting(
           spawn_task: '以上 tool 消息是 spawn_task 子代理返回的实际执行结果。严格基于这些数据回答，不要编造。',
         };
         const nudge = nudges[record.name];
-        if (nudge) {
-          ctx.messages.push({ role: 'system', content: `⚠️ ${nudge}` });
-        }
+	        if (nudge) {
+	          ctx.messages.push({ role: 'user', content: `⚠️ ${nudge}` });
+	        }
       }
       if (cacheKey) toolResultCache.set(cacheKey, { result: record.result!, timestamp: Date.now() });
       // 记录度量
@@ -1463,7 +1758,7 @@ async function handleObserving(
   currentSession: ChatSession | null,
 ): Promise<void> {
   // 中止检查
-  if (state.get<AbortController | null>(KEYS.ABORT_CONTROLLER)?.signal.aborted) return;
+  if (isAborted()) return;
   // 硬限制工具消息数量 — 保留最近 40 条
   {
     const toolIndices: number[] = [];
@@ -1493,13 +1788,13 @@ async function handleObserving(
   // ── post_iteration Hook ──
   executeHooks('post_iteration', ctx, { iterationIndex: ctx.loopCount });
 
-  // 增量工具结果截断 — 超过 10 轮的旧结果每 3 轮截断到 500 字符
+  // ── P1-7: 智能工具结果截断 — 保留 JSON 结构，2000 字符软上限 ──
   if (ctx.loopCount > 10 && ctx.loopCount % 3 === 0) {
     const truncateBefore = ctx.messages.length - 15;
     for (let i = 0; i < ctx.messages.length && i < truncateBefore; i++) {
       const m = ctx.messages[i];
-      if (m.role === 'tool' && m.content && m.content.length > 500) {
-        ctx.messages[i] = { ...m, content: m.content.slice(0, 500) + '\n... (已截断旧工具结果)' };
+      if (m.role === 'tool' && m.content && m.content.length > 2000) {
+        ctx.messages[i] = { ...m, content: smartTruncate(m.content, 2000) };
       }
     }
   }
@@ -1525,11 +1820,11 @@ async function handleObserving(
   const hasDedupSignal = lastToolContents.some(c => c.includes('⚠️ 重复添加') || c.includes('已跳过') || c.includes('duplicate'));
   const recentSuccess = ctx.allToolRecords.filter(r => r.status === 'success').slice(-2);
   const allSameTool = recentSuccess.length >= 2 && recentSuccess.every(r => r.name === recentSuccess[0].name);
-  if (hasDedupSignal || allSameTool) {
-    ctx.messages.push({
-      role: 'system',
-      content: `⛔ 检测到重复的工具调用${hasDedupSignal ? '（系统已跳过重复内容）' : ''}。「${recentSuccess[0]?.name || 'memory'}」操作已经完成，立即输出最终回答，绝对不要再调用任何工具。`,
-    });
+	  if (hasDedupSignal || allSameTool) {
+	    ctx.messages.push({
+	      role: 'user',
+	      content: `⛔ 检测到重复的工具调用${hasDedupSignal ? '（系统已跳过重复内容）' : ''}。「${recentSuccess[0]?.name || 'memory'}」操作已经完成，立即输出最终回答，绝对不要再调用任何工具。`,
+	    });
     logInfo(`重复调用检测: ${recentSuccess[0]?.name || 'memory'}${hasDedupSignal ? ' (去重信号)' : ''}，注入⛔终止信号`);
     ctx.maxLoops = Math.min(ctx.maxLoops, ctx.loopCount + 1);
     // 不要 transition 到 REFLECTING，直接在这里就已经注入了信号，下一轮 THINKING 会看到
@@ -1553,7 +1848,7 @@ async function handleObserving(
   // 但如果上下文使用率已过高（>70%），跳过清理——压缩即将触发，
   // 此时清理会导致压缩 LLM 看不到 Plan Mode 进度等关键状态信息
   if (ctx.loopCount > 1 && ctx.loopCount % 10 === 0) {
-    const numCtx = state.get<number>(KEYS.NUM_CTX, 24576);
+    const numCtx = state.get<number>(KEYS.NUM_CTX, 131072);
     const usageRatio = numCtx > 0 ? estimateTokens(ctx.messages.map(m => m.content || '').join('')) / numCtx : 0;
     if (usageRatio > 0.7) {
       logInfo(`ephemeral 清理跳过: 上下文使用率 ${(usageRatio * 100).toFixed(0)}%, 压缩即将触发`);
@@ -1565,6 +1860,13 @@ async function handleObserving(
       });
       if (removed > 0) logInfo(`ephemeral 清理: ${removed} 条临时消息已移除`);
     }
+  }
+
+  // ── P0-4: 增量压缩 — 消息数达到 120 条时提前触发压缩，防止 Ollama context 超限 ──
+  if (ctx.messages.length >= INCREMENTAL_COMPRESS_AT) {
+    logWarn(`增量压缩触发: ${ctx.messages.length} 条消息 > ${INCREMENTAL_COMPRESS_AT}`);
+    transition(ctx, S.COMPRESSING);
+    return;
   }
 
   transition(ctx, S.REFLECTING);
@@ -1582,7 +1884,7 @@ async function handleReflecting(
   currentSession: ChatSession | null,
 ): Promise<void> {
   // 中止检查
-  if (state.get<AbortController | null>(KEYS.ABORT_CONTROLLER)?.signal.aborted) return;
+  if (isAborted()) return;
   // ── 异常1: 空响应 + 有工具历史 → 模型可能困惑 → 注入提示 ──
   if (ctx.toolCalls.length === 0 && !ctx.content.trim() && ctx.loopCount > 1 && ctx.allToolRecords.length > 0) {
     logWarn('模型返回空内容（有未处理的工具结果），注入继续提示');
@@ -1749,7 +2051,7 @@ async function handleCompressing(
   api: OllamaAPI,
   model: string,
 ): Promise<void> {
-  const numCtx = state.get<number>(KEYS.NUM_CTX, 24576);
+  const numCtx = state.get<number>(KEYS.NUM_CTX, 131072);
   if (shouldAutoCompress(ctx.messages, numCtx)) {
     logInfo('COMPRESSING: 上下文压缩触发');
     const compressAC = state.get<AbortController | null>(KEYS.ABORT_CONTROLLER) || new AbortController();
@@ -1860,7 +2162,7 @@ export async function runAgentLoop(
       }
 
       // 检查中止信号
-      if (state.get<AbortController | null>(KEYS.ABORT_CONTROLLER)?.signal.aborted) {
+      if (isAborted()) {
         logInfo('ReAct Agent Loop 已中止');
         if (ctx.allToolRecords.length > 0) {
           state.set('_abortToolRecords', ctx.allToolRecords);
@@ -1869,7 +2171,7 @@ export async function runAgentLoop(
       }
 
       // Token 感知的动态迭代预算
-      const numCtx = state.get<number>(KEYS.NUM_CTX, 24576);
+      const numCtx = state.get<number>(KEYS.NUM_CTX, 131072);
       const usageRatio = estimateTokens(ctx.messages.map(m => m.content || '').join('')) / numCtx;
       if (usageRatio > 0.8 && (ctx.maxLoops - ctx.loopCount) > 3) {
         const newMax = ctx.loopCount + 3;
@@ -1931,14 +2233,25 @@ export async function runAgentLoop(
     }
     transition(ctx, S.TERMINATED);
   } finally {
-    // ── 保存 Plan Mode 进度（中止/异常路径也保留）──
+    // ── P1-8: Plan Mode 断点续传 — 保存完整追踪器到 session，支持跨轮次恢复 ──
     if (ctx.mode === 'plan') {
       const tracker = getPlanTracker();
       if (tracker.active && tracker.steps.length > 0) {
+        // 保存可恢复的完整追踪器（与 formatted status 共存）
+        const resumeData = {
+          steps: tracker.steps.map(s => ({ index: s.index, label: s.label, done: s.done })),
+          total: tracker.total,
+          done: tracker.done,
+          loopCount: ctx.loopCount,
+          savedAt: Date.now(),
+        };
+        state.set('_planResumeData', resumeData);
         state.set('_lastPlanStatus', formatPlanStatus());
       }
     }
     clearPlanTracker();
     endSessionMetrics();
+    cleanupAbortController();
+    flushAllTraces(); // P3-13: 确保所有轨迹写入 SQLite
   }
 }
