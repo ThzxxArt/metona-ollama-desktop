@@ -25,7 +25,6 @@ import { buildContext, estimateTokens, shouldAutoCompress, compressWithLLM, AUTO
 import { runCompletionGate } from './completion-gate.js';
 import { executeHooks } from './hooks.js';
 import { recordIteration, recordToolCall, recordCompletionGate, startSessionMetrics, endSessionMetrics } from './agent-metrics.js';
-import { buildProjectIndex, buildIndexContext } from './context-indexer.js';
 import type {
   OllamaMessage,
   OllamaStreamChunk,
@@ -684,7 +683,7 @@ async function loadCustomFiles(workspaceDir: string, systemPromptParts: string[]
   }
 }
 
-/** P2-11: 构建环境+反幻觉+日期固定提示词片段 */
+/** P2-11: 构建环境+日期固定提示词片段 */
 function buildStandardPrompts(userContent: string): string[] {
   const parts: string[] = [];
 
@@ -703,22 +702,6 @@ Shell: ${osInfo.shell}
 - 如果是 Windows，使用 CMD/PowerShell 命令（如 dir、type、findstr，路径用 \\）
 - 如果是 Linux/macOS，使用 Bash 命令（如 ls、cat、grep，路径用 /）
 - 严禁在 Windows 上执行 Linux 命令，严禁在 Linux 上执行 Windows 命令。`);
-
-  // 反幻觉铁律
-  parts.push(`[反幻觉铁律 — 最高优先级，不可违反]
-
-⚠️ 以下规则高于一切其他指令，违反将导致任务失败：
-
-1. **禁止编造工具结果**：绝对不能在未调用工具的情况下声称"已搜索"、"已获取"、"已写入"、"已执行"。如果你没有调用过某个工具，就不能说使用了它。
-2. **文件操作必须实际执行**：说"已写入文件"之前，必须先调用 write_file 并收到成功返回。说"已读取文件"之前，必须先调用 read_file。
-3. **搜索必须实际执行**：说"搜索结果显示"、"根据搜索结果"之前，必须先调用 web_search。搜索结果的 snippet 不可信，必须用 web_fetch 获取完整内容后才能引用。
-4. **信息不足时如实报告**：如果工具调用失败或返回了意外的结果，必须如实报告，不能编造替代信息。
-5. **完成标志**：当所有必需的工具调用已经实际执行完毕，且获得了足够的信息后，才能给出最终回答。最终回答中不要编造"文件已生成"等声明——除非你真的调用了对应工具。
-6. **用户上传的图片和文件已在当前消息中**：如果用户消息中包含图片附件标记（如 [已上传 N 张图片: ...]）或文件标记（如 [文件: xxx]），说明这些资源已随消息作为附件提供，你可以直接"看到"和分析它们。**严禁再用 read_file / search_files 等工具去磁盘上查找这些已上传的图片和文件**——它们不在磁盘上，就在当前消息里。不要浪费轮次去做无意义的文件搜索。
-7. **read_file 不能看图片**：read_file 返回的是文本或 base64 编码字符串，视觉模型无法处理。如果你需要分析图片内容，只有用户通过上传功能提供的图片才是可见的。不要尝试用 read_file mode=binary 去"读取"图片文件。
-8. **禁止在 Plan 模式下为已上传的附件规划文件查找步骤**：如果用户消息中已经有图片或文件附件，执行计划的第一步应该是直接分析这些附件，而不是"搜索工作空间中的图片文件"或"查找相关文件"。
-
-违反以上任何一条都是不可接受的错误。请逐条对照检查你的每一次回复。`);
 
   // 日期
   const now = new Date();
@@ -841,21 +824,9 @@ async function handleInit(
 ⚠️ 以上是你需要完成的任务。即使上下文被压缩或清理，也必须记住并完成这个任务。`);
     }
   }
-
-  // ── 渐进式披露 — 项目索引（始终保留在上下文中）──
-  if (workspaceDir) {
-    try {
-      const projectIndex = await buildProjectIndex(workspaceDir);
-      const indexContext = buildIndexContext(projectIndex);
-      if (indexContext) {
-        systemPromptParts.push(indexContext);
-        logInfo('项目索引已注入系统提示词', `${projectIndex.tokenCount} tokens`);
-      }
-    } catch { /* 索引构建失败不影响主流程 */ }
-  }
   }
 
-  // P2-11: 注入标准固定提示词（环境 + 反幻觉铁律 + 日期）
+  // P2-11: 注入标准固定提示词（环境 + 日期）
   systemPromptParts.push(...buildStandardPrompts(userContent));
 
   const fullSystemPrompt = systemPromptParts.join('\n\n');
@@ -982,114 +953,6 @@ function extractPlanSteps(content: string): string[] {
 
   return steps.length > 0 ? steps.slice(0, 8) : ['执行任务计划（详见上方描述）'];
 }
-
-/**
- * P2-9 + P2-12: 中途幻觉检测 — 中英文双语规则，与 completion-gate 共用统一规则表
- * 通过提取共享规则 + 添加英文 pattern，覆盖中英文模型输出
- */
-function detectMidTaskHallucination(
-  content: string,
-  allToolRecords: Array<{ name: string }>,
-): string | null {
-  const called = new Set(allToolRecords.map(r => r.name));
-  const lower = content.toLowerCase();
-
-  // 统一规则表：单一定义，mid-task 和 completion-gate 共用
-  for (const rule of HALLUCINATION_RULES) {
-    for (const pattern of rule.patterns) {
-      if (pattern.test(content)) {
-        const anyCalled = rule.requiredTools.some(t => called.has(t));
-        if (anyCalled) break; // 工具已调用，跳过此类检测
-        // 写后读豁免
-        if (rule.label.includes('读取') && called.has('write_file')) break;
-        return `${rule.label}操作但对应工具从未被实际调用（应调用 ${rule.requiredTools.join(' / ')}）。`;
-      }
-    }
-  }
-  return null;
-}
-
-/** P2-12: 统一幻觉检测规则表（中英文双语），completion-gate.ts 通过 import 共享此表 */
-interface HallucinationRule {
-  patterns: RegExp[];
-  requiredTools: string[];
-  label: string;
-}
-
-export const HALLUCINATION_RULES: HallucinationRule[] = [
-  // 文件写入 — 中英
-  { patterns: [/已写入文件/, /已创建文件/, /文件已生成/, /已保存到/, /已成功创建/, /成功写入/,
-               /文件.*已.*创建/, /文件.*已.*写入/, /生成.*文件/, /写入.*工作空间/,
-               /(?:have|has)\s+(?:written|created|saved|generated)\s+(?:the\s+)?file/i,
-               /file\s+(?:has been|was)\s+(?:written|created|saved|generated)/i,
-               /I(?:'ve|\s+have)\s+(?:written|created|saved)/i],
-    requiredTools: ['write_file'], label: '写入/创建文件' },
-  // 文件编辑
-  { patterns: [/已修改文件/, /已编辑文件/, /文件已更新/, /已替换.*内容/, /修改了.*文件/, /更新了.*文件/,
-               /(?:have|has)\s+(?:modified|edited|updated)\s+(?:the\s+)?file/i,
-               /I(?:'ve|\s+have)\s+(?:modified|edited|updated)\s+the\s+file/i],
-    requiredTools: ['edit_file', 'write_file'], label: '编辑/修改文件' },
-  // 文件删除
-  { patterns: [/已删除文件/, /已移除文件/, /文件已清除/, /删除了.*文件/,
-               /(?:have|has)\s+(?:deleted|removed)\s+(?:the\s+)?file/i],
-    requiredTools: ['delete_file'], label: '删除文件' },
-  // 文件移动/复制
-  { patterns: [/已移动文件/, /已复制文件/, /已重命名/, /文件.*已.*移动/, /文件.*已.*复制/,
-               /(?:have|has)\s+(?:moved|copied|renamed)\s+(?:the\s+)?file/i],
-    requiredTools: ['move_file', 'copy_file'], label: '移动/复制文件' },
-  // 目录创建
-  { patterns: [/已创建了?(目录|文件夹)/,
-               /(?:have|has)\s+created\s+(?:a\s+)?(?:directory|folder)/i],
-    requiredTools: ['create_directory'], label: '创建目录' },
-  // 搜索/抓取网页
-  { patterns: [/搜索(结果|到|显示).*(条|个)/, /根据搜索/, /抓取了.*网页/, /从.*搜索.*得到/,
-               /查询到/, /检索到/, /搜索到/, /网络.*显示/, /实时.*数据.*显示/,
-               /search\s+results\s+(?:show|indicate|suggest)/i, /according\s+to\s+(?:the\s+)?search/i,
-               /I\s+(?:found|discovered|searched)\s+(?:on|the\s+web|online)/i,
-               /based\s+on\s+(?:the\s+)?search\s+results/i],
-    requiredTools: ['web_search', 'web_fetch'], label: '搜索/抓取网页' },
-  // 浏览器
-  { patterns: [/浏览器截图显示/, /打开网页.*看到/, /页面显示/, /浏览器.*打开/,
-               /点击了.*按钮/, /输入了.*文本/, /页面.*截图/,
-               /browser\s+(?:screenshot|shows|displays)/i, /opened\s+(?:the\s+)?(?:page|url|website)/i,
-               /I\s+(?:opened|navigated|browsed)\s+(?:to\s+)?(?:the\s+)?/i],
-    requiredTools: ['browser_open', 'browser_screenshot', 'browser_extract', 'browser_click', 'browser_type'], label: '浏览器操作' },
-  // 命令执行
-  { patterns: [/运行.*命令/, /执行.*脚本/, /命令.*输出/, /运行结果/, /命令.*返回/, /执行.*结果/, /终端.*显示/,
-               /(?:ran|executed|run)\s+(?:the\s+)?command/i, /command\s+(?:output|result)/i,
-               /I(?:'ve|\s+have)\s+(?:run|executed)\s+(?:the\s+)?command/i],
-    requiredTools: ['run_command'], label: '执行命令' },
-  // Git 操作
-  { patterns: [/已提交/, /已推送/, /已暂存/, /已创建分支/, /已合并/, /已克隆/,
-               /git.*commit/, /git.*push/, /git.*add/, /提交了.*代码/,
-               /(?:have|has)\s+(?:committed|pushed|staged|merged|cloned)/i,
-               /I(?:'ve|\s+have)\s+(?:committed|pushed|staged)/i],
-    requiredTools: ['git'], label: 'Git 操作' },
-  // 下载
-  { patterns: [/已下载文件/, /下载完成/, /文件.*已.*下载/, /从.*下载/,
-               /(?:have|has)\s+downloaded\s+(?:the\s+)?file/i],
-    requiredTools: ['download_file'], label: '下载文件' },
-  // 压缩/解压
-  { patterns: [/已压缩/, /已解压/, /压缩完成/, /解压完成/, /归档.*已.*创建/,
-               /(?:have|has)\s+(?:compressed|extracted|archived)/i],
-    requiredTools: ['compress'], label: '压缩/解压' },
-  // 记忆操作
-  { patterns: [/已记住/, /已添加记忆/, /记忆已保存/, /已更新记忆/, /已删除记忆/,
-               /(?:have|has)\s+(?:remembered|memorized|saved\s+to\s+memory)/i],
-    requiredTools: ['memory'], label: '记忆操作' },
-  // 会话操作
-  { patterns: [/历史会话.*显示/, /已读取.*会话/, /会话.*内容.*如下/,
-               /(?:have|has)\s+(?:read|listed)\s+(?:the\s+)?session/i],
-    requiredTools: ['session_list', 'session_read'], label: '会话操作' },
-  // 子代理
-  { patterns: [/子代理.*完成/, /子任务.*已.*执行/, /spawn.*task.*完成/,
-               /sub[\s-]?agent\s+(?:has\s+)?(?:completed|finished)/i],
-    requiredTools: ['spawn_task'], label: '子代理委派' },
-  // 系统工具
-  { patterns: [/计算.*结果.*为/, /哈希.*值.*为/, /UUID.*生成/, /随机.*生成.*为/,
-               /(?:calculated|computed|hashed)\s+(?:the\s+)?(?:result|value)/i],
-    requiredTools: ['calculator', 'hash', 'uuid', 'random'], label: '系统工具' },
-];
 
 /**
  * 多步骤任务待办检测 — 解析用户请求中的动作动词，对比已完成的工具调用
@@ -1305,10 +1168,10 @@ async function handleThinking(
     if (needsTools) {
       ctx.messages.push({
         role: 'user',
-        content: '⚠️ 你的任务需要调用工具才能完成。请不要用文字描述"你会怎么做"，而是直接调用对应的工具（web_search、write_file 等）来实际执行。如果你不确定调用哪个工具，查看可用工具列表。',
+        content: '请直接调用工具完成任务，不要只描述做法。',
         ephemeral: true,
       });
-      logInfo('任务感知: 检测到可能需要工具但尚未调用，注入提醒');
+      logInfo('任务感知: 注入工具调用提醒');
     }
   }
 
@@ -1320,10 +1183,10 @@ async function handleThinking(
     if (pending.length > 0) {
       ctx.messages.push({
         role: 'user',
-        content: `⚠️ 你还有以下未完成的任务（来自用户原始请求）：\n${pending.map((p, i) => `  ${i + 1}. ${p}`).join('\n')}\n\n请继续执行，完成所有任务后再给出最终回答。`,
+        content: `还有任务未完成: ${pending.join('、')}`,
         ephemeral: true,
       });
-      logInfo('待办追踪: 注入未完成任务提醒', pending.join(', '));
+      logInfo('待办追踪', pending.join(', '));
     }
     // 注：不再注入"全部完成"确认信号。工具调用数量≠任务完成度，
     // 例如"删除3个文件"调用1次 delete_file 不能算完成。
@@ -1332,12 +1195,10 @@ async function handleThinking(
 
   // Token 预算警告
   const remaining = ctx.maxLoops - ctx.loopCount + 1;
-  if (remaining <= 5 && remaining > 0) {
-    const warning = remaining <= 2
-      ? `\n⚠️ CRITICAL: You have only ${remaining} iteration(s) left. Stop using tools and provide your final answer NOW.`
-      : `\n⚠️ WARNING: You have approximately ${remaining} iterations remaining. Start wrapping up and prepare your final answer.`;
-	    ctx.messages.push({ role: 'user', content: warning, ephemeral: true });
-	  }
+  if (remaining <= 3 && remaining > 0) {
+    const warning = `剩余 ${remaining} 轮，尽快完成。`;
+    ctx.messages.push({ role: 'user', content: warning, ephemeral: true });
+  }
 
 	  const abortController = registerAbortController();
 
@@ -1782,22 +1643,6 @@ async function handleObserving(
     }
   }
 
-  // ── 进度锚定 — 每 5 轮注入机器生成的工具调用摘要 ──
-  if (ctx.loopCount > 1 && ctx.loopCount % 5 === 0 && ctx.allToolRecords.length > 0) {
-    const recentRecords = ctx.allToolRecords.slice(-10);
-    const summary = recentRecords.map(r => {
-      const statusIcon = r.status === 'success' ? '✅' : r.status === 'error' ? '❌' : '🔄';
-      const argsPreview = r.arguments ? JSON.stringify(r.arguments).slice(0, 60) : '';
-      return `${statusIcon} ${r.name}(${argsPreview}${argsPreview.length >= 60 ? '…' : ''})`;
-    }).join('\n');
-    ctx.messages.push({
-      role: 'user',
-      content: `[进度锚点 #${ctx.loopCount}] 以下是你最近实际调用的工具（由系统记录，不可伪造）：\n${summary}\n\n请基于以上真实记录继续。不要声称执行过未在列表中出现的操作。`,
-      ephemeral: true,
-    });
-      logInfo('进度锚点已注入', `第 ${ctx.loopCount} 轮, ${recentRecords.length} 条记录`);
-  }
-
   // ── 通用重复调用检测：工具结果含去重信号 或 同工具连续成功 2+ 次 ──
   const lastToolContents = ctx.messages.filter(m => m.role === 'tool').slice(-3).map(m => m.content || '');
   const hasDedupSignal = lastToolContents.some(c => c.includes('⚠️ 重复添加') || c.includes('已跳过') || c.includes('duplicate'));
@@ -1811,20 +1656,6 @@ async function handleObserving(
     logInfo(`重复调用检测: ${recentSuccess[0]?.name || 'memory'}${hasDedupSignal ? ' (去重信号)' : ''}，注入⛔终止信号`);
     ctx.maxLoops = Math.min(ctx.maxLoops, ctx.loopCount + 1);
     // 不要 transition 到 REFLECTING，直接在这里就已经注入了信号，下一轮 THINKING 会看到
-  }
-
-  // ── 中途幻觉检测 — 每轮检查模型是否在无工具调用时声称完成了操作 ──
-  const lastAssistantMsg = [...ctx.messages].reverse().find(m => m.role === 'assistant');
-  if (lastAssistantMsg?.content) {
-    const midHallucination = detectMidTaskHallucination(lastAssistantMsg.content, ctx.allToolRecords);
-    if (midHallucination) {
-      logWarn(`中途幻觉检测: ${midHallucination}`);
-      ctx.messages.push({
-        role: 'user',
-        content: `⚠️ ${midHallucination}\n请实际调用对应工具来完成操作，不要用文字描述来替代。`,
-        ephemeral: true,
-      });
-    }
   }
 
   // 每 10 轮清理累积的 ephemeral 消息
@@ -1955,42 +1786,12 @@ async function handleReflecting(
     return;
   }
 
-  // ── 正常终止: 模型停止调工具 → 模型认为任务完成 → 信任模型 ──
-  // Completion Gate 分级：阻断级检查（幻觉/注入）不通过则强制重新回答
-  // 咨询级检查（notThinking/contentQuality）仅记录日志
+  // ── 正常终止: 模型停止调工具 → 信任模型的判断 ──
   try {
     const gateResult = await runCompletionGate(ctx);
     if (!gateResult.passed) {
       recordCompletionGate(false);
-      if (gateResult.critical) {
-        // 阻断级失败：强制模型重新回答
-        logWarn(`Completion Gate 🔴阻断: ${gateResult.reason}`);
-        // 检测是否所有待办任务已完成 — 若是，则只要求修改措辞；若待办中仍有被 Gate 拦截的操作，则明确要求调用工具
-        const firstUserMsg = ctx.messages.find(m => m.role === 'user');
-        const userText = firstUserMsg?.content || '';
-        const stillPending = detectPendingActions(userText, ctx.allToolRecords);
-        const gateReason = gateResult.reason || '';
-        let retryMsg: string;
-        if (stillPending.length === 0) {
-          retryMsg = `⚠️ 完成检查发现问题: ${gateReason}\n注意：你的所有工具调用已经实际完成。请只修改文字措辞消除上述问题，**绝对不要**调用任何新工具。直接重新输出修正后的文字即可。`;
-        } else if (gateReason.includes('写入') && stillPending.some(p => p.includes('写入'))) {
-          // 关键：模型声称写了文件但实际没调 write_file → 明确要求调用工具
-          retryMsg = `⚠️ 你还没有实际调用 write_file 工具写入文件，但回复中声称已写入。\n请**立即调用 write_file** 工具将内容写入工作空间，不要只在文字中描述。\n待完成任务: ${stillPending.join('、')}`;
-        } else if (gateReason.includes('搜索') && stillPending.some(p => p.includes('搜索'))) {
-          retryMsg = `⚠️ 你还没有实际调用 web_search 工具，但回复中声称已搜索。\n请**立即调用 web_search** 工具执行搜索。\n待完成任务: ${stillPending.join('、')}`;
-        } else {
-          retryMsg = `⚠️ 完成检查发现问题: ${gateReason}\n请修正后重新给出回答。待完成任务: ${stillPending.join('、')}`;
-        }
-        ctx.messages.push({
-          role: 'user',
-          content: retryMsg,
-          ephemeral: true,
-        });
-        transition(ctx, S.THINKING);
-        return;
-      }
-      // 咨询级失败：仅记录，不阻断
-      logWarn(`Completion Gate 🟡咨询: ${gateResult.reason}（不阻断）`);
+      logWarn(`Completion Gate: ${gateResult.reason}（仅记录，不阻断）`);
     } else {
       recordCompletionGate(true);
     }

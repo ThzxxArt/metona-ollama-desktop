@@ -10,7 +10,6 @@
 
 import { logWarn, logInfo } from './log-service.js';
 import { estimateTokens } from './context-manager.js';
-import { HALLUCINATION_RULES } from './agent-engine.js';
 import type { LoopContext, CompletionCheck } from '../types.js';
 
 // ═══════════════════════════════════════════════════════════════
@@ -106,62 +105,6 @@ const contextEfficiencyCheck: CompletionCheck = {
   },
 };
 
-/** 系统提示词注入检测：防止模型在回复中尝试注入 prompt */
-const promptInjectionCheck: CompletionCheck = {
-  name: 'promptInjection',
-  description: '检测回复中是否包含疑似 prompt injection 内容',
-  check: async (ctx: LoopContext) => {
-    const injectionPatterns = [
-      /ignore\s+(all\s+)?(previous|above)\s+instructions/i,
-      /you\s+are\s+now\s+(a|an)\s+/i,
-      /new\s+system\s*prompt/i,
-      /forget\s+(all\s+)?(previous|above)/i,
-      /\[SOUL\.md\]/,
-      /\[AGENT\.md\]/,
-    ];
-    for (const pattern of injectionPatterns) {
-      if (pattern.test(ctx.content)) {
-        return {
-          passed: false,
-          reason: '回复中包含疑似 prompt injection 内容（试图覆盖系统提示词）。请移除相关内容后重新回答。'
-        };
-      }
-    }
-    return { passed: true, reason: '' };
-  },
-};
-
-/** 工具幻觉检测：模型声称完成了某操作但该工具从未被调用 */
-const toolHallucinationCheck: CompletionCheck = {
-  name: 'toolHallucination',
-  description: '检测模型是否编造了工具调用结果',
-  check: async (ctx: LoopContext) => {
-    const calledTools = new Set(ctx.allToolRecords.map(r => r.name));
-    const content = ctx.content;
-
-    for (const rule of HALLUCINATION_RULES) {
-      for (const pattern of rule.patterns) {
-        if (pattern.test(content)) {
-          const anyCalled = rule.requiredTools.some(t => calledTools.has(t));
-          if (!anyCalled) {
-            if (rule.label.includes('读取') && calledTools.has('write_file')) {
-              return { passed: true, reason: '' };
-            }
-            const toolList = rule.requiredTools.join(' / ');
-            return {
-              passed: false,
-              reason: `回复声称进行了"${rule.label}"操作，但 ${toolList} 工具从未被调用。请实际调用 ${toolList} 来完成任务，不要编造结果。`
-            };
-          }
-          break;
-        }
-      }
-    }
-
-    return { passed: true, reason: '' };
-  },
-};
-
 // ═══════════════════════════════════════════════════════════════
 // 检查项注册与管理
 // ═══════════════════════════════════════════════════════════════
@@ -171,14 +114,6 @@ const DEFAULT_ENABLED_CHECKS = new Set([
   'contentQuality',
   'toolResultReview',
   'notThinking',
-  'promptInjection',
-  'toolHallucination',
-]);
-
-/** 阻断级检查：不通过时强制模型重新回答 */
-const CRITICAL_CHECKS = new Set([
-  'toolHallucination',
-  'promptInjection',
 ]);
 
 /** 注册表 */
@@ -187,8 +122,6 @@ const checkRegistry = new Map<string, CompletionCheck>([
   ['toolResultReview', toolResultReviewCheck],
   ['notThinking', notThinkingCheck],
   ['contextEfficiency', contextEfficiencyCheck],
-  ['promptInjection', promptInjectionCheck],
-  ['toolHallucination', toolHallucinationCheck],
 ]);
 
 /** 已启用的检查项 */
@@ -232,8 +165,6 @@ export function getEnabledChecks(): CompletionCheck[] {
 export interface GateResult {
   passed: boolean;
   reason: string;
-  /** 是否为阻断级失败（必须重新回答） */
-  critical: boolean;
   /** 各项检查的详细结果 */
   details: Array<{ name: string; passed: boolean; reason: string; durationMs: number }>;
 }
@@ -244,19 +175,12 @@ export interface GateResult {
 export async function runCompletionGate(ctx: LoopContext): Promise<GateResult> {
   const checks = getEnabledChecks();
   if (checks.length === 0) {
-    return { passed: true, reason: '', critical: false, details: [] };
+    return { passed: true, reason: '', details: [] };
   }
 
   const details: GateResult['details'] = [];
 
-  // 关键检查优先（幻觉/注入），咨询检查在后
-  const sorted = [...checks].sort((a, b) => {
-    const aCrit = CRITICAL_CHECKS.has(a.name) ? 0 : 1;
-    const bCrit = CRITICAL_CHECKS.has(b.name) ? 0 : 1;
-    return aCrit - bCrit;
-  });
-
-  for (const check of sorted) {
+  for (const check of checks) {
     const start = Date.now();
     try {
       const result = await check.check(ctx);
@@ -267,14 +191,8 @@ export async function runCompletionGate(ctx: LoopContext): Promise<GateResult> {
         durationMs: Date.now() - start,
       });
       if (!result.passed) {
-        const isCritical = CRITICAL_CHECKS.has(check.name);
-        logWarn(`Completion Gate: "${check.name}" ${isCritical ? '🔴阻断' : '🟡咨询'} — ${result.reason}`);
-        return {
-          passed: false,
-          reason: result.reason,
-          critical: isCritical,
-          details,
-        };
+        logWarn(`Completion Gate: "${check.name}" — ${result.reason}`);
+        return { passed: false, reason: result.reason, details };
       }
     } catch (err) {
       details.push({
@@ -286,7 +204,7 @@ export async function runCompletionGate(ctx: LoopContext): Promise<GateResult> {
     }
   }
 
-  return { passed: true, reason: '', critical: false, details };
+  return { passed: true, reason: '', details };
 }
 
 /**
