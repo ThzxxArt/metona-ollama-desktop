@@ -9,7 +9,7 @@ import { getSelectedModel, isThinkEnabled, isVisionAvailable, isToolCallingSuppo
 import {
   renderMessages, clearMessagesDOM, appendAssistantPlaceholder, appendSystemMessage,
   updateLastAssistantMessage, clearMessages, safeMarkdown, enableAutoScroll, resetAutoScroll,
-  appendToolCallCardToPlaceholder, updateToolCallCardInPlaceholder, resetCurrentPlaceholder
+  appendToolCallCardToPlaceholder, updateToolCallCardInPlaceholder, resetCurrentPlaceholder, removeCurrentPlaceholder
 } from './chat-area.js';
 import { showToast } from './toast.js';
 import { addToolCard, startToolCard, updateToolCard, clearToolCardsExternal, clearTerminalExternal, getWorkspaceDirPath, hasActiveCards, showWorkingHint, clearWorkingHint } from './workspace-panel.js';
@@ -529,17 +529,14 @@ async function handleRetry(): Promise<void> {
           });
         },
         onNewIteration: (toolCalls) => {
-          const hasToolCalls = toolCalls && toolCalls.length > 0;
-          if (retryContent || hasToolCalls) {
+          removeCurrentPlaceholder();
+          const hasContent = !!retryContent?.trim();
+          if (hasContent || retryIterations === 0) {
             const now = Date.now();
-            const toolCallRecords: ToolCallRecord[] | undefined = toolCalls?.map(tc => ({
-              name: tc.function.name, arguments: tc.function.arguments,
-              result: null, status: 'running' as const, timestamp: now
-            }));
             const prevMsg: ChatMessage = {
-              role: 'assistant', content: retryContent || '', timestamp: now,
+              role: 'assistant', content: retryContent || '', model: getSelectedModel(),
+              timestamp: now,
               ...(retryThinkContent && { think: retryThinkContent }),
-              ...(toolCallRecords?.length && { toolCalls: toolCallRecords }),
             };
             state.update(KEYS.CURRENT_SESSION, (s: any) => ({
               ...s, messages: [...s.messages, prevMsg], updatedAt: Date.now()
@@ -548,7 +545,6 @@ async function handleRetry(): Promise<void> {
           }
           appendAssistantPlaceholder();
           retryContent = '';
-          retryThinkContent = '';
           retryIterations++;
         },
         onThinking: (thinking) => { retryThinkContent = thinking; updateLastAssistantMessage(retryContent, thinking, null, getSelectedModel()); },
@@ -1090,27 +1086,7 @@ export async function sendMessage(): Promise<void> {
 
 /** 更新当前会话消息中最近一个 'running' 状态的同名工具记录 */
 function updateMessageToolRecord(toolName: string, status: 'success' | 'error', result: Record<string, unknown>): void {
-  let updated = false;
-  state.update(KEYS.CURRENT_SESSION, (session: any) => {
-    if (!session) return session;
-    const messages = [...session.messages];
-    // 从后往前找最近一条包含该工具 running 状态记录的消息
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const msg = messages[i];
-      if (!msg.toolCalls) continue;
-      const idx = msg.toolCalls.findIndex((tc: any) => tc.name === toolName && tc.status === 'running');
-      if (idx !== -1) {
-        const updatedRecords = [...msg.toolCalls];
-        updatedRecords[idx] = { ...updatedRecords[idx], status, result };
-        messages[i] = { ...msg, toolCalls: updatedRecords };
-        updated = true;
-        return { ...session, messages, updatedAt: Date.now() };
-      }
-    }
-    return session;
-  });
-  // 状态更新后重新渲染消息，使工具卡片状态即时生效
-  if (updated) renderMessages();
+  // 工具卡片统一由 onDone 挂载，不在执行中更新消息记录
 }
 
 async function sendMessageWithAgentLoop(text: string, currentSession: ChatSession, model: string): Promise<void> {
@@ -1255,10 +1231,7 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
 
   let assistantContent = '';
   let thinkContent = '';
-  let agentModeIterations = 0; // 跟踪 onNewIteration 调用次数
-  state.set('_currentEvalCount', 0); // 重置累计 token 计数，防止跨会话残留
-  let lastIterationEvalCount = 0; // 上一轮迭代结束时的累计 token 数
-  let lastIterationStartTime = Date.now(); // 当前迭代开始时间
+  state.set('_currentEvalCount', 0);
 
   // ── 监控定时器：流式输出期间持续显示工作提示 ──
   // 模型生成大参数 tool_call 可能需要几分钟，期间工作空间显示提示
@@ -1278,52 +1251,25 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
         });
       },
       onNewIteration: (toolCalls) => {
-        // Agent Loop 新迭代开始：保存上一轮内容为独立消息，创建新 placeholder
-        // 先移除旧 placeholder（防止被 renderMessages 当作已渲染消息计数）
-        const oldPlaceholder = document.querySelector('#messagesContainer .message.assistant.loading') as HTMLElement;
-        if (oldPlaceholder) oldPlaceholder.remove();
+        // 保存上一轮的卡片（不含工具记录，工具统一在 onDone 挂载）
+        const prevMsg: ChatMessage = {
+          role: 'assistant',
+          content: assistantContent || '',
+          model: getSelectedModel(),
+          timestamp: Date.now(),
+          ...(thinkContent && { think: thinkContent }),
+        };
+        state.update(KEYS.CURRENT_SESSION, (session: any) => ({
+          ...session,
+          messages: [...session.messages, prevMsg],
+          updatedAt: Date.now()
+        }));
+        renderMessages();
 
-        // 有文本内容 或 有工具调用 → 保存为独立消息
-        const hasToolCalls = toolCalls && toolCalls.length > 0;
-        if (assistantContent || hasToolCalls) {
-          const now = Date.now();
-          // 计算本轮迭代的 token 和时长
-          const currentEvalCount = state.get<number>('_currentEvalCount', 0);
-          const iterationEvalCount = Math.max(0, currentEvalCount - lastIterationEvalCount);
-          const iterationDuration = (now - lastIterationStartTime) * 1e6;
-
-          const toolCallRecords: ToolCallRecord[] | undefined = toolCalls?.map(tc => ({
-            name: tc.function.name,
-            arguments: tc.function.arguments,
-            result: null,
-            status: 'running' as const,
-            timestamp: now
-          }));
-
-          const prevMsg: ChatMessage = {
-            role: 'assistant',
-            content: assistantContent || '',
-            timestamp: now,
-            ...(thinkContent && { think: thinkContent }),
-            ...(toolCallRecords?.length && { toolCalls: toolCallRecords }),
-            ...(iterationEvalCount > 0 && { eval_count: iterationEvalCount }),
-            ...(iterationDuration > 0 && { total_duration: iterationDuration }),
-          };
-          state.update(KEYS.CURRENT_SESSION, (session: any) => ({
-            ...session,
-            messages: [...session.messages, prevMsg],
-            updatedAt: Date.now()
-          }));
-          renderMessages();
-
-          lastIterationEvalCount = currentEvalCount;
-          lastIterationStartTime = Date.now();
-        }
-        // 创建新 placeholder，重置内容
+        removeCurrentPlaceholder();
         appendAssistantPlaceholder();
         assistantContent = '';
         thinkContent = '';
-        agentModeIterations++;
       },
       onThinking: (thinking) => {
         thinkContent = thinking;
@@ -1372,50 +1318,23 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
         }
       },
       onDone: async (finalContent, toolRecords, loopStats) => {
-        assistantContent = finalContent;
+        const assistantMsg: ChatMessage = {
+          role: 'assistant',
+          content: finalContent || '',
+          model: getSelectedModel(),
+          timestamp: Date.now(),
+          ...(thinkContent && { think: thinkContent }),
+          ...(toolRecords?.length && { toolCalls: toolRecords }),
+          ...(loopStats?.eval_count && { eval_count: loopStats.eval_count }),
+          ...(loopStats?.prompt_eval_count && { prompt_eval_count: loopStats.prompt_eval_count }),
+          ...(loopStats?.total_duration && { total_duration: loopStats.total_duration }),
+        };
+        state.update(KEYS.CURRENT_SESSION, (session: any) => ({
+          ...session,
+          messages: [...session.messages, assistantMsg],
+          updatedAt: Date.now()
+        }));
 
-        // 如果有多个迭代，最后一条消息已由 onNewIteration 保存，这里创建新消息保存最终回复
-        if (agentModeIterations > 0) {
-          if (assistantContent) {
-            const lastIterDuration = (Date.now() - lastIterationStartTime) * 1e6;
-            const lastMsg: ChatMessage = {
-              role: 'assistant',
-              content: assistantContent,
-              model: getSelectedModel(),
-              timestamp: Date.now(),
-              ...(thinkContent && { think: thinkContent }),
-              ...(toolRecords?.length && { toolCalls: toolRecords }),
-              ...(loopStats?.eval_count && { eval_count: loopStats.eval_count }),
-              ...(loopStats?.prompt_eval_count && { prompt_eval_count: loopStats.prompt_eval_count }),
-              ...(loopStats?.total_duration && { total_duration: loopStats.total_duration }),
-            };
-            state.update(KEYS.CURRENT_SESSION, (session: any) => ({
-              ...session,
-              messages: [...session.messages, lastMsg],
-              updatedAt: Date.now()
-            }));
-          }
-        } else {
-          // 单迭代模式：正常保存
-          const assistantMsg: ChatMessage = {
-            role: 'assistant',
-            content: assistantContent || '',
-            model: getSelectedModel(),
-            timestamp: Date.now(),
-            ...(thinkContent && { think: thinkContent }),
-            ...(toolRecords?.length && { toolCalls: toolRecords }),
-            ...(loopStats?.eval_count && { eval_count: loopStats.eval_count }),
-            ...(loopStats?.prompt_eval_count && { prompt_eval_count: loopStats.prompt_eval_count }),
-            ...(loopStats?.total_duration && { total_duration: loopStats.total_duration }),
-          };
-          state.update(KEYS.CURRENT_SESSION, (session: any) => ({
-            ...session,
-            messages: [...session.messages, assistantMsg],
-            updatedAt: Date.now()
-          }));
-        }
-        // 清掉流式 placeholder，统一从 session 渲染（单条消息，Markdown 格式）
-        clearMessagesDOM();
         renderMessages();
 
         // ── 保存 Plan Mode 最终进度到会话（供下一轮 Loop 注入）──

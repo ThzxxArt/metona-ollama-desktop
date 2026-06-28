@@ -115,37 +115,29 @@ export function renderMessages(): void {
   const currentSession = state.get<ChatSession | null>(KEYS.CURRENT_SESSION);
   const msgs = currentSession ? currentSession.messages : [];
 
+  // 全量清空重建，避免增量 diff 的边界 bug
+  messagesContainerEl.innerHTML = '';
+  currentPlaceholder = null;
+  _renderedMsgIndices.clear();
+
   if (msgs.length === 0) {
     emptyStateEl.style.display = '';
     messagesContainerEl.style.display = 'none';
-    _renderedMsgIndices.clear();
     return;
   }
 
   emptyStateEl.style.display = 'none';
   messagesContainerEl.style.display = '';
 
-  // P1-1: 基于 Set 的稳定增量 diff
-  const wasExisting = _renderedMsgIndices.size > 0;
-  let isNewMessage = false;
   for (let i = 0; i < msgs.length; i++) {
-    if (!_renderedMsgIndices.has(i)) {
-      appendMessageDOM(msgs[i], i);
-      _renderedMsgIndices.add(i);
-      isNewMessage = true;
-    }
+    const msg = msgs[i];
+    // 只跳过既无内容也无 think 也无工具的空消息
+    if (msg.role === 'assistant' && !msg.content && !msg.think && (!msg.toolCalls || msg.toolCalls.length === 0)) continue;
+    appendMessageDOM(msgs[i], i);
+    _renderedMsgIndices.add(i);
   }
 
-  // 清理超出范围的索引（消息被 undo/retry 移除时）
-  for (const idx of _renderedMsgIndices) {
-    if (idx >= msgs.length) _renderedMsgIndices.delete(idx);
-  }
-
-  if (isNewMessage) {
-    scrollToBottom();
-  } else if (msgs.length > 0 && !wasExisting) {
-    chatAreaEl.scrollTop = chatAreaEl.scrollHeight;
-  }
+  scrollToBottom();
 }
 
 export function appendMessageDOM(msg: ChatMessage, index: number): void {
@@ -516,6 +508,14 @@ export function clearMessages(): void {
 /** 清理 currentPlaceholder 引用（当 placeholder 从外部被移除时调用） */
 export function resetCurrentPlaceholder(): void {
   if (currentPlaceholder && !currentPlaceholder.isConnected) {
+    currentPlaceholder = null;
+  }
+}
+
+/** 从 DOM 移除当前 placeholder 并清空引用 */
+export function removeCurrentPlaceholder(): void {
+  if (currentPlaceholder) {
+    currentPlaceholder.remove();
     currentPlaceholder = null;
   }
 }

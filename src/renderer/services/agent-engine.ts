@@ -1946,8 +1946,8 @@ export async function runAgentLoop(
         ctx.maxLoops = newMax;
       }
 
-      // 非首轮迭代：通知 UI
-      if (ctx.loopCount > 0 && callbacks.onNewIteration) {
+      // 仅在 THINKING 阶段通知 UI（一次迭代只通知一次，不是每个状态切换都通知）
+      if (ctx.loopCount > 0 && ctx.state === S.THINKING && callbacks.onNewIteration) {
         callbacks.onNewIteration(ctx.prevToolCalls.length > 0 ? ctx.prevToolCalls : undefined);
       }
 
