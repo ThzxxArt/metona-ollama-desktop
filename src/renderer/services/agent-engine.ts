@@ -1484,6 +1484,11 @@ async function handleExecuting(
         const result = await executeTool(call.function.name, call.function.arguments)
           .catch(err => ({ success: false, error: err?.message || String(err) }) as ToolResult);
         logToolResult(call.function.name, result.success, result.success ? undefined : result.error);
+        // 记录 write_file 成功路径，供 FileWriteDedup Hook 拦截重复写入
+        if (call.function.name === 'write_file' && result.success && call.function.arguments?.path) {
+          const { addWrittenFile } = await import('./hooks.js');
+          addWrittenFile(String(call.function.arguments.path));
+        }
         return [{
           name: call.function.name, arguments: call.function.arguments,
           result, status: result.success ? 'success' as const : 'error' as const, timestamp: Date.now()

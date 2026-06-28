@@ -31,7 +31,6 @@ import { initLogPanel, addLog } from './services/log-service.js';
 import { logInfo, logSuccess, logError, logDebug, logInit, logWarn } from './services/log-service.js';
 import { initSearxngModal, closeSearxngModal, loadSearxngConfig } from './components/searxng-modal.js';
 import { initHarnessHooks } from './services/hooks.js';
-import { initVerificationSystem } from './services/verification.js';
 import type { ChatSession } from './types.js';
 
 // ─── v4.0 数据迁移：IndexedDB → SQLite ───
@@ -353,7 +352,6 @@ async function init(): Promise<void> {
 
     // ── Harness Engineering 系统初始化 ──
     initHarnessHooks();
-    initVerificationSystem();
     // Agent Metrics 无需显式初始化（按需启动）
     // Context Indexer 在 Agent INIT 状态按需构建
 
@@ -481,7 +479,6 @@ async function init(): Promise<void> {
     initWorkspacePanel();
     setupDesktopIntegration();
     initHarnessHooks();
-    initVerificationSystem();
     // ── MEMORY.md 初始化（fallback 路径）──
     import('./services/memory-service.js').then(({ initMemoryFile }) => {
       initMemoryFile().catch(() => {});

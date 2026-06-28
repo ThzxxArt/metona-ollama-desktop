@@ -101,7 +101,7 @@ export function createMenu(): void {
             dialog.showMessageBox(mainWindow!, {
               type: 'info',
               title: '关于 Metona Ollama',
-              message: 'Metona Ollama Desktop v0.14.4',
+              message: 'Metona Ollama Desktop v0.14.5',
               detail: 'TypeScript + Electron Ollama AI 聊天客户端\n\nhttps://gitee.com/thzxx/metona-ollama',
               icon: getIconPath()
             });
