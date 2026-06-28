@@ -499,7 +499,7 @@ export interface AgentCallbacks {
   onToolCallStart: (call: ToolCall) => void;
   onToolCallResult: (name: string, result: ToolResult, call: ToolCall) => void;
   onToolCallError: (name: string, error: string, call: ToolCall) => void;
-  onDone: (finalContent: string, toolRecords?: ToolCallRecord[], stats?: { eval_count?: number; prompt_eval_count?: number; total_duration?: number }) => void;
+  onDone: (finalContent: string, toolRecords?: ToolCallRecord[], stats?: { eval_count?: number; prompt_eval_count?: number; total_duration?: number; ctx_tokens?: number }) => void;
   onConfirmTool: (call: ToolCall) => Promise<boolean>;
   onNewIteration?: (toolCalls?: ToolCall[]) => void;
   /** Plan Mode: 计划已生成，等待用户确认 */
@@ -1341,23 +1341,10 @@ async function handleThinking(
 
 	  const abortController = registerAbortController();
 
-  // ── P1-5: 流式超时分级 ──
+  // ── 流式超时保护 ──
   const STREAM_TIMEOUT_MS = state.get<number>('streamTimeout', 300_000);   // 总超时 300s
-  const IDLE_TIMEOUT_MS = 30_000;                                           // 空闲超时 30s（无新 token）
 
   let totalTimer: ReturnType<typeof setTimeout> | null = null;
-  let idleTimer: ReturnType<typeof setTimeout> | null = null;
-  let lastContentTime = Date.now();
-
-  const resetIdleTimer = (): void => {
-    lastContentTime = Date.now();
-    if (idleTimer) clearTimeout(idleTimer);
-    idleTimer = setTimeout(() => {
-      const idleSec = Math.round((Date.now() - lastContentTime) / 1000);
-      logWarn(`流式空闲超时 (${idleSec}s 无新 token)，中止本轮`);
-      abortController.abort();
-    }, IDLE_TIMEOUT_MS);
-  };
 
   if (STREAM_TIMEOUT_MS > 0) {
     totalTimer = setTimeout(() => {
@@ -1365,7 +1352,6 @@ async function handleThinking(
       abortController.abort();
     }, STREAM_TIMEOUT_MS);
   }
-  resetIdleTimer(); // 启动空闲超时
 
   let progressTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -1414,7 +1400,6 @@ async function handleThinking(
 	        if (chunk.message?.content) {
 	          ctx.content += chunk.message.content;
 	          callbacks.onContent(ctx.content);
-	          resetIdleTimer(); // P1-5: 收到内容 token → 重置空闲超时
 	        }
         if (chunk.eval_count) { ctx.loopEvalCount = chunk.eval_count; }
         if (chunk.prompt_eval_count) { ctx.loopPromptEvalCount = chunk.prompt_eval_count; }
@@ -1481,14 +1466,12 @@ async function handleThinking(
     ctx.loopInferenceNs = 0;
 
     if (totalTimer) { clearTimeout(totalTimer); totalTimer = null; }
-    if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
     if (progressTimer) clearInterval(progressTimer as unknown as number);
 
     transition(ctx, S.PARSING);
 
   } catch (err) {
     if (totalTimer) { clearTimeout(totalTimer); totalTimer = null; }
-    if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
     if (progressTimer) clearInterval(progressTimer as unknown as number);
     if (abortController.signal.aborted) {
       logInfo('流式调用已中止');
@@ -2079,6 +2062,7 @@ function makeStats(ctx: LoopContext) {
     eval_count: ctx.totalEvalCount || undefined,
     prompt_eval_count: ctx.totalPromptEvalCount || undefined,
     total_duration: ctx.totalInferenceNs || undefined,
+    ctx_tokens: estimateTokens(ctx.messages.map(m => m.content || '').join('')), // 实际上下文占用
   };
 }
 

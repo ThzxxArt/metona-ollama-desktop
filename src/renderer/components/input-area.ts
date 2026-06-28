@@ -626,7 +626,7 @@ async function handleRetry(): Promise<void> {
             }));
           }
           await saveCurrentSession();
-          if (loopStats?.prompt_eval_count) updateCtxRemain(loopStats.prompt_eval_count);
+          if (loopStats?.ctx_tokens) updateCtxRemain(loopStats.ctx_tokens);
         }
       });
     } catch (err) {
@@ -789,16 +789,16 @@ function stopGeneration(): void {
   if (abortController) abortController.abort();
 }
 
-/** 更新剩余上下文显示 */
-function updateCtxRemain(promptEvalCount?: number): void {
+/** 更新剩余上下文显示（使用 estimateTokens 估算实际占用，非 Ollama eval_count） */
+function updateCtxRemain(ctxTokens?: number): void {
   const el = document.querySelector('#ctxRemain') as HTMLElement;
   if (!el) return;
   const total = state.get<number>(KEYS.NUM_CTX, 0);
-  if (!total || !promptEvalCount || promptEvalCount <= 0) {
+  if (!total || !ctxTokens || ctxTokens <= 0) {
     el.style.display = 'none';
     return;
   }
-  const remain = total - promptEvalCount;
+  const remain = total - ctxTokens;
   if (remain <= 0) {
     el.style.display = 'inline-flex';
     el.textContent = '⚠ 上下文已满';
@@ -806,8 +806,9 @@ function updateCtxRemain(promptEvalCount?: number): void {
   } else {
     el.style.display = 'inline-flex';
     el.style.color = '';
-    const fmt = remain >= 1024 ? `${(remain / 1024).toFixed(0)}K` : String(remain);
-    el.textContent = `剩余 ${fmt}`;
+    const remainFmt = remain >= 1024 ? `${(remain / 1024).toFixed(0)}K` : String(remain);
+    const usedFmt = ctxTokens >= 1024 ? `${(ctxTokens / 1024).toFixed(0)}K` : String(ctxTokens);
+    el.textContent = `${usedFmt} / ${total >= 1024 ? (total/1024).toFixed(0)+'K' : total}`;
   }
 }
 

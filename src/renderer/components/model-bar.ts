@@ -98,7 +98,7 @@ export async function loadModels(): Promise<void> {
       await checkModelCapability(modelSelectEl.value);
     }
 
-    filterEmbedModels(data.models);
+    await filterEmbedModels(data.models);
   } catch (err) {
     logError('加载模型列表失败', (err as Error).message);
     modelSelectEl.innerHTML = '<option value="">加载失败 - 检查连接</option>';
