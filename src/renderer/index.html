@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="theme-color" content="#FAF7F2">
     <meta name="description" content="Metona Ollama Desktop - TypeScript + Electron AI 聊天客户端">
-    <link rel="icon" href="/assets/icons/llama.ico" type="image/x-icon">
+    <link rel="icon" href="./assets/icons/llama.ico" type="image/x-icon">
     <title>Metona Ollama</title>
 </head>
 <body>
@@ -26,9 +26,9 @@
     <!-- ═══════════════ 顶部导航 ═══════════════ -->
     <header class="app-header">
         <div class="header-left">
-            <span class="logo">🦙</span>
+            <img class="logo" src="./assets/icons/llama.png" alt="logo" />
             <span class="app-title">Metona Ollama</span>
-            <span class="app-version">v0.14.8</span>
+            <span class="app-version">v0.14.9</span>
             <button class="icon-btn help-btn" id="btnHelp" title="使用帮助">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
@@ -110,14 +110,7 @@
     <main class="chat-area" id="chatArea">
         <div class="empty-state" id="emptyState">
             <div class="empty-icon">
-                <svg viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <circle cx="100" cy="100" r="80" stroke="rgba(0,245,212,0.2)" stroke-width="2"/>
-                    <circle cx="100" cy="100" r="60" stroke="rgba(123,47,247,0.2)" stroke-width="2"/>
-                    <path d="M70 90c0-16.57 13.43-30 30-30s30 13.43 30 30" stroke="rgba(0,245,212,0.5)" stroke-width="2" stroke-linecap="round"/>
-                    <circle cx="85" cy="100" r="5" fill="rgba(0,245,212,0.6)"/>
-                    <circle cx="115" cy="100" r="5" fill="rgba(0,245,212,0.6)"/>
-                    <path d="M88 120c4 4 20 4 24 0" stroke="rgba(0,245,212,0.4)" stroke-width="2" stroke-linecap="round"/>
-                </svg>
+                <img src="./assets/icons/llama.png" alt="Metona Ollama" style="width:80px;height:80px;object-fit:contain;opacity:0.85;" />
             </div>
             <h2>开始对话</h2>
             <p>选择一个模型，输入消息开始聊天</p>

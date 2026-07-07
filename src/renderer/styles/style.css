@@ -218,6 +218,10 @@ html, body {
 .logo {
     font-size: 22px;
     flex-shrink: 0;
+    width: 24px;
+    height: 24px;
+    object-fit: contain;
+    vertical-align: middle;
 }
 
 .app-title {

@@ -12,16 +12,25 @@ import { logInfo, logWarn, logSuccess, logError } from './log-service.js';
 /** 校准比例：actualTokens / estimatedTokens，基于 Ollama 返回的实际计数动态修正 */
 let _tokenCalibrationRatio = 1.0;
 let _calibrationSamples = 0;
+let _calibrationModel = '';  // C8: 记录校准时的模型名
 const MIN_CALIBRATION_SAMPLES = 3;
 
 /**
  * 记录 Ollama 返回的实际 token 计数，用于校准估算器。
  * 在 agent-engine.ts 每轮流式完成后调用。
+ * C8: 模型切换时自动重置校准比例，避免不同 tokenizer 导致估算失真
  * @param actualInputTokens Ollama 返回的 prompt_eval_count
  * @param actualOutputTokens Ollama 返回的 eval_count
  * @param estimatedTokens 本轮消息调用 estimateTokens 的合计值
+ * @param modelName 当前使用的模型名
  */
-export function recordActualTokens(actualInputTokens: number, actualOutputTokens: number, estimatedCount: number): void {
+export function recordActualTokens(actualInputTokens: number, actualOutputTokens: number, estimatedCount: number, modelName?: string): void {
+  // C8: 模型切换时重置校准
+  if (modelName && modelName !== _calibrationModel) {
+    _calibrationModel = modelName;
+    _calibrationRatio = 1.0;
+    _calibrationSamples = 0;
+  }
   if (actualInputTokens <= 0 || estimatedCount <= 0) return;
   const actualTotal = actualInputTokens + actualOutputTokens;
   const sampleRatio = actualTotal / Math.max(1, estimatedCount);
@@ -68,9 +77,11 @@ export function scoreMessageImportance(msg: OllamaMessage): number {
   let score = 5; // 默认中等
 
   // SOUL.md / 日期 / 环境 消息永远不可压缩
-  if (msg.content?.startsWith('[SOUL.md]')) return 10;
+  if (msg.content?.includes('[SOUL.md]') || msg.content?.includes('<<<REFERENCE_DATA_START>>>')) return 10;
   if (msg.content?.startsWith('[日期]')) return 10;
   if (msg.content?.startsWith('[环境]')) return 10;
+  // 安全规则提示也不可压缩
+  if (msg.content?.includes('安全规则')) return 10;
 
   // 角色权重
   if (msg.role === 'user') score += 2;      // 用户消息最重要
@@ -79,8 +90,8 @@ export function scoreMessageImportance(msg: OllamaMessage): number {
   // ephemeral 临时消息 → 最低权重，优先丢弃
   if (msg.ephemeral) return 0;
 
-  // 已压缩标记 → 低权重（避免压缩产物堆积）
-  if (msg.compressed) score = 1;
+  // 已压缩标记 → 中等权重（C6: 提高从 1 到 4，避免快速摘要被立即丢弃）
+  if (msg.compressed) score = 4;
 
   const content = msg.content || '';
 
@@ -210,9 +221,16 @@ export function buildContext(
 /**
  * 判断是否需要自动压缩
  * 当总 token 数超过 context window 的 AUTO_COMPRESS_THRESHOLD 比例时返回 true
+ * C3: 包含 tool_calls 和 images 的 token 开销
  */
 export function shouldAutoCompress(messages: OllamaMessage[], numCtx: number): boolean {
-  const totalTokens = estimateTokens(messages.map(m => m.content || '').join(''));
+  let totalTokens = 0;
+  for (const m of messages) {
+    totalTokens += estimateTokens(m.content || '');
+    // C3: tool_calls 和 images 也消耗大量 token
+    if (m.tool_calls?.length) totalTokens += m.tool_calls.length * 50;
+    if (m.images?.length) totalTokens += m.images.length * 100;
+  }
   const threshold = numCtx * AUTO_COMPRESS_THRESHOLD;
   return totalTokens > threshold;
 }
@@ -257,9 +275,18 @@ export async function compressWithLLM(
   const keepTail = options.keepTail ?? COMPRESS_KEEP_TAIL;
   const maxSummaryTokens = options.maxSummaryTokens ?? 500;
 
-  // 分离 system 和非 system 消息
+  // C1: 分离 system 和非 system 消息，再细分不可压缩的 system 消息
   const systemMsgs = messages.filter(m => m.role === 'system');
   const nonSystemMsgs = messages.filter(m => m.role !== 'system');
+  const incompressibleSysMsgs: OllamaMessage[] = [];
+  const compressibleSysMsgs: OllamaMessage[] = [];
+  for (const m of systemMsgs) {
+    if (scoreMessageImportance(m) >= 10) {
+      incompressibleSysMsgs.push(m);
+    } else {
+      compressibleSysMsgs.push(m);
+    }
+  }
 
   if (nonSystemMsgs.length <= keepHead + keepTail + 2) {
     logInfo('上下文压缩: 消息太少，跳过压缩');
@@ -345,8 +372,9 @@ export async function compressWithLLM(
   if (parsed.toolResults.length) parts.push(`🔧 工具结果: ${parsed.toolResults.join('；')}`);
 
   // 构建压缩后的摘要消息
+  // C5: 使用 user role 而非 system role，避免部分模型拒绝多个 system 消息
   const summaryMsg: OllamaMessage = {
-    role: 'system',
+    role: 'user',
     content: `📋 以下是对之前对话的摘要（已压缩 ${uncompressedMiddle.length} 条消息）：\n\n${parts.join('\n')}`,
     compressed: true
   };
@@ -354,11 +382,11 @@ export async function compressWithLLM(
   // 保留已压缩的中间消息 + 新摘要
   const alreadyCompressed = middle.filter(m => m.compressed);
 
-  // 合并所有 system 消息为一条，避免多条 system 消息触发 Qwen3 等模型 400 错误
+  // C1: 合并 system 消息为一条，但保留不可压缩的 system 消息完整内容
   const mergedSystemContent = [
-    ...systemMsgs.map(m => m.content || ''),
+    ...incompressibleSysMsgs.map(m => m.content || ''),
+    ...compressibleSysMsgs.map(m => m.content || ''),
     ...alreadyCompressed.filter(m => m.role === 'system').map(m => m.content || ''),
-    summaryMsg.content || '',
   ].filter(Boolean).join('\n\n');
 
   const nonSystemCompressed = alreadyCompressed.filter(m => m.role !== 'system');
@@ -367,6 +395,7 @@ export async function compressWithLLM(
     { role: 'system', content: mergedSystemContent },
     ...head,
     ...nonSystemCompressed,
+    summaryMsg,
     ...tail
   ];
 
@@ -437,6 +466,7 @@ function createQuickSummary(messages: OllamaMessage[]): string {
 /**
  * 根据 token 限制裁剪消息。
  * v6.0: 按重要性评分决定保留顺序——重要性低的优先被丢弃。
+ * C2: 始终保留最近 N 条消息（时间窗口保护），避免丢失关键上下文
  */
 function trimByTokenLimit(messages: OllamaMessage[], maxTokens: number): OllamaMessage[] {
   // 分离 system 和非 system 消息
@@ -445,8 +475,13 @@ function trimByTokenLimit(messages: OllamaMessage[], maxTokens: number): OllamaM
 
   if (nonSystemMsgs.length <= 4) return messages; // 消息太少不裁剪
 
+  // C2: 最近 6 条消息始终保留（时间窗口保护）
+  const PROTECT_RECENT = 6;
+  const recentMsgs = nonSystemMsgs.slice(-PROTECT_RECENT);
+  const olderMsgs = nonSystemMsgs.slice(0, -PROTECT_RECENT);
+
   // 计算每条消息的 token + 重要性
-  const scored = nonSystemMsgs.map(m => ({
+  const scored = olderMsgs.map(m => ({
     msg: m,
     tokens: estimateTokens(m.content || '') +
       (m.images ? m.images.length * 100 : 0) +
@@ -456,7 +491,16 @@ function trimByTokenLimit(messages: OllamaMessage[], maxTokens: number): OllamaM
 
   // system 消息的 token 消耗
   const systemTokens = systemMsgs.reduce((sum, m) => sum + estimateTokens(m.content || ''), 0);
-  const availableTokens = maxTokens - systemTokens;
+  const recentTokens = recentMsgs.reduce((sum, m) =>
+    sum + estimateTokens(m.content || '') +
+    (m.images ? m.images.length * 100 : 0) +
+    (m.tool_calls ? m.tool_calls.length * 50 : 0), 0);
+  const availableTokens = maxTokens - systemTokens - recentTokens;
+
+  if (availableTokens <= 0) {
+    // 连 system + recent 都超了，只保留 system + recent
+    return [...systemMsgs, ...recentMsgs];
+  }
 
   // 按重要性降序排列，取能装下的最大数量
   scored.sort((a, b) => b.importance - a.importance);
@@ -469,13 +513,13 @@ function trimByTokenLimit(messages: OllamaMessage[], maxTokens: number): OllamaM
     kept.add(i);
   }
 
-  // 按原始顺序重建：system → 按重要性保留的非system
+  // 按原始顺序重建：system → 按重要性保留的旧消息 → 最近的 protected 消息
   const result: OllamaMessage[] = [...systemMsgs];
-  // 使用原始顺序而非重要性顺序，保持对话的时间线
   const keptSet = new Set(scored.filter((_, i) => kept.has(i)).map(s => s.msg));
-  for (const m of nonSystemMsgs) {
+  for (const m of olderMsgs) {
     if (keptSet.has(m)) result.push(m);
   }
+  result.push(...recentMsgs);
 
   return result;
 }
