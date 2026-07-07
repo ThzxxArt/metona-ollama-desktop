@@ -7,6 +7,7 @@ import { logError, logSession } from '../services/log-service.js';
 import { marked } from '../utils/marked-config.js';
 import { escapeHtml, formatTime } from '../utils/utils.js';
 import { estimateTokens } from '../services/context-manager.js';
+import { getToolIcon, formatToolName } from '../services/tool-registry.js';
 import type { ChatSession, ChatMessage, ToolCallRecord } from '../types.js';
 
 function getFileIcon(filename: string): string {
@@ -111,6 +112,9 @@ export function resetAutoScroll(): void {
 /** P1-1: 已渲染消息索引集合，用于稳定增量 diff（替代 DOM querySelectorAll 计数） */
 const _renderedMsgIndices = new Set<number>();
 
+/** 标记当前渲染批次中系统提示词卡片是否已渲染（每会话仅首条 assistant 消息展示） */
+let _sysPromptRendered = false;
+
 export function renderMessages(): void {
   const currentSession = state.get<ChatSession | null>(KEYS.CURRENT_SESSION);
   const msgs = currentSession ? currentSession.messages : [];
@@ -119,6 +123,7 @@ export function renderMessages(): void {
   messagesContainerEl.innerHTML = '';
   currentPlaceholder = null;
   _renderedMsgIndices.clear();
+  _sysPromptRendered = false; // 重置：每轮全量渲染时重新判定首条 assistant
 
   if (msgs.length === 0) {
     emptyStateEl.style.display = '';
@@ -155,10 +160,13 @@ export function appendMessageDOM(msg: ChatMessage, index: number): void {
   let safeContent = (msg.content != null) ? String(msg.content) : '';
 
   if (msg.role === 'assistant') {
-    // ── 系统提示词折叠卡片（每条助理消息顶部展示）──
-    const sysPrompt = state.get<string>('_lastSystemPrompt', '');
-    if (sysPrompt) {
-      contentHtml += renderSystemPromptCard(sysPrompt);
+    // ── 系统提示词折叠卡片（仅会话首条 assistant 消息展示，避免重复）──
+    if (!_sysPromptRendered) {
+      const sysPrompt = state.get<string>('_lastSystemPrompt', '');
+      if (sysPrompt) {
+        contentHtml += renderSystemPromptCard(sysPrompt);
+      }
+      _sysPromptRendered = true;
     }
 
     if (msg.think) {
@@ -252,34 +260,12 @@ export function appendMessageDOM(msg: ChatMessage, index: number): void {
 }
 
 function renderToolCallCard(tc: ToolCallRecord): string {
-  const icons: Record<string, string> = {
-    read_file: '📄', write_file: '✏️', list_directory: '📁',
-    search_files: '🔍', create_directory: '📂', delete_file: '🗑️', run_command: '💻',
-    move_file: '📦', copy_file: '📋', web_fetch: '🌐',
-    edit_file: '✂️', get_file_info: 'ℹ️', tree: '🌳', download_file: '⬇️',
-    diff_files: '🔀', replace_in_files: '🔄', read_multiple_files: '📚',
-    git: '🔖', compress: '🗜️', web_search: '🔍',
-	    memory: '🧠', session_list: '📋', session_read: '📖', spawn_task: '🤖', plan_track: '📋',
-    browser_open: '🌐', browser_screenshot: '📸', browser_evaluate: '⚡', browser_extract: '📰',
-    browser_click: '👆', browser_type: '⌨️', browser_scroll: '↕️', browser_close: '❌'
-  };
-  const names: Record<string, string> = {
-    read_file: '读取文件', write_file: '写入文件', list_directory: '列出目录',
-    search_files: '搜索文件', create_directory: '创建目录', delete_file: '删除文件', run_command: '执行命令',
-    move_file: '移动文件', copy_file: '复制文件', web_fetch: '网页抓取',
-    edit_file: '编辑文件', get_file_info: '文件信息', tree: '目录树', download_file: '下载文件',
-    diff_files: '文件对比', replace_in_files: '批量替换', read_multiple_files: '批量读取',
-    git: 'Git 操作', compress: '压缩/解压', web_search: '联网搜索',
-	    memory: '记忆管理', session_list: '会话列表', session_read: '读取会话', spawn_task: '子代理委派', plan_track: '计划追踪',
-    browser_open: '打开网页', browser_screenshot: '浏览器截图', browser_evaluate: '执行JS', browser_extract: '提取内容',
-    browser_click: '点击元素', browser_type: '输入文本', browser_scroll: '滚动页面', browser_close: '关闭浏览器'
-  };
   const statusLabels: Record<string, string> = {
     pending: '📝 准备中…', running: '🔄 执行中', success: '✅ 完成', error: '❌ 失败', cancelled: '🚫 已取消'
   };
 
-  const icon = icons[tc.name] || '🔧';
-  const name = names[tc.name] || tc.name;
+  const icon = getToolIcon(tc.name);
+  const name = formatToolName(tc.name);
   const status = statusLabels[tc.status] || tc.status;
   const args = tc.arguments || {};
 
@@ -328,18 +314,22 @@ export function updateLastAssistantMessage(
     if (loadingDots) loadingDots.remove();
     if (loadingText) loadingText.remove();
 
-    // 流式消息首次转正：注入系统提示词折叠卡片
+    // 流式消息首次转正：注入系统提示词折叠卡片（仅当会话中无前序 assistant 消息时）
     const sysPrompt = state.get<string>('_lastSystemPrompt', '');
     if (sysPrompt && !lastMsg.querySelector('.system-prompt-card')) {
-      const msgBody = lastMsg.querySelector('.msg-body');
-      const tempDiv = document.createElement('div');
-      tempDiv.innerHTML = renderSystemPromptCard(sysPrompt);
-      const card = tempDiv.firstElementChild!;
-      const thinkBlock = msgBody?.querySelector('.think-block');
-      if (thinkBlock) {
-        msgBody!.insertBefore(card, thinkBlock);
-      } else {
-        msgBody!.insertBefore(card, msgBody!.firstChild);
+      const session = state.get<ChatSession | null>(KEYS.CURRENT_SESSION);
+      const hasPrevAssistant = session?.messages.some(m => m.role === 'assistant') ?? false;
+      if (!hasPrevAssistant) {
+        const msgBody = lastMsg.querySelector('.msg-body');
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = renderSystemPromptCard(sysPrompt);
+        const card = tempDiv.firstElementChild!;
+        const thinkBlock = msgBody?.querySelector('.think-block');
+        if (thinkBlock) {
+          msgBody!.insertBefore(card, thinkBlock);
+        } else {
+          msgBody!.insertBefore(card, msgBody!.firstChild);
+        }
       }
     }
   }

@@ -5,6 +5,7 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { spawn } from 'child_process';
+import * as crypto from 'crypto';
 import { checkPathAllowed, checkCommandAllowed } from './tool-security.js';
 import { mainWindow } from './main.js';
 import { sendLog, resolvePath, type ToolResult } from './tool-handlers-shared.js';
@@ -52,18 +53,39 @@ export async function handleRunCommand(params: { command: string; cwd?: string; 
 
       let stdout = '';
       let stderr = '';
+      const MAX_OUTPUT = 512 * 1024; // 512KB 上限，防止 OOM
+      let stdoutTruncated = false;
+      let stderrTruncated = false;
 
       // 实时推送到工作空间终端
       _toolProc.stdout?.on('data', (data: Buffer) => {
         const str = data.toString('utf-8');
-        stdout += str;
-        mainWindow?.webContents.send('cmd:output', { command: params.command, type: 'stdout', data: str });
+        if (!stdoutTruncated) {
+          if (stdout.length + str.length > MAX_OUTPUT) {
+            const remaining = MAX_OUTPUT - stdout.length;
+            stdout += str.slice(0, remaining);
+            stdoutTruncated = true;
+            mainWindow?.webContents.send('cmd:output', { command: params.command, type: 'stdout', data: str.slice(0, remaining) + '\n[stdout 超出 512KB 限制，已截断]' });
+          } else {
+            stdout += str;
+            mainWindow?.webContents.send('cmd:output', { command: params.command, type: 'stdout', data: str });
+          }
+        }
       });
 
       _toolProc.stderr?.on('data', (data: Buffer) => {
         const str = data.toString('utf-8');
-        stderr += str;
-        mainWindow?.webContents.send('cmd:output', { command: params.command, type: 'stderr', data: str });
+        if (!stderrTruncated) {
+          if (stderr.length + str.length > MAX_OUTPUT) {
+            const remaining = MAX_OUTPUT - stderr.length;
+            stderr += str.slice(0, remaining);
+            stderrTruncated = true;
+            mainWindow?.webContents.send('cmd:output', { command: params.command, type: 'stderr', data: str.slice(0, remaining) + '\n[stderr 超出 512KB 限制，已截断]' });
+          } else {
+            stderr += str;
+            mainWindow?.webContents.send('cmd:output', { command: params.command, type: 'stderr', data: str });
+          }
+        }
       });
 
       _toolProc.on('close', (code) => {
@@ -72,13 +94,15 @@ export async function handleRunCommand(params: { command: string; cwd?: string; 
         sendLog(
           code === 0 ? 'success' : 'warn',
           `🔧 run_command 完成`,
-          `exitCode: ${code} | ${duration}ms | stdout: ${stdout.length}B | stderr: ${stderr.length}B`
+          `exitCode: ${code} | ${duration}ms | stdout: ${stdout.length}B${stdoutTruncated ? '(已截断)' : ''} | stderr: ${stderr.length}B${stderrTruncated ? '(已截断)' : ''}`
         );
         mainWindow?.webContents.send('cmd:done', { command: params.command, exitCode: code });
         resolve({
           success: code === 0,
           stdout,
           stderr,
+          stdout_truncated: stdoutTruncated || undefined,
+          stderr_truncated: stderrTruncated || undefined,
           exitCode: code,
           duration,
           cwd,
@@ -95,6 +119,8 @@ export async function handleRunCommand(params: { command: string; cwd?: string; 
           success: false,
           stdout,
           stderr: stderr + (stderr ? '\n' : '') + err.message,
+          stdout_truncated: stdoutTruncated || undefined,
+          stderr_truncated: stderrTruncated || undefined,
           exitCode: 1,
           error: err.message,
           duration,
@@ -204,8 +230,10 @@ function isBlockedPage(html: string): boolean {
 function jitter(ms: number): number { return ms + Math.floor(Math.random() * ms * 0.6); }
 
 /** 构建 fetch 请求头，根据尝试次数轮换 UA 和语言 */
-function buildFetchHeaders(url: string, attemptIndex: number): Record<string, string> {
-  const ua = UA_POOL[attemptIndex % UA_POOL.length];
+function buildFetchHeaders(url: string, attemptIndex: number, useMobileUA: boolean = false): Record<string, string> {
+  const ua = useMobileUA
+    ? 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1'
+    : UA_POOL[attemptIndex % UA_POOL.length];
   const lang = LANG_POOL[attemptIndex % LANG_POOL.length];
   let referer = 'https://www.google.com/';
   try {
@@ -302,6 +330,69 @@ function htmlToText(html: string): string {
   return text.trim();
 }
 
+/** HTML → Markdown 转换（保留标题、列表、链接、代码块等结构） */
+function htmlToMarkdown(html: string): string {
+  let text = html;
+  // 移除 script/style/nav/header/footer 等噪音标签
+  text = text.replace(/<script[\s\S]*?<\/script>/gi, '');
+  text = text.replace(/<style[\s\S]*?<\/style>/gi, '');
+  text = text.replace(/<noscript[\s\S]*?<\/noscript>/gi, '');
+  text = text.replace(/<nav[\s\S]*?<\/nav>/gi, '');
+  text = text.replace(/<header[\s\S]*?<\/header>/gi, '');
+  text = text.replace(/<footer[\s\S]*?<\/footer>/gi, '');
+  text = text.replace(/<aside[\s\S]*?<\/aside>/gi, '');
+  text = text.replace(/<iframe[\s\S]*?<\/iframe>/gi, '');
+  text = text.replace(/<svg[\s\S]*?<\/svg>/gi, '');
+  text = text.replace(/<!--[\s\S]*?-->/g, '');
+
+  // 标题 → Markdown 标题
+  text = text.replace(/<h1[^>]*>([\s\S]*?)<\/h1>/gi, '\n# $1\n');
+  text = text.replace(/<h2[^>]*>([\s\S]*?)<\/h2>/gi, '\n## $1\n');
+  text = text.replace(/<h3[^>]*>([\s\S]*?)<\/h3>/gi, '\n### $1\n');
+  text = text.replace(/<h4[^>]*>([\s\S]*?)<\/h4>/gi, '\n#### $1\n');
+  text = text.replace(/<h5[^>]*>([\s\S]*?)<\/h5>/gi, '\n##### $1\n');
+  text = text.replace(/<h6[^>]*>([\s\S]*?)<\/h6>/gi, '\n###### $1\n');
+
+  // 代码块
+  text = text.replace(/<pre[^>]*>([\s\S]*?)<\/pre>/gi, '\n```\n$1\n```\n');
+  text = text.replace(/<code[^>]*>([\s\S]*?)<\/code>/gi, '`$1`');
+
+  // 链接和图片
+  text = text.replace(/<a[^>]*href=["']([^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi, '[$2]($1)');
+  text = text.replace(/<img[^>]*src=["']([^"']*)["'][^>]*alt=["']([^"']*)["'][^>]*\/?>/gi, '![$2]($1)');
+  text = text.replace(/<img[^>]*src=["']([^"']*)["'][^>]*\/?>/gi, '![]($1)');
+
+  // 列表
+  text = text.replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, '- $1\n');
+  text = text.replace(/<\/?(ul|ol)[^>]*>/gi, '\n');
+
+  // 引用块
+  text = text.replace(/<blockquote[^>]*>([\s\S]*?)<\/blockquote>/gi, '\n> $1\n');
+
+  // 表格行
+  text = text.replace(/<\/tr>/gi, '|\n');
+  text = text.replace(/<tr[^>]*>/gi, '|');
+  text = text.replace(/<\/?(td|th)[^>]*>/gi, '');
+
+  // 块级标签转为换行
+  text = text.replace(/<\/(p|div|section|article)[^>]*>/gi, '\n');
+  text = text.replace(/<(br|hr)[^>]*\/?>/gi, '\n');
+
+  // 加粗/斜体
+  text = text.replace(/<(strong|b)[^>]*>([\s\S]*?)<\/\1>/gi, '**$2**');
+  text = text.replace(/<(em|i)[^>]*>([\s\S]*?)<\/\1>/gi, '*$2*');
+
+  // 移除剩余标签
+  text = text.replace(/<[^>]+>/g, '');
+  // 解码 HTML 实体
+  text = decodeHTMLEntities(text);
+  // 清理多余空白
+  text = text.replace(/[ \t]+/g, ' ');
+  text = text.replace(/\n\s*\n\s*\n+/g, '\n\n');
+  text = text.split('\n').map(l => l.trim()).join('\n');
+  return text.trim();
+}
+
 import { browserOpen, browserExtract, browserClose } from './browser.js';
 
 // ──────────────────────────────────────────────────
@@ -375,7 +466,7 @@ export async function handleWebFetch(params: { url: string; max_chars?: number; 
       await new Promise(r => setTimeout(r, delay));
     }
 
-    const headers = buildFetchHeaders(url, attempt);
+    const headers = buildFetchHeaders(url, attempt, useMobileUA);
 
     try {
       const controller = new AbortController();
@@ -441,7 +532,13 @@ export async function handleWebFetch(params: { url: string; max_chars?: number; 
       }
       const isHTML = contentType.includes('html');
       if (isHTML) {
-        text = htmlToText(text);
+        // P2 修复：支持 extract_mode 参数 — 'markdown' 模式保留结构化格式，'text' 模式纯文本
+        const extractMode = params.extract_mode || 'text';
+        if (extractMode === 'markdown') {
+          text = htmlToMarkdown(text);
+        } else {
+          text = htmlToText(text);
+        }
         // 检测是否被拦截（Cloudflare/验证码/空白页）
         if (isBlockedPage(text) && BROWSER_FALLBACK_ENABLED) {
           sendLog('warn', `🌐 web_fetch 检测到拦截页`, '自动回退浏览器渲染');
@@ -667,7 +764,8 @@ async function handleWebSearchSearxng(
       })),
       effectiveMax,
       false,
-      engineStats
+      engineStats,
+      query,
     );
     result._mode = 'searxng';
     return result;
@@ -727,10 +825,10 @@ export async function handleWebSearch(params: { query: string; max_results?: num
     const cached = cacheGet(cacheKey);
     if (cached) {
       sendLog('success', `🔍 web_search 缓存命中`, `"${query}" → ${cached.results.length} 条`);
-      const cachedResult = buildSearchResponse(cached.results, maxResults, true);
-      cachedResult._mode = 'builtin';
-      return cachedResult;
-    }
+    const cachedResult = buildSearchResponse(cached.results, maxResults, true, undefined, query);
+    cachedResult._mode = 'builtin';
+    return cachedResult;
+  }
 
     sendLog('info', `🔍 web_search`, `"${query}" (${maxResults} 条) [并行]`);
 
@@ -875,7 +973,7 @@ export async function handleWebSearch(params: { query: string; max_results?: num
     // ── 6. 缓存结果 ──
     cacheSet(cacheKey, { results: finalResults, time: Date.now() });
 
-    const finalResult = buildSearchResponse(finalResults, maxResults, false, engineStats);
+    const finalResult = buildSearchResponse(finalResults, maxResults, false, engineStats, query);
     finalResult._mode = 'builtin';
     return finalResult;
   })();
@@ -1045,6 +1143,7 @@ function buildSearchResponse(
   maxResults: number,
   fromCache: boolean,
   engineStats?: Record<string, string>,
+  query?: string,
 ): ToolResult {
   const sliced = results.slice(0, maxResults);
 
@@ -1083,7 +1182,7 @@ function buildSearchResponse(
 
   return {
     success: true,
-    query: '',
+    query: query || '',
     results: sliced,
     total: sliced.length,
     formatted,
@@ -1250,17 +1349,42 @@ export async function handleDownloadFile(params: { url: string; destination: str
 
     sendLog('info', `⬇️ download_file`, `${params.url} → ${destPath}`);
 
-    // 带超时的下载（大文件给更长超时）
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 60_000);
-    let resp: Response;
-    try {
-      resp = await fetch(params.url, { signal: controller.signal });
-    } finally {
-      clearTimeout(timeoutId);
+    // 带超时和 UA 的下载，支持重试
+    const MAX_RETRIES = 3;
+    const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+    let resp: Response | null = null;
+    let lastError: string = '';
+
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 60_000);
+      try {
+        resp = await fetch(params.url, {
+          signal: controller.signal,
+          headers: {
+            'User-Agent': UA,
+            'Accept': '*/*',
+            'Accept-Encoding': 'gzip, deflate, br',
+          },
+          redirect: 'follow',
+        });
+        clearTimeout(timeoutId);
+        if (resp.ok) break; // 成功
+        lastError = `HTTP ${resp.status}: ${resp.statusText}`;
+        // 4xx 不重试
+        if (resp.status >= 400 && resp.status < 500) break;
+      } catch (err) {
+        clearTimeout(timeoutId);
+        lastError = (err as Error).message;
+        if (lastError.includes('abort')) lastError = '下载超时 (60s)';
+      }
+      if (attempt < MAX_RETRIES) {
+        await new Promise(r => setTimeout(r, 1000 * attempt)); // 指数退避
+        sendLog('warn', `⬇️ download_file 重试`, `第 ${attempt + 1} 次: ${params.url}`);
+      }
     }
 
-    if (!resp.ok) return { success: false, error: `HTTP ${resp.status}: ${resp.statusText}` };
+    if (!resp || !resp.ok) return { success: false, error: lastError || '下载失败' };
 
     const buf = Buffer.from(await resp.arrayBuffer());
     if (buf.length > 50 * 1024 * 1024) {
@@ -1311,10 +1435,12 @@ export async function handleCompress(params: { action: string; path: string; des
 
         if (format === 'zip') {
           if (isWin) {
-            // Windows: PowerShell Compress-Archive
+            // PowerShell 转义单引号：' → ''
+            const safeSrc = srcName.replace(/'/g, "''");
+            const safeDest = destPath.replace(/'/g, "''");
             child = spawn('powershell', [
               '-NoProfile', '-Command',
-              `Compress-Archive -Path '${srcName}' -DestinationPath '${destPath}' -Force`
+              `Compress-Archive -Path '${safeSrc}' -DestinationPath '${safeDest}' -Force`
             ], { cwd, stdio: ['pipe', 'pipe', 'pipe'] });
           } else {
             child = spawn('zip', ['-r', destPath, srcName], { cwd, stdio: ['pipe', 'pipe', 'pipe'] });
@@ -1355,9 +1481,11 @@ export async function handleCompress(params: { action: string; path: string; des
 
         if (isZip) {
           if (isWin) {
+            const safeArchive = archivePath.replace(/'/g, "''");
+            const safeDest = destDir.replace(/'/g, "''");
             child = spawn('powershell', [
               '-NoProfile', '-Command',
-              `Expand-Archive -Path '${archivePath}' -DestinationPath '${destDir}' -Force`
+              `Expand-Archive -Path '${safeArchive}' -DestinationPath '${safeDest}' -Force`
             ], { stdio: ['pipe', 'pipe', 'pipe'] });
           } else {
             child = spawn('unzip', ['-o', archivePath, '-d', destDir], { stdio: ['pipe', 'pipe', 'pipe'] });
@@ -1587,16 +1715,11 @@ export function handleRandom(params: { type?: string; min?: number; max?: number
       case 'string': {
         const length = Math.min(params.length ?? 8, 256);
         const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-        let s = '';
-        for (let i = 0; i < length; i++) s += chars.charAt(Math.floor(Math.random() * chars.length));
         // 使用 crypto 增强随机性
-        const buf = require('crypto').randomBytes(Math.ceil(length * 0.75));
-        let bIdx = 0;
+        const buf = crypto.randomBytes(length);
         let result = '';
         for (let i = 0; i < length; i++) {
-          const r = buf[bIdx++] || Math.floor(Math.random() * 256);
-          if (bIdx >= buf.length) bIdx = 0;
-          result += chars.charAt(r % chars.length);
+          result += chars.charAt(buf[i] % chars.length);
         }
         return { success: true, type: 'string', result, length, charset: 'alphanumeric' };
       }

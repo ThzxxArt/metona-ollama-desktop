@@ -323,13 +323,17 @@ function getToolCacheKey(name: string, args: Record<string, unknown>): string {
   }
 }
 
-/** 检测当前轮次是否存在重复工具调用 */
+/** 检测当前轮次是否存在重复工具调用（同一参数的工具被调用超过 1 次） */
 function isDuplicateCall(call: ToolCall, allCalls: ToolCall[]): boolean {
   const callKey = getToolCacheKey(call.function.name, call.function.arguments);
-  return allCalls.some((prev, idx) => {
-    if (idx === allCalls.length - 1) return false;
-    return getToolCacheKey(prev.function.name, prev.function.arguments) === callKey;
-  });
+  let count = 0;
+  for (const prev of allCalls) {
+    if (getToolCacheKey(prev.function.name, prev.function.arguments) === callKey) {
+      count++;
+      if (count > 1) return true;
+    }
+  }
+  return false;
 }
 
 /** 格式化工具结果的通用默认路径 */
@@ -453,10 +457,10 @@ function formatToolResultForModel(toolName: string, result: ToolResult): string 
       if ((result as any).duplicate) {
         return `⚠️ 重复添加: ${(result as any).message || '相同内容已存在'}\n✅ 记忆操作已全部完成，不要再调用 memory 工具，直接输出最终回答。`;
       }
-      // read_all / search 结果用可读文本格式，确保模型不会"看漏"
+      // read_all / search 结果：包裹在 JSON 中以保持与其他工具一致的格式
       if ((result as any).action === 'read_all') {
         const entries = ((result as any).entries || []) as Array<{ id: string; type: string; content: string; importance: number; tags: string[] }>;
-        if (entries.length === 0) return '记忆为空，没有任何已保存的记忆条目。';
+        if (entries.length === 0) return JSON.stringify({ success: true, action: 'read_all', message: '记忆为空，没有任何已保存的记忆条目。', total: 0 });
         const grouped: Record<string, typeof entries> = {};
         for (const e of entries) {
           const t = e.type || 'fact';
@@ -470,16 +474,16 @@ function formatToolResultForModel(toolName: string, result: ToolResult): string 
             lines.push(`  • [${e.type}] ${e.content}（重要性:${e.importance}, 标签: ${(e.tags || []).join(', ') || '无'}）`);
           }
         }
-        return lines.join('\n');
+        return JSON.stringify({ success: true, action: 'read_all', formatted: lines.join('\n'), total: entries.length });
       }
       if ((result as any).action === 'search') {
         const results = ((result as any).results || []) as Array<{ id: string; type: string; content: string; importance: number; score: number }>;
-        if (results.length === 0) return '未找到匹配的记忆。';
+        if (results.length === 0) return JSON.stringify({ success: true, action: 'search', message: '未找到匹配的记忆。', total: 0 });
         const lines = [`[记忆搜索结果] 共 ${results.length} 条：`];
         for (const r of results) {
           lines.push(`  • [${r.type || 'fact'}] ${r.content}（重要性:${r.importance}, 匹配度:${(r.score || 0).toFixed(0)}）`);
         }
-        return lines.join('\n');
+        return JSON.stringify({ success: true, action: 'search', formatted: lines.join('\n'), total: results.length });
       }
       // 其他 action（add/replace/remove）→ 保留完整 JSON，走 default 逻辑
       return formatDefaultToolResult(toolName, result);
@@ -1625,11 +1629,14 @@ async function handleObserving(
     }
   }
 
-  // ── 通用重复调用检测：工具结果含去重信号 或 同工具连续成功 2+ 次 ──
+  // ── 通用重复调用检测：工具结果含去重信号 或 同工具同参数连续成功 2+ 次 ──
   const lastToolContents = ctx.messages.filter(m => m.role === 'tool').slice(-3).map(m => m.content || '');
   const hasDedupSignal = lastToolContents.some(c => c.includes('⚠️ 重复添加') || c.includes('已跳过') || c.includes('duplicate'));
   const recentSuccess = ctx.allToolRecords.filter(r => r.status === 'success').slice(-2);
-  const allSameTool = recentSuccess.length >= 2 && recentSuccess.every(r => r.name === recentSuccess[0].name);
+  // P0 修复：仅当工具名 AND 参数完全相同时才判定为重复（避免读两个不同文件被误杀）
+  const allSameTool = recentSuccess.length >= 2
+    && recentSuccess.every(r => r.name === recentSuccess[0].name)
+    && getToolCacheKey(recentSuccess[0].name, recentSuccess[0].arguments) === getToolCacheKey(recentSuccess[1].name, recentSuccess[1].arguments);
 	  if (hasDedupSignal || allSameTool) {
 	    ctx.messages.push({
 	      role: 'user',
@@ -1700,9 +1707,19 @@ async function handleReflecting(
   }
 
   // ── Plan Mode: 第一轮回复 → 检测是否为计划 → 等待用户确认 ──
-  if (ctx.mode === 'plan' && ctx.loopCount === 1 && ctx.toolCalls.length === 0 && ctx.content.length > 50) {
+  // P1 修复：移除 ctx.toolCalls.length === 0 条件 — 模型可能忽略 Plan Mode 指令直接调用工具，
+  // 此时应取消工具执行，转为等待用户确认计划
+  if (ctx.mode === 'plan' && ctx.loopCount === 1 && ctx.content.length > 50) {
     const isPlanLike = /计划|步骤|step|plan|思路|方案|流程/.test(ctx.content.slice(0, 200));
     if (isPlanLike && callbacks.onPlanReady) {
+      // 如果模型在第一轮就调用了工具，取消这些工具调用（Plan Mode 要求先规划后执行）
+      if (ctx.toolCalls.length > 0) {
+        logWarn(`Plan Mode: 模型在首轮调用了 ${ctx.toolCalls.length} 个工具，取消并转为计划确认`);
+        for (const call of ctx.toolCalls) {
+          callbacks.onToolCallError(call.function.name, 'Plan Mode: 首轮不应调用工具，请先输出计划', call);
+        }
+        ctx.toolCalls.length = 0;
+      }
       const steps = extractPlanSteps(ctx.content);
       const approved = await callbacks.onPlanReady(ctx.content, steps);
       if (!approved) {

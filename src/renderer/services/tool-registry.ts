@@ -283,7 +283,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         required: ['paths'],
         properties: {
           paths: { type: 'array', items: { type: 'string' }, description: 'Array of file paths to read.' },
-          max_chars_per_file: { type: 'integer', description: 'Max chars per file. Default: 2000.' }
+          max_chars_per_file: { type: 'integer', description: 'Max chars per file. Default: 10000.' }
         }
       }
     }
@@ -302,6 +302,8 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
           files: { type: 'array', items: { type: 'string' }, description: 'Files for add/diff/checkout.' },
           message: { type: 'string', description: 'Commit message for commit action.' },
           branch: { type: 'string', description: 'Branch name for branch/checkout/merge.' },
+          tag_name: { type: 'string', description: 'Tag name for tag action (creates an annotated tag if message is provided).' },
+          stash_sub: { type: 'string', enum: ['push', 'pop', 'apply', 'list', 'drop'], description: 'Stash subcommand. Default: push.' },
           remote: { type: 'string', description: 'Remote name for push/pull/remote.' },
           remote_url: { type: 'string', description: 'Remote URL for remote add.' },
           count: { type: 'integer', description: 'Number of log entries. Default: 20.' },
@@ -673,7 +675,14 @@ CRITICAL: For add action, you MUST include both "type" (fact/preference/rule) an
   }
 ];
 
-const CONFIRM_TOOLS = ['run_command'];
+// 需要用户确认的工具：写操作、删除、命令执行、压缩、浏览器操作
+const CONFIRM_TOOLS = [
+  'run_command',
+  'write_file', 'create_directory', 'delete_file',
+  'edit_file', 'replace_in_files', 'move_file', 'copy_file',
+  'download_file', 'compress',
+  'browser_open', 'browser_click', 'browser_type', 'browser_evaluate',
+];
 
 export function needsConfirmation(toolName: string): boolean {
   if (toolName === 'run_command') {
@@ -963,7 +972,9 @@ export function getToolIcon(name: string): string {
     session_list: '📋', session_read: '📖', spawn_task: '🤖',
     plan_track: '📋',
     browser_open: '🌐', browser_screenshot: '📸', browser_evaluate: '⚡', browser_extract: '📰',
-    browser_click: '👆', browser_type: '⌨️', browser_scroll: '↕️', browser_close: '❌'
+    browser_click: '👆', browser_type: '⌨️', browser_scroll: '↕️', browser_close: '❌',
+    browser_wait: '⏳',
+    datetime: '🕐', calculator: '🔢', random: '🎲', uuid: '🔑', json_format: '📝', hash: '#️⃣'
   };
   return icons[name] || '🔧';
 }
@@ -1039,7 +1050,9 @@ export function formatToolName(name: string): string {
     session_list: '会话列表', session_read: '读取会话', spawn_task: '子代理委派',
     plan_track: '计划追踪',
     browser_open: '打开网页', browser_screenshot: '浏览器截图', browser_evaluate: '执行JS', browser_extract: '提取内容',
-    browser_click: '点击元素', browser_type: '输入文本', browser_scroll: '滚动页面', browser_close: '关闭浏览器'
+    browser_click: '点击元素', browser_type: '输入文本', browser_scroll: '滚动页面', browser_close: '关闭浏览器',
+    browser_wait: '等待',
+    datetime: '日期时间', calculator: '计算器', random: '随机数', uuid: '生成UUID', json_format: 'JSON格式化', hash: '哈希计算'
   };
   return names[name] || name;
 }

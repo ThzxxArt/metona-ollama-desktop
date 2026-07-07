@@ -267,10 +267,17 @@ export async function handleListDir(params: { path: string; recursive?: boolean;
         if (!params.include_hidden && item.name.startsWith('.')) continue;
         if (params.filter_extension && item.isFile() && !item.name.endsWith(params.filter_extension)) continue;
 
-        // 分页：跳过前 offset 个条目
+        const fullPath = path.join(dir, item.name);
+
+        // P0 修复：递归模式下先递归子目录，再做分页跳过（避免跳过目录时丢失子树）
+        if (params.recursive && item.isDirectory()) {
+          await scanDir(fullPath, depth + 1);
+          continue;
+        }
+
+        // 分页：跳过前 offset 个条目（仅对非目录条目计数）
         if (skipped < startOffset) { skipped++; continue; }
 
-        const fullPath = path.join(dir, item.name);
         const stat = await fs.stat(fullPath);
         entries.push({
           name: params.recursive ? path.relative(dirPath, fullPath) : item.name,
@@ -278,10 +285,6 @@ export async function handleListDir(params: { path: string; recursive?: boolean;
           size: item.isFile() ? stat.size : null,
           modified: stat.mtime.toISOString()
         });
-
-        if (params.recursive && item.isDirectory()) {
-          await scanDir(fullPath, depth + 1);
-        }
       }
     }
 
@@ -356,9 +359,15 @@ export async function handleSearchFiles(params: { path: string; query: string; s
 
       if (searchType === 'filename' || searchType === 'both') {
         const fileName = path.basename(filePath);
-        const nameToCheck = caseSensitive ? fileName : fileName.toLowerCase();
-        const queryToCheck = caseSensitive ? query : query.toLowerCase();
-        if (nameToCheck.includes(queryToCheck)) {
+        let nameMatched: boolean;
+        if (useRegex) {
+          nameMatched = contentMatcher(fileName);
+        } else {
+          const nameToCheck = caseSensitive ? fileName : fileName.toLowerCase();
+          const queryToCheck = caseSensitive ? query : query.toLowerCase();
+          nameMatched = nameToCheck.includes(queryToCheck);
+        }
+        if (nameMatched) {
           results.push({ path: filePath, matches: [{ line: 0, text: `[文件名匹配] ${fileName}` }] });
           totalMatches++;
           continue;
@@ -702,15 +711,29 @@ function builtinDiff(path1: string, path2: string, contextSize: number): string 
   return diffLines.join('\n');
 }
 
+/** 将 glob 模式转换为正则表达式（支持 **, *, ?） */
+function globToRegex(glob: string): RegExp {
+  // 转义正则特殊字符
+  let pattern = glob.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+  // ** → 匹配任意路径（含 /）
+  pattern = pattern.replace(/\*\*/g, '\u0000'); // 临时占位
+  // * → 匹配除 / 外的任意字符
+  pattern = pattern.replace(/\*/g, '[^/]*');
+  // ? → 匹配除 / 外的单个字符
+  pattern = pattern.replace(/\?/g, '[^/]');
+  // 恢复 ** → .*
+  pattern = pattern.replace(/\u0000/g, '.*');
+  return new RegExp(`^${pattern}$`);
+}
+
 export async function handleReplaceInFiles(params: { path: string; glob: string; old_text: string; new_text: string }): Promise<ToolResult> {
   try {
     const rootPath = resolvePath(params.path);
     const allowed = checkPathAllowed(rootPath, 'write');
     if (!allowed.ok) return { success: false, error: allowed.reason };
 
-    // 简单 glob 匹配
-    const pattern = params.glob.replace(/\./g, '\\.').replace(/\*/g, '.*').replace(/\?/g, '.');
-    const regex = new RegExp(`^${pattern}$`);
+    // 正确的 glob → regex 转换：支持 ** (跨目录通配), * (单层通配), ? (单字符)
+    const globRegex = globToRegex(params.glob);
 
     const results: Array<{ file: string; replacements: number }> = [];
     let totalReplacements = 0;
@@ -726,10 +749,11 @@ export async function handleReplaceInFiles(params: { path: string; glob: string;
         if (fileCount >= maxFiles) return;
         if (item.name.startsWith('.')) continue;
         const fullPath = path.join(dir, item.name);
+        const relPath = path.relative(rootPath, fullPath);
 
         if (item.isDirectory()) {
           await scanDir(fullPath);
-        } else if (regex.test(item.name)) {
+        } else if (globRegex.test(relPath) || globRegex.test(item.name)) {
           fileCount++;
           try {
             const content = await fs.readFile(fullPath, 'utf-8');

@@ -31,6 +31,7 @@ import { initLogPanel, addLog } from './services/log-service.js';
 import { logInfo, logSuccess, logError, logDebug, logInit, logWarn } from './services/log-service.js';
 import { initSearxngModal, closeSearxngModal, loadSearxngConfig } from './components/searxng-modal.js';
 import { initHarnessHooks } from './services/hooks.js';
+import { setAppVersion } from './services/agent-metrics.js';
 import type { ChatSession } from './types.js';
 
 // ─── v4.0 数据迁移：IndexedDB → SQLite ───
@@ -354,6 +355,14 @@ async function init(): Promise<void> {
     initHarnessHooks();
     // Agent Metrics 无需显式初始化（按需启动）
     // Context Indexer 在 Agent INIT 状态按需构建
+
+    // ── 注入应用版本号到 Agent Metrics ──
+    const _bridge = window.metonaDesktop;
+    if (_bridge?.info) {
+      _bridge.info().then((info: { version?: string }) => {
+        if (info?.version) setAppVersion(info.version);
+      }).catch(() => {});
+    }
 
     logInit('所有组件已就绪（含 Harness）');
 

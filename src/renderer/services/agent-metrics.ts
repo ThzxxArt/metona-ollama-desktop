@@ -13,6 +13,17 @@ import { logInfo, logDebug } from './log-service.js';
 import type { AgentMetrics, LoopContext } from '../types.js';
 
 // ═══════════════════════════════════════════════════════════════
+// 应用版本号（由 main.ts 初始化时注入，避免硬编码）
+// ═══════════════════════════════════════════════════════════════
+
+let _appVersion = 'unknown';
+
+/** 初始化应用版本号（应在 app 启动时调用） */
+export function setAppVersion(version: string): void {
+  _appVersion = version;
+}
+
+// ═══════════════════════════════════════════════════════════════
 // 度量采集
 // ═══════════════════════════════════════════════════════════════
 
@@ -268,7 +279,7 @@ export function exportMetricsJSON(): string {
   return JSON.stringify({
     timestamp: new Date().toISOString(),
     application: 'metona-ollama-desktop',
-    version: '0.13.8',
+    version: _appVersion,
     metrics: {
       sessions_total: metrics.totalSessions,
       avg_iterations_per_task: metrics.avgIterationsPerTask,

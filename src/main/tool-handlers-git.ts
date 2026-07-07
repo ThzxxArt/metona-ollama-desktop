@@ -172,14 +172,16 @@ export async function handleGit(params: { action: string; path?: string; files?:
       }
 
       case 'stash': {
-        // stash 子命令（push/pop/apply/list/drop/show）
-        // message 仅作为 stash push 的提交信息
-        const subAction = 'push'; // 默认 push
-        const args = ['stash', subAction];
-        if (params.message) args.push('-m', params.message);
-        const r = await runGit(args);
+        // stash 子命令（push/pop/apply/list/drop）
+        // 支持 message 中的 stash 子命令或默认 push
+        const stashSub = (params as any).stash_sub || 'push';
+        const stashArgs = ['stash', stashSub];
+        if ((stashSub === 'push') && params.message) {
+          stashArgs.push('-m', params.message);
+        }
+        const r = await runGit(stashArgs);
         if (r.code !== 0) return { success: false, error: r.stderr };
-        return { success: true, action: 'stash', subAction, output: r.stdout.trim() };
+        return { success: true, action: 'stash', subAction: stashSub, output: r.stdout.trim() };
       }
 
       case 'remote': {
@@ -225,13 +227,15 @@ export async function handleGit(params: { action: string; path?: string; files?:
       }
 
       case 'tag': {
-        if (params.branch) {
-          // branch field reused as tag name
-          const args = ['tag', params.branch];
-          if (params.message) args.push('-m', params.message);
-          const r = await runGit(args);
+        // 支持显式 tag_name 参数，回退兼容旧的 branch 参数
+        const tagName = (params as any).tag_name || params.branch;
+        if (tagName) {
+          const tagArgs = ['tag'];
+          if (params.message) tagArgs.push('-a', tagName, '-m', params.message);
+          else tagArgs.push(tagName);
+          const r = await runGit(tagArgs);
           if (r.code !== 0) return { success: false, error: r.stderr };
-          return { success: true, action: 'tag', created: params.branch };
+          return { success: true, action: 'tag', created: tagName };
         }
         const r = await runGit(['tag', '-l']);
         if (r.code !== 0) return { success: false, error: r.stderr };

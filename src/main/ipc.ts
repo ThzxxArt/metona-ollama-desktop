@@ -203,14 +203,14 @@ export async function setupIPC(): Promise<void> {
       switch (toolName) {
         case 'read_file':          result = await handleReadFile(args as { path: string; encoding?: string; start_line?: number; end_line?: number }); break;
         case 'write_file':         result = await handleWriteFile(args as { path: string; content: string; encoding?: string }); break;
-        case 'list_directory':     result = await handleListDir(args as { path: string; recursive?: boolean; max_depth?: number; include_hidden?: boolean; filter_extension?: string }); break;
-        case 'search_files':       result = await handleSearchFiles(args as { path: string; query: string; search_type?: string; case_sensitive?: boolean; max_results?: number; file_extensions?: string[] }); break;
+        case 'list_directory':     result = await handleListDir(args as { path: string; recursive?: boolean; max_depth?: number; include_hidden?: boolean; filter_extension?: string; limit?: number; offset?: number }); break;
+        case 'search_files':       result = await handleSearchFiles(args as { path: string; query: string; search_type?: string; case_sensitive?: boolean; use_regex?: boolean; max_results?: number; file_extensions?: string[] }); break;
         case 'create_directory':   result = await handleCreateDir(args as { path: string }); break;
         case 'delete_file':        result = await handleDeleteFile(args as { path: string; recursive?: boolean }); break;
         case 'run_command':        return await handleRunCommand(args as { command: string; cwd?: string; timeout?: number }); // run_command 自身管理日志
         case 'move_file':          result = await handleMoveFile(args as { source: string; destination: string }); break;
         case 'copy_file':          result = await handleCopyFile(args as { source: string; destination: string; recursive?: boolean }); break;
-        case 'web_fetch':          result = await handleWebFetch(args as { url: string; max_chars?: number; extract_mode?: string }); break;
+        case 'web_fetch':          result = await handleWebFetch(args as { url: string; max_chars?: number; extract_mode?: string; mobile_ua?: boolean; retry?: boolean }); break;
         case 'web_search':         result = await handleWebSearch(args as { query: string; max_results?: number; time_range?: string; enhance_snippets?: boolean; fetch_top?: number }); break;
         case 'edit_file':          result = await handleEditFile(args as { path: string; old_text: string; new_text: string; all?: boolean; use_regex?: boolean }); break;
         case 'get_file_info':      result = await handleGetFileInfo(args as { path: string }); break;
@@ -219,7 +219,7 @@ export async function setupIPC(): Promise<void> {
         case 'diff_files':         result = await handleDiffFiles(args as { file1: string; file2: string; context_lines?: number }); break;
         case 'replace_in_files':   result = await handleReplaceInFiles(args as { path: string; glob: string; old_text: string; new_text: string }); break;
         case 'read_multiple_files':result = await handleReadMultipleFiles(args as { paths: string[]; max_chars_per_file?: number }); break;
-        case 'git':                result = await handleGit(args as { action: string; path?: string; files?: string[]; message?: string; branch?: string; remote?: string; remote_url?: string; count?: number; all?: boolean; staged?: boolean; new_branch?: boolean; delete_branch?: boolean; force?: boolean; url?: string }); break;
+        case 'git':                result = await handleGit(args as { action: string; path?: string; files?: string[]; message?: string; branch?: string; tag_name?: string; stash_sub?: string; remote?: string; remote_url?: string; count?: number; all?: boolean; staged?: boolean; new_branch?: boolean; delete_branch?: boolean; force?: boolean; url?: string }); break;
         case 'compress':           result = await handleCompress(args as { action: string; path: string; destination?: string; format?: string }); break;
     case 'datetime':          result = handleDateTime(args as { format?: string; timezone?: string }); break;
     case 'calculator':        result = handleCalculator(args as { expression: string }); break;

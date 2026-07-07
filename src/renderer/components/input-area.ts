@@ -503,6 +503,8 @@ async function handleRetry(): Promise<void> {
       let retryContent = '';
       let retryThinkContent = '';
       let retryIterations = 0;
+      // P1 修复：追踪当前迭代的工具记录（与 send 路径保持一致）
+      let retryIterationToolRecords: ToolCallRecord[] = [];
 
       // 构建重试用的完整内容和 images（含文件内容和视频帧）
       let retryUserContent = userMsg.content || '';
@@ -537,7 +539,9 @@ async function handleRetry(): Promise<void> {
               role: 'assistant', content: retryContent || '', model: getSelectedModel(),
               timestamp: now,
               ...(retryThinkContent && { think: retryThinkContent }),
+              ...(retryIterationToolRecords.length > 0 && { toolCalls: [...retryIterationToolRecords] }),
             };
+            retryIterationToolRecords = [];
             state.update(KEYS.CURRENT_SESSION, (s: any) => ({
               ...s, messages: [...s.messages, prevMsg], updatedAt: Date.now()
             }));
@@ -560,14 +564,20 @@ async function handleRetry(): Promise<void> {
             name, arguments: call.function.arguments,
             result, status: result.success ? 'success' : 'error', timestamp: Date.now()
           });
-          updateMessageToolRecord(name, result.success ? 'success' : 'error', result);
+          retryIterationToolRecords.push({
+            name, arguments: call.function.arguments,
+            result, status: result.success ? 'success' : 'error', timestamp: Date.now()
+          });
         },
         onToolCallError: (name, error, call) => {
           updateToolCard({
             name, arguments: call.function.arguments,
             result: { success: false, error }, status: 'error', timestamp: Date.now()
           });
-          updateMessageToolRecord(name, 'error', { success: false, error });
+          retryIterationToolRecords.push({
+            name, arguments: call.function.arguments,
+            result: { success: false, error }, status: 'error', timestamp: Date.now()
+          });
         },
         onConfirmTool: async (call) => showToolConfirm(call),
         onPlanReady: async (plan: string, steps: string[]) => {
@@ -580,14 +590,16 @@ async function handleRetry(): Promise<void> {
             return true;
           }
         },
-        onDone: async (finalContent, toolRecords, loopStats) => {
+        onDone: async (finalContent, _toolRecords, loopStats) => {
           retryContent = finalContent;
+          // P1 修复：使用本地追踪的当前迭代工具记录，而非引擎的 allToolRecords（含所有迭代，会与中间消息重复）
+          const finalToolRecords = retryIterationToolRecords.length > 0 ? retryIterationToolRecords : undefined;
           if (retryIterations > 0) {
             if (finalContent) {
               const lastMsg: ChatMessage = {
                 role: 'assistant', content: finalContent, model: getSelectedModel(), timestamp: Date.now(),
                 ...(retryThinkContent && { think: retryThinkContent }),
-                ...(toolRecords?.length && { toolCalls: toolRecords }),
+                ...(finalToolRecords?.length && { toolCalls: finalToolRecords }),
                 ...(loopStats?.eval_count && { eval_count: loopStats.eval_count }),
                 ...(loopStats?.prompt_eval_count && { prompt_eval_count: loopStats.prompt_eval_count }),
                 ...(loopStats?.total_duration && { total_duration: loopStats.total_duration }),
@@ -600,7 +612,7 @@ async function handleRetry(): Promise<void> {
             const assistantMsg: ChatMessage = {
               role: 'assistant', content: finalContent || '', model: getSelectedModel(), timestamp: Date.now(),
               ...(retryThinkContent && { think: retryThinkContent }),
-              ...(toolRecords?.length && { toolCalls: toolRecords }),
+              ...(finalToolRecords?.length && { toolCalls: finalToolRecords }),
               ...(loopStats?.eval_count && { eval_count: loopStats.eval_count }),
               ...(loopStats?.prompt_eval_count && { prompt_eval_count: loopStats.prompt_eval_count }),
               ...(loopStats?.total_duration && { total_duration: loopStats.total_duration }),
@@ -1231,6 +1243,8 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
 
   let assistantContent = '';
   let thinkContent = '';
+  // P1 修复：追踪当前迭代的工具记录，onNewIteration 时保存到消息中
+  let currentIterationToolRecords: ToolCallRecord[] = [];
   state.set('_currentEvalCount', 0);
 
   // ── 监控定时器：流式输出期间持续显示工作提示 ──
@@ -1251,14 +1265,16 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
         });
       },
       onNewIteration: (toolCalls) => {
-        // 保存上一轮的卡片（不含工具记录，工具统一在 onDone 挂载）
+        // 保存上一轮的卡片（含工具记录）
         const prevMsg: ChatMessage = {
           role: 'assistant',
           content: assistantContent || '',
           model: getSelectedModel(),
           timestamp: Date.now(),
           ...(thinkContent && { think: thinkContent }),
+          ...(currentIterationToolRecords.length > 0 && { toolCalls: [...currentIterationToolRecords] }),
         };
+        currentIterationToolRecords = [];
         state.update(KEYS.CURRENT_SESSION, (session: any) => ({
           ...session,
           messages: [...session.messages, prevMsg],
@@ -1290,14 +1306,20 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
           name, arguments: call.function.arguments,
           result, status: result.success ? 'success' : 'error', timestamp: Date.now()
         });
-        updateMessageToolRecord(name, result.success ? 'success' : 'error', result);
+        currentIterationToolRecords.push({
+          name, arguments: call.function.arguments,
+          result, status: result.success ? 'success' : 'error', timestamp: Date.now()
+        });
       },
       onToolCallError: (name, error, call) => {
         updateToolCard({
           name, arguments: call.function.arguments,
           result: { success: false, error }, status: 'error', timestamp: Date.now()
         });
-        updateMessageToolRecord(name, 'error', { success: false, error });
+        currentIterationToolRecords.push({
+          name, arguments: call.function.arguments,
+          result: { success: false, error }, status: 'error', timestamp: Date.now()
+        });
       },
       onConfirmTool: async (call) => {
         return showToolConfirm(call);
@@ -1317,14 +1339,16 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
           return true; // 加载失败时自动批准，不阻断执行
         }
       },
-      onDone: async (finalContent, toolRecords, loopStats) => {
+      onDone: async (finalContent, _toolRecords, loopStats) => {
+        // P1 修复：使用本地追踪的当前迭代工具记录，而非引擎的 allToolRecords（含所有迭代，会与中间消息重复）
+        const finalToolRecords = currentIterationToolRecords.length > 0 ? currentIterationToolRecords : undefined;
         const assistantMsg: ChatMessage = {
           role: 'assistant',
           content: finalContent || '',
           model: getSelectedModel(),
           timestamp: Date.now(),
           ...(thinkContent && { think: thinkContent }),
-          ...(toolRecords?.length && { toolCalls: toolRecords }),
+          ...(finalToolRecords?.length && { toolCalls: finalToolRecords }),
           ...(loopStats?.eval_count && { eval_count: loopStats.eval_count }),
           ...(loopStats?.prompt_eval_count && { prompt_eval_count: loopStats.prompt_eval_count }),
           ...(loopStats?.total_duration && { total_duration: loopStats.total_duration }),
@@ -1348,8 +1372,8 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
           }));
         }
         await saveCurrentSession();
-        // 更新剩余上下文
-        if (loopStats?.prompt_eval_count) updateCtxRemain(loopStats.prompt_eval_count);
+        // 更新剩余上下文 — P0 修复：应使用 ctx_tokens（总上下文占用估算）而非 prompt_eval_count（仅最后一轮输入 token）
+        if (loopStats?.ctx_tokens) updateCtxRemain(loopStats.ctx_tokens);
       }
     });
   } catch (err) {
