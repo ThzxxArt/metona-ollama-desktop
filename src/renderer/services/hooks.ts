@@ -93,18 +93,32 @@ export async function executeHooks(
 // 内置 Hook
 // ═══════════════════════════════════════════════════════════════
 
-/** 会话级已写入文件路径集合 */
-const _writtenFilesThisSession = new Set<string>();
+/**
+ * 会话级已写入文件路径 → 内容指纹映射
+ * P0-2 优化：从 Set<string> 改为 Map<string, string>，支持内容指纹去重
+ * 只有内容完全相同时才阻断重复写入，允许不同内容的重写（修复→重写场景）
+ */
+const _writtenFileFingerprints = new Map<string, string>();
+
+/** 简单内容指纹（djb2 hash，轻量快速，用于去重判断） */
+function contentFingerprint(content: string): string {
+  let hash = 5381;
+  for (let i = 0; i < content.length; i++) {
+    hash = ((hash << 5) + hash) + content.charCodeAt(i);
+    hash = hash & 0xffffffff; // 保持32位
+  }
+  return hash.toString(16);
+}
 
 /** 暴露写入记录供 agent-engine 清理 */
 export function clearWrittenFiles(): void {
-  _writtenFilesThisSession.clear();
+  _writtenFileFingerprints.clear();
 }
 export function hasWrittenFile(path: string): boolean {
-  return _writtenFilesThisSession.has(path);
+  return _writtenFileFingerprints.has(path);
 }
-export function addWrittenFile(path: string): void {
-  _writtenFilesThisSession.add(path);
+export function addWrittenFile(path: string, content?: string): void {
+  _writtenFileFingerprints.set(path, content ? contentFingerprint(content) : '');
 }
 
 /**
@@ -149,8 +163,10 @@ export const securityCheckHook: HarnessHook = {
 
 /**
  * FileWriteDedupHook — 文件写入去重（pre_tool 阻断级）
- * 同一会话中同一路径写入成功后，后续写入被拦截，防止 AI 反复覆盖同一文件。
- * 同时记录 write_file 成功路径。
+ * P0-2 优化：从「同路径一刀切阻断」改为「内容指纹去重」
+ * - 内容完全相同的重复写入 → 阻断（真正的浪费）
+ * - 内容不同的重写 → 允许（修复→重写、迭代开发场景）
+ * 同时记录 write_file 成功路径及内容指纹。
  */
 export const fileWriteDedupHook: HarnessHook = {
   name: 'FileWriteDedup',
@@ -161,9 +177,16 @@ export const fileWriteDedupHook: HarnessHook = {
     if (data.toolName !== 'write_file') return { passed: true, message: '' };
     const filePath = String(data.toolArgs?.path || '');
     if (!filePath) return { passed: true, message: '' };
-    if (_writtenFilesThisSession.has(filePath)) {
-      return { passed: false, message: `文件 "${filePath}" 已在本会话中写入，无需重复覆盖。` };
+
+    const content = String(data.toolArgs?.content || '');
+    const newFingerprint = contentFingerprint(content);
+    const existingFingerprint = _writtenFileFingerprints.get(filePath);
+
+    if (existingFingerprint !== undefined && existingFingerprint === newFingerprint) {
+      // 内容完全相同 → 真正的重复写入，阻断
+      return { passed: false, message: `文件 "${filePath}" 内容未变化，无需重复写入。` };
     }
+    // 内容不同或首次写入 → 允许
     return { passed: true, message: '' };
   },
 };

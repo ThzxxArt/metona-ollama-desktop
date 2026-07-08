@@ -233,6 +233,60 @@ function smartTruncate(text: string, maxLen: number): string {
   return text.slice(0, maxLen) + `... (${text.length - maxLen}字符 已截断)`;
 }
 
+/** P2-4: 工具参数前置校验 — 轻量级参数检查，避免无效参数浪费一轮迭代 */
+function validateToolArgs(toolName: string, args: Record<string, unknown>): string | null {
+  const getString = (key: string): string | null => {
+    const v = args[key];
+    if (typeof v === 'string' && v.trim().length > 0) return v;
+    return null;
+  };
+  switch (toolName) {
+    case 'read_file':
+    case 'write_file':
+    case 'delete_file':
+    case 'create_directory':
+    case 'get_file_info':
+    case 'tree':
+    case 'compress':
+      if (!getString('path')) return `${toolName} 缺少有效的 path 参数`;
+      break;
+    case 'list_directory':
+      if (!getString('path')) return 'list_directory 缺少 path 参数';
+      break;
+    case 'search_files':
+      if (!getString('query')) return 'search_files 缺少有效的 query 参数';
+      if (!getString('path')) return 'search_files 缺少 path 参数';
+      break;
+    case 'web_fetch':
+      if (!args.url || typeof args.url !== 'string' || !/^https?:\/\//.test(args.url as string))
+        return 'web_fetch 的 url 参数无效（需以 http:// 或 https:// 开头）';
+      break;
+    case 'web_search':
+      if (!getString('query')) return 'web_search 缺少有效的 query 参数';
+      break;
+    case 'run_command':
+      if (!getString('command')) return 'run_command 缺少有效的 command 参数';
+      break;
+    case 'move_file':
+    case 'copy_file':
+      if (!getString('source')) return `${toolName} 缺少 source 参数`;
+      if (!getString('destination')) return `${toolName} 缺少 destination 参数`;
+      break;
+    case 'edit_file':
+      if (!getString('path')) return 'edit_file 缺少 path 参数';
+      if (args.old_text === undefined || args.old_text === null)
+        return 'edit_file 缺少 old_text 参数';
+      if (args.new_text === undefined || args.new_text === null)
+        return 'edit_file 缺少 new_text 参数';
+      break;
+    case 'diff_files':
+      if (!getString('file1')) return 'diff_files 缺少 file1 参数';
+      if (!getString('file2')) return 'diff_files 缺少 file2 参数';
+      break;
+  }
+  return null;
+}
+
 /** 工具名白名单：用于文本解析兜底时过滤非法工具名 */
 const VALID_TOOL_NAMES = new Set([
   'read_file', 'write_file', 'list_directory', 'search_files', 'create_directory',
@@ -246,35 +300,25 @@ const VALID_TOOL_NAMES = new Set([
 
 /**
  * 文本解析兜底：当模型没有通过 tool_calls 字段返回工具调用，
- * 而是在文本中写了 "Action: xxx" / "Action Input: {...}" 时，
- * 从文本中提取工具调用。
+ * 而是在文本中写了工具调用时，从文本中提取。
+ *
+ * P2-3 增强：支持4种格式
+ * 1. Action/Action Input 格式（原有）
+ * 2. <tool_call> XML 标签格式
+ * 3. ```json 代码块中含 "name" 字段
+ * 4. 函数调用语法 func_name({...})
  */
 function parseToolCallsFromText(content: string): ToolCall[] {
   const calls: ToolCall[] = [];
 
-  const actionRegex = /\*{0,2}Action:?\*{0,2}\s*(\w+)\s+[\r\n\s]*\*{0,2}Action\s*Input:?\*{0,2}\s*(\{[\s\S]*?\})/gi;
-
-  let match;
-  while ((match = actionRegex.exec(content)) !== null) {
-    const toolName = match[1].trim();
-    const argsStr = match[2].trim();
-
-    if (!VALID_TOOL_NAMES.has(toolName)) continue;
-
+  // 辅助函数：尝试解析 JSON 参数字符串，容错处理
+  const tryParseArgs = (argsStr: string): Record<string, unknown> | null => {
     const TICK = String.fromCharCode(96);
     const tickJson = TICK + TICK + TICK + 'json';
     const tick3 = TICK + TICK + TICK;
-
     try {
-      let cleaned = argsStr
-        .split(tickJson).join('')
-        .split(tick3).join('')
-        .trim();
-      const args = JSON.parse(cleaned);
-      calls.push({
-        type: 'function',
-        function: { name: toolName, arguments: args }
-      });
+      let cleaned = argsStr.split(tickJson).join('').split(tick3).join('').trim();
+      return JSON.parse(cleaned);
     } catch {
       try {
         let fixed = argsStr
@@ -284,19 +328,81 @@ function parseToolCallsFromText(content: string): ToolCall[] {
           .split(tickJson).join('')
           .split(tick3).join('')
           .trim();
-        const args = JSON.parse(fixed);
-        calls.push({
-          type: 'function',
-          function: { name: toolName, arguments: args }
-        });
+        return JSON.parse(fixed);
       } catch {
-        logWarn("文本解析兜底: 工具 " + toolName + " 的参数 JSON 解析失败", argsStr.slice(0, 100));
+        return null;
+      }
+    }
+  };
+
+  // 辅助函数：验证工具名并添加到结果
+  const tryAddCall = (toolName: string, argsStr: string): boolean => {
+    toolName = toolName.trim();
+    if (!VALID_TOOL_NAMES.has(toolName)) return false;
+    const args = tryParseArgs(argsStr);
+    if (!args) {
+      logWarn("文本解析兜底: 工具 " + toolName + " 的参数 JSON 解析失败", argsStr.slice(0, 100));
+      return false;
+    }
+    calls.push({ type: 'function', function: { name: toolName, arguments: args } });
+    return true;
+  };
+
+  // ── 格式1: Action/Action Input（原有格式）──
+  const actionRegex = /\*{0,2}Action:?\*{0,2}\s*(\w+)\s+[\r\n\s]*\*{0,2}Action\s*Input:?\*{0,2}\s*(\{[\s\S]*?\})/gi;
+  let match;
+  while ((match = actionRegex.exec(content)) !== null) {
+    tryAddCall(match[1], match[2]);
+  }
+
+  // ── 格式2: <tool_call> XML 标签 ──
+  // 匹配 <tool_call>{"name": "xxx", "arguments": {...}}</tool_call>
+  const xmlRegex = /<tool_call>\s*([\s\S]*?)<\/tool_call>/gi;
+  while ((match = xmlRegex.exec(content)) !== null) {
+    const inner = match[1].trim().replace(/```json\s*/g, '').replace(/```/g, '').trim();
+    try {
+      const parsed = JSON.parse(inner);
+      const toolName = parsed.name || parsed.function?.name || '';
+      const toolArgs = parsed.arguments || parsed.function?.arguments || parsed.parameters || {};
+      if (toolName && VALID_TOOL_NAMES.has(toolName)) {
+        calls.push({ type: 'function', function: { name: toolName, arguments: toolArgs } });
+      }
+    } catch {
+      // JSON 解析失败，尝试分别提取 name 和 arguments
+      const nameMatch = inner.match(/"name"\s*:\s*"(\w+)"/i);
+      if (nameMatch) {
+        const argsMatch = inner.match(/"arguments"\s*:\s*(\{[\s\S]*\})/i);
+        if (argsMatch) tryAddCall(nameMatch[1], argsMatch[1]);
       }
     }
   }
 
+  // ── 格式3: ```json 代码块中含 "name" 字段 ──
+  // 匹配 ```json\n{"name": "xxx", "arguments": {...}}\n```
+  const codeBlockRegex = /```(?:json)?\s*(\{[\s\S]*?"name"\s*:\s*"\w+"[\s\S]*?\})\s*```/gi;
+  while ((match = codeBlockRegex.exec(content)) !== null) {
+    const jsonStr = match[1].trim();
+    try {
+      const parsed = JSON.parse(jsonStr);
+      const toolName = parsed.name || '';
+      const toolArgs = parsed.arguments || parsed.parameters || {};
+      if (toolName && VALID_TOOL_NAMES.has(toolName)) {
+        calls.push({ type: 'function', function: { name: toolName, arguments: toolArgs } });
+      }
+    } catch {
+      // 解析失败忽略，其他格式可能匹配
+    }
+  }
+
+  // ── 格式4: 函数调用语法 func_name({"key": "value"}) ──
+  // 匹配 read_file({"path": "xxx"})
+  const funcCallRegex = /\b(\w+)\s*\(\s*(\{[^}]*\})\s*\)/g;
+  while ((match = funcCallRegex.exec(content)) !== null) {
+    tryAddCall(match[1], match[2]);
+  }
+
   if (calls.length > 0) {
-      logInfo("文本解析兜底: 从回复中提取到 " + calls.length + " 个工具调用", calls.map(c => c.function.name).join(', '));
+    logInfo("文本解析兜底: 从回复中提取到 " + calls.length + " 个工具调用", calls.map(c => c.function.name).join(', '));
   }
 
   return calls;
@@ -718,15 +824,11 @@ Shell: ${osInfo.shell}
 用户目录: ${osInfo.homeDir}
 换行符: ${osInfo.lineEnding}
 路径分隔符: ${osInfo.pathSep}
+⚠️ 命令语法必须匹配当前OS（${osInfo.os}），跨平台命令会失败。`);
 
-⚠️ 重要：必须使用与上述操作系统匹配的命令语法。
-- 如果是 Windows，使用 CMD/PowerShell 命令（如 dir、type、findstr，路径用 \\）
-- 如果是 Linux/macOS，使用 Bash 命令（如 ls、cat、grep，路径用 /）
-- 严禁在 Windows 上执行 Linux 命令，严禁在 Linux 上执行 Windows 命令。`);
-
-  // 日期
+  // 日期（精简强调措辞，保留核心信息）
   const now = new Date();
-  parts.push(`[日期] ${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日（此日期来自系统时钟，绝对可信。你的训练数据可能已过时，请以此日期为准构造所有搜索查询和时效性回答。绝对不要基于训练数据推断日期。）`);
+  parts.push(`[日期] ${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日（系统时钟，以此为准）`);
 
   return parts;
 }
@@ -1155,36 +1257,38 @@ async function handleThinking(
     }
   }
 
-  // ── 任务感知 — 检测用户请求需要工具但模型尚未行动 ──
+  // P1-1 优化：合并任务感知、待办追踪、Token 预算警告为1条结构化提醒
+  // 减少上下文中合成 user 消息数量，降低模型注意力分散
+  const _reminders: string[] = [];
+
+  // 任务感知 — 检测用户请求需要工具但模型尚未行动
+  // P1-2 优化：用更精确的短语替代单字匹配，避免"查无此人"等误报
   if (ctx.loopCount === 2 && ctx.allToolRecords.length === 0) {
-    // 从用户第一条消息中检测是否需要工具
     const firstUserMsg = ctx.messages.find(m => m.role === 'user');
     const userText = (firstUserMsg?.content || '').toLowerCase();
-    const actionVerbs = ['搜索', '查找', '查', '写入', '创建', '生成', '运行', '执行', '打开', '抓取',
-      '获取', '下载', '提交', '推送', '克隆', '读取', '删除', '移动', '复制', '压缩',
-      'search', 'find', 'write', 'create', 'run', 'execute', 'fetch', 'download', 'clone'];
-    const needsTools = actionVerbs.some(v => userText.includes(v)) && userText.length > 20;
+    const actionVerbs = [
+      '搜索', '查找', '查一下', '搜一下', '检索', '查询',
+      '写入文件', '创建文件', '生成文件', '保存文件',
+      '运行命令', '执行命令', '运行脚本', '编译',
+      '抓取网页', '获取内容', '抓取全文',
+      '下载文件', '提交代码', '推送代码', '克隆仓库',
+      '读取文件', '删除文件', '移动文件', '复制文件', '压缩文件',
+      'search', 'find', 'write', 'create', 'run', 'execute', 'fetch', 'download', 'clone',
+    ];
+    const needsTools = actionVerbs.some(v => userText.includes(v)) && userText.length > 30;
     if (needsTools) {
-      ctx.messages.push({
-        role: 'user',
-        content: '请直接调用工具完成任务，不要只描述做法。',
-        ephemeral: true,
-      });
-      logInfo('任务感知: 注入工具调用提醒');
+      _reminders.push('请直接调用工具完成任务，不要只描述做法');
+      logInfo('任务感知: 检测到需要工具');
     }
   }
 
-  // ── 多步骤任务待办追踪 — 用户一句话里有多个动作时，提醒未完成的 ──
+  // 多步骤任务待办追踪 — 用户一句话里有多个动作时，提醒未完成的
   if (ctx.loopCount >= 2 && ctx.allToolRecords.length > 0) {
     const firstUserMsg = ctx.messages.find(m => m.role === 'user');
     const userText = firstUserMsg?.content || '';
     const pending = detectPendingActions(userText, ctx.allToolRecords);
     if (pending.length > 0) {
-      ctx.messages.push({
-        role: 'user',
-        content: `还有任务未完成: ${pending.join('、')}`,
-        ephemeral: true,
-      });
+      _reminders.push(`待办: ${pending.join('、')}`);
       logInfo('待办追踪', pending.join(', '));
     }
     // 注：不再注入"全部完成"确认信号。工具调用数量≠任务完成度，
@@ -1195,8 +1299,15 @@ async function handleThinking(
   // Token 预算警告
   const remaining = ctx.maxLoops - ctx.loopCount + 1;
   if (remaining <= 3 && remaining > 0) {
-    const warning = `剩余 ${remaining} 轮，尽快完成。`;
-    ctx.messages.push({ role: 'user', content: warning, ephemeral: true });
+    _reminders.push(`剩余 ${remaining} 轮，尽快完成`);
+  }
+
+  // 合并为1条结构化提醒（减少上下文噪音）
+  if (_reminders.length > 0) {
+    const reminderContent = _reminders.length === 1
+      ? `[系统提醒] ${_reminders[0]}`
+      : `[系统提醒]\n${_reminders.map((r, i) => `${i + 1}. ${r}`).join('\n')}`;
+    ctx.messages.push({ role: 'user', content: reminderContent, ephemeral: true });
   }
 
 	  const abortController = registerAbortController();
@@ -1460,6 +1571,17 @@ async function handleExecuting(
       toolResultCache.delete(cacheKey);
     }
 
+    // P2-4: 工具参数前置校验 — 参数无效直接返回错误，不执行实际工具，节省一轮迭代
+    const paramError = validateToolArgs(call.function.name, call.function.arguments);
+    if (paramError) {
+      logWarn(`参数校验失败: ${call.function.name}`, paramError);
+      return [{
+        name: call.function.name, arguments: call.function.arguments,
+        result: { success: false, error: paramError },
+        status: 'error' as const, timestamp: Date.now()
+      }, null];
+    }
+
     // P2-10 修复：queueMicrotask 替代 rAF，在隐藏窗口下不会降频
     await new Promise<void>(r => { queueMicrotask(r); });
     callbacks.onToolCallStart(call);
@@ -1506,10 +1628,10 @@ async function handleExecuting(
         const result = await executeTool(call.function.name, call.function.arguments)
           .catch(err => ({ success: false, error: err?.message || String(err) }) as ToolResult);
         logToolResult(call.function.name, result.success, result.success ? undefined : result.error);
-        // 记录 write_file 成功路径，供 FileWriteDedup Hook 拦截重复写入
+        // 记录 write_file 成功路径及内容指纹，供 FileWriteDedup Hook 做内容级去重
         if (call.function.name === 'write_file' && result.success && call.function.arguments?.path) {
           const { addWrittenFile } = await import('./hooks.js');
-          addWrittenFile(String(call.function.arguments.path));
+          addWrittenFile(String(call.function.arguments.path), String(call.function.arguments.content || ''));
         }
         return [{
           name: call.function.name, arguments: call.function.arguments,
@@ -1563,19 +1685,10 @@ async function handleExecuting(
         role: 'tool', tool_name: record.name,
         content: `<<<TOOL_RESULT_START name="${record.name}">>>\n${formatToolResultForModel(record.name, record.result!)}\n<<<TOOL_RESULT_END>>>`
       });
-      // ── 读数据类工具结果加硬提示，防止模型忽略实际数据去用系统提示词编造 ──
-      if (record.status === 'success') {
-        const nudges: Record<string, string> = {
-          memory:    '以上 tool 消息是 memory 工具返回的实际记忆数据。严格基于这些数据回答，不要把系统提示词里的内容当成记忆列出来。',
-          session_read: '以上 tool 消息是 session_read 返回的实际历史会话内容。严格基于这些数据回答，不要编造。',
-          session_list: '以上 tool 消息是 session_list 返回的实际会话列表。严格基于这些数据回答，不要编造。',
-          spawn_task: '以上 tool 消息是 spawn_task 子代理返回的实际执行结果。严格基于这些数据回答，不要编造。',
-        };
-        const nudge = nudges[record.name];
-	        if (nudge) {
-	          ctx.messages.push({ role: 'user', content: `⚠️ ${nudge}` });
-	        }
-      }
+      // P1-3 优化：移除逐次 nudge 注入，改为 AGENT.md 通用规则
+      // 原逻辑：memory/session_read/session_list/spawn_task 后注入额外 user 消息
+      // 问题：每轮最多多4条合成 user 消息，污染上下文
+      // 方案：在 AGENT.md 核心规则中增加"工具返回数据是事实来源"通用规则
       if (cacheKey) toolResultCache.set(cacheKey, { result: record.result!, timestamp: Date.now() });
       // 记录度量
       recordToolCall(record.name, record.status, Date.now() - record.timestamp);
@@ -1630,6 +1743,29 @@ async function handleObserving(
   // 保存本轮工具调用
   ctx.prevToolCalls = [...ctx.toolCalls];
 
+  // P2-1: 工具调用失败恢复指引 — 同一工具同一参数连续失败2次以上时注入恢复建议
+  {
+    const errorRecords = ctx.allToolRecords.filter(r => r.status === 'error');
+    if (errorRecords.length > 0) {
+      const lastError = errorRecords[errorRecords.length - 1];
+      const lastErrorKey = getToolCacheKey(lastError.name, lastError.arguments);
+      // 检查是否连续失败同一工具同一参数
+      const sameFailures = errorRecords.filter(r =>
+        r.name === lastError.name &&
+        getToolCacheKey(r.name, r.arguments) === lastErrorKey
+      );
+      if (sameFailures.length >= 2) {
+        const errorMsg = lastError.result?.error || '未知错误';
+        ctx.messages.push({
+          role: 'user',
+          content: `[失败恢复] "${lastError.name}" 已连续失败 ${sameFailures.length} 次（${errorMsg}）。建议：1) 检查参数是否正确 2) 换一种方法 3) 如果无法解决，说明原因并给出替代方案。不要重复调用相同参数。`,
+          ephemeral: true,
+        });
+        logInfo(`失败恢复指引: ${lastError.name} 连续失败 ${sameFailures.length} 次`);
+      }
+    }
+  }
+
   // 记录本轮迭代度量
   recordIteration(ctx);
 
@@ -1655,14 +1791,27 @@ async function handleObserving(
   const allSameTool = recentSuccess.length >= 2
     && recentSuccess.every(r => r.name === recentSuccess[0].name)
     && getToolCacheKey(recentSuccess[0].name, recentSuccess[0].arguments) === getToolCacheKey(recentSuccess[1].name, recentSuccess[1].arguments);
-	  if (hasDedupSignal || allSameTool) {
-	    ctx.messages.push({
-	      role: 'user',
-	      content: `⛔ 检测到重复的工具调用${hasDedupSignal ? '（系统已跳过重复内容）' : ''}。「${recentSuccess[0]?.name || 'memory'}」操作已经完成，立即输出最终回答，绝对不要再调用任何工具。`,
-	    });
+
+  // P0-1 优化：只读工具允许同名同参数重复调用（验证场景：写文件后重读、git status 等）
+  // 仅当 hasDedupSignal（工具自身报告重复）或写类工具同名同参数重复时才注入⛔
+  const RE_READ_ALLOWED = new Set([
+    'read_file', 'list_directory', 'search_files', 'get_file_info', 'tree',
+    'web_search', 'git', 'session_list', 'session_read', 'diff_files',
+    'browser_screenshot', 'browser_extract',
+  ]);
+  const isReadOnlyRepeat = allSameTool && recentSuccess.length > 0 && RE_READ_ALLOWED.has(recentSuccess[0].name);
+
+  if (hasDedupSignal || (allSameTool && !isReadOnlyRepeat)) {
+    ctx.messages.push({
+      role: 'user',
+      content: `⛔ 检测到重复的工具调用${hasDedupSignal ? '（系统已跳过重复内容）' : ''}。「${recentSuccess[0]?.name || 'memory'}」操作已经完成，立即输出最终回答，绝对不要再调用任何工具。`,
+    });
     logInfo(`重复调用检测: ${recentSuccess[0]?.name || 'memory'}${hasDedupSignal ? ' (去重信号)' : ''}，注入⛔终止信号`);
     ctx.maxLoops = Math.min(ctx.maxLoops, ctx.loopCount + 1);
     // 不要 transition 到 REFLECTING，直接在这里就已经注入了信号，下一轮 THINKING 会看到
+  } else if (isReadOnlyRepeat) {
+    // 只读工具重复调用是合法的验证场景（如写文件后重读确认），不注入⛔
+    logInfo(`只读工具重复调用（允许验证场景）: ${recentSuccess[0].name}`);
   }
 
 // 每 10 轮清理累积的 ephemeral 消息
@@ -1938,6 +2087,7 @@ export async function runAgentLoop(
   };
 
   state.set('_loopState', S.INIT);
+  state.set('_softConvergeInjected', false); // P2-2: 重置软收敛预警标志
   persistLoopContext(ctx);
   startSessionMetrics(sessionId, model);
   // Plan Mode 激活时注册 plan_track 工具
@@ -1987,6 +2137,18 @@ export async function runAgentLoop(
       // Token 感知的动态迭代预算
       const numCtx = state.get<number>(KEYS.NUM_CTX, 131072);
       const usageRatio = estimateTokens(ctx.messages.map(m => m.content || '').join('')) / numCtx;
+
+      // P2-2: 上下文健康度软收敛 — 60% 时提前预警，让 AI 主动收敛
+      if (usageRatio > 0.6 && usageRatio <= 0.8 && !state.get<boolean>('_softConvergeInjected', false)) {
+        ctx.messages.push({
+          role: 'user',
+          content: '[上下文提醒] 上下文窗口使用率已达60%，建议尽快总结已有信息并给出最终回答，避免上下文压缩导致信息丢失。',
+          ephemeral: true,
+        });
+        state.set('_softConvergeInjected', true);
+        logInfo(`软收敛预警: 上下文使用率 ${(usageRatio * 100).toFixed(0)}%`);
+      }
+
       if (usageRatio > 0.8 && (ctx.maxLoops - ctx.loopCount) > 3) {
         const newMax = ctx.loopCount + 3;
         logWarn(`上下文使用率 ${(usageRatio * 100).toFixed(0)}%, 限制剩余迭代为 ${newMax - ctx.loopCount} 轮（原 ${ctx.maxLoops - ctx.loopCount} 轮）`);
