@@ -12,6 +12,8 @@ export interface OllamaMessage {
   compressed?: boolean;
   /** 标记此消息为临时性消息（预算警告等），上下文裁剪时优先丢弃 */
   ephemeral?: boolean;
+  /** 标记此消息为 Plan Mode 约束消息（首轮禁止工具调用），批准后据此精确清理 */
+  planConstraint?: boolean;
 }
 
 export interface OllamaChatParams {
@@ -283,7 +285,11 @@ export type StateKey =
   | 'subAgentModel'
   | 'agentMode'
   | 'loopWatchdogMs'
-  | '_planTracker';
+  | '_planTracker'
+  | '_planResumeData'
+  | '_lastPlanStatus'
+  | '_planLastInjectedDone'
+  | 'toolModes';
 
 // ═══════════════════════════════════════════════════════════
 // Tool Calling 类型

@@ -109,21 +109,6 @@ function getOSEnvironment() {
   };
 }
 
-/** 每个工具返回给模型的最大字符数 */
-const TOOL_MAX_RESULT_SIZE: Record<string, number> = {
-  web_fetch: 20000,
-  web_search: 3000,
-  read_file: 15000,
-  read_multiple_files: 10000,
-  list_directory: 5000,
-  search_files: 5000,
-  run_command: 10000,
-  git: 5000,
-  session_read: 15000,
-  browser_extract: 10000,
-  browser_evaluate: 8000,
-};
-
 /** 始终可并行的只读/独立工具 */
 const ALWAYS_PARALLEL = new Set([
   'read_file', 'list_directory', 'search_files', 'get_file_info', 'tree',
@@ -466,10 +451,7 @@ function formatDefaultToolResult(toolName: string, result: ToolResult): string {
         k === 'status' || k === 'length' || k === 'isDirectory') continue;
     clean[k] = v;
   }
-  let json = JSON.stringify(clean);
-  const maxLen = TOOL_MAX_RESULT_SIZE[toolName] || 15000;
-  if (json.length > maxLen) json = json.slice(0, maxLen) + '\n... (已截断)';
-  return json;
+  return JSON.stringify(clean);
 }
 
 /**
@@ -484,13 +466,12 @@ function formatToolResultForModel(toolName: string, result: ToolResult): string 
     case 'web_search': {
       const raw = result.results as Array<{ title: string; url: string; snippet: string }> | undefined;
       if (!raw?.length) return JSON.stringify({ success: true, message: '未找到结果' });
-      const visible = Math.min(10, raw.length);
-      const top = raw.slice(0, visible).map((r, i) =>
+      const top = raw.map((r, i) =>
         `[${i + 1}] ${r.title}\n    URL: ${r.url}\n    ${r.snippet}`
       ).join('\n\n');
       const fetched = (result as any)._fetched as Array<{ url: string; title: string; content: string }> | undefined;
       const body = JSON.stringify({
-        success: true, query: result.query, total: result.total, shown: visible, results: top,
+        success: true, query: result.query, total: result.total, shown: raw.length, results: top,
       });
       if (fetched && fetched.length > 0) {
         return body + '\n\n' + fetched.map((f, i) =>
@@ -881,18 +862,14 @@ async function handleInit(
   if (ctx.mode === 'plan') {
     const resumeData = state.get<{ steps: Array<{index:number;label:string;done:boolean}>; total: number; done: number; loopCount: number } | null>('_planResumeData', null);
     if (resumeData && resumeData.steps.length > 0 && resumeData.done < resumeData.total) {
-      // 恢复追踪器状态
-      const { initPlanTracker } = await import('./tool-registry.js');
-      const steps = resumeData.steps.map(s => s.label);
-      const tracker = initPlanTracker(steps);
-      // 标记已完成的步骤
-      for (const s of resumeData.steps) {
-        if (s.done) {
-          tracker.steps[s.index - 1].done = true;
-          tracker.done++;
-        }
-      }
+      // 直接从恢复数据构建追踪器，一次保存（避免 initPlanTracker 的冗余中间保存）
       const { savePlanTracker } = await import('./tool-registry.js');
+      const tracker = {
+        steps: resumeData.steps.map(s => ({ index: s.index, label: s.label, done: s.done })),
+        total: resumeData.total,
+        done: resumeData.done,
+        active: true as const,
+      };
       savePlanTracker(tracker);
       // 清空恢复数据，避免重复恢复
       state.set('_planResumeData', null);
@@ -990,6 +967,7 @@ async function handleInit(
       role: 'user' as const,
       content: `[Plan Mode] 请按照 Plan Mode 执行规则中指定的格式输出执行计划。不要直接执行工具调用，先输出计划等待用户批准。`,
       ephemeral: true,
+      planConstraint: true,
     });
   }
 
@@ -1018,7 +996,7 @@ function extractPlanSteps(content: string): string[] {
       // 匹配: 1. **步骤名** — 工具: xxx — 描述
       const match = line.match(/^\d+[\.\)、]\s*(?:\*\*)?(.+?)(?:\*\*)?(?:\s*[—\-]\s*)/);
       if (match) {
-        const step = match[0].trim();
+        const step = match[1].trim();
         if (step.length >= 5 && step.length <= 200) {
           steps.push(step);
           continue;
@@ -1048,7 +1026,7 @@ function extractPlanSteps(content: string): string[] {
     }
   }
 
-  return steps.length > 0 ? steps.slice(0, 8) : ['执行任务计划（详见上方描述）'];
+  return steps.slice(0, 8);
 }
 
 /**
@@ -1283,7 +1261,8 @@ async function handleThinking(
   }
 
   // 多步骤任务待办追踪 — 用户一句话里有多个动作时，提醒未完成的
-  if (ctx.loopCount >= 2 && ctx.allToolRecords.length > 0) {
+  // Plan Mode 下由 Plan Tracker 统一追踪进度，跳过避免信息冗余
+  if (ctx.mode !== 'plan' && ctx.loopCount >= 2 && ctx.allToolRecords.length > 0) {
     const firstUserMsg = ctx.messages.find(m => m.role === 'user');
     const userText = firstUserMsg?.content || '';
     const pending = detectPendingActions(userText, ctx.allToolRecords);
@@ -1888,8 +1867,12 @@ async function handleReflecting(
   // ── Plan Mode: 第一轮回复 → 检测是否为计划 → 等待用户确认 ──
   // P1 修复：移除 ctx.toolCalls.length === 0 条件 — 模型可能忽略 Plan Mode 指令直接调用工具，
   // 此时应取消工具执行，转为等待用户确认计划
-  if (ctx.mode === 'plan' && ctx.loopCount === 1 && ctx.content.length > 50) {
-    const isPlanLike = /计划|步骤|step|plan|思路|方案|流程/.test(ctx.content.slice(0, 200));
+  if (ctx.mode === 'plan' && ctx.loopCount === 1 && ctx.content.length > 20) {
+    // 收紧检测：需要同时包含计划关键词和结构化标记（编号列表或 Markdown 标题）
+    const head = ctx.content.slice(0, 300);
+    const hasPlanKeyword = /执行计划|步骤[一二三四五六七八九十\d]|Step\s*\d|Plan:|行动计划|实施方案/.test(head);
+    const hasStructure = /^\s*(\d+[\.\)、]|[-*]\s)/m.test(head) || /^#{1,3}\s/m.test(head);
+    const isPlanLike = hasPlanKeyword && hasStructure;
     if (isPlanLike && callbacks.onPlanReady) {
       // 如果模型在第一轮就调用了工具，取消这些工具调用（Plan Mode 要求先规划后执行）
       if (ctx.toolCalls.length > 0) {
@@ -1928,10 +1911,9 @@ async function handleReflecting(
         initPlanTracker(steps);
         logInfo('Plan Tracker 已启动', `${steps.length} 个步骤`);
       }
-      // 移除 Plan Mode 的"不要执行工具"约束消息，替换为执行指令
-      // 从后往前找到并移除 Plan Mode 提示（ephemeral 标记）
+      // 移除 Plan Mode 的约束消息（通过 planConstraint 标记精确匹配，不依赖字符串内容）
       for (let i = ctx.messages.length - 1; i >= 0; i--) {
-        if (ctx.messages[i].ephemeral && ctx.messages[i].content?.includes('不要直接执行工具调用')) {
+        if (ctx.messages[i].planConstraint) {
           ctx.messages.splice(i, 1);
           break;
         }
@@ -1944,9 +1926,40 @@ async function handleReflecting(
       transition(ctx, S.THINKING);
       return;
     }
-    // 非计划回复（如简单问答）→ 跳过 Plan Mode，直接完成
+    // 非计划回复 → 检查是否需要保护
     if (!isPlanLike) {
-      logInfo('Plan Mode: 回复非计划内容，直接完成');
+      // 模型未输出计划但调用了工具 → 取消工具，要求重新规划
+      if (ctx.toolCalls.length > 0) {
+        ctx.planRetries++;
+        if (ctx.planRetries >= 3) {
+          logWarn('Plan Mode: 非计划回复+工具调用达到最大重试次数，强制执行');
+          for (const call of ctx.toolCalls) {
+            callbacks.onToolCallError(call.function.name, 'Plan Mode: 超过最大重试次数', call);
+          }
+          ctx.toolCalls.length = 0;
+          ctx.messages.push({
+            role: 'user',
+            content: '已达到最大计划重试次数。请基于当前回复直接开始执行任务。',
+            ephemeral: true,
+          });
+          transition(ctx, S.THINKING);
+          return;
+        }
+        logWarn(`Plan Mode: 回复非计划内容但调用了 ${ctx.toolCalls.length} 个工具，取消并要求重新规划 (重试 ${ctx.planRetries}/3)`);
+        for (const call of ctx.toolCalls) {
+          callbacks.onToolCallError(call.function.name, 'Plan Mode: 首轮应输出计划，请先规划再执行', call);
+        }
+        ctx.toolCalls.length = 0;
+        ctx.messages.push({
+          role: 'user',
+          content: '请按照 Plan Mode 执行规则输出结构化执行计划（包含编号步骤），不要直接回答或调用工具。',
+          ephemeral: true,
+        });
+        transition(ctx, S.THINKING);
+        return;
+      }
+      // 无工具调用的简单回复 → 跳过 Plan Mode，直接完成
+      logInfo('Plan Mode: 回复非计划内容（简单问答），直接完成');
     }
   }
 
@@ -1977,13 +1990,13 @@ async function handleReflecting(
 
   logInfo('模型停止工具调用 → ReAct Agent Loop 结束');
   // ── 保存 Plan Mode 最终进度到状态，供下一轮 Loop 注入历史 ──
+  // 注意：不在此处 clearPlanTracker，由 finally 块统一处理（保存 resumeData 后清理）
   if (ctx.mode === 'plan') {
     const tracker = getPlanTracker();
     if (tracker.active && tracker.steps.length > 0) {
       state.set('_lastPlanStatus', formatPlanStatus());
     }
   }
-  clearPlanTracker();
 
   // ── 自动记忆提取（异步，不阻塞用户看到回复）──
   const abortController = state.get<AbortController | null>(KEYS.ABORT_CONTROLLER);

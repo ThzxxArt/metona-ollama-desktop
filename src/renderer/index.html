@@ -28,7 +28,7 @@
         <div class="header-left">
             <img class="logo" src="./assets/icons/llama.png" alt="logo" />
             <span class="app-title">Metona Ollama</span>
-            <span class="app-version">v0.14.10</span>
+            <span class="app-version">v0.14.11</span>
             <button class="icon-btn help-btn" id="btnHelp" title="使用帮助">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
@@ -440,7 +440,7 @@
         <div class="modal-body">
             <div class="help-section"><h4>🚀 快速开始</h4><ol><li>确保 Ollama 已启动（默认 <code>http://127.0.0.1:11434</code>，可在设置中修改）</li><li>顶部模型栏选择一个模型，右侧会显示模型能力徽章（🧠 Think / 👁️ Vision / 🔧 Tools）</li><li>输入消息，按 <kbd>Enter</kbd> 发送，<kbd>Shift+Enter</kbd> 换行</li></ol></div>
             <div class="help-section"><h4>💬 聊天功能</h4><ul><li><strong>流式回复</strong> — 实时打字效果，随时点 ■ 停止</li><li><strong>Think 推理</strong> — 下方 Think 按钮切换，让模型展示深度思考过程（需模型支持，如 Qwen3）</li><li><strong>上下文长度手动控制</strong> — 设置面板下拉选择（128K / 256K / 512K / 1M），默认 128K。模型栏显示当前配置值，下拉框中每个模型旁显示其自身的上下文长度</li><li><strong>Qwen3 兼容</strong> — 自动保证 system 消息唯一且位于首位，避免 Qwen3 等模型 400 错误</li><li><strong>多模态</strong> — 上传图片或视频（≤10MB），模型需支持 Vision。图片自动压缩，视频 1fps 提取帧序列带时序标注</li><li><strong>文件分析</strong> — 支持 50+ 种文本/代码格式，单文件 ≤500KB，自动剥离注释并按上下文预算智能截断</li><li><strong>AI 回复顶部</strong> — 每条 AI 回复上方展示 📋 系统提示词折叠卡片，可点击查看实际发送给模型的完整上下文</li></ul></div>
-            <div class="help-section"><h4>🔧 Tool Calling（始终开启）</h4><ul><li>所有消息均通过 <strong>Agent Loop 自主调用本地工具</strong>，像一个本地 Agent，无普通聊天模式</li><li><strong>40+1 个工具</strong>，分为 9 类：<ul><li><strong>文件系统</strong>（16 个）：read_file / write_file / list_directory / search_files / create_directory / delete_file / move_file / copy_file / edit_file / get_file_info / tree / download_file / diff_files / replace_in_files / read_multiple_files / compress</li><li><strong>命令执行</strong>（1 个）：run_command（实时流式输出，支持自动/需确认/禁用三种模式，可配置超时）</li><li><strong>联网搜索</strong>（2 个）：web_search（支持 SearXNG 元搜索引擎 JSON API / 四引擎 HTML 解析，双模式可切换）/ web_fetch（反爬headers+UA自动切换+自动回退浏览器渲染）</li><li><strong>Git</strong>（1 个）：git（17 个子操作，push/pull/clone 内置60-120s超时保护）</li><li><strong>浏览器控制</strong>（9 个）：browser_open / browser_screenshot / browser_evaluate / browser_extract / browser_click / browser_type / browser_scroll / browser_wait / browser_close</li><li><strong>记忆 & 会话</strong>（5 个）：memory（统一记忆管理，5 个 action）/ session_list / session_read / spawn_task / plan_track</li><li><strong>系统工具</strong>（6 个）：datetime / calculator / random / uuid / json_format / hash</li></ul></li><li>read_file 支持 binary模式读取/base64解码/字节分页/2000行默认+截断hint自动续读</li><li>write_file 支持 base64写二进制文件/mode(overwrite+append)合并append_file功能/10MB</li><li>edit_file 支持 use_regex 正则替换</li><li>search_files 支持正则表达式搜索（use_regex=true）</li><li>browser_screenshot 支持全页面截图+元素截图</li><li>browser_extract 支持CSS选择器提取特定区域</li><li>new browser_wait 等待元素出现或定时等待</li><li>仅 <code>run_command</code> 支持三模式切换：自动/需确认/禁用</li><li>危险命令（<code>rm -rf</code>、<code>mkfs</code>、反弹 shell 等）和系统路径（<code>/etc</code>、<code>~/.ssh</code> 等）被自动拦截</li><li>工具调用以<strong>可视化卡片</strong>展示状态（pending → running → success/error），在工作空间🔧工具页签中显示</li><li>默认最大 <strong>85 轮</strong>工具调用循环（设置面板可调），上下文使用率>80%时自动缩减到3轮</li><li>独立工具自动<strong>并行执行</strong>（16个只读工具加入并行白名单），有依赖关系的工具串行执行</li></ul></div>
+            <div class="help-section"><h4>🔧 Tool Calling（始终开启）</h4><ul><li>所有消息均通过 <strong>Agent Loop 自主调用本地工具</strong>，像一个本地 Agent，无普通聊天模式</li><li><strong>40+1 个工具</strong>，分为 9 类：<ul><li><strong>文件系统</strong>（16 个）：read_file / write_file / list_directory / search_files / create_directory / delete_file / move_file / copy_file / edit_file / get_file_info / tree / download_file / diff_files / replace_in_files / read_multiple_files / compress</li><li><strong>命令执行</strong>（1 个）：run_command（实时流式输出，支持自动/需确认/禁用三种模式，可配置超时）</li><li><strong>联网搜索</strong>（2 个）：web_search（支持 SearXNG 元搜索引擎 JSON API / 四引擎 HTML 解析，双模式可切换）/ web_fetch（反爬headers+UA自动切换+自动回退浏览器渲染）</li><li><strong>Git</strong>（1 个）：git（17 个子操作，push/pull/clone 内置60-120s超时保护）</li><li><strong>浏览器控制</strong>（9 个）：browser_open / browser_screenshot / browser_evaluate / browser_extract / browser_click / browser_type / browser_scroll / browser_wait / browser_close</li><li><strong>记忆 & 会话</strong>（5 个）：memory（统一记忆管理，5 个 action）/ session_list / session_read / spawn_task / plan_track</li><li><strong>系统工具</strong>（6 个）：datetime / calculator / random / uuid / json_format / hash</li></ul></li><li>read_file 支持 binary模式读取/base64解码/字节分页/2000行默认+截断hint自动续读</li><li>write_file 支持 base64写二进制文件/mode(overwrite+append)合并append_file功能/10MB</li><li>edit_file 支持 use_regex 正则替换</li><li>search_files 支持正则表达式搜索（use_regex=true）</li><li>browser_screenshot 支持全页面截图+元素截图</li><li>browser_extract 支持CSS选择器提取特定区域</li><li>new browser_wait 等待元素出现或定时等待</li><li>所有写操作工具均支持三档开关：自动/需确认/禁用（浏览器工具始终自动执行）</li><li>危险命令（<code>rm -rf</code>、<code>mkfs</code>、反弹 shell 等）和系统路径（<code>/etc</code>、<code>~/.ssh</code> 等）被自动拦截</li><li>工具调用以<strong>可视化卡片</strong>展示状态（pending → running → success/error），在工作空间🔧工具页签中显示</li><li>默认最大 <strong>85 轮</strong>工具调用循环（设置面板可调），上下文使用率>80%时自动缩减到3轮</li><li>独立工具自动<strong>并行执行</strong>（16个只读工具加入并行白名单），有依赖关系的工具串行执行</li></ul></div>
             <div class="help-section"><h4>🧠 Agent 记忆系统</h4><ul><li>记忆存储在工作空间 <strong>MEMORY.md</strong> 文件，受严格路径保护，仅 <code>memory</code> 工具可读写</li><li>新对话时自动检索相关记忆注入 AI 上下文，让 AI "记住"你</li><li>对话结束时 AI 自动提取有价值的用户信息保存（多层质量过滤，宁缺毋滥）</li><li><strong>memory 工具</strong>（5 个 action）：search（关键词搜索）/ add（添加）/ replace（替换）/ remove（删除）/ read_all（读取全部）</li><li>点击顶部 🧠 按钮打开记忆面板：查看、添加、删除记忆条目</li><li><strong>记忆容量上限 500 条</strong>，超限时自动清理低价值条目（规则类型受保护）</li><li>写入前自动安全扫描（prompt injection / 敏感信息 / 不可见字符检测）</li><li>应用启动时自动校验 MEMORY.md 格式，格式错误自动备份重建</li></ul></div>
             <div class="help-section"><h4>📋 Plan Mode（计划模式）</h4><ul><li>点击输入框上方 📋 按钮开启 <strong>Plan Mode</strong>（开关式）</li><li>开启后，AI <strong>先生成执行计划</strong>（Markdown 渲染弹窗），用户批准后才开始执行</li><li>计划批准后自动初始化追踪器，每个步骤完成后调用 <code>plan_track</code> 工具标记进度</li><li>系统提示词自动注入当前进度状态，AI 始终知道还剩多少步未完成</li><li><strong>多步骤任务防遗忘</strong>：自动检测用户请求中的动作动词，对比已完成步骤，注入提醒</li><li>关闭 Plan Mode 后恢复正常 Agent Loop 模式</li><li><strong>仅 Plan 模式</strong> 下 plan_track 工具可见，避免污染普通模式的工具列表</li></ul></div>
             <div class="help-section"><h4>🛡️ 抗幻觉 & 稳定性</h4><ul><li><strong>5 层防御体系</strong>：系统提示词加固 → 任务感知 → 中途幻觉检测（中英双语规则覆盖全部工具类别）→ 进度锚点 → 完成闸门（6 项检查，幻觉/注入 → 阻断，质量/效率 → 咨询）</li><li><strong>完成闸门</strong>：对话结束前自动审查 AI 回复，检测工具幻觉和 prompt injection，阻断有问题的回复</li><li><strong>中英双语检测规则</strong>：覆盖中英文模型输出，防止 AI 声称执行了未调用的工具</li><li><strong>智能重试机制</strong>：永久错误（文件不存在/权限拒绝）立即返回，瞬态错误（网络/超时）指数退避最多重试 2 次</li><li><strong>看门狗超时</strong>：设置面板可配置全局超时（默认 30 分钟），AI 卡死或无限循环时自动中止</li><li><strong>流式总超时</strong>：可配置超时（默认 300s），Ollama 卡死不再永久阻塞</li><li><strong>中止保护</strong>：所有状态处理器 + 重试循环均检查中止信号，点击 ■ 按钮立即生效</li><li><strong>上下文硬上限</strong>：200 条消息强制压缩 + 120 条增量压缩，防止 OOM</li></ul></div>
@@ -475,8 +475,16 @@
                     <div class="tool-card-desc">读取文件(文本/binary/base64)，2000行默认，截断自动提示续读</div>
                 </div>
                 <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">✏️</span><span class="tool-card-name">write_file</span><span class="tool-card-badge auto">自动</span></div>
+                    <div class="tool-card-header"><span class="tool-card-icon">✏️</span><span class="tool-card-name">write_file</span><span class="tool-card-badge confirm" id="badge_write_file">需确认</span></div>
                     <div class="tool-card-desc">写入/追加文件，支持base64二进制，最大10MB</div>
+                    <div style="margin-top:6px;display:flex;align-items:center;gap:8px;">
+                        <label style="margin:0;font-size:11px;color:var(--text-secondary);">执行模式：</label>
+                        <select class="tool-mode-select" data-tool="write_file" style="font-size:11px;padding:2px 6px;background:var(--bg-card);color:var(--text-primary);border:1px solid var(--border-default);border-radius:4px;">
+                            <option value="confirm">需确认</option>
+                            <option value="auto">自动执行</option>
+                            <option value="disabled">禁用</option>
+                        </select>
+                    </div>
                 </div>
                 <div class="tool-card">
                     <div class="tool-card-header"><span class="tool-card-icon">📁</span><span class="tool-card-name">list_directory</span><span class="tool-card-badge auto">自动</span></div>
@@ -487,35 +495,75 @@
                     <div class="tool-card-desc">按文件名或内容搜索，支持正则表达式</div>
                 </div>
                 <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">📂</span><span class="tool-card-name">create_directory</span><span class="tool-card-badge auto">自动</span></div>
+                    <div class="tool-card-header"><span class="tool-card-icon">📂</span><span class="tool-card-name">create_directory</span><span class="tool-card-badge confirm" id="badge_create_directory">需确认</span></div>
                     <div class="tool-card-desc">创建目录，自动创建父级</div>
+                    <div style="margin-top:6px;display:flex;align-items:center;gap:8px;">
+                        <label style="margin:0;font-size:11px;color:var(--text-secondary);">执行模式：</label>
+                        <select class="tool-mode-select" data-tool="create_directory" style="font-size:11px;padding:2px 6px;background:var(--bg-card);color:var(--text-primary);border:1px solid var(--border-default);border-radius:4px;">
+                            <option value="confirm">需确认</option>
+                            <option value="auto">自动执行</option>
+                            <option value="disabled">禁用</option>
+                        </select>
+                    </div>
                 </div>
                 <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">🗑️</span><span class="tool-card-name">delete_file</span><span class="tool-card-badge auto">自动</span></div>
+                    <div class="tool-card-header"><span class="tool-card-icon">🗑️</span><span class="tool-card-name">delete_file</span><span class="tool-card-badge confirm" id="badge_delete_file">需确认</span></div>
                     <div class="tool-card-desc">删除文件或目录，返回被删文件数和总大小</div>
+                    <div style="margin-top:6px;display:flex;align-items:center;gap:8px;">
+                        <label style="margin:0;font-size:11px;color:var(--text-secondary);">执行模式：</label>
+                        <select class="tool-mode-select" data-tool="delete_file" style="font-size:11px;padding:2px 6px;background:var(--bg-card);color:var(--text-primary);border:1px solid var(--border-default);border-radius:4px;">
+                            <option value="confirm">需确认</option>
+                            <option value="auto">自动执行</option>
+                            <option value="disabled">禁用</option>
+                        </select>
+                    </div>
                 </div>
                 <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">📦</span><span class="tool-card-name">move_file</span><span class="tool-card-badge auto">自动</span></div>
+                    <div class="tool-card-header"><span class="tool-card-icon">📦</span><span class="tool-card-name">move_file</span><span class="tool-card-badge confirm" id="badge_move_file">需确认</span></div>
                     <div class="tool-card-desc">移动或重命名文件/目录</div>
+                    <div style="margin-top:6px;display:flex;align-items:center;gap:8px;">
+                        <label style="margin:0;font-size:11px;color:var(--text-secondary);">执行模式：</label>
+                        <select class="tool-mode-select" data-tool="move_file" style="font-size:11px;padding:2px 6px;background:var(--bg-card);color:var(--text-primary);border:1px solid var(--border-default);border-radius:4px;">
+                            <option value="confirm">需确认</option>
+                            <option value="auto">自动执行</option>
+                            <option value="disabled">禁用</option>
+                        </select>
+                    </div>
                 </div>
                 <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">📋</span><span class="tool-card-name">copy_file</span><span class="tool-card-badge auto">自动</span></div>
+                    <div class="tool-card-header"><span class="tool-card-icon">📋</span><span class="tool-card-name">copy_file</span><span class="tool-card-badge confirm" id="badge_copy_file">需确认</span></div>
                     <div class="tool-card-desc">复制文件或目录到新位置</div>
+                    <div style="margin-top:6px;display:flex;align-items:center;gap:8px;">
+                        <label style="margin:0;font-size:11px;color:var(--text-secondary);">执行模式：</label>
+                        <select class="tool-mode-select" data-tool="copy_file" style="font-size:11px;padding:2px 6px;background:var(--bg-card);color:var(--text-primary);border:1px solid var(--border-default);border-radius:4px;">
+                            <option value="confirm">需确认</option>
+                            <option value="auto">自动执行</option>
+                            <option value="disabled">禁用</option>
+                        </select>
+                    </div>
                 </div>
                 <div class="tool-card">
                     <div class="tool-card-header"><span class="tool-card-icon">🌐</span><span class="tool-card-name">web_fetch</span><span class="tool-card-badge auto">自动</span></div>
                     <div class="tool-card-desc">抓取网页内容，反爬headers+UA切换+自动回退浏览器渲染</div>
                 </div>
                 <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">✂️</span><span class="tool-card-name">edit_file</span><span class="tool-card-badge auto">自动</span></div>
+                    <div class="tool-card-header"><span class="tool-card-icon">✂️</span><span class="tool-card-name">edit_file</span><span class="tool-card-badge confirm" id="badge_edit_file">需确认</span></div>
                     <div class="tool-card-desc">查找替换(支持正则use_regex)，全部或单次替换</div>
+                    <div style="margin-top:6px;display:flex;align-items:center;gap:8px;">
+                        <label style="margin:0;font-size:11px;color:var(--text-secondary);">执行模式：</label>
+                        <select class="tool-mode-select" data-tool="edit_file" style="font-size:11px;padding:2px 6px;background:var(--bg-card);color:var(--text-primary);border:1px solid var(--border-default);border-radius:4px;">
+                            <option value="confirm">需确认</option>
+                            <option value="auto">自动执行</option>
+                            <option value="disabled">禁用</option>
+                        </select>
+                    </div>
                 </div>
                 <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">💻</span><span class="tool-card-name">run_command</span><span class="tool-card-badge confirm" id="runCommandBadge">需确认</span></div>
+                    <div class="tool-card-header"><span class="tool-card-icon">💻</span><span class="tool-card-name">run_command</span><span class="tool-card-badge confirm" id="badge_run_command">需确认</span></div>
                     <div class="tool-card-desc">执行 shell 命令，无超时限制</div>
                     <div style="margin-top:6px;display:flex;align-items:center;gap:8px;">
                         <label style="margin:0;font-size:11px;color:var(--text-secondary);">执行模式：</label>
-                        <select id="selectRunCommandMode" style="font-size:11px;padding:2px 6px;background:var(--bg-card);color:var(--text-primary);border:1px solid var(--border-default);border-radius:4px;">
+                        <select class="tool-mode-select" data-tool="run_command" style="font-size:11px;padding:2px 6px;background:var(--bg-card);color:var(--text-primary);border:1px solid var(--border-default);border-radius:4px;">
                             <option value="confirm">需确认</option>
                             <option value="auto">自动执行</option>
                             <option value="disabled">禁用</option>
@@ -531,16 +579,32 @@
                     <div class="tool-card-desc">以树形结构展示目录内容</div>
                 </div>
                 <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">⬇️</span><span class="tool-card-name">download_file</span><span class="tool-card-badge auto">自动</span></div>
+                    <div class="tool-card-header"><span class="tool-card-icon">⬇️</span><span class="tool-card-name">download_file</span><span class="tool-card-badge confirm" id="badge_download_file">需确认</span></div>
                     <div class="tool-card-desc">从 URL 下载文件到本地</div>
+                    <div style="margin-top:6px;display:flex;align-items:center;gap:8px;">
+                        <label style="margin:0;font-size:11px;color:var(--text-secondary);">执行模式：</label>
+                        <select class="tool-mode-select" data-tool="download_file" style="font-size:11px;padding:2px 6px;background:var(--bg-card);color:var(--text-primary);border:1px solid var(--border-default);border-radius:4px;">
+                            <option value="confirm">需确认</option>
+                            <option value="auto">自动执行</option>
+                            <option value="disabled">禁用</option>
+                        </select>
+                    </div>
                 </div>
                 <div class="tool-card">
                     <div class="tool-card-header"><span class="tool-card-icon">🔀</span><span class="tool-card-name">diff_files</span><span class="tool-card-badge auto">自动</span></div>
                     <div class="tool-card-desc">对比两个文件，显示差异</div>
                 </div>
                 <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">🔄</span><span class="tool-card-name">replace_in_files</span><span class="tool-card-badge auto">自动</span></div>
+                    <div class="tool-card-header"><span class="tool-card-icon">🔄</span><span class="tool-card-name">replace_in_files</span><span class="tool-card-badge confirm" id="badge_replace_in_files">需确认</span></div>
                     <div class="tool-card-desc">按 glob 模式批量查找替换多个文件</div>
+                    <div style="margin-top:6px;display:flex;align-items:center;gap:8px;">
+                        <label style="margin:0;font-size:11px;color:var(--text-secondary);">执行模式：</label>
+                        <select class="tool-mode-select" data-tool="replace_in_files" style="font-size:11px;padding:2px 6px;background:var(--bg-card);color:var(--text-primary);border:1px solid var(--border-default);border-radius:4px;">
+                            <option value="confirm">需确认</option>
+                            <option value="auto">自动执行</option>
+                            <option value="disabled">禁用</option>
+                        </select>
+                    </div>
                 </div>
                 <div class="tool-card">
                     <div class="tool-card-header"><span class="tool-card-icon">📚</span><span class="tool-card-name">read_multiple_files</span><span class="tool-card-badge auto">自动</span></div>
@@ -551,8 +615,16 @@
                     <div class="tool-card-desc">Git 全操作（17个子命令：status/log/diff/add/commit/push等）</div>
                 </div>
                 <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">🗜️</span><span class="tool-card-name">compress</span><span class="tool-card-badge auto">自动</span></div>
+                    <div class="tool-card-header"><span class="tool-card-icon">🗜️</span><span class="tool-card-name">compress</span><span class="tool-card-badge confirm" id="badge_compress">需确认</span></div>
                     <div class="tool-card-desc">创建或解压 zip/tar.gz 归档</div>
+                    <div style="margin-top:6px;display:flex;align-items:center;gap:8px;">
+                        <label style="margin:0;font-size:11px;color:var(--text-secondary);">执行模式：</label>
+                        <select class="tool-mode-select" data-tool="compress" style="font-size:11px;padding:2px 6px;background:var(--bg-card);color:var(--text-primary);border:1px solid var(--border-default);border-radius:4px;">
+                            <option value="confirm">需确认</option>
+                            <option value="auto">自动执行</option>
+                            <option value="disabled">禁用</option>
+                        </select>
+                    </div>
                 </div>
                 <div class="tool-card">
                     <div class="tool-card-header"><span class="tool-card-icon">🔍</span><span class="tool-card-name">web_search</span><span class="tool-card-badge auto">自动</span></div>

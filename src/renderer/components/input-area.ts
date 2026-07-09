@@ -586,8 +586,8 @@ async function handleRetry(): Promise<void> {
             const html = buildPlanConfirmHtml(plan, steps);
             return showHtmlConfirm(html, '📋 执行计划确认', true);
           } catch (err) {
-            logWarn('Plan Mode: 弹窗加载失败，自动批准', (err as Error).message);
-            return true;
+            logError('Plan Mode: 弹窗加载失败，拒绝执行以保护用户', (err as Error).message);
+            return false; // 弹窗失败时拒绝执行，避免绕过用户审批
           }
         },
         onDone: async (finalContent, _toolRecords, loopStats) => {
@@ -1335,8 +1335,8 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
           }
           return approved;
         } catch (err) {
-          logWarn('Plan Mode: 弹窗加载失败，自动批准', (err as Error).message);
-          return true; // 加载失败时自动批准，不阻断执行
+          logError('Plan Mode: 弹窗加载失败，拒绝执行以保护用户', (err as Error).message);
+          return false; // 弹窗失败时拒绝执行，避免绕过用户审批
         }
       },
       onDone: async (finalContent, _toolRecords, loopStats) => {

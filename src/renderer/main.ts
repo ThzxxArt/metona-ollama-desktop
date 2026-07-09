@@ -23,7 +23,7 @@ import { initHistoryModal, closeHistoryModal } from './components/history-modal.
 import { initMemoryModal } from './components/memory-modal.js';
 import { initToolsModal, closeToolsModal } from './components/tools-modal.js';
 import { initTokenDashboard, closeTokenDashboard } from './components/token-dashboard.js';
-import { setToolEnabled, setRunCommandMode, refreshMCPTools } from './services/tool-registry.js';
+import { setToolEnabled, setToolMode, refreshMCPTools } from './services/tool-registry.js';
 import { startAllMCPServers } from './services/mcp-client.js';
 import { initToolConfirmModal } from './components/tool-confirm-modal.js';
 import { initWorkspacePanel, clearToolCardsExternal, clearTerminalExternal, switchToTab } from './components/workspace-panel.js';
@@ -319,7 +319,7 @@ async function init(): Promise<void> {
 
     // ── 防御性重置：确保首次启动不会遗留脏状态 ──
     state.set('toolCallingEnabled', true);
-    state.set('runCommandMode', 'confirm');  // 默认需确认
+    state.set('runCommandMode', 'confirm');  // 兼容旧代码读取
     state.set('thinkEnabled', false);
 
     initLogPanel();  // ← 日志面板最先初始化，确保后续 init 日志能显示
@@ -448,9 +448,23 @@ async function init(): Promise<void> {
 
     // ── Tool Calling 设置（永久开启，不可关闭）──
     state.set('toolCallingEnabled', true);
-    const runCommandMode = await db.getSetting('runCommandMode', 'confirm') as 'auto' | 'confirm' | 'disabled';
-    state.set('runCommandMode', runCommandMode);
-    setRunCommandMode(runCommandMode);
+    // 统一加载所有工具的执行模式（auto/confirm/disabled）
+    {
+      // 优先读取合并存储的 toolModes JSON
+      const savedModes = await db.getSetting<Record<string, 'auto' | 'confirm' | 'disabled'>>('toolModes', {});
+      // 兼容旧版：如果 toolModes 中没有 run_command 但有独立的 runCommandMode，则迁移
+      if (!savedModes['run_command']) {
+        const legacy = await db.getSetting('runCommandMode', 'confirm') as 'auto' | 'confirm' | 'disabled';
+        savedModes['run_command'] = legacy;
+        await db.saveSetting('toolModes', savedModes);
+        await db.saveSetting('runCommandMode', null); // 清除旧键
+      }
+      state.set('toolModes', savedModes);
+      // 为每个工具应用模式
+      for (const [toolName, mode] of Object.entries(savedModes)) {
+        setToolMode(toolName, mode);
+      }
+    }
 
     // ── MCP 工具注册 ──
     await startAllMCPServers();

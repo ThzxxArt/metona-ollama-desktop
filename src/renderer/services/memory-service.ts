@@ -286,7 +286,7 @@ export function serializeMemoryMd(entries: MemoryEntry[]): string {
 /**
  * 关键词搜索记忆
  */
-export function searchMemory(entries: MemoryEntry[], query: string, limit = 8): MemorySearchResult[] {
+export function searchMemory(entries: MemoryEntry[], query: string, limit = 0): MemorySearchResult[] {
   if (!query || entries.length === 0) return [];
 
   const queryLower = query.toLowerCase();
@@ -331,7 +331,7 @@ export function searchMemory(entries: MemoryEntry[], query: string, limit = 8): 
     }
   }
 
-  return merged.slice(0, limit);
+  return limit > 0 ? merged.slice(0, limit) : merged;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -437,7 +437,7 @@ export async function loadAllEntries(): Promise<MemoryEntry[]> {
 }
 
 /** 搜索记忆（读取 MEMORY.md → 解析 → 搜索） */
-export async function search(query: string, limit = 8): Promise<MemorySearchResult[]> {
+export async function search(query: string, limit = 0): Promise<MemorySearchResult[]> {
   try {
     const entries = await loadAllEntries();
     return searchMemory(entries, query, limit);

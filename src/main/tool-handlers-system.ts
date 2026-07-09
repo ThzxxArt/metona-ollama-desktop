@@ -53,39 +53,18 @@ export async function handleRunCommand(params: { command: string; cwd?: string; 
 
       let stdout = '';
       let stderr = '';
-      const MAX_OUTPUT = 512 * 1024; // 512KB 上限，防止 OOM
-      let stdoutTruncated = false;
-      let stderrTruncated = false;
 
       // 实时推送到工作空间终端
       _toolProc.stdout?.on('data', (data: Buffer) => {
         const str = data.toString('utf-8');
-        if (!stdoutTruncated) {
-          if (stdout.length + str.length > MAX_OUTPUT) {
-            const remaining = MAX_OUTPUT - stdout.length;
-            stdout += str.slice(0, remaining);
-            stdoutTruncated = true;
-            mainWindow?.webContents.send('cmd:output', { command: params.command, type: 'stdout', data: str.slice(0, remaining) + '\n[stdout 超出 512KB 限制，已截断]' });
-          } else {
-            stdout += str;
-            mainWindow?.webContents.send('cmd:output', { command: params.command, type: 'stdout', data: str });
-          }
-        }
+        stdout += str;
+        mainWindow?.webContents.send('cmd:output', { command: params.command, type: 'stdout', data: str });
       });
 
       _toolProc.stderr?.on('data', (data: Buffer) => {
         const str = data.toString('utf-8');
-        if (!stderrTruncated) {
-          if (stderr.length + str.length > MAX_OUTPUT) {
-            const remaining = MAX_OUTPUT - stderr.length;
-            stderr += str.slice(0, remaining);
-            stderrTruncated = true;
-            mainWindow?.webContents.send('cmd:output', { command: params.command, type: 'stderr', data: str.slice(0, remaining) + '\n[stderr 超出 512KB 限制，已截断]' });
-          } else {
-            stderr += str;
-            mainWindow?.webContents.send('cmd:output', { command: params.command, type: 'stderr', data: str });
-          }
-        }
+        stderr += str;
+        mainWindow?.webContents.send('cmd:output', { command: params.command, type: 'stderr', data: str });
       });
 
       _toolProc.on('close', (code) => {
@@ -94,15 +73,13 @@ export async function handleRunCommand(params: { command: string; cwd?: string; 
         sendLog(
           code === 0 ? 'success' : 'warn',
           `🔧 run_command 完成`,
-          `exitCode: ${code} | ${duration}ms | stdout: ${stdout.length}B${stdoutTruncated ? '(已截断)' : ''} | stderr: ${stderr.length}B${stderrTruncated ? '(已截断)' : ''}`
+          `exitCode: ${code} | ${duration}ms | stdout: ${stdout.length}B | stderr: ${stderr.length}B`
         );
         mainWindow?.webContents.send('cmd:done', { command: params.command, exitCode: code });
         resolve({
           success: code === 0,
           stdout,
           stderr,
-          stdout_truncated: stdoutTruncated || undefined,
-          stderr_truncated: stderrTruncated || undefined,
           exitCode: code,
           duration,
           cwd,
@@ -119,8 +96,6 @@ export async function handleRunCommand(params: { command: string; cwd?: string; 
           success: false,
           stdout,
           stderr: stderr + (stderr ? '\n' : '') + err.message,
-          stdout_truncated: stdoutTruncated || undefined,
-          stderr_truncated: stderrTruncated || undefined,
           exitCode: 1,
           error: err.message,
           duration,
@@ -696,17 +671,15 @@ async function handleWebSearchSearxng(
     if (isHtml) {
       const html = await resp.text();
       const text = htmlToText(html);
-      const truncated = effectiveMax > 0 && text.length > effectiveMax * 500;
-      const content = truncated ? text.slice(0, effectiveMax * 500) + '\n...（已截断）' : text;
       sendLog('success', `🔍 SearXNG HTML 完成`, `${text.length} 字符`);
       return {
         success: true,
         _mode: 'searxng',
         url: apiUrl,
-        content,
+        content: text,
         content_type: 'text/html',
-        length: content.length,
-        truncated,
+        length: text.length,
+        truncated: false,
         format: 'html',
         _hint: '这是 SearXNG 搜索结果页面的纯文本提取。请从中提取有用的搜索结果信息来回答用户问题。'
       };

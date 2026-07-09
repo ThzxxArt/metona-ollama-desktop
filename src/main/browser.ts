@@ -203,7 +203,7 @@ export async function browserExtract(params: { selector?: string; max_chars?: nu
     const ready = ensureBrowserReady();
     if (!ready.ok) return { success: false, error: ready.error };
     const win = ready.win!;
-    const maxChars = params.max_chars || 15000;
+    const maxChars = params.max_chars || 0; // 0 = 不截断
 
     const result = await win.webContents.executeJavaScript(`
       (() => {
@@ -223,7 +223,7 @@ export async function browserExtract(params: { selector?: string; max_chars?: nu
 
         const body = getText(root);
         const maxC = ${maxChars};
-        const text = body.length > maxC ? body.slice(0, maxC) + '\\\\n... (已截断)' : body;
+        const text = maxC > 0 && body.length > maxC ? body.slice(0, maxC) + '\\\\n... (已截断)' : body;
 
         const links = [];
         root.querySelectorAll('a[href]').forEach(a => {

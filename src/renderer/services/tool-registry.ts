@@ -446,7 +446,7 @@ CRITICAL: For add action, you MUST include both "type" (fact/preference/rule) an
         type: 'object',
         required: ['action'],
         properties: {
-          action: { type: 'string', enum: ['status', 'mark_done', 'mark_all_done'], description: 'status=查看当前进度, mark_done=标记步骤完成, mark_all_done=全部完成' },
+          action: { type: 'string', enum: ['status', 'mark_done', 'mark_undone', 'mark_all_done'], description: 'status=查看当前进度, mark_done=标记步骤完成, mark_undone=撤销步骤完成标记, mark_all_done=全部完成' },
           step_index: { type: 'integer', description: 'Step number (1-indexed) to mark as done. Required for mark_done.' },
           step_label: { type: 'string', description: 'Optional: description of what was completed, for logging.' }
         }
@@ -675,32 +675,43 @@ CRITICAL: For add action, you MUST include both "type" (fact/preference/rule) an
   }
 ];
 
-// 需要用户确认的工具：写操作、删除、命令执行、压缩、浏览器操作
-const CONFIRM_TOOLS = [
+// 支持三档开关的工具列表（auto/confirm/disabled）
+// 浏览器工具不需要确认，永远自动执行
+const MODE_TOOLS = [
   'run_command',
   'write_file', 'create_directory', 'delete_file',
   'edit_file', 'replace_in_files', 'move_file', 'copy_file',
   'download_file', 'compress',
-  'browser_open', 'browser_click', 'browser_type', 'browser_evaluate',
 ];
 
+export type ToolMode = 'auto' | 'confirm' | 'disabled';
+
+// 工具模式缓存：key=工具名, value=模式
+const _toolModes = new Map<string, ToolMode>();
+
 export function needsConfirmation(toolName: string): boolean {
-  if (toolName === 'run_command') {
-    // run_command 确认模式由 runCommandMode 状态控制
-    const runCommandMode = (window as any).__runCommandMode || 'confirm';
-    return runCommandMode === 'confirm';
-  }
-  return CONFIRM_TOOLS.includes(toolName);
+  if (!MODE_TOOLS.includes(toolName)) return false;
+  return getToolMode(toolName) === 'confirm';
 }
 
-/** 设置 run_command 执行模式 */
-export function setRunCommandMode(mode: 'auto' | 'confirm' | 'disabled'): void {
-  (window as any).__runCommandMode = mode;
+/** 获取工具模式，默认 confirm */
+export function getToolMode(toolName: string): ToolMode {
+  return _toolModes.get(toolName) ?? 'confirm';
+}
+
+/** 设置工具执行模式 */
+export function setToolMode(toolName: string, mode: ToolMode): void {
+  _toolModes.set(toolName, mode);
   if (mode === 'disabled') {
-    setToolEnabled('run_command', false);
+    setToolEnabled(toolName, false);
   } else {
-    setToolEnabled('run_command', true);
+    setToolEnabled(toolName, true);
   }
+}
+
+/** 兼容旧接口：设置 run_command 执行模式 */
+export function setRunCommandMode(mode: ToolMode): void {
+  setToolMode('run_command', mode);
 }
 
 let enabledTools: Set<string> = new Set([
@@ -729,8 +740,8 @@ export function setPlanModeActive(active: boolean): void {
     enabledTools.add('plan_track');
   } else {
     enabledTools.delete('plan_track');
-    // 清除追踪器状态
-    state.set('_planTracker', null);
+    // 清除追踪器状态（同时清模块变量和 state）
+    clearPlanTracker();
   }
 }
 
@@ -793,9 +804,9 @@ export async function executeTool(toolName: string, args: Record<string, unknown
       switch (action) {
         case 'search': {
           const query = args.query as string;
-          const limit = (args.limit as number) || 8;
-          if (!query) return { success: false, error: '缺少 query 参数' };
-          const results = await search(query, limit);
+const limit = (args.limit as number) || 0; // 0 = 不限制
+if (!query) return { success: false, error: '缺少 query 参数' };
+const results = await search(query, limit);
           logToolResult('memory', true, `${results.length} 条结果`);
           return { success: true, action, results, total: results.length };
         }
@@ -843,7 +854,7 @@ export async function executeTool(toolName: string, args: Record<string, unknown
     if (toolName === 'session_list') {
       const bridge = window.metonaDesktop;
       if (!bridge?.db) return { success: false, error: '桌面 API 不可用' };
-      const limit = (args.limit as number) || 20;
+      const limit = (args.limit as number) || 0; // 0 = 不限制
       const search = (args.search as string) || '';
       const sessions = await bridge.db.getAllSessions();
       let filtered = sessions.map((s: any) => ({
@@ -858,7 +869,7 @@ export async function executeTool(toolName: string, args: Record<string, unknown
         filtered = filtered.filter((s: any) => s.title.toLowerCase().includes(search.toLowerCase()));
       }
       filtered.sort((a: any, b: any) => b.updatedAt - a.updatedAt);
-      filtered = filtered.slice(0, limit);
+      if (limit > 0) filtered = filtered.slice(0, limit);
       logToolResult('session_list', true, `${filtered.length} 个会话`);
       return { success: true, sessions: filtered, total: filtered.length };
     }
@@ -866,12 +877,12 @@ export async function executeTool(toolName: string, args: Record<string, unknown
       const bridge = window.metonaDesktop;
       if (!bridge?.db) return { success: false, error: '桌面 API 不可用' };
       const sessionId = args.session_id as string;
-      const maxMessages = (args.max_messages as number) || 50;
+      const maxMessages = (args.max_messages as number) || 0; // 0 = 不限制
       if (!sessionId) return { success: false, error: '缺少 session_id 参数' };
       const session = await bridge.db.getSession(sessionId);
       if (!session) return { success: false, error: `会话 ${sessionId} 不存在` };
       const messages = await bridge.db.getMessages(sessionId);
-      const msgs = messages.slice(0, maxMessages).map((m: any) => ({
+      const msgs = (maxMessages > 0 ? messages.slice(0, maxMessages) : messages).map((m: any) => ({
         role: m.role,
         content: m.content || '',
         timestamp: m.created_at
@@ -909,6 +920,9 @@ export async function executeTool(toolName: string, args: Record<string, unknown
         return { success: true, action: 'status', steps: tracker.steps, total: tracker.total, done: tracker.done };
       }
       if (action === 'mark_done' && typeof stepIndex === 'number' && stepIndex > 0) {
+        if (!Number.isInteger(stepIndex)) {
+          return { success: false, error: `step_index 必须是整数，收到 ${stepIndex}` };
+        }
         const idx = stepIndex - 1;
         if (idx >= 0 && idx < tracker.steps.length) {
           tracker.steps[idx].done = true;
@@ -918,6 +932,21 @@ export async function executeTool(toolName: string, args: Record<string, unknown
           const remaining = tracker.total - tracker.done;
           logToolResult('plan_track', true, `步骤 ${stepIndex} 已完成 (${tracker.done}/${tracker.total}${remaining > 0 ? `, 剩余 ${remaining}` : ', 全部完成!'})`);
           return { success: true, action: 'mark_done', step: stepIndex, done: tracker.done, total: tracker.total, remaining };
+        }
+        return { success: false, error: `步骤 ${stepIndex} 不存在（共 ${tracker.total} 步）` };
+      }
+      if (action === 'mark_undone' && typeof stepIndex === 'number' && stepIndex > 0) {
+        if (!Number.isInteger(stepIndex)) {
+          return { success: false, error: `step_index 必须是整数，收到 ${stepIndex}` };
+        }
+        const idx = stepIndex - 1;
+        if (idx >= 0 && idx < tracker.steps.length) {
+          tracker.steps[idx].done = false;
+          tracker.done = tracker.steps.filter(s => s.done).length;
+          savePlanTracker(tracker);
+          const remaining = tracker.total - tracker.done;
+          logToolResult('plan_track', true, `步骤 ${stepIndex} 已撤销完成标记 (${tracker.done}/${tracker.total}, 剩余 ${remaining})`);
+          return { success: true, action: 'mark_undone', step: stepIndex, done: tracker.done, total: tracker.total, remaining };
         }
         return { success: false, error: `步骤 ${stepIndex} 不存在（共 ${tracker.total} 步）` };
       }
@@ -996,10 +1025,12 @@ export interface PlanTracker {
 
 let _planTracker: PlanTracker = { steps: [], total: 0, done: 0, active: false };
 
+const EMPTY_TRACKER: PlanTracker = { steps: [], total: 0, done: 0, active: false };
+
 export function getPlanTracker(): PlanTracker {
-  // 每次读取时同步 state 中的最新状态
+  // 始终从 state 同步最新状态；state 为 null 时返回空追踪器
   const saved = state.get<PlanTracker | null>('_planTracker', null);
-  if (saved) _planTracker = saved;
+  _planTracker = saved ?? EMPTY_TRACKER;
   return _planTracker;
 }
 
@@ -1021,7 +1052,7 @@ export function initPlanTracker(steps: string[]): PlanTracker {
 }
 
 export function clearPlanTracker(): void {
-  _planTracker = { steps: [], total: 0, done: 0, active: false };
+  _planTracker = EMPTY_TRACKER;
   state.set('_planTracker', null);
 }
 

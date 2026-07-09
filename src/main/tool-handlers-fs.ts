@@ -33,15 +33,11 @@ export async function handleReadFile(params: { path: string; encoding?: string; 
 
       if (params.offset_bytes !== undefined || params.limit_bytes !== undefined) {
         const offset = params.offset_bytes || 0;
-        const limit = params.limit_bytes || Math.min(100 * 1024, buf.length - offset); // 默认100KB
+        const limit = params.limit_bytes || buf.length - offset;
         const end = Math.min(buf.length, offset + limit);
         resultBuf = buf.subarray(offset, end);
         byteRange = [offset, end];
         truncated = end < buf.length;
-      } else if (buf.length > 100 * 1024) {
-        resultBuf = buf.subarray(0, 100 * 1024);
-        byteRange = [0, 100 * 1024];
-        truncated = true;
       }
 
       const ext = path.extname(filePath).toLowerCase();
@@ -101,7 +97,6 @@ export async function handleReadFile(params: { path: string; encoding?: string; 
     // 按行读取
     const content = await fs.readFile(filePath, encoding);
     const lines = content.split('\n');
-    const defaultLimit = 2000;
 
     let resultContent = content;
     let lineRange: [number, number] = [1, lines.length];
@@ -109,14 +104,10 @@ export async function handleReadFile(params: { path: string; encoding?: string; 
 
     if (params.start_line || params.end_line) {
       const start = Math.max(1, params.start_line || 1) - 1;
-      const end = Math.min(lines.length, params.end_line || Math.min(start + defaultLimit, lines.length));
+      const end = Math.min(lines.length, params.end_line || lines.length);
       resultContent = lines.slice(start, end).join('\n');
       lineRange = [start + 1, end];
       truncated = end < lines.length;
-    } else if (lines.length > defaultLimit) {
-      resultContent = lines.slice(0, defaultLimit).join('\n');
-      lineRange = [1, defaultLimit];
-      truncated = true;
     }
 
     return {
@@ -251,19 +242,16 @@ export async function handleListDir(params: { path: string; recursive?: boolean;
     const allowed = checkPathAllowed(dirPath, 'read');
     if (!allowed.ok) return { success: false, error: allowed.reason };
 
-    const maxEntries = 2000;
     const startOffset = params.offset || 0;
     const entries: Array<{ name: string; type: string; size: number | null; modified: string }> = [];
     let truncated = false;
     let skipped = 0;
 
     async function scanDir(dir: string, depth: number): Promise<void> {
-      if (entries.length >= maxEntries) { truncated = true; return; }
       if (params.recursive && params.max_depth && depth > params.max_depth) return;
 
       const items = await fs.readdir(dir, { withFileTypes: true });
       for (const item of items) {
-        if (entries.length >= maxEntries) { truncated = true; return; }
         if (!params.include_hidden && item.name.startsWith('.')) continue;
         if (params.filter_extension && item.isFile() && !item.name.endsWith(params.filter_extension)) continue;
 
@@ -307,7 +295,7 @@ export async function handleSearchFiles(params: { path: string; query: string; s
     const searchType = params.search_type || 'both';
     const caseSensitive = params.case_sensitive || false;
     const useRegex = params.use_regex || false;
-    const maxResults = params.max_results || 50;
+    const maxResults = params.max_results || 0; // 0 = 不限制
     const query = params.query; // 保持原始，正则用 flags 控制大小写
 
     // 构建搜索匹配器
@@ -355,7 +343,7 @@ export async function handleSearchFiles(params: { path: string; query: string; s
     const allFiles = await collectFiles(rootPath);
 
     for (const filePath of allFiles) {
-      if (totalMatches >= maxResults) break;
+      if (maxResults > 0 && totalMatches >= maxResults) break;
 
       if (searchType === 'filename' || searchType === 'both') {
         const fileName = path.basename(filePath);
@@ -383,7 +371,7 @@ export async function handleSearchFiles(params: { path: string; query: string; s
           const lines = content.split('\n');
           const fileMatches: Array<{ line: number; text: string; column: number }> = [];
 
-          for (let i = 0; i < lines.length && fileMatches.length < 10; i++) {
+          for (let i = 0; i < lines.length; i++) {
             if (contentMatcher(lines[i])) {
               const col = useRegex ? 1 : (caseSensitive ? lines[i] : lines[i].toLowerCase()).indexOf(caseSensitive ? query : query.toLowerCase());
               fileMatches.push({ line: i + 1, text: lines[i].trim(), column: Math.max(1, col + 1) });
@@ -405,7 +393,7 @@ export async function handleSearchFiles(params: { path: string; query: string; s
       results,
       total_files: allFiles.length,
       total_matches: totalMatches,
-      truncated: totalMatches >= maxResults
+      truncated: maxResults > 0 && totalMatches >= maxResults
     };
   } catch (err) {
     return { success: false, error: (err as Error).message };
@@ -787,7 +775,7 @@ export async function handleReplaceInFiles(params: { path: string; glob: string;
 
 export async function handleReadMultipleFiles(params: { paths: string[]; max_chars_per_file?: number }): Promise<ToolResult> {
   try {
-    const maxChars = params.max_chars_per_file || 10000;
+    const maxChars = params.max_chars_per_file || 0; // 0 = 不截断
 
     // 并行读取所有文件（最多50个）
     const filesToRead = params.paths.slice(0, 50).map(async (p) => {
@@ -803,7 +791,7 @@ export async function handleReadMultipleFiles(params: { paths: string[]; max_cha
         }
         let content = await fs.readFile(filePath, 'utf-8');
         const lines = content.split('\n').length;
-        if (content.length > maxChars) content = content.slice(0, maxChars) + '\n... (已截断)';
+        if (maxChars > 0 && content.length > maxChars) content = content.slice(0, maxChars) + '\n... (已截断)';
         return { path: p, success: true, content, lines };
       } catch (err) {
         return { path: p, success: false, error: (err as Error).message };
