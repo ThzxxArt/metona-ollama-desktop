@@ -378,7 +378,7 @@ CRITICAL: For add action, you MUST include both "type" (fact/preference/rule) an
           content: { type: 'string', description: '[add REQUIRED, replace] Memory text. Keep it concise (8-100 chars).' },
           importance: { type: 'integer', description: '[add] Priority 1-10. Default: 5. Use 8+ for critical info.' },
           tags: { type: 'array', items: { type: 'string' }, description: '[add] 2-5 keywords for search matching.' },
-          old_text: { type: 'string', description: '[replace, remove REQUIRED] Unique substring to identify the entry. Must be ≥8 chars for precision.' },
+          old_text: { type: 'string', description: '[replace, remove REQUIRED] Unique substring to identify the entry. Must be ≥5 chars. Use exact text from read_all for best results.' },
           new_content: { type: 'string', description: '[replace REQUIRED] New text to replace with.' }
         }
       }

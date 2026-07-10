@@ -530,12 +530,11 @@ export async function addEntry(
 
 /** 替换记忆（子串匹配）
  * M8: 使用写入锁串行化
- * M9: 要求 oldText 至少 5 个字符，减少误匹配 */
+ * 要求 oldText 至少 5 个字符，减少误匹配 */
 export async function replaceEntry(oldText: string, newContent: string): Promise<{ success: boolean; message: string }> {
   return withWriteLock(async () => {
-    // M4: 提高最小匹配长度到 8，减少误匹配
-    if (!oldText || oldText.length < 8) {
-      return { success: false, message: 'old_text 不能为空且至少 8 个字符（提高精确度）' };
+    if (!oldText || oldText.length < 5) {
+      return { success: false, message: 'old_text 不能为空且至少 5 个字符（提高精确度）' };
     }
     if (!newContent || newContent.length < 2) {
       return { success: false, message: 'new_content 不能为空且至少 2 个字符' };
@@ -547,12 +546,12 @@ export async function replaceEntry(oldText: string, newContent: string): Promise
     }
 
     const entries = await loadAllEntries();
-    // M9: 大小写不敏感匹配
-    const oldTextLower = oldText.toLowerCase();
-    const matches = entries.filter(e => e.content.toLowerCase().includes(oldTextLower));
+    // 归一化匹配：统一全角/半角标点、空白、大小写，解决引号等字符差异
+    const oldTextNorm = normalizeForDedup(oldText);
+    const matches = entries.filter(e => normalizeForDedup(e.content).includes(oldTextNorm));
 
     if (matches.length === 0) {
-      return { success: false, message: `未找到包含 "${oldText.slice(0, 50)}" 的记忆` };
+      return { success: false, message: `未找到包含 "${oldText.slice(0, 50)}" 的记忆。建议先调用 memory read_all 查看完整内容，再用精确的 old_text 重试` };
     }
     if (matches.length > 1) {
       return { success: false, message: `匹配到 ${matches.length} 条记忆，请使用更精确的 old_text` };
@@ -579,21 +578,20 @@ export async function replaceEntry(oldText: string, newContent: string): Promise
 
 /** 删除记忆（子串匹配）
  * M8: 使用写入锁串行化
- * M4: 要求 oldText 至少 8 个字符，减少误匹配 */
+ * 要求 oldText 至少 5 个字符，减少误匹配 */
 export async function removeEntry(oldText: string): Promise<{ success: boolean; message: string }> {
   return withWriteLock(async () => {
-    // M4: 提高最小匹配长度到 8
-    if (!oldText || oldText.length < 8) {
-      return { success: false, message: 'old_text 不能为空且至少 8 个字符（提高精确度）' };
+    if (!oldText || oldText.length < 5) {
+      return { success: false, message: 'old_text 不能为空且至少 5 个字符（提高精确度）' };
     }
 
     const entries = await loadAllEntries();
-    // M9: 大小写不敏感匹配
-    const oldTextLower = oldText.toLowerCase();
-    const matches = entries.filter(e => e.content.toLowerCase().includes(oldTextLower));
+    // 归一化匹配：统一全角/半角标点、空白、大小写，解决引号等字符差异
+    const oldTextNorm = normalizeForDedup(oldText);
+    const matches = entries.filter(e => normalizeForDedup(e.content).includes(oldTextNorm));
 
     if (matches.length === 0) {
-      return { success: false, message: `未找到包含 "${oldText.slice(0, 50)}" 的记忆` };
+      return { success: false, message: `未找到包含 "${oldText.slice(0, 50)}" 的记忆。建议先调用 memory read_all 查看完整内容，再用精确的 old_text 重试` };
     }
     if (matches.length > 1) {
       return { success: false, message: `匹配到 ${matches.length} 条记忆，请使用更精确的 old_text` };
