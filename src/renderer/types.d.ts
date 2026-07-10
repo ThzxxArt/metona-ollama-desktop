@@ -524,7 +524,9 @@ export interface MessageRow {
   images: string | null;
   tool_calls: string | null;
   tool_name: string | null;
+  attachments: string | null;
   eval_count: number | null;
+  prompt_eval_count: number | null;
   total_duration: number | null;
   created_at: number;
 }

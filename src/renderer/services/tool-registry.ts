@@ -371,14 +371,14 @@ CRITICAL: For add action, you MUST include both "type" (fact/preference/rule) an
         type: 'object',
         required: ['action'],
         properties: {
-          action: { type: 'string', enum: ['search', 'add', 'replace', 'remove', 'read_all'], description: 'Which operation to perform.' },
-          query: { type: 'string', description: '[search] Keywords to search for.' },
+          action: { type: 'string', enum: ['search', 'add', 'replace', 'remove', 'read_all'], description: 'Which operation to perform. Note: "add" requires "type"+"content", "replace" requires "old_text"+"new_content", "remove" requires "old_text", "search" requires "query".' },
+          query: { type: 'string', description: '[search REQUIRED] Keywords to search for.' },
           limit: { type: 'integer', description: '[search] Max results. Default: 8.' },
           type: { type: 'string', enum: ['fact', 'preference', 'rule'], description: '[add REQUIRED] Memory type. fact=user info, preference=user preference, rule=behavior rule.' },
           content: { type: 'string', description: '[add REQUIRED, replace] Memory text. Keep it concise (8-100 chars).' },
           importance: { type: 'integer', description: '[add] Priority 1-10. Default: 5. Use 8+ for critical info.' },
           tags: { type: 'array', items: { type: 'string' }, description: '[add] 2-5 keywords for search matching.' },
-          old_text: { type: 'string', description: '[replace, remove REQUIRED] Unique substring to identify the entry.' },
+          old_text: { type: 'string', description: '[replace, remove REQUIRED] Unique substring to identify the entry. Must be ≥8 chars for precision.' },
           new_content: { type: 'string', description: '[replace REQUIRED] New text to replace with.' }
         }
       }

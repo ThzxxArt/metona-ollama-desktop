@@ -112,25 +112,56 @@ interface RoundData {
   total_duration: number;
   timestamp: number;
   model?: string;
+  llmCallCount: number;
 }
 
+/**
+ * 收集轮次数据 — 按用户消息分组（一次用户消息 = 一轮）。
+ * Agent Loop 中一次用户交互可能触发多次 LLM 调用，
+ * 这些调用的 token 统计会被聚合到同一个轮次中。
+ */
 function collectRoundData(messages: ChatMessage[]): RoundData[] {
   const rounds: RoundData[] = [];
-  let roundNum = 0;
+  let turnNum = 0;
+  let currentTurn: RoundData | null = null;
+
   for (const msg of messages) {
-    if (msg.role === 'assistant' && (msg.eval_count || msg.prompt_eval_count || msg.total_duration)) {
-      roundNum++;
-      rounds.push({
-        round: roundNum,
-        role: msg.role,
-        eval_count: msg.eval_count || 0,
-        prompt_eval_count: msg.prompt_eval_count || 0,
-        total_duration: msg.total_duration || 0,
+    if (msg.role === 'user') {
+      // 新轮次开始
+      if (currentTurn) rounds.push(currentTurn);
+      turnNum++;
+      currentTurn = {
+        round: turnNum,
+        role: 'assistant',
+        eval_count: 0,
+        prompt_eval_count: 0,
+        total_duration: 0,
         timestamp: msg.timestamp,
-        model: msg.model,
-      });
+        llmCallCount: 0,
+      };
+    } else if (msg.role === 'assistant' && (msg.eval_count || msg.prompt_eval_count || msg.total_duration)) {
+      if (!currentTurn) {
+        // 边界情况：assistant 消息出现在任何 user 消息之前
+        turnNum++;
+        currentTurn = {
+          round: turnNum,
+          role: 'assistant',
+          eval_count: 0,
+          prompt_eval_count: 0,
+          total_duration: 0,
+          timestamp: msg.timestamp,
+          llmCallCount: 0,
+        };
+      }
+      currentTurn.eval_count += msg.eval_count || 0;
+      currentTurn.prompt_eval_count += msg.prompt_eval_count || 0;
+      currentTurn.total_duration += msg.total_duration || 0;
+      currentTurn.llmCallCount++;
+      currentTurn.model = msg.model || currentTurn.model;
+      currentTurn.timestamp = msg.timestamp;
     }
   }
+  if (currentTurn) rounds.push(currentTurn);
   return rounds;
 }
 
@@ -184,9 +215,32 @@ function renderDashboard(): void {
   }
 }
 
+/** P9: 全局刷新请求 ID，防止异步竞态 */
+let globalFetchId = 0;
+
+/** 重新计算全局汇总 */
+function recalcTotals(sessions: SessionTokenStat[]): GlobalTokenTotals {
+  let totalInput = 0, totalOutput = 0, totalDuration = 0, totalRounds = 0;
+  for (const s of sessions) {
+    totalInput += s.total_input || 0;
+    totalOutput += s.total_output || 0;
+    totalDuration += s.total_duration || 0;
+    totalRounds += s.round_count || 0;
+  }
+  return {
+    total_input: totalInput,
+    total_output: totalOutput,
+    total_duration: totalDuration,
+    total_rounds: totalRounds,
+    session_count: sessions.length,
+  };
+}
+
 /** 渲染全局统计视图 */
 function renderGlobalView(): void {
+  const myFetchId = ++globalFetchId;
   fetchGlobalStats().then(stats => {
+    if (myFetchId !== globalFetchId) return; // P9: 过期响应，丢弃
     if (!stats) {
       // P1 #3/#9: 刷新失败时保留旧数据，仅在从未加载成功时显示错误
       if (hasEverLoaded && lastSuccessfulStats) {
@@ -198,6 +252,35 @@ function renderGlobalView(): void {
       }
       return;
     }
+
+    // P2: 合并当前会话内存数据，确保实时性
+    const currentSession = state.get<ChatSession | null>(KEYS.CURRENT_SESSION);
+    if (currentSession && currentSession.messages.length > 0) {
+      const rounds = collectRoundData(currentSession.messages);
+      if (rounds.length > 0) {
+        const totalInput = rounds.reduce((sum, r) => sum + r.prompt_eval_count, 0);
+        const totalOutput = rounds.reduce((sum, r) => sum + r.eval_count, 0);
+        const totalDuration = rounds.reduce((sum, r) => sum + r.total_duration, 0);
+        const sessionStat: SessionTokenStat = {
+          session_id: currentSession.id,
+          title: currentSession.title,
+          model: currentSession.model,
+          created_at: currentSession.createdAt,
+          total_input: totalInput,
+          total_output: totalOutput,
+          total_duration: totalDuration,
+          round_count: rounds.length,
+        };
+        const idx = stats.sessions.findIndex(s => s.session_id === currentSession.id);
+        if (idx >= 0) {
+          stats.sessions[idx] = sessionStat;
+        } else {
+          stats.sessions.push(sessionStat);
+        }
+        stats.totals = recalcTotals(stats.sessions);
+      }
+    }
+
     renderGlobalOverview(stats);
     renderGlobalChart(stats);
     renderGlobalTable(stats);
@@ -294,8 +377,8 @@ function renderBarChart(
           </div>
         </div>
         <div class="td-bar-labels">
-          <span class="td-val-output">${formatTokenCount(d.output)}</span>
           <span class="td-val-input">${formatTokenCount(d.input)}</span>
+          <span class="td-val-output">${formatTokenCount(d.output)}</span>
         </div>
         <div class="td-bar-label">${escapeHtml(d.label)}</div>
       </div>
@@ -346,7 +429,10 @@ function renderGlobalChart(stats: AllSessionsTokenStats): void {
     tooltip: `${s.title} · 模型 ${s.model} · 输入 ${formatTokenCount(s.total_input)} + 输出 ${formatTokenCount(s.total_output)} = ${formatTokenCount(s.total_input + s.total_output)} tokens · ${s.round_count} 轮`,
   }));
 
-  renderBarChart(chartEl, chartData, `最近 ${sorted.length} 个会话`, savedScrollLeft);
+  const noteText = sessions.length > sorted.length
+    ? `最近 ${sorted.length} / 共 ${sessions.length} 个会话`
+    : `共 ${sorted.length} 个会话`;
+  renderBarChart(chartEl, chartData, noteText, savedScrollLeft);
 }
 
 /** 渲染全局明细表格 */
@@ -584,17 +670,26 @@ function renderSessionView(): void {
   const barsEl = chartEl.querySelector('.td-chart-bars') as HTMLElement | null;
   const savedScrollLeft = barsEl?.scrollLeft ?? 0;
 
-  const chartData = rounds.map(r => ({
+  // P4: 限制图表柱子数量，避免长会话性能下降
+  const MAX_CHART_ROUNDS = 50;
+  const displayRounds = rounds.length > MAX_CHART_ROUNDS ? rounds.slice(-MAX_CHART_ROUNDS) : rounds;
+
+  const chartData = displayRounds.map(r => ({
     label: `R${r.round}`,
     input: r.prompt_eval_count,
     output: r.eval_count,
-    tooltip: `第${r.round}轮 · 输入 ${formatTokenCount(r.prompt_eval_count)} + 输出 ${formatTokenCount(r.eval_count)} = ${formatTokenCount(r.eval_count + r.prompt_eval_count)} tokens · ${formatDuration(r.total_duration)}`,
+    tooltip: `第${r.round}轮${r.llmCallCount > 1 ? ` · ${r.llmCallCount}次调用` : ''} · 输入 ${formatTokenCount(r.prompt_eval_count)} + 输出 ${formatTokenCount(r.eval_count)} = ${formatTokenCount(r.eval_count + r.prompt_eval_count)} tokens · ${formatDuration(r.total_duration)}`,
   }));
 
   const chartTitleEl = dashboardModalEl.querySelector('#tdChartTitle');
   if (chartTitleEl) chartTitleEl.textContent = '📈 Token 消耗趋势 — 按轮次';
 
-  renderBarChart(chartEl, chartData, undefined, savedScrollLeft);
+  // P4 #6/#7: 图表 note — 显示轮次总数 + 流式提示
+  const noteParts: string[] = [];
+  if (rounds.length > MAX_CHART_ROUNDS) noteParts.push(`最近 ${MAX_CHART_ROUNDS} / 共 ${rounds.length} 轮`);
+  else noteParts.push(`共 ${rounds.length} 轮`);
+  if (isStreaming) noteParts.push('⚡ AI 回复中…');
+  renderBarChart(chartEl, chartData, noteParts.join(' · '), savedScrollLeft);
 
   // 表格标题
   const tableTitleEl = dashboardModalEl.querySelector('#tdTableTitle') as HTMLElement | null;
@@ -625,7 +720,7 @@ function renderSessionView(): void {
       return `
       <tr>
         <td>R${r.round}</td>
-        <td><span class="td-role-badge">🤖 AI</span>${r.model ? ` <span class="td-model-tag">${escapeHtml(r.model)}</span>` : ''}</td>
+        <td>${r.llmCallCount > 1 ? `<span class="td-num">${r.llmCallCount}次</span>` : '<span class="td-num">1次</span>'}${r.model ? ` <span class="td-model-tag">${escapeHtml(r.model)}</span>` : ''}</td>
         <td class="td-num">${formatTokenCount(r.prompt_eval_count)}</td>
         <td class="td-num">${formatTokenCount(r.eval_count)}</td>
         <td class="td-num td-num-total">${formatTokenCount(total)}</td>
@@ -661,7 +756,7 @@ function updateTableHeader(mode: 'global' | 'session'): void {
   } else {
     thead.innerHTML = `
       <th>轮次</th>
-      <th>角色</th>
+      <th>调用</th>
       <th>输入</th>
       <th>输出</th>
       <th>合计</th>

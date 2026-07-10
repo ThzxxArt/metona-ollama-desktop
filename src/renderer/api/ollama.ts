@@ -29,8 +29,9 @@ export class OllamaAPI {
     return response;
   }
 
-  private async _json<T = unknown>(path: string, body: unknown = null): Promise<T> {
+  private async _json<T = unknown>(path: string, body: unknown = null, signal?: AbortSignal): Promise<T> {
     const options: RequestInit = body ? { method: 'POST', body: JSON.stringify(body) } : {};
+    if (signal) options.signal = signal;
     const response = await this._request(path, options);
     return response.json() as Promise<T>;
   }
@@ -51,7 +52,7 @@ export class OllamaAPI {
     return this._json('/api/show', { model });
   }
 
-  async chat(params: Omit<OllamaChatParams, 'stream'>): Promise<unknown> {
+  async chat(params: Omit<OllamaChatParams, 'stream'> & { signal?: AbortSignal }): Promise<unknown> {
     const body: Record<string, unknown> = {
       model: params.model,
       messages: params.messages,
@@ -62,7 +63,7 @@ export class OllamaAPI {
     if (params.system) body.system = params.system;
     if (params.keep_alive !== undefined) body.keep_alive = params.keep_alive;
     if (params.options) body.options = params.options;
-    return this._json('/api/chat', body);
+    return this._json('/api/chat', body, params.signal);
   }
 
   async chatStream(

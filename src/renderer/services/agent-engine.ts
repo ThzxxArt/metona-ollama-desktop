@@ -114,10 +114,25 @@ function getOSEnvironment() {
 const ALWAYS_PARALLEL = new Set([
   'read_file', 'list_directory', 'search_files', 'get_file_info', 'tree',
   'web_search', 'browser_screenshot', 'browser_extract', 'browser_evaluate',
-  'memory_search', 'session_list', 'session_read',
+  'memory', 'session_list', 'session_read',
   'diff_files', 'git',
   'datetime', 'calculator',
   'random', 'uuid', 'json_format', 'hash',
+]);
+
+/** D4: 有副作用的工具 — 同轮次去重时不返回缓存，需实际执行 */
+const SIDE_EFFECT_TOOLS = new Set([
+  'write_file', 'edit_file', 'create_directory', 'delete_file',
+  'move_file', 'copy_file', 'replace_in_files', 'download_file',
+  'run_command', 'git', 'compress',
+  'browser_open', 'browser_click', 'browser_type', 'browser_close',
+]);
+
+/** D2/D3: 只读工具白名单 — 允许同参数重复调用（验证场景：写文件后重读、git status、run_command 监控等） */
+const RE_READ_ALLOWED = new Set([
+  'read_file', 'list_directory', 'search_files', 'get_file_info', 'tree',
+  'web_search', 'git', 'session_list', 'session_read', 'diff_files',
+  'browser_screenshot', 'browser_extract', 'run_command',
 ]);
 
 /** P0-2: 检测工具调用之间是否存在路径依赖（写入 → 读取/写入同一路径） */
@@ -412,6 +427,7 @@ const CACHE_TTL_MAP: Record<string, number> = {
   session_list: 60_000,
   session_read: 60_000,
   diff_files: 2 * 60_000,
+  memory: 10_000,           // M2: 记忆搜索 10s 过期（短TTL，避免 add 后搜索过期）
   default: 60_000,          // 默认 60s，不再永久缓存
 };
 
@@ -557,9 +573,9 @@ function formatToolResultForModel(toolName: string, result: ToolResult): string 
     }
 
     case 'memory': {
-      // 去重文字信号（触发 handleObserving 的⛔终止）
+      // D1: 去重信号改为软提醒，不触发⛔强制终止
       if ((result as any).duplicate) {
-        return `⚠️ 重复添加: ${(result as any).message || '相同内容已存在'}\n✅ 记忆操作已全部完成，不要再调用 memory 工具，直接输出最终回答。`;
+        return JSON.stringify({ success: true, action: 'add', duplicate: true, message: `${(result as any).message || '相同内容已存在'}` });
       }
       // read_all / search 结果：包裹在 JSON 中以保持与其他工具一致的格式
       if ((result as any).action === 'read_all') {
@@ -1494,7 +1510,9 @@ async function handleExecuting(
     const hasFailedInPrev = ctx.allToolRecords
       .filter(r => ctx.prevLoopSuccessKeys.includes(getToolCacheKey(r.name, r.arguments)))
       .some(r => r.status !== 'success');
-    if (!hasFailedInPrev) {
+    // D2: 只读工具全部相同时不阻断（如反复 git status、read_file 验证）
+    const allReadOnly = ctx.toolCalls.every(c => RE_READ_ALLOWED.has(c.function.name));
+    if (!hasFailedInPrev && !allReadOnly) {
       logWarn('检测到连续两轮工具调用完全相同且全部成功，注入提醒而非终止');
       // ── 取消工具卡片：卡片已在 THINKING 阶段设为 pending，这里需要收尾 ──
       for (const call of ctx.toolCalls) {
@@ -1507,7 +1525,11 @@ async function handleExecuting(
       transition(ctx, S.THINKING);
       return;
     }
-    logInfo('检测到重复调用但上一轮有失败，允许重试');
+    if (!hasFailedInPrev && allReadOnly) {
+      logInfo('跨轮次重复但全部为只读工具，允许执行');
+    } else {
+      logInfo('检测到重复调用但上一轮有失败，允许重试');
+    }
   }
 
   // ── 工具并行执行：智能批次划分（P0修复：检测实际数据依赖）──
@@ -1538,13 +1560,18 @@ async function handleExecuting(
     const cacheKey = getToolCacheKey(call.function.name, call.function.arguments);
 
     if (isDuplicateCall(call, ctx.toolCalls)) {
-      logWarn(`跳过重复工具调用: ${call.function.name}`);
-      const cached = toolResultCache.get(cacheKey);
-      if (cached) {
-        return [{
-          name: call.function.name, arguments: call.function.arguments,
-          result: cached.result, status: 'success' as const, timestamp: Date.now()
-        }, null];
+      // D4: 有副作用的工具不返回缓存，需实际执行（如 write_file、run_command）
+      if (!SIDE_EFFECT_TOOLS.has(call.function.name)) {
+        logWarn(`跳过重复工具调用: ${call.function.name}`);
+        const cached = toolResultCache.get(cacheKey);
+        if (cached) {
+          return [{
+            name: call.function.name, arguments: call.function.arguments,
+            result: cached.result, status: 'success' as const, timestamp: Date.now()
+          }, null];
+        }
+      } else {
+        logInfo(`有副作用的工具重复调用，实际执行: ${call.function.name}`);
       }
     }
 
@@ -1772,9 +1799,8 @@ async function handleObserving(
     }
   }
 
-  // ── 通用重复调用检测：工具结果含去重信号 或 同工具同参数连续成功 2+ 次 ──
-  const lastToolContents = ctx.messages.filter(m => m.role === 'tool').slice(-3).map(m => m.content || '');
-  const hasDedupSignal = lastToolContents.some(c => c.includes('⚠️ 重复添加') || c.includes('已跳过') || c.includes('duplicate'));
+  // ── 通用重复调用检测：同工具同参数连续成功 2+ 次 ──
+  // D1: 移除 hasDedupSignal 触发路径 — memory duplicate 改为软提醒，不强制终止
   const recentSuccess = ctx.allToolRecords.filter(r => r.status === 'success').slice(-2);
   // P0 修复：仅当工具名 AND 参数完全相同时才判定为重复（避免读两个不同文件被误杀）
   const allSameTool = recentSuccess.length >= 2
@@ -1782,20 +1808,15 @@ async function handleObserving(
     && getToolCacheKey(recentSuccess[0].name, recentSuccess[0].arguments) === getToolCacheKey(recentSuccess[1].name, recentSuccess[1].arguments);
 
   // P0-1 优化：只读工具允许同名同参数重复调用（验证场景：写文件后重读、git status 等）
-  // 仅当 hasDedupSignal（工具自身报告重复）或写类工具同名同参数重复时才注入⛔
-  const RE_READ_ALLOWED = new Set([
-    'read_file', 'list_directory', 'search_files', 'get_file_info', 'tree',
-    'web_search', 'git', 'session_list', 'session_read', 'diff_files',
-    'browser_screenshot', 'browser_extract',
-  ]);
+  // D3: 添加 run_command 到白名单（监控场景：反复执行同命令检查状态变化）
   const isReadOnlyRepeat = allSameTool && recentSuccess.length > 0 && RE_READ_ALLOWED.has(recentSuccess[0].name);
 
-  if (hasDedupSignal || (allSameTool && !isReadOnlyRepeat)) {
+  if (allSameTool && !isReadOnlyRepeat) {
     ctx.messages.push({
       role: 'user',
-      content: `⛔ 检测到重复的工具调用${hasDedupSignal ? '（系统已跳过重复内容）' : ''}。「${recentSuccess[0]?.name || 'memory'}」操作已经完成，立即输出最终回答，绝对不要再调用任何工具。`,
+      content: `⛔ 检测到重复的工具调用。「${recentSuccess[0]?.name || 'memory'}」操作已经完成，立即输出最终回答，绝对不要再调用任何工具。`,
     });
-    logInfo(`重复调用检测: ${recentSuccess[0]?.name || 'memory'}${hasDedupSignal ? ' (去重信号)' : ''}，注入⛔终止信号`);
+    logInfo(`重复调用检测: ${recentSuccess[0]?.name}，注入⛔终止信号`);
     ctx.maxLoops = Math.min(ctx.maxLoops, ctx.loopCount + 1);
     // 不要 transition 到 REFLECTING，直接在这里就已经注入了信号，下一轮 THINKING 会看到
   } else if (isReadOnlyRepeat) {
@@ -2013,13 +2034,15 @@ async function handleReflecting(
   if (!abortController?.signal.aborted) {
     const _api = state.get<OllamaAPI>(KEYS.API);
     const _model = state.get<string>('_defaultModel', '');
-    const msgsForMemory = ctx.messages
+    // A1: 使用完整会话消息而非压缩后的 ctx.messages
+    const _session = state.get<ChatSession | null>(KEYS.CURRENT_SESSION);
+    const msgsForMemory = (_session?.messages || ctx.messages)
       .filter(m => m.role === 'user' || m.role === 'assistant')
       .map(m => ({ role: m.role, content: m.content || '' }));
     // 使用 setTimeout 延迟执行，确保 onDone 先触发，用户先看到回复
     setTimeout(() => {
       import('./memory-service.js').then(({ extractAndSaveMemories }) => {
-        extractAndSaveMemories(msgsForMemory, _api, _model).catch(() => {});
+        extractAndSaveMemories(msgsForMemory, _api, _model, abortController?.signal).catch(() => {});
       }).catch(() => {});
     }, 500);
   }

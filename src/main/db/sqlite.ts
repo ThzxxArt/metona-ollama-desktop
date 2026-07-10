@@ -404,7 +404,7 @@ export function getAllSessionsTokenStats(): AllSessionsTokenStats {
       COALESCE(SUM(m.prompt_eval_count), 0) as total_input,
       COALESCE(SUM(m.eval_count), 0) as total_output,
       COALESCE(SUM(m.total_duration), 0) as total_duration,
-      COUNT(CASE WHEN m.role = 'assistant' AND (m.eval_count > 0 OR m.prompt_eval_count > 0) THEN 1 END) as round_count
+      COUNT(CASE WHEN m.role = 'assistant' AND (m.eval_count IS NOT NULL OR m.prompt_eval_count IS NOT NULL OR m.total_duration IS NOT NULL) THEN 1 END) as round_count
     FROM sessions s
     LEFT JOIN messages m ON s.id = m.session_id
     GROUP BY s.id

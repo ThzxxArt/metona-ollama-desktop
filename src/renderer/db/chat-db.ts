@@ -83,9 +83,10 @@ export class ChatDB {
       };
       await dbBridge().saveSession(row);
       // 同步保存消息
-      for (const msg of session.messages) {
+      for (let mi = 0; mi < session.messages.length; mi++) {
+        const msg = session.messages[mi];
         const msgRow = {
-          id: `${session.id}_${msg.timestamp}_${msg.role}`,
+          id: `${session.id}_${msg.timestamp}_${msg.role}_${mi}`,
           session_id: session.id,
           role: msg.role,
           content: msg.content || null,
@@ -176,8 +177,8 @@ export class ChatDB {
           id: s.id, title: s.title, model: s.model, system_prompt: null,
           parent_id: null, status: 'active', created_at: s.createdAt, updated_at: s.updatedAt
         })),
-        messages: sessions.flatMap(s => s.messages.map(m => ({
-          id: `${s.id}_${m.timestamp}_${m.role}`,
+        messages: sessions.flatMap(s => s.messages.map((m, mi) => ({
+          id: `${s.id}_${m.timestamp}_${m.role}_${mi}`,
           session_id: s.id, role: m.role, content: m.content || null,
           thinking: m.think || null,
           images: m.images?.length ? JSON.stringify(m.images) : null,

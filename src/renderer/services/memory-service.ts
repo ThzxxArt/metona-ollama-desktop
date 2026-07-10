@@ -293,12 +293,16 @@ export function searchMemory(entries: MemoryEntry[], query: string, limit = 0): 
   const queryWords = queryLower.split(/[\s,，。！？、；：""''（）\[\]{}<>`~@#$%^&*+=|\\/.]+/).filter(w => w.length > 1);
 
   // rule 和 preference 类型的记忆全局生效，始终注入
+  // M5: 限制全局注入数量，避免大量 rule/preference 膨胀搜索结果
+  const MAX_GLOBAL_INJECT = 10;
   const alwaysInclude: MemorySearchResult[] = [];
   const scored: MemorySearchResult[] = [];
 
   for (const entry of entries) {
     if (entry.type === 'rule' || entry.type === 'preference') {
-      alwaysInclude.push({ ...entry, score: 100 + entry.importance });
+      if (alwaysInclude.length < MAX_GLOBAL_INJECT) {
+        alwaysInclude.push({ ...entry, score: 100 + entry.importance });
+      }
       continue;
     }
 
@@ -529,9 +533,9 @@ export async function addEntry(
  * M9: 要求 oldText 至少 5 个字符，减少误匹配 */
 export async function replaceEntry(oldText: string, newContent: string): Promise<{ success: boolean; message: string }> {
   return withWriteLock(async () => {
-    // M9: 提高最小匹配长度到 5
-    if (!oldText || oldText.length < 5) {
-      return { success: false, message: 'old_text 不能为空且至少 5 个字符（提高精确度）' };
+    // M4: 提高最小匹配长度到 8，减少误匹配
+    if (!oldText || oldText.length < 8) {
+      return { success: false, message: 'old_text 不能为空且至少 8 个字符（提高精确度）' };
     }
     if (!newContent || newContent.length < 2) {
       return { success: false, message: 'new_content 不能为空且至少 2 个字符' };
@@ -575,12 +579,12 @@ export async function replaceEntry(oldText: string, newContent: string): Promise
 
 /** 删除记忆（子串匹配）
  * M8: 使用写入锁串行化
- * M9: 要求 oldText 至少 5 个字符，减少误匹配 */
+ * M4: 要求 oldText 至少 8 个字符，减少误匹配 */
 export async function removeEntry(oldText: string): Promise<{ success: boolean; message: string }> {
   return withWriteLock(async () => {
-    // M9: 提高最小匹配长度到 5
-    if (!oldText || oldText.length < 5) {
-      return { success: false, message: 'old_text 不能为空且至少 5 个字符（提高精确度）' };
+    // M4: 提高最小匹配长度到 8
+    if (!oldText || oldText.length < 8) {
+      return { success: false, message: 'old_text 不能为空且至少 8 个字符（提高精确度）' };
     }
 
     const entries = await loadAllEntries();
@@ -830,7 +834,7 @@ ${conversationText.slice(0, 5000)}
 1. 仅提取用户**明确陈述**的个人信息（项目名、技术栈、偏好、习惯），禁止推断
 2. 必须是**跨会话有用**的长期信息，临时需求不提取
 3. 每条内容 ≤40 字，精炼具体
-4. importance 7-10，只有真正重要的才给 7+
+4. importance 6-10，只有真正重要的才给 6+
 5. tags 2-3 个精确关键词
 6. 禁止自动提取 rule 类型
 
@@ -845,11 +849,13 @@ ${conversationText.slice(0, 5000)}
 
   try {
     // ── 调用 LLM 提取 ──
+    // A2: 传递 abortSignal 给 api.chat
     const response = await api.chat({
       model,
       messages: [{ role: 'user', content: extractPrompt }],
       think: false,
-      options: { num_ctx: 8192, temperature: 0.1 }
+      options: { num_ctx: 8192, temperature: 0.1 },
+      signal: abortSignal,
     });
 
     // 检查中止信号
@@ -866,9 +872,7 @@ ${conversationText.slice(0, 5000)}
       JSON.parse(jsonMatch[1] || jsonMatch[0]);
     if (!parsed.entries?.length) return 0;
 
-    // ── 加载已有记忆用于去重 ──
-    const existingEntries = await loadAllEntries();
-
+    // A7: 去重逻辑已移至 addEntry 内部，无需预先加载已有记忆
     let count = 0;
     const MAX_PER_EXTRACT = 2;
 
@@ -887,38 +891,25 @@ ${conversationText.slice(0, 5000)}
         continue;
       }
 
-      // ── 过滤 3: 泛化检测（过于宽泛的表述）──
-      const genericPatterns = [
-        /^用户是/, /^用户喜欢/, /^用户正在/, /^用户需要/,
-        /^用户想要/, /^用户希望/, /^用户使用/, /^用户做/,
-      ];
-      const isGeneric = genericPatterns.some(p => p.test(entry.content)) && entry.content.length < 15;
+      // ── 过滤 3: 泛化检测（内容长度 + 关键词组合检测）──
+      // A5: 不再单纯靠前缀模式，改为结合内容长度和泛化关键词检测
+      const GENERIC_KEYWORDS = ['喜欢', '正在', '需要', '想要', '希望', '使用', '做', '是', '有'];
+      const startsWithGeneric = GENERIC_KEYWORDS.some(kw => entry.content.startsWith(kw));
+      const isGeneric = startsWithGeneric && entry.content.length < 20;
       if (isGeneric) {
         logDebug('自动记忆过滤: 过于泛化', entry.content);
         continue;
       }
 
-      // ── 过滤 4: importance 门槛（>= 7）──
+      // ── 过滤 4: importance 门槛（>= 6）──
+      // A3: 从 7 降到 6，覆盖更多有价值的记忆
       const importance = Math.min(10, Math.max(1, entry.importance || 5));
-      if (importance < 7) {
+      if (importance < 6) {
         logDebug('自动记忆过滤: importance 不足', `${importance}`);
         continue;
       }
 
-      // ── 过滤 5: 去重（规范化后比较）──
-      const normalizedNew = normalizeForDedup(entry.content);
-      const isDuplicate = existingEntries.some(e => {
-        const normalizedExisting = normalizeForDedup(e.content);
-        const prefixLen = Math.min(30, normalizedNew.length, normalizedExisting.length);
-        if (prefixLen > 10 && normalizedNew.slice(0, prefixLen) === normalizedExisting.slice(0, prefixLen)) return true;
-        if (normalizedNew.length < 40 && normalizedExisting.includes(normalizedNew)) return true;
-        if (normalizedExisting.length < 40 && normalizedNew.includes(normalizedExisting)) return true;
-        return simpleSimilarity(normalizedExisting, normalizedNew) > 0.6;
-      });
-      if (isDuplicate) {
-        logDebug('自动记忆过滤: 重复', entry.content.slice(0, 40));
-        continue;
-      }
+      // A7: 移除重复去重检查 — addEntry 内部已有完善的去重逻辑，无需重复
 
       // ── 保存 ──
       try {
@@ -928,10 +919,6 @@ ${conversationText.slice(0, 5000)}
           importance,
           (entry.tags || []).slice(0, 3)
         );
-        existingEntries.push({
-          id: '', type: entry.type as MemoryType, content: entry.content.trim(),
-          importance, tags: (entry.tags || []).slice(0, 3),
-        });
         count++;
       } catch (err) {
         logDebug('自动记忆保存失败', (err as Error).message);
@@ -940,6 +927,11 @@ ${conversationText.slice(0, 5000)}
 
     if (count > 0) {
       logInfo('🧠 自动记忆提取完成', `从对话中提取了 ${count} 条有价值记忆`);
+      // A6: 显示 toast 通知用户记忆已自动保存
+      try {
+        const { showToast } = await import('../components/toast.js');
+        showToast(`🧠 已自动保存 ${count} 条记忆`, 'success', 4000);
+      } catch {}
     }
     return count;
   } catch (err) {
