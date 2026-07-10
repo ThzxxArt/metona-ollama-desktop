@@ -614,6 +614,7 @@ export async function handleWebFetch(params: { url: string; max_chars?: number; 
 /**
  * SearXNG 元搜索引擎 — JSON API 搜索
  * 支持 70+ 引擎聚合、隐私保护、无广告
+ * v2: pageno 分页 + URL 去重 + 早退，准确满足 max_results
  */
 async function handleWebSearchSearxng(
   query: string,
@@ -636,20 +637,14 @@ async function handleWebSearchSearxng(
   const format = getSetting<string>('searxng_format', 'json');
   const isHtml = format === 'html';
 
-  const params = new URLSearchParams({ q: query });
-  if (!isHtml) params.set('format', 'json');
-  if (engines) params.set('engines', engines);
-  if (language) params.set('language', language);
-  if (safesearch > 0) params.set('safesearch', String(safesearch));
-  if (effectiveTimeRange) params.set('time_range', effectiveTimeRange);
-
   const authKey = getSetting<string>('searxng_auth_key', '');
   const authType = getSetting<string>('searxng_auth_type', 'bearer');
 
-  const apiUrl = `${url.replace(/\/+$/, '')}/search?${params.toString()}`;
-  sendLog('info', `🔍 SearXNG 搜索`, `${query} → ${url} (${format})`);
+  const baseUrl = url.replace(/\/+$/, '');
+  sendLog('info', `🔍 SearXNG 搜索`, `"${query}" → ${baseUrl} (${format}) 期望=${effectiveMax}条`);
 
-  try {
+  // 构建请求头
+  const buildHeaders = (apiUrl: string) => {
     const headers = buildFetchHeaders(apiUrl, 0);
     if (authKey) {
       if (authType === 'basic') {
@@ -658,17 +653,34 @@ async function handleWebSearchSearxng(
         headers['Authorization'] = `Bearer ${authKey}`;
       }
     }
-    const resp = await fetchWithTimeout(apiUrl, HTTP_TIMEOUT, headers);
-    if (!resp || !resp.ok) {
-      return {
-        success: false,
-        error: `SearXNG 搜索失败 (HTTP ${resp?.status || 'timeout'})。请检查 SearXNG 实例是否运行正常：${url}。`,
-        _searxng_url: apiUrl
-      };
-    }
+    return headers;
+  };
 
-    // ── HTML 模式：返回原始网页文本，让 AI 自行分析 ──
+  // 构建单页请求 URL
+  const buildPageUrl = (pageno: number) => {
+    const params = new URLSearchParams({ q: query });
+    if (!isHtml) params.set('format', 'json');
+    if (engines) params.set('engines', engines);
+    if (language) params.set('language', language);
+    if (safesearch > 0) params.set('safesearch', String(safesearch));
+    if (effectiveTimeRange) params.set('time_range', effectiveTimeRange);
+    if (pageno > 1) params.set('pageno', String(pageno));
+    return `${baseUrl}/search?${params.toString()}`;
+  };
+
+  try {
+    // ── HTML 模式：单页返回原始网页文本，让 AI 自行分析（不分页）──
     if (isHtml) {
+      const apiUrl = buildPageUrl(1);
+      const headers = buildHeaders(apiUrl);
+      const resp = await fetchWithTimeout(apiUrl, HTTP_TIMEOUT, headers);
+      if (!resp || !resp.ok) {
+        return {
+          success: false,
+          error: `SearXNG 搜索失败 (HTTP ${resp?.status || 'timeout'})。请检查 SearXNG 实例是否运行正常：${url}。`,
+          _searxng_url: apiUrl
+        };
+      }
       const html = await resp.text();
       const text = htmlToText(html);
       sendLog('success', `🔍 SearXNG HTML 完成`, `${text.length} 字符`);
@@ -685,52 +697,99 @@ async function handleWebSearchSearxng(
       };
     }
 
-    const data = await resp.json() as {
-      query: string;
-      number_of_results?: number;
-      results?: Array<{
-        title: string;
-        url: string;
-        content: string;
-        engine: string;
-        score?: number;
-        category?: string;
-      }>;
-      unresponsive_engines?: Array<[string, string]>;
-    };
+    // ── JSON 模式：分页请求 + URL 去重 + 早退 ──
+    const MAX_PAGES = 5; // 最大翻页数，防滥用
+    const seenUrls = new Set<string>(); // URL 归一化去重
+    const allResults: Array<{ title: string; url: string; content: string; engine: string }> = [];
+    const allEngineNames = new Set<string>();
+    const allUnresponsive: Array<[string, string]> = [];
+    let pagesFetched = 0;
 
-    const rawResults = (data.results || []).slice(0, effectiveMax);
-    if (rawResults.length === 0) {
+    for (let pageno = 1; pageno <= MAX_PAGES; pageno++) {
+      // 已够，早退
+      if (allResults.length >= effectiveMax) break;
+
+      const apiUrl = buildPageUrl(pageno);
+      const headers = buildHeaders(apiUrl);
+      const resp = await fetchWithTimeout(apiUrl, HTTP_TIMEOUT, headers);
+      if (!resp || !resp.ok) {
+        if (pageno === 1) {
+          return {
+            success: false,
+            error: `SearXNG 搜索失败 (HTTP ${resp?.status || 'timeout'})。请检查 SearXNG 实例是否运行正常：${url}。`,
+            _searxng_url: apiUrl
+          };
+        }
+        // 后续页失败，用已有结果
+        sendLog('warn', `🔍 SearXNG 翻页失败`, `pageno=${pageno} HTTP ${resp?.status || 'timeout'}, 使用已有 ${allResults.length} 条结果`);
+        break;
+      }
+
+      const data = await resp.json() as {
+        query: string;
+        number_of_results?: number;
+        results?: Array<{ title: string; url: string; content: string; engine: string; score?: number; category?: string }>;
+        unresponsive_engines?: Array<[string, string]>;
+      };
+
+      pagesFetched++;
+      const pageResults = data.results || [];
+      if (data.unresponsive_engines) allUnresponsive.push(...data.unresponsive_engines);
+
+      let newCount = 0;
+      for (const r of pageResults) {
+        // URL 归一化去重：去除 fragment → 小写 → 去除尾部斜杠
+        const normalizedUrl = (r.url || '').split('#')[0].toLowerCase().replace(/\/+$/, '');
+        if (!normalizedUrl || seenUrls.has(normalizedUrl)) continue;
+        seenUrls.add(normalizedUrl);
+        if (r.engine) allEngineNames.add(r.engine);
+        allResults.push({
+          title: (r.title || '').replace(/<[^>]+>/g, '').trim(),
+          url: r.url,
+          content: (r.content || '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim(),
+          engine: r.engine || 'searxng',
+        });
+        newCount++;
+        if (allResults.length >= effectiveMax) break;
+      }
+
+      sendLog('info', `🔍 SearXNG 翻页`, `pageno=${pageno} → ${pageResults.length}条, 去重后${newCount}条新 (累计${allResults.length})`);
+
+      // 本页没有新结果 → 没有更多了，早退
+      if (newCount === 0) {
+        sendLog('info', `🔍 SearXNG 早退`, `pageno=${pageno} 无新结果，停止翻页`);
+        break;
+      }
+      // 本页返回的原始结果数 < 预期（通常是引擎已耗尽），也停止
+      if (pageResults.length < 5 && allResults.length < effectiveMax) {
+        sendLog('info', `🔍 SearXNG 早退`, `pageno=${pageno} 仅${pageResults.length}条，引擎可能已耗尽`);
+        break;
+      }
+    }
+
+    if (allResults.length === 0) {
       return { success: false, error: 'SearXNG 未返回任何结果，请尝试其他关键词或调整搜索引擎配置' };
     }
 
-    // 转换为兼容格式
-    const results = rawResults.map(r => ({
-      title: (r.title || '').replace(/<[^>]+>/g, '').trim(),
-      url: r.url,
-      snippet: (r.content || '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim(),
-      engine: r.engine || 'searxng',
-      weight: 80,
-      reachable: true,
-    }));
+    // 最终裁剪到 effectiveMax
+    const finalResults = allResults.slice(0, effectiveMax);
 
-    const engineNames = [...new Set(rawResults.map(r => r.engine))].filter(Boolean);
-    const unresponsive = data.unresponsive_engines || [];
+    // 构建引擎统计
     const engineStats: Record<string, string> = {};
-    for (const engine of engineNames) {
-      engineStats[engine] = `${rawResults.filter(r => r.engine === engine).length} 条`;
+    for (const engine of allEngineNames) {
+      engineStats[engine] = `${finalResults.filter(r => r.engine === engine).length} 条`;
     }
-    for (const [eng, reason] of unresponsive) {
+    for (const [eng, reason] of allUnresponsive) {
       engineStats[eng] = `⚠️ ${reason}`;
     }
 
-    sendLog('success', `🔍 SearXNG 完成`, `${results.length} 条结果, 引擎: ${engineNames.join(', ')}`);
+    sendLog('success', `🔍 SearXNG 完成`, `${finalResults.length} 条结果 (${pagesFetched}页), 引擎: ${[...allEngineNames].join(', ')}`);
 
     const result = buildSearchResponse(
-      results.map(r => ({
+      finalResults.map(r => ({
         title: r.title,
         url: r.url,
-        snippet: r.snippet,
+        snippet: r.content,
         engine: `searxng:${r.engine}`,
         weight: 80,
         reachable: true,

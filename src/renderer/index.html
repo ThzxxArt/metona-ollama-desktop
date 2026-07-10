@@ -28,7 +28,7 @@
         <div class="header-left">
             <img class="logo" src="./assets/icons/llama.png" alt="logo" />
             <span class="app-title">Metona Ollama</span>
-            <span class="app-version">v0.14.11</span>
+            <span class="app-version">v0.14.12</span>
             <button class="icon-btn help-btn" id="btnHelp" title="使用帮助">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
@@ -854,7 +854,8 @@
                 </div>
                 <div class="setting-group">
                     <label class="setting-label">单次结果数</label>
-                    <input class="setting-input" id="searxngMaxResults" type="number" min="0" max="50" step="1" placeholder="0=使用默认值" style="margin-bottom:0;">
+                    <input class="setting-input" id="searxngMaxResults" type="number" min="0" max="100" step="1" placeholder="0=使用默认值(30)" style="margin-bottom:0;">
+                    <p class="text-muted" id="searxngMaxResultsHint" style="font-size:11px;margin-top:4px;display:none;color:var(--text-disabled);">HTML 模式下此选项不生效，返回整页文本</p>
                 </div>
                 <div class="setting-group">
                     <label class="setting-label">返回格式</label>

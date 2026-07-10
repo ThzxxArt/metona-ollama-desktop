@@ -66,6 +66,17 @@ export async function loadSearxngConfig(db: ChatDB): Promise<void> {
   updateEnabledUI(searxngConfig.enabled);
 }
 
+/** 根据返回格式动态启用/禁用「单次结果数」输入框 */
+function updateMaxResultsVisibility(): void {
+  const format = (document.querySelector('#searxngFormat') as HTMLSelectElement).value;
+  const isHtml = format === 'html';
+  const input = document.querySelector('#searxngMaxResults') as HTMLInputElement;
+  const hint = document.querySelector('#searxngMaxResultsHint') as HTMLElement;
+  input.disabled = isHtml;
+  input.style.opacity = isHtml ? '0.4' : '';
+  hint.style.display = isHtml ? '' : 'none';
+}
+
 /** 刷新 UI 控件以匹配当前配置 */
 function syncFormFromConfig(): void {
   (document.querySelector('#searxngUrl') as HTMLInputElement).value = searxngConfig.url;
@@ -82,6 +93,7 @@ function syncFormFromConfig(): void {
   const toggle = document.querySelector('#toggleSearxngEnabled') as HTMLInputElement;
   toggle.checked = searxngConfig.enabled;
   updateEnabledUI(searxngConfig.enabled);
+  updateMaxResultsVisibility();
 }
 
 /** 启用/禁用状态切换 UI */
@@ -128,6 +140,11 @@ export function initSearxngModal(): void {
     const db = state.get<ChatDB | null>(KEYS.DB);
     if (db) await db.saveSetting('searxng_enabled', checked);
     logInfo('SearXNG', checked ? '已启用' : '已禁用');
+  });
+
+  // ── 返回格式切换 → 动态启用/禁用「单次结果数」 ──
+  document.querySelector('#searxngFormat')!.addEventListener('change', () => {
+    updateMaxResultsVisibility();
   });
 
   // ── 保存按钮 ──
