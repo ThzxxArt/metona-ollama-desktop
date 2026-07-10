@@ -794,7 +794,7 @@ export async function extractAndSaveMemories(
   for (let i = allMsgs.length - 1; i >= 0 && rounds.length < 15; i--) {
     const msg = allMsgs[i];
     if (msg.role === 'assistant') {
-      const round = { assistant: msg.content };
+      const round: { user?: string; assistant?: string } = { assistant: msg.content };
       // 找到前面最近的 user 消息
       for (let j = i - 1; j >= 0; j--) {
         if (allMsgs[j].role === 'user') {

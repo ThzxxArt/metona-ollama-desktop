@@ -503,36 +503,6 @@ html, body {
     border-color: rgba(212, 160, 60, 0.15);
 }
 
-/* ── 上下文长度胶囊（模型栏） ── */
-.ctx-total {
-    display: inline-flex;
-    align-items: center;
-    font-size: 11px;
-    font-weight: 600;
-    white-space: nowrap;
-    padding: 3px 10px;
-    border-radius: 20px;
-    color: #47848F;
-    background: rgba(71, 132, 143, 0.08);
-    border: 1px solid rgba(71, 132, 143, 0.15);
-    margin-left: 6px;
-}
-
-/* ── 剩余上下文胶囊 ── */
-.ctx-remain {
-    display: inline-flex;
-    align-items: center;
-    font-size: 11px;
-    font-weight: 600;
-    white-space: nowrap;
-    padding: 3px 10px;
-    border-radius: 20px;
-    color: #4CAF50;
-    background: rgba(76, 175, 80, 0.08);
-    border: 1px solid rgba(76, 175, 80, 0.15);
-    margin-left: 2px;
-}
-
 /* ── 温度滑块 ── */
 .temp-slider {
     width: 100%;
@@ -3738,7 +3708,7 @@ html, body {
 /* 概览卡片组 */
 .td-overview {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
     gap: 12px;
     margin-bottom: 20px;
 }
@@ -4104,9 +4074,108 @@ html, body {
     padding: 24px !important;
 }
 
-/* 响应式 */
-@media (max-width: 900px) {
+/* 响应式：超窄屏幕强制 2 列 */
+@media (max-width: 600px) {
     .td-overview {
         grid-template-columns: repeat(2, 1fr);
     }
+}
+
+/* ═══════════════════════════════════════════════════════
+   上下文使用率环形图
+   ═══════════════════════════════════════════════════════ */
+.td-ctx-ring-section {
+    margin-bottom: 20px;
+}
+
+.td-ctx-ring-wrap {
+    background: var(--bg-card);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    padding: 20px;
+    box-shadow: var(--shadow-card);
+}
+
+.td-ctx-ring-container {
+    display: flex;
+    align-items: center;
+    gap: 28px;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.td-ctx-ring-svg {
+    flex-shrink: 0;
+}
+
+.td-ctx-ring-details {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 200px;
+}
+
+.td-ctx-ring-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+}
+
+.td-ctx-ring-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    flex-shrink: 0;
+}
+
+.td-ctx-dot-used {
+    background: #9B7ED8;
+}
+
+.td-ctx-dot-remain {
+    background: var(--border-subtle);
+}
+
+.td-ctx-ring-label-text {
+    color: var(--text-secondary);
+    flex: 1;
+}
+
+.td-ctx-ring-val {
+    font-family: var(--font-mono);
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.td-ctx-ring-total {
+    border-top: 1px solid var(--border-subtle);
+    padding-top: 8px;
+    margin-top: 2px;
+}
+
+.td-ctx-ring-total .td-ctx-ring-val {
+    color: var(--accent);
+    font-weight: 700;
+}
+
+.td-ctx-ring-note {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    font-style: italic;
+    margin-top: 2px;
+}
+
+.td-ctx-ring-source {
+    font-size: 10px;
+    color: var(--text-tertiary);
+    margin-top: 2px;
+    opacity: 0.8;
+}
+
+.td-ctx-ring-streaming {
+    font-size: 11px;
+    color: #F0A040;
+    margin-top: 4px;
+    font-weight: 500;
 }

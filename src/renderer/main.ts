@@ -14,10 +14,9 @@ import { generateId } from './utils/utils.js';
 import { initToast, showToast } from './components/toast.js';
 import { initLightbox, closeLightbox } from './components/lightbox.js';
 import { initHeader, checkConnection } from './components/header.js';
-import { initModelBar, loadModels, setSelectedModel, updateCtxTotalExternal } from './components/model-bar.js';
+import { initModelBar, loadModels, setSelectedModel } from './components/model-bar.js';
 import { initChatArea, renderMessages, clearMessages, enableAutoScroll } from './components/chat-area.js';
 import { initInputArea } from './components/input-area.js';
-import { clearCtxRemain } from './components/input-area.js';
 import { initSettingsModal, closeSettingsModal } from './components/settings-modal.js';
 import { initHistoryModal, closeHistoryModal } from './components/history-modal.js';
 import { initMemoryModal } from './components/memory-modal.js';
@@ -257,9 +256,6 @@ async function startNewSession(): Promise<void> {
   state.set(KEYS.CURRENT_SESSION, session);
   logInfo('新建会话');
 
-  // 清除剩余上下文显示
-  clearCtxRemain();
-
   // ── 强制中断正在进行的生成 ──
   const abortController = state.get<AbortController | null>(KEYS.ABORT_CONTROLLER);
   if (abortController) {
@@ -388,8 +384,6 @@ async function init(): Promise<void> {
     // 反显设置面板的下拉框
     const ctxSelect = document.querySelector('#selectContextLength') as HTMLSelectElement;
     if (ctxSelect) ctxSelect.value = String(numCtx);
-    // 更新模型栏上下文显示
-    updateCtxTotalExternal(numCtx);
 
     (document.querySelector('#inputTemperature') as HTMLInputElement).value = String(temperature);
     document.querySelector('#tempValue')!.textContent = parseFloat(String(temperature)).toFixed(1);

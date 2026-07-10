@@ -403,6 +403,12 @@ export interface LoopContext {
   planRetries: number;
   /** 循环开始时间 */
   startTime: number;
+  /** 上一轮独立 stats（供 onNewIteration / makeStats 使用，避免累计值导致重复计算） */
+  lastLoopStats?: {
+    eval_count?: number;
+    prompt_eval_count?: number;
+    total_duration?: number;
+  };
 }
 
 /** Agent 运行模式 */

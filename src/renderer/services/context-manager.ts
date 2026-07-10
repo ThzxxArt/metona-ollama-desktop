@@ -28,12 +28,13 @@ export function recordActualTokens(actualInputTokens: number, actualOutputTokens
   // C8: 模型切换时重置校准
   if (modelName && modelName !== _calibrationModel) {
     _calibrationModel = modelName;
-    _calibrationRatio = 1.0;
+    _tokenCalibrationRatio = 1.0;
     _calibrationSamples = 0;
   }
   if (actualInputTokens <= 0 || estimatedCount <= 0) return;
-  const actualTotal = actualInputTokens + actualOutputTokens;
-  const sampleRatio = actualTotal / Math.max(1, estimatedCount);
+  // 仅用 prompt_eval_count（实际输入 token）与估算值对比，
+  // 因为 estimatedCount 只估算消息内容（不含输出 token），加入 eval_count 会导致比值虚高
+  const sampleRatio = actualInputTokens / Math.max(1, estimatedCount);
   // 指数移动平均，平滑异常值
   const alpha = 0.3;
   _tokenCalibrationRatio = _tokenCalibrationRatio * (1 - alpha) + sampleRatio * alpha;

@@ -59,21 +59,21 @@ export async function executeSubAgent(
   const toolNames = [...SUB_AGENT_TOOL_WHITELIST].join(', ');
   logInfo(`子 Agent 启动`, `任务: ${task.slice(0, 80)} | 工具: ${toolNames} | 模型: ${model}`);
 
-  // 如果子代理使用了不同于主 AI 的模型，获取该模型的实际上下文长度
-  const defaultModel = state.get<string>('_defaultModel', '');
-  let numCtx = state.get<number>(KEYS.NUM_CTX, 131072);
-  if (model !== defaultModel) {
-    try {
-      const detail = await api.showModel(model);
-      const modelInfo = detail.model_info || {};
-      for (const key of Object.keys(modelInfo)) {
-        if (key.endsWith('.context_length')) {
-          numCtx = Number(modelInfo[key]) || numCtx;
-          break;
-        }
+  // 钳制：取 min(模型支持值, 用户设置值)，防止手动设置超过模型能力
+  const userCtx = state.get<number>(KEYS.NUM_CTX, 131072);
+  let modelCtx = userCtx;
+  // 无论是否是默认模型，都获取模型实际上下文长度做钳制
+  try {
+    const detail = await api.showModel(model);
+    const modelInfo = detail.model_info || {};
+    for (const key of Object.keys(modelInfo)) {
+      if (key.endsWith('.context_length')) {
+        modelCtx = Number(modelInfo[key]) || userCtx;
+        break;
       }
-    } catch { /* 获取失败用默认值 */ }
-  }
+    }
+  } catch { /* 获取失败用默认值 */ }
+  const numCtx = Math.min(modelCtx, userCtx);
 
   const systemPrompt = `你是一个子任务执行 Agent，拥有只读工具权限。请高效完成指定任务，给出结果报告。
 

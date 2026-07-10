@@ -28,7 +28,7 @@
         <div class="header-left">
             <img class="logo" src="./assets/icons/llama.png" alt="logo" />
             <span class="app-title">Metona Ollama</span>
-            <span class="app-version">v0.14.12</span>
+            <span class="app-version">v0.14.13</span>
             <button class="icon-btn help-btn" id="btnHelp" title="使用帮助">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
@@ -102,8 +102,6 @@
             <span class="model-badge vision-badge" id="badgeVision" style="display:none;">👁️ Vision</span>
             <span class="model-badge tools-badge" id="badgeTools" style="display:none;">🔧 Tools</span>
         </div>
-        <span class="ctx-total" id="ctxTotal" title="模型上下文窗口大小"></span>
-        <span class="ctx-remain" id="ctxRemain" style="display:none;" title="剩余可用上下文"></span>
     </div>
 
     <!-- ═══════════════ 聊天区域 ═══════════════ -->
@@ -731,6 +729,10 @@
             <div class="td-view-toggle" id="tdViewToggle">
                 <button class="td-view-btn active" data-view="global">🌍 全局统计</button>
                 <button class="td-view-btn" data-view="session">💬 当前会话</button>
+            </div>
+            <div class="td-ctx-ring-section" id="tdCtxRingSection" style="display:none;">
+                <div class="td-section-title">🎯 上下文窗口使用率</div>
+                <div class="td-ctx-ring-wrap" id="tdCtxRing"></div>
             </div>
             <div class="td-section">
                 <div class="td-section-title" id="tdChartTitle">📈 Token 消耗趋势 — 全局</div>

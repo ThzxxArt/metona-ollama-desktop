@@ -7,7 +7,7 @@ import { debounce } from '../utils/utils.js';
 import { encryptData, decryptData } from '../services/crypto.js';
 import { logSetting, logInfo, logWarn, logError, logSuccess } from '../services/log-service.js';
 import { checkConnection, updateConnectionInfo, updateRunningModels } from './header.js';
-import { loadModels, updateCtxTotalExternal, formatCtxLen } from './model-bar.js';
+import { loadModels, formatCtxLen } from './model-bar.js';
 import { showToast } from './toast.js';
 import { showConfirm } from './prompt-modal.js';
 import { OllamaAPI } from '../api/ollama.js';
@@ -71,8 +71,6 @@ export function initSettingsModal(): void {
     if (!val) return;
     state.set(KEYS.NUM_CTX, val);
     if (db) await db.saveSetting('numCtx', val);
-    // 更新模型栏显示
-    updateCtxTotalExternal(val);
     logSetting('上下文长度', formatCtxLen(val));
   });
 

@@ -530,7 +530,7 @@ async function handleRetry(): Promise<void> {
             result: null, status: 'pending', timestamp: Date.now()
           });
         },
-        onNewIteration: (toolCalls) => {
+        onNewIteration: (toolCalls, stats) => {
           removeCurrentPlaceholder();
           const hasContent = !!retryContent?.trim();
           if (hasContent || retryIterations === 0) {
@@ -540,6 +540,10 @@ async function handleRetry(): Promise<void> {
               timestamp: now,
               ...(retryThinkContent && { think: retryThinkContent }),
               ...(retryIterationToolRecords.length > 0 && { toolCalls: [...retryIterationToolRecords] }),
+              // P0 修复：中间迭代消息携带本轮独立 token 统计
+              ...(stats?.eval_count && { eval_count: stats.eval_count }),
+              ...(stats?.prompt_eval_count && { prompt_eval_count: stats.prompt_eval_count }),
+              ...(stats?.total_duration && { total_duration: stats.total_duration }),
             };
             retryIterationToolRecords = [];
             state.update(KEYS.CURRENT_SESSION, (s: any) => ({
@@ -634,11 +638,10 @@ async function handleRetry(): Promise<void> {
               updatedAt: Date.now()
             }));
           }
-          await saveCurrentSession();
-          if (loopStats?.ctx_tokens) updateCtxRemain(loopStats.ctx_tokens);
-        }
-      });
-    } catch (err) {
+        await saveCurrentSession();
+      }
+    });
+  } catch (err) {
     logError('重试失败', (err as Error).message);
     appendSystemMessage(`❌ 重试失败: ${(err as Error).message}`);
   } finally {
@@ -796,34 +799,6 @@ function updateSendButton(streaming: boolean): void {
 function stopGeneration(): void {
   const abortController = state.get<AbortController | null>(KEYS.ABORT_CONTROLLER);
   if (abortController) abortController.abort();
-}
-
-/** 更新剩余上下文显示（使用 estimateTokens 估算实际占用，非 Ollama eval_count） */
-function updateCtxRemain(ctxTokens?: number): void {
-  const el = document.querySelector('#ctxRemain') as HTMLElement;
-  if (!el) return;
-  const total = state.get<number>(KEYS.NUM_CTX, 0);
-  if (!total || !ctxTokens || ctxTokens <= 0) {
-    el.style.display = 'none';
-    return;
-  }
-  const remain = total - ctxTokens;
-  if (remain <= 0) {
-    el.style.display = 'inline-flex';
-    el.textContent = '⚠ 上下文已满';
-    el.style.color = 'var(--danger, #e74c3c)';
-  } else {
-    el.style.display = 'inline-flex';
-    el.style.color = '';
-    const remainFmt = remain >= 1024 ? `${(remain / 1024).toFixed(0)}K` : String(remain);
-    const usedFmt = ctxTokens >= 1024 ? `${(ctxTokens / 1024).toFixed(0)}K` : String(ctxTokens);
-    el.textContent = `${usedFmt} / ${total >= 1024 ? (total/1024).toFixed(0)+'K' : total}`;
-  }
-}
-
-export function clearCtxRemain(): void {
-  const el = document.querySelector('#ctxRemain') as HTMLElement;
-  if (el) el.style.display = 'none';
 }
 
 /** Token 预算比例：文件内容最多占用上下文窗口的比例 */
@@ -1264,7 +1239,7 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
           result: null, status: 'pending', timestamp: Date.now()
         });
       },
-      onNewIteration: (toolCalls) => {
+      onNewIteration: (toolCalls, stats) => {
         // 保存上一轮的卡片（含工具记录）
         const prevMsg: ChatMessage = {
           role: 'assistant',
@@ -1273,6 +1248,10 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
           timestamp: Date.now(),
           ...(thinkContent && { think: thinkContent }),
           ...(currentIterationToolRecords.length > 0 && { toolCalls: [...currentIterationToolRecords] }),
+          // P0 修复：中间迭代消息携带本轮独立 token 统计
+          ...(stats?.eval_count && { eval_count: stats.eval_count }),
+          ...(stats?.prompt_eval_count && { prompt_eval_count: stats.prompt_eval_count }),
+          ...(stats?.total_duration && { total_duration: stats.total_duration }),
         };
         currentIterationToolRecords = [];
         state.update(KEYS.CURRENT_SESSION, (session: any) => ({
@@ -1372,8 +1351,6 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
           }));
         }
         await saveCurrentSession();
-        // 更新剩余上下文 — P0 修复：应使用 ctx_tokens（总上下文占用估算）而非 prompt_eval_count（仅最后一轮输入 token）
-        if (loopStats?.ctx_tokens) updateCtxRemain(loopStats.ctx_tokens);
       }
     });
   } catch (err) {

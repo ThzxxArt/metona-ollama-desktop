@@ -8,7 +8,6 @@ import { formatSize } from '../utils/utils.js';
 import { OllamaAPI } from '../api/ollama.js';
 import { ChatDB } from '../db/chat-db.js';
 import { logModel, logDebug, logError, logWarn } from '../services/log-service.js';
-import { clearCtxRemain } from './input-area.js';
 import type { OllamaModelDetail, ModelCaps } from '../types.js';
 
 let modelSelectEl: HTMLSelectElement;
@@ -170,9 +169,6 @@ async function filterEmbedModels(models: Array<{ name: string }>): Promise<void>
 }
 
 async function checkModelCapability(modelName: string): Promise<void> {
-  // 切换模型时清除旧上下文剩余显示
-  clearCtxRemain();
-
   if (modelCapabilityCache.has(modelName)) {
     const cached = modelCapabilityCache.get(modelName)!;
     applyCapability(modelName, cached);
@@ -294,15 +290,25 @@ export function formatCtxLen(n: number): string {
   return String(n);
 }
 
-/** 更新模型栏上下文长度显示（显示用户配置的值，而非模型自身值） */
-function updateCtxTotal(contextLength: number): void {
-  const el = document.querySelector('#ctxTotal') as HTMLElement;
-  if (!el) return;
-  el.style.display = 'inline-flex';
-  el.textContent = formatCtxLen(contextLength);
+/** 获取当前选中模型自身支持的上下文长度 */
+export function getModelContextLength(): number {
+  const model = modelSelectEl?.value;
+  if (!model) return 0;
+  const caps = modelCapabilityCache.get(model);
+  return caps?.contextLength || 0;
 }
 
-/** 外部调用：更新上下文长度显示 */
-export function updateCtxTotalExternal(contextLength: number): void {
-  updateCtxTotal(contextLength);
+/** 获取当前选中模型的名称 */
+export function getCurrentModelName(): string {
+  return modelSelectEl?.value || '';
+}
+
+/** 获取有效的上下文长度：min(模型支持值, 用户设置值) */
+export function getEffectiveNumCtx(): number {
+  const userCtx = state.get<number>(KEYS.NUM_CTX, 131072);
+  const modelCtx = getModelContextLength();
+  if (modelCtx > 0 && modelCtx < userCtx) {
+    return modelCtx;
+  }
+  return userCtx;
 }

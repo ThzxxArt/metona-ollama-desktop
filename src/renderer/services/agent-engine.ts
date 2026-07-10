@@ -25,6 +25,7 @@ import { buildContext, estimateTokens, shouldAutoCompress, compressWithLLM, AUTO
 import { runCompletionGate } from './completion-gate.js';
 import { executeHooks } from './hooks.js';
 import { recordIteration, recordToolCall, recordCompletionGate, startSessionMetrics, endSessionMetrics } from './agent-metrics.js';
+import { getEffectiveNumCtx } from '../components/model-bar.js';
 import type {
   OllamaMessage,
   OllamaStreamChunk,
@@ -607,7 +608,7 @@ export interface AgentCallbacks {
   onToolCallError: (name: string, error: string, call: ToolCall) => void;
   onDone: (finalContent: string, toolRecords?: ToolCallRecord[], stats?: { eval_count?: number; prompt_eval_count?: number; total_duration?: number; ctx_tokens?: number }) => void;
   onConfirmTool: (call: ToolCall) => Promise<boolean>;
-  onNewIteration?: (toolCalls?: ToolCall[]) => void;
+  onNewIteration?: (toolCalls?: ToolCall[], stats?: { eval_count?: number; prompt_eval_count?: number; total_duration?: number }) => void;
   /** Plan Mode: 计划已生成，等待用户确认 */
   onPlanReady?: (plan: string, steps: string[]) => Promise<boolean>;
 }
@@ -937,14 +938,16 @@ async function handleInit(
   ctx.messages.push(userMsg);
 
   // 上下文窗口管理：滑动窗口 + 摘要压缩 + token 裁剪
-  const numCtx = state.get<number>(KEYS.NUM_CTX, 131072);
+  // 钳制：取 min(模型支持值, 用户设置值)，防止手动设置超过模型能力
+  const numCtx = getEffectiveNumCtx();
   const contextResult = buildContext(ctx.messages, { maxTokens: numCtx, windowSize: 20 });
   ctx.messages.length = 0;
   ctx.messages.push(...contextResult);
 
-  // 自动压缩检测
-  if (shouldAutoCompress(ctx.messages, numCtx)) {
-    logInfo(`自动上下文压缩触发: tokens≈${estimateTokens(ctx.messages.map(m => m.content || '').join(''))} > ${Math.floor(numCtx * AUTO_COMPRESS_THRESHOLD)} (50% of ${numCtx})`);
+  // 钳制：取 min(模型支持值, 用户设置值)
+  const effectiveNumCtx = getEffectiveNumCtx();
+  if (shouldAutoCompress(ctx.messages, effectiveNumCtx)) {
+    logInfo(`自动上下文压缩触发: tokens≈${estimateTokens(ctx.messages.map(m => m.content || '').join(''))} > ${Math.floor(effectiveNumCtx * AUTO_COMPRESS_THRESHOLD)} (50% of ${effectiveNumCtx})`);
     const compressAC = state.get<AbortController | null>(KEYS.ABORT_CONTROLLER) || new AbortController();
     try {
       const compressed = await compressWithLLM(ctx.messages, api as any, model, { abortController: compressAC });
@@ -1337,7 +1340,7 @@ async function handleThinking(
         stream: true,
         think: state.get<boolean>('thinkEnabled', false),
         options: {
-          num_ctx: state.get<number>(KEYS.NUM_CTX, 131072),
+          num_ctx: getEffectiveNumCtx(),
           temperature: state.get<number>('temperature', 0.7)
         },
         ...(getEnabledToolDefinitions().length > 0 && { tools: getEnabledToolDefinitions() })
@@ -1393,6 +1396,13 @@ async function handleThinking(
       },
       abortController
     );
+
+    // P0 修复：保存本轮独立 stats（供 onNewIteration / makeStats 使用，避免累计值导致重复计算）
+    ctx.lastLoopStats = {
+      eval_count: ctx.loopEvalCount || undefined,
+      prompt_eval_count: ctx.loopPromptEvalCount || undefined,
+      total_duration: ctx.loopInferenceNs || undefined,
+    };
 
     // 累加 token 统计
     ctx.totalEvalCount += ctx.loopEvalCount;
@@ -2026,7 +2036,7 @@ async function handleCompressing(
   api: OllamaAPI,
   model: string,
 ): Promise<void> {
-  const numCtx = state.get<number>(KEYS.NUM_CTX, 131072);
+  const numCtx = getEffectiveNumCtx();
   if (shouldAutoCompress(ctx.messages, numCtx)) {
     logInfo('COMPRESSING: 上下文压缩触发');
     const compressAC = state.get<AbortController | null>(KEYS.ABORT_CONTROLLER) || new AbortController();
@@ -2050,11 +2060,25 @@ async function handleCompressing(
 // ═══════════════════════════════════════════════════════════════
 
 function makeStats(ctx: LoopContext) {
+  // P0 修复：返回本轮独立值而非累计值，避免与中间消息重复计算
+  // ctx_tokens 优先使用 Ollama 返回的实际 prompt_eval_count，回退到增强估算
+  let ctxTokens: number;
+  if (ctx.loopPromptEvalCount > 0) {
+    ctxTokens = ctx.loopPromptEvalCount + (ctx.loopEvalCount || 0);
+  } else {
+    // 增强估算：消息内容 + tool_calls/images 开销
+    ctxTokens = ctx.messages.reduce((sum, m) => {
+      let t = estimateTokens(m.content || '');
+      if (m.tool_calls?.length) t += m.tool_calls.length * 50;
+      if (m.images?.length) t += m.images.length * 100;
+      return sum + t;
+    }, 0);
+  }
   return {
-    eval_count: ctx.totalEvalCount || undefined,
-    prompt_eval_count: ctx.totalPromptEvalCount || undefined,
-    total_duration: ctx.totalInferenceNs || undefined,
-    ctx_tokens: estimateTokens(ctx.messages.map(m => m.content || '').join('')), // 实际上下文占用
+    eval_count: ctx.lastLoopStats?.eval_count || undefined,
+    prompt_eval_count: ctx.lastLoopStats?.prompt_eval_count || undefined,
+    total_duration: ctx.lastLoopStats?.total_duration || undefined,
+    ctx_tokens: ctxTokens,
   };
 }
 
@@ -2097,6 +2121,7 @@ export async function runAgentLoop(
     mode,
     planRetries: 0,
     startTime: Date.now(),
+    lastLoopStats: undefined,
   };
 
   state.set('_loopState', S.INIT);
@@ -2148,7 +2173,7 @@ export async function runAgentLoop(
       }
 
       // Token 感知的动态迭代预算
-      const numCtx = state.get<number>(KEYS.NUM_CTX, 131072);
+      const numCtx = getEffectiveNumCtx();
       const usageRatio = estimateTokens(ctx.messages.map(m => m.content || '').join('')) / numCtx;
 
       // P2-2: 上下文健康度软收敛 — 60% 时提前预警，让 AI 主动收敛
@@ -2170,7 +2195,7 @@ export async function runAgentLoop(
 
       // 仅在 THINKING 阶段通知 UI（一次迭代只通知一次，不是每个状态切换都通知）
       if (ctx.loopCount > 0 && ctx.state === S.THINKING && callbacks.onNewIteration) {
-        callbacks.onNewIteration(ctx.prevToolCalls.length > 0 ? ctx.prevToolCalls : undefined);
+        callbacks.onNewIteration(ctx.prevToolCalls.length > 0 ? ctx.prevToolCalls : undefined, ctx.lastLoopStats);
       }
 
       // 状态分发
