@@ -612,6 +612,75 @@ export async function removeEntry(oldText: string): Promise<{ success: boolean; 
   });
 }
 
+/** 批量删除记忆（一次读+一次写，高效）
+ * @param oldTexts 要删除的子串数组
+ * @returns 每个子串的匹配结果 + 总体统计
+ */
+export async function removeEntries(oldTexts: string[]): Promise<{
+  success: boolean;
+  message: string;
+  results: Array<{ old_text: string; matched: boolean; entry_id?: string; error?: string }>;
+  deleted: number;
+  failed: number;
+}> {
+  return withWriteLock(async () => {
+    const results: Array<{ old_text: string; matched: boolean; entry_id?: string; error?: string }> = [];
+    let deleted = 0;
+    let failed = 0;
+
+    // 校验
+    const validTexts = oldTexts.filter(t => {
+      if (!t || t.length < 5) {
+        results.push({ old_text: t || '(空)', matched: false, error: '至少 5 个字符' });
+        failed++;
+        return false;
+      }
+      return true;
+    });
+
+    if (validTexts.length === 0) {
+      return { success: false, message: '没有有效的 old_text（每个至少 5 个字符）', results, deleted, failed };
+    }
+
+    const entries = await loadAllEntries();
+    const idsToDelete = new Set<string>();
+
+    for (const oldText of validTexts) {
+      const oldTextNorm = normalizeForDedup(oldText);
+      const matches = entries.filter(e => !idsToDelete.has(e.id) && normalizeForDedup(e.content).includes(oldTextNorm));
+
+      if (matches.length === 0) {
+        results.push({ old_text: oldText.slice(0, 50), matched: false, error: '未找到匹配' });
+        failed++;
+      } else if (matches.length > 1) {
+        results.push({ old_text: oldText.slice(0, 50), matched: false, error: `匹配到 ${matches.length} 条，需更精确` });
+        failed++;
+      } else {
+        idsToDelete.add(matches[0].id);
+        results.push({ old_text: oldText.slice(0, 50), matched: true, entry_id: matches[0].id });
+        deleted++;
+      }
+    }
+
+    if (idsToDelete.size === 0) {
+      return { success: false, message: `批量删除失败: ${failed} 条未匹配`, results, deleted: 0, failed };
+    }
+
+    const newEntries = entries.filter(e => !idsToDelete.has(e.id));
+    const fileContent = newEntries.length > 0 ? serializeMemoryMd(newEntries) : '';
+    await writeMemoryFile(fileContent);
+
+    logMemory('批量删除', `删除 ${deleted} 条, 失败 ${failed} 条`);
+    return {
+      success: true,
+      message: `批量删除完成: 成功 ${deleted} 条${failed > 0 ? `, 失败 ${failed} 条` : ''}`,
+      results,
+      deleted,
+      failed,
+    };
+  });
+}
+
 /** 清空所有记忆
  * M8: 使用写入锁串行化 */
 export async function clearAll(): Promise<void> {

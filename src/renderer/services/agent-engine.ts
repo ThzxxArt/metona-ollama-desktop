@@ -605,6 +605,21 @@ function formatToolResultForModel(toolName: string, result: ToolResult): string 
         }
         return JSON.stringify({ success: true, action: 'search', formatted: lines.join('\n'), total: results.length });
       }
+      // remove_batch 结果：格式化每条匹配情况
+      if ((result as any).action === 'remove_batch') {
+        const items = ((result as any).results || []) as Array<{ old_text: string; matched: boolean; entry_id?: string; error?: string }>;
+        const deleted = (result as any).deleted || 0;
+        const failed = (result as any).failed || 0;
+        const lines = [`[批量删除结果] 成功 ${deleted} 条${failed > 0 ? `, 失败 ${failed} 条` : ''}:`];
+        for (const item of items) {
+          if (item.matched) {
+            lines.push(`  ✅ "${item.old_text}" → 已删除 (${item.entry_id})`);
+          } else {
+            lines.push(`  ❌ "${item.old_text}" → ${item.error || '失败'}`);
+          }
+        }
+        return JSON.stringify({ success: (result as any).success, action: 'remove_batch', formatted: lines.join('\n'), deleted, failed });
+      }
       // 其他 action（add/replace/remove）→ 保留完整 JSON，走 default 逻辑
       return formatDefaultToolResult(toolName, result);
     }

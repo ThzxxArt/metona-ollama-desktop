@@ -364,14 +364,16 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
 - add: {"action":"add","type":"fact","content":"the memory content","importance":8,"tags":["tag1","tag2"]}  ← type and content are REQUIRED for add!
 - replace: {"action":"replace","old_text":"unique substring","new_content":"replacement"}
 - remove: {"action":"remove","old_text":"unique substring"}
+- remove_batch: {"action":"remove_batch","old_texts":["substring1","substring2","substring3"]}  ← Batch delete multiple entries in one call
 - read_all: {"action":"read_all"}
 
-CRITICAL: For add action, you MUST include both "type" (fact/preference/rule) and "content" fields. If you omit them, the call will fail.`,
+CRITICAL: For add action, you MUST include both "type" (fact/preference/rule) and "content" fields. If you omit them, the call will fail.
+TIP: Use remove_batch when deleting multiple entries — it's much more efficient than calling remove repeatedly.`,
       parameters: {
         type: 'object',
         required: ['action'],
         properties: {
-          action: { type: 'string', enum: ['search', 'add', 'replace', 'remove', 'read_all'], description: 'Which operation to perform. Note: "add" requires "type"+"content", "replace" requires "old_text"+"new_content", "remove" requires "old_text", "search" requires "query".' },
+          action: { type: 'string', enum: ['search', 'add', 'replace', 'remove', 'remove_batch', 'read_all'], description: 'Which operation to perform. Note: "add" requires "type"+"content", "replace" requires "old_text"+"new_content", "remove" requires "old_text", "remove_batch" requires "old_texts" (array), "search" requires "query".' },
           query: { type: 'string', description: '[search REQUIRED] Keywords to search for.' },
           limit: { type: 'integer', description: '[search] Max results. Default: 8.' },
           type: { type: 'string', enum: ['fact', 'preference', 'rule'], description: '[add REQUIRED] Memory type. fact=user info, preference=user preference, rule=behavior rule.' },
@@ -379,6 +381,7 @@ CRITICAL: For add action, you MUST include both "type" (fact/preference/rule) an
           importance: { type: 'integer', description: '[add] Priority 1-10. Default: 5. Use 8+ for critical info.' },
           tags: { type: 'array', items: { type: 'string' }, description: '[add] 2-5 keywords for search matching.' },
           old_text: { type: 'string', description: '[replace, remove REQUIRED] Unique substring to identify the entry. Must be ≥5 chars. Use exact text from read_all for best results.' },
+          old_texts: { type: 'array', items: { type: 'string' }, description: '[remove_batch REQUIRED] Array of substrings to identify multiple entries for batch deletion. Each must be ≥5 chars.' },
           new_content: { type: 'string', description: '[replace REQUIRED] New text to replace with.' }
         }
       }
@@ -799,7 +802,7 @@ export async function executeTool(toolName: string, args: Record<string, unknown
   try {
     // 内存工具（不走 IPC，直接处理 MEMORY.md）
     if (toolName === 'memory') {
-      const { search, addEntry, replaceEntry, removeEntry, loadAllEntries, DuplicateEntryError } = await import('./memory-service.js');
+      const { search, addEntry, replaceEntry, removeEntry, removeEntries, loadAllEntries, DuplicateEntryError } = await import('./memory-service.js');
       const action = args.action as string;
       switch (action) {
         case 'search': {
@@ -841,6 +844,13 @@ const results = await search(query, limit);
           const result = await removeEntry(oldText);
           logToolResult('memory', result.success, result.message);
           return { success: result.success, action, ...(result.success ? {} : { error: result.message }), message: result.message };
+        }
+        case 'remove_batch': {
+          const oldTexts = Array.isArray(args.old_texts) ? args.old_texts.map(String) : [];
+          if (oldTexts.length === 0) return { success: false, error: '缺少 old_texts 参数（字符串数组）' };
+          const result = await removeEntries(oldTexts);
+          logToolResult('memory', result.success, result.message);
+          return { success: result.success, action, results: result.results, deleted: result.deleted, failed: result.failed, ...(result.success ? {} : { error: result.message }), message: result.message };
         }
         case 'read_all': {
           const entries = await loadAllEntries();
