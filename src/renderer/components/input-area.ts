@@ -1291,9 +1291,8 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
           messages: [...session.messages, prevMsg],
           updatedAt: Date.now()
         }));
-        renderMessages();
-
         removeCurrentPlaceholder();
+        renderMessages();
         appendAssistantPlaceholder();
         assistantContent = '';
         thinkContent = '';
@@ -1376,6 +1375,8 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
           updatedAt: Date.now()
         }));
 
+        // 先移除流式 placeholder 再 renderMessages，避免未渲染(纯文本)和已渲染(markdown)两个卡片同时存在
+        removeCurrentPlaceholder();
         renderMessages();
 
         // ── 消费 _lastPlanStatus（不再保存为 session 消息，避免 system 消息渲染到聊天界面）──
