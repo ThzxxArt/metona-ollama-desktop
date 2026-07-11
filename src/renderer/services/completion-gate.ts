@@ -105,6 +105,32 @@ const contextEfficiencyCheck: CompletionCheck = {
   },
 };
 
+/** R83: Plan Mode 完成检查 — 验证所有计划步骤是否已标记完成 */
+const planModeCompletionCheck: CompletionCheck = {
+  name: 'planModeCompletion',
+  description: 'Plan Mode 下检查所有计划步骤是否已完成',
+  check: async (ctx: LoopContext) => {
+    if (ctx.mode !== 'plan') return { passed: true, reason: '' };
+    // 从 state 获取 Plan Tracker
+    try {
+      const { getPlanTracker } = await import('./tool-registry.js');
+      const tracker = getPlanTracker();
+      if (!tracker.active || tracker.steps.length === 0) return { passed: true, reason: '' };
+      if (tracker.done < tracker.total) {
+        const remaining = tracker.total - tracker.done;
+        const undoneSteps = tracker.steps.filter(s => !s.done).map(s => s.label).slice(0, 3);
+        return {
+          passed: false,
+          reason: `Plan Mode: 还有 ${remaining} 步未完成（${undoneSteps.join('、')}${remaining > 3 ? '...' : ''}）。请继续执行剩余步骤，或说明为什么这些步骤无法完成。`
+        };
+      }
+      return { passed: true, reason: '' };
+    } catch {
+      return { passed: true, reason: '' };
+    }
+  },
+};
+
 // ═══════════════════════════════════════════════════════════════
 // 检查项注册与管理
 // ═══════════════════════════════════════════════════════════════
@@ -114,6 +140,7 @@ const DEFAULT_ENABLED_CHECKS = new Set([
   'contentQuality',
   'toolResultReview',
   'notThinking',
+  'planModeCompletion',
 ]);
 
 /** 注册表 */
@@ -122,6 +149,7 @@ const checkRegistry = new Map<string, CompletionCheck>([
   ['toolResultReview', toolResultReviewCheck],
   ['notThinking', notThinkingCheck],
   ['contextEfficiency', contextEfficiencyCheck],
+  ['planModeCompletion', planModeCompletionCheck],
 ]);
 
 /** 已启用的检查项 */
@@ -165,54 +193,104 @@ export function getEnabledChecks(): CompletionCheck[] {
 export interface GateResult {
   passed: boolean;
   reason: string;
-  /** 各项检查的详细结果 */
+  /** R90: 各项检查的详细结果 */
   details: Array<{ name: string; passed: boolean; reason: string; durationMs: number }>;
+  /** R90/R127: 完成门控评分（0-100） */
+  score: number;
+  /** R90/R127: 评分明细 */
+  scoreBreakdown: Array<{ check: string; passed: boolean; points: number }>;
 }
+
+/** R127: 各检查项的权重分配 */
+const CHECK_WEIGHTS: Record<string, number> = {
+  contentQuality: 30,
+  toolResultReview: 25,
+  notThinking: 20,
+  contextEfficiency: 15,
+  planModeCompletion: 10,
+};
 
 /**
  * 运行完成门控检查
+ * R90: 返回评分结果，评分基于各检查项的权重
  */
 export async function runCompletionGate(ctx: LoopContext): Promise<GateResult> {
   const checks = getEnabledChecks();
   if (checks.length === 0) {
-    return { passed: true, reason: '', details: [] };
+    return { passed: true, reason: '', details: [], score: 100, scoreBreakdown: [] };
   }
 
   const details: GateResult['details'] = [];
+  const scoreBreakdown: GateResult['scoreBreakdown'] = [];
+  let totalScore = 0;
+  let maxScore = 0;
 
   for (const check of checks) {
     const start = Date.now();
     try {
       const result = await check.check(ctx);
+      const durationMs = Date.now() - start;
+      const weight = CHECK_WEIGHTS[check.name] ?? 10;
+      maxScore += weight;
+
       details.push({
         name: check.name,
         passed: result.passed,
         reason: result.reason,
-        durationMs: Date.now() - start,
+        durationMs,
       });
-      if (!result.passed) {
+
+      scoreBreakdown.push({
+        check: check.name,
+        passed: result.passed,
+        points: result.passed ? weight : 0,
+      });
+
+      if (result.passed) {
+        totalScore += weight;
+      } else {
         logWarn(`Completion Gate: "${check.name}" — ${result.reason}`);
-        return { passed: false, reason: result.reason, details };
+        return {
+          passed: false,
+          reason: result.reason,
+          details,
+          score: Math.round((totalScore / Math.max(1, maxScore)) * 100),
+          scoreBreakdown,
+        };
       }
     } catch (err) {
+      const weight = CHECK_WEIGHTS[check.name] ?? 10;
+      maxScore += weight;
       details.push({
         name: check.name,
         passed: true,
         reason: `检查异常: ${(err as Error).message}`,
         durationMs: Date.now() - start,
       });
+      scoreBreakdown.push({
+        check: check.name,
+        passed: true,
+        points: weight,
+      });
+      totalScore += weight;
     }
   }
 
-  return { passed: true, reason: '', details };
+  return {
+    passed: true,
+    reason: '',
+    details,
+    score: Math.round((totalScore / Math.max(1, maxScore)) * 100),
+    scoreBreakdown,
+  };
 }
 
 /**
- * 生成门控报告（供日志/调试使用）
+ * R127: 生成门控报告（供日志/调试使用）
  */
 export function formatGateReport(result: GateResult): string {
   const status = result.passed ? '✅ 通过' : '❌ 未通过';
-  let report = `Completion Gate ${status}`;
+  let report = `Completion Gate ${status} (评分: ${result.score}/100)`;
   if (!result.passed) {
     report += ` — ${result.reason}`;
   }
@@ -220,6 +298,13 @@ export function formatGateReport(result: GateResult): string {
   for (const d of result.details) {
     const icon = d.passed ? '✅' : '❌';
     report += `\n${icon} ${d.name}: ${d.reason || '通过'} (${d.durationMs}ms)`;
+  }
+  // R127: 评分明细
+  if (result.scoreBreakdown.length > 0) {
+    report += `\n${'─'.repeat(40)}\n评分明细:`;
+    for (const s of result.scoreBreakdown) {
+      report += `\n  ${s.passed ? '✅' : '❌'} ${s.check}: ${s.points} 分`;
+    }
   }
   return report;
 }

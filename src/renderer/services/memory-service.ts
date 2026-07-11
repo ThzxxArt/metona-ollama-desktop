@@ -41,6 +41,9 @@ export interface MemoryEntry {
   content: string;
   importance: number;  // 1-10
   tags: string[];
+  // R106: 访问追踪 — 用于 TTL 衰减时的保留策略
+  lastAccessed?: number;  // 最后访问时间（毫秒时间戳）
+  accessCount?: number;     // 访问次数
 }
 
 export interface MemorySearchResult extends MemoryEntry {
@@ -284,13 +287,62 @@ export function serializeMemoryMd(entries: MemoryEntry[]): string {
 // ═══════════════════════════════════════════════════════════════
 
 /**
+ * R101: 计算词项的 IDF（逆文档频率）权重
+ * 在所有记忆条目中出现频率越低的词，IDF 越高
+ */
+function computeIDF(entries: MemoryEntry[], words: string[]): Map<string, number> {
+  const idfMap = new Map<string, number>();
+  const N = entries.length;
+  if (N === 0) return idfMap;
+
+  for (const word of words) {
+    let docFreq = 0;
+    for (const entry of entries) {
+      if (entry.content.toLowerCase().includes(word)) docFreq++;
+    }
+    // IDF = log(N / (df + 1))，加 1 防止除零
+    const idf = Math.log((N + 1) / (docFreq + 1)) + 1;
+    idfMap.set(word, idf);
+  }
+  return idfMap;
+}
+
+/**
+ * R101: 模糊匹配 — 检查两个短字符串的编辑距离是否在阈值内
+ * 仅对长度 <= 10 的短词使用，避免性能开销
+ */
+function fuzzyMatch(a: string, b: string, maxDistance: number): boolean {
+  if (a === b) return true;
+  if (Math.abs(a.length - b.length) > maxDistance) return false;
+  // 简化编辑距离（Levenshtein）
+  const matrix: number[][] = [];
+  for (let i = 0; i <= a.length; i++) matrix[i] = [i];
+  for (let j = 0; j <= b.length; j++) matrix[0][j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      matrix[i][j] = Math.min(
+        matrix[i - 1][j] + 1,
+        matrix[i][j - 1] + 1,
+        matrix[i - 1][j - 1] + cost,
+      );
+    }
+  }
+  return matrix[a.length][b.length] <= maxDistance;
+}
+
+/**
  * 关键词搜索记忆
+ * R101: 增强 — IDF 权重 + 模糊匹配 + 多词短语奖励
  */
 export function searchMemory(entries: MemoryEntry[], query: string, limit = 0): MemorySearchResult[] {
   if (!query || entries.length === 0) return [];
 
   const queryLower = query.toLowerCase();
   const queryWords = queryLower.split(/[\s,，。！？、；：""''（）\[\]{}<>`~@#$%^&*+=|\\/.]+/).filter(w => w.length > 1);
+
+  // R101: 预计算 IDF 权重
+  const idfMap = computeIDF(entries, queryWords);
 
   // rule 和 preference 类型的记忆全局生效，始终注入
   // M5: 限制全局注入数量，避免大量 rule/preference 膨胀搜索结果
@@ -310,28 +362,70 @@ export function searchMemory(entries: MemoryEntry[], query: string, limit = 0): 
     const contentLower = entry.content.toLowerCase();
     const tagsLower = entry.tags.map(t => t.toLowerCase());
 
+    // 精确匹配查询字符串
     if (contentLower.includes(queryLower)) score += 50;
+
+    // R101: 多词短语连续匹配奖励
+    if (queryWords.length >= 2 && contentLower.includes(queryWords.join(' '))) {
+      score += 25;
+    }
+
     for (const tag of tagsLower) {
       if (queryLower.includes(tag) || tag.includes(queryLower)) score += 30;
       for (const word of queryWords) {
-        if (tag.includes(word)) score += 15;
+        if (tag.includes(word)) {
+          // R101: 使用 IDF 权重
+          score += 15 * (idfMap.get(word) || 1);
+        }
+        // R101: 对短词进行模糊匹配
+        if (word.length <= 10 && tag.length <= 15 && fuzzyMatch(word, tag, 1)) {
+          score += 8;
+        }
       }
     }
     for (const word of queryWords) {
-      if (contentLower.includes(word)) score += 10;
+      if (contentLower.includes(word)) {
+        // R101: 使用 IDF 权重
+        score += 10 * (idfMap.get(word) || 1);
+      }
+      // R101: 对短词进行模糊匹配
+      if (word.length <= 10) {
+        // 检查内容中是否有编辑距离为 1 的近似词
+        const words = contentLower.split(/\s+/);
+        for (const cw of words) {
+          if (cw.length <= 12 && fuzzyMatch(word, cw, 1)) {
+            score += 5;
+            break; // 每个查询词只奖励一次
+          }
+        }
+      }
     }
 
     score *= (0.5 + entry.importance / 20);
-    if (score > 0) scored.push({ ...entry, score });
+    if (score > 0) scored.push({ ...entry, score: Math.round(score) });
   }
 
   // 去重 + 排序
   const seen = new Set<string>();
   const merged: MemorySearchResult[] = [];
+  const accessedIds: string[] = []; // R106: 需要记录访问的 ID
+
   for (const item of [...alwaysInclude, ...scored.sort((a, b) => b.score - a.score)]) {
     if (!seen.has(item.id)) {
       seen.add(item.id);
       merged.push(item);
+      // R106: 记录访问（但不持久化，只影响本次搜索后的衰减判断）
+      accessedIds.push(item.id);
+    }
+  }
+
+  // R106: 更新原始 entries 中的访问追踪（影响未来的 TTL 衰减）
+  // 注意：这不会立即持久化，在 writeMemoryFile 时才生效
+  for (const id of accessedIds) {
+    const entry = entries.find(e => e.id === id);
+    if (entry) {
+      entry.lastAccessed = Date.now();
+      entry.accessCount = (entry.accessCount || 0) + 1;
     }
   }
 
@@ -443,6 +537,8 @@ export async function loadAllEntries(): Promise<MemoryEntry[]> {
 /** 搜索记忆（读取 MEMORY.md → 解析 → 搜索） */
 export async function search(query: string, limit = 0): Promise<MemorySearchResult[]> {
   try {
+    // R57: 触发 TTL 衰减检查（带节流，不会每次搜索都执行）
+    maybeRunTTLDecay().catch(() => {}); // 非阻塞，失败不影响搜索
     const entries = await loadAllEntries();
     return searchMemory(entries, query, limit);
   } catch (err) {
@@ -810,6 +906,137 @@ function autoCleanEntries(entries: MemoryEntry[]): MemoryEntry[] {
 
   logMemory('容量清理', `清理 ${evictIds.size} 条低价值记忆（上限 ${MAX_ENTRIES}），评分基于重要性+时间`);
   return entries.filter(e => !evictIds.has(e.id));
+}
+
+// ═══════════════════════════════════════════════════════════════
+// R57: 记忆 TTL 衰减 — 基于时间的自动重要性衰减
+// ═══════════════════════════════════════════════════════════════
+
+/** R57: 上次 TTL 衰减执行时间（避免每次搜索都触发文件写入） */
+let _lastTTLDecayTime = 0;
+const TTL_DECAY_INTERVAL = 6 * 3600 * 1000; // 每 6 小时最多执行一次衰减
+
+/** R57: 从记忆 ID 中提取创建日期 */
+function extractDateFromId(id: string): number {
+  const m = id.match(/mem_(\d{4})(\d{2})(\d{2})_/);
+  if (m) {
+    return new Date(parseInt(m[1]), parseInt(m[2]) - 1, parseInt(m[3])).getTime();
+  }
+  return Date.now(); // 无法解析时视为刚创建
+}
+
+/**
+ * R106: 记录条目访问 — 增强访问频率追踪用于 TTL 衰减时的保留策略
+ * 在搜索匹配、检索时调用
+ */
+export function recordMemoryAccess(entryId: string, entries: MemoryEntry[]): void {
+  const entry = entries.find(e => e.id === entryId);
+  if (entry) {
+    entry.lastAccessed = Date.now();
+    entry.accessCount = (entry.accessCount || 0) + 1;
+  }
+}
+
+/**
+ * R57: 对记忆条目应用 TTL 衰减
+ * 
+ * 衰减规则：
+ * - rule 类型：完全免疫衰减（永久规则）
+ * - preference 类型：轻微衰减（用户偏好通常长期有效）
+ * - fact 类型：按年龄衰减，低重要性的旧事实优先遗忘
+ * - importance 已经 ≤ 2 的 fact 且超过 60 天：自动移除
+ * - R106: 访问频率作为保留因素（最近访问或高频访问的条目优先保留）
+ * 
+ * @param entries 当前所有记忆条目
+ * @returns { decayed: MemoryEntry[], removed: number, changed: boolean }
+ */
+export function applyTTLDecay(entries: MemoryEntry[]): { decayed: MemoryEntry[]; removed: number; changed: boolean } {
+  const now = Date.now();
+  const ONE_DAY = 24 * 3600 * 1000;
+  const removed: string[] = [];
+  let changed = false;
+
+  const decayed = entries.filter(entry => {
+    const createdAt = extractDateFromId(entry.id);
+    const ageDays = (now - createdAt) / ONE_DAY;
+    const lastAccessed = entry.lastAccessed || createdAt;
+    const accessCount = entry.accessCount || 0;
+    const daysSinceAccess = (now - lastAccessed) / ONE_DAY;
+
+    // R106: 访问频率保护 — 最近 30 天内有访问或访问次数 >= 3 的条目优先保留
+    const accessProtected = daysSinceAccess < 30 || accessCount >= 3;
+
+    // rule 类型永久保留
+    if (entry.type === 'rule') return true;
+
+    // preference 类型：90 天以上且 importance ≤ 3 才移除（访问频率可豁免）
+    if (entry.type === 'preference') {
+      if (ageDays > 90 && entry.importance <= 3 && !accessProtected) {
+        removed.push(entry.id);
+        changed = true;
+        return false;
+      }
+      return true;
+    }
+
+    // fact 类型：按年龄和重要性衰减
+    // 衰减公式：每 30 天 importance - 1（仅对 importance < 8 的条目）
+    if (entry.type === 'fact') {
+      // R106: 访问频率保护 — 最近访问过的不易删除
+      if (accessProtected && ageDays < 120) {
+        // 120 天内访问过的 fact 豁免删除
+        return true;
+      }
+      
+      // 超过 60 天且 importance ≤ 2 → 自动移除
+      if (ageDays > 60 && entry.importance <= 2 && !accessProtected) {
+        removed.push(entry.id);
+        changed = true;
+        return false;
+      }
+      // 超过 90 天且 importance ≤ 4 → 自动移除
+      if (ageDays > 90 && entry.importance <= 4 && !accessProtected) {
+        removed.push(entry.id);
+        changed = true;
+        return false;
+      }
+      // 高重要性的 fact 永久保留
+      if (entry.importance >= 8) return true;
+      return true;
+    }
+
+    return true;
+  });
+
+  if (removed.length > 0) {
+    logMemory('TTL 衰减', `自动移除 ${removed.length} 条过期记忆（fact/preference 类型，低重要性+超龄）`);
+  }
+
+  return { decayed, removed: removed.length, changed };
+}
+
+/**
+ * R57: 执行 TTL 衰减并持久化（带节流保护）
+ * 在搜索记忆时调用，如果距离上次衰减超过 TTL_DECAY_INTERVAL 则执行
+ */
+async function maybeRunTTLDecay(): Promise<void> {
+  const now = Date.now();
+  if (now - _lastTTLDecayTime < TTL_DECAY_INTERVAL) return;
+  _lastTTLDecayTime = now;
+
+  try {
+    const entries = await loadAllEntries();
+    if (entries.length === 0) return;
+
+    const { decayed, removed, changed } = applyTTLDecay(entries);
+    if (changed && removed > 0) {
+      const fileContent = decayed.length > 0 ? serializeMemoryMd(decayed) : '';
+      await writeMemoryFile(fileContent);
+      logMemory('TTL 衰减', `已持久化: 移除 ${removed} 条，剩余 ${decayed.length} 条`);
+    }
+  } catch (err) {
+    logWarn('TTL 衰减执行失败', (err as Error).message);
+  }
 }
 
 /**

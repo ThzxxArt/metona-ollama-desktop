@@ -754,6 +754,91 @@ export function getEnabledToolDefinitions(): ToolDefinition[] {
   return [...builtIn, ..._mcpToolCache];
 }
 
+// R55: 语义工具检索 — 根据用户查询过滤相关工具，减少上下文占用
+
+/** 核心工具集 — 始终包含的关键工具 */
+const CORE_TOOLS = new Set([
+  'read_file', 'write_file', 'list_directory', 'search_files', 'edit_file',
+  'run_command', 'web_search', 'web_fetch', 'memory', 'git',
+]);
+
+/** 工具关键词映射 — 用于语义匹配 */
+const TOOL_KEYWORDS: Record<string, string[]> = {
+  read_file: ['read', 'file', '读取', '文件', '看', '查看', '内容'],
+  write_file: ['write', 'file', '写入', '保存', '创建文件', '输出'],
+  list_directory: ['list', 'directory', '目录', '文件夹', '列'],
+  search_files: ['search', 'find', '搜索', '查找', 'grep', 'find'],
+  create_directory: ['create', 'directory', 'mkdir', '创建目录', '新建'],
+  delete_file: ['delete', 'remove', '删除', 'rm', '移除'],
+  run_command: ['run', 'command', 'shell', '执行', '命令', '终端'],
+  move_file: ['move', 'rename', '移动', '重命名', 'mv'],
+  copy_file: ['copy', '复制', 'cp'],
+  web_fetch: ['fetch', 'url', '网页', '抓取', '获取'],
+  web_search: ['search', 'web', '搜索', '联网', '查', 'google', 'bing'],
+  edit_file: ['edit', 'replace', '编辑', '替换', '修改'],
+  get_file_info: ['info', 'stat', '信息', '属性', '详情'],
+  tree: ['tree', '结构', '树', '目录结构'],
+  download_file: ['download', '下载'],
+  diff_files: ['diff', 'compare', '对比', '差异'],
+  replace_in_files: ['replace', 'batch', '批量替换'],
+  read_multiple_files: ['read', 'multiple', '批量读取'],
+  git: ['git', 'commit', 'push', 'pull', 'branch', '仓库'],
+  compress: ['compress', 'zip', 'tar', '压缩', '解压', 'extract'],
+  memory: ['memory', '记忆', 'remember', 'save', 'rule', '规则'],
+  session_list: ['session', 'history', '会话', '历史'],
+  session_read: ['session', 'read', '读取会话'],
+  spawn_task: ['sub', 'agent', 'delegate', '子代理', '委派'],
+  plan_track: ['plan', 'track', '计划', '进度'],
+  browser_open: ['browser', 'open', '浏览器', '打开网页'],
+  browser_screenshot: ['screenshot', '截图', '屏幕'],
+  browser_evaluate: ['evaluate', 'javascript', 'js', '执行JS'],
+  browser_extract: ['extract', '提取', '内容'],
+  browser_click: ['click', '点击'],
+  browser_type: ['type', 'input', '输入'],
+  browser_scroll: ['scroll', '滚动'],
+  browser_wait: ['wait', '等待'],
+  browser_close: ['close', '关闭浏览器'],
+  datetime: ['time', 'date', '时间', '日期'],
+  calculator: ['calculate', 'math', '计算', '算'],
+  random: ['random', '随机'],
+  uuid: ['uuid', 'guid', '唯一'],
+  json_format: ['json', 'format', '格式化'],
+  hash: ['hash', 'sha', 'md5', '哈希'],
+};
+
+/** R55: 根据用户查询语义过滤工具定义，减少 token 占用 */
+export function getRelevantToolDefinitions(userQuery: string): ToolDefinition[] {
+  const allTools = getEnabledToolDefinitions();
+  // 查询为空或很短时返回全部
+  if (!userQuery || userQuery.length < 5) return allTools;
+
+  const queryLower = userQuery.toLowerCase();
+  const relevantTools = new Set<string>();
+
+  // 核心工具始终包含
+  for (const t of CORE_TOOLS) relevantTools.add(t);
+
+  // 语义匹配
+  for (const [toolName, keywords] of Object.entries(TOOL_KEYWORDS)) {
+    if (relevantTools.has(toolName)) continue;
+    for (const kw of keywords) {
+      if (queryLower.includes(kw.toLowerCase())) {
+        relevantTools.add(toolName);
+        break;
+      }
+    }
+  }
+
+  // 如果匹配到的工具太少，返回全部（避免遗漏）
+  if (relevantTools.size < 8) return allTools;
+
+  const filtered = allTools.filter(t => relevantTools.has(t.function.name));
+  // 确保不过度过滤 — 至少保留 60% 的工具
+  if (filtered.length < allTools.length * 0.6) return allTools;
+
+  return filtered;
+}
+
 /** MCP 工具缓存 */
 let _mcpToolCache: ToolDefinition[] = [];
 

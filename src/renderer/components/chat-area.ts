@@ -378,14 +378,39 @@ let _streamRenderPending = false;
 let _streamRenderContent = '';
 let _streamRenderThink: string | null = null;
 let _streamRenderModel: string | undefined;
+// R58: 流式渲染优化 — 增量阈值 + 内容指纹，避免高频小片段冗余重渲染
+let _streamLastRenderedLen = 0;     // 上次渲染时的内容长度
+let _streamLastRenderedHash = 0;     // 上次渲染时的内容哈希（简单 DJB2）
+const STREAM_MIN_DELTA = 15;         // 最小增量字符数（不足则跳过本次渲染）
+
+/** R58: 快速 DJB2 哈希 */
+function _djb2(str: string): number {
+  let hash = 5381;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) + hash + str.charCodeAt(i)) & 0x7fffffff;
+  }
+  return hash;
+}
 
 /**
  * 执行实际的流式 Markdown 渲染
+ * R58: 添加增量阈值检查 — 内容增长不足 STREAM_MIN_DELTA 字符时跳过渲染
  */
 function _doStreamRender(): void {
   _streamRenderPending = false;
   const lastMsg = currentPlaceholder;
   if (!lastMsg) return;
+
+  // R58: 增量阈值检查 — 内容变化不足时跳过本次渲染
+  const contentLen = _streamRenderContent.length;
+  const contentHash = _djb2(_streamRenderContent);
+  if (contentLen > 0 && contentHash === _streamLastRenderedHash) return; // 内容完全相同
+  if (contentLen - _streamLastRenderedLen < STREAM_MIN_DELTA && contentLen > 100) {
+    // 内容增长不足且已有内容 → 跳过本次，等下次 rAF
+    return;
+  }
+  _streamLastRenderedLen = contentLen;
+  _streamLastRenderedHash = contentHash;
 
   const contentDiv = lastMsg.querySelector('.msg-content');
   if (contentDiv && _streamRenderContent) {
@@ -460,6 +485,10 @@ export function updateLastAssistantMessage(
         requestAnimationFrame(_doStreamRender);
       }
     }
+  } else if (isFinal) {
+    // R58: 最终渲染时重置增量追踪状态
+    _streamLastRenderedLen = 0;
+    _streamLastRenderedHash = 0;
   }
 
   let thinkBlock = lastMsg.querySelector('.think-block');

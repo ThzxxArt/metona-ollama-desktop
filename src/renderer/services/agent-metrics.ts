@@ -101,7 +101,70 @@ export function endSessionMetrics(): SessionMetrics | null {
     `${formatPercent(getToolSuccessRate(metrics))} 成功率`
   );
   currentMetrics = null;
+  // R84: 持久化度量历史到 localStorage
+  persistMetricsHistory();
   return metrics;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// R84: 度量持久化 — localStorage 存储与恢复
+// ═══════════════════════════════════════════════════════════════
+
+const METRICS_STORAGE_KEY = '_metona_agent_metrics';
+const METRICS_HISTORY_MAX = 100;
+
+/** R84: 将度量历史保存到 localStorage */
+function persistMetricsHistory(): void {
+  try {
+    const recent = sessionMetricsHistory.slice(-METRICS_HISTORY_MAX);
+    const serialized = recent.map(m => ({
+      sessionId: m.sessionId,
+      model: m.model,
+      duration: m.endTime - m.startTime,
+      iterations: m.totalIterations,
+      toolCallCount: m.toolCalls.length,
+      toolSuccessRate: getToolSuccessRate(m),
+      completionGatePassed: m.completionGatePassed,
+      errorPatterns: m.errorPatterns,
+      inputTokens: m.totalInputTokens,
+      outputTokens: m.totalOutputTokens,
+      timestamp: m.endTime,
+    }));
+    localStorage.setItem(METRICS_STORAGE_KEY, JSON.stringify(serialized));
+  } catch {
+    // localStorage 满或不可用时静默忽略
+  }
+}
+
+/** R84: 从 localStorage 恢复度量历史 */
+export function loadMetricsHistory(): void {
+  try {
+    const raw = localStorage.getItem(METRICS_STORAGE_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw) as Array<Record<string, any>>;
+    for (const item of parsed) {
+      sessionMetricsHistory.push({
+        sessionId: item.sessionId || 'unknown',
+        model: item.model || 'unknown',
+        startTime: item.timestamp ? item.timestamp - (item.duration || 0) : 0,
+        endTime: item.timestamp || 0,
+        totalIterations: item.iterations || 0,
+        toolCalls: [],
+        totalInputTokens: item.inputTokens || 0,
+        totalOutputTokens: item.outputTokens || 0,
+        completionGatePassed: item.completionGatePassed || false,
+        errorPatterns: item.errorPatterns || [],
+      });
+    }
+    logInfo(`R84: 恢复了 ${sessionMetricsHistory.length} 条历史度量`);
+  } catch {
+    // 解析失败静默忽略
+  }
+}
+
+/** R84: 获取度量历史（供 UI 仪表盘使用） */
+export function getMetricsHistory(): SessionMetrics[] {
+  return [...sessionMetricsHistory];
 }
 
 // ═══════════════════════════════════════════════════════════════

@@ -9,19 +9,65 @@ import { state, KEYS } from '../state/state.js';
 import {
   executeTool,
   getEnabledToolDefinitions,
+  getRelevantToolDefinitions,
   needsConfirmation,
   initPlanTracker,
   getPlanTracker,
   formatPlanStatus,
   clearPlanTracker,
 } from './tool-registry.js';
+import {
+  compactOldToolResult,
+  detectOscillation,
+  recordToolCallHistory,
+  detectConsecutiveIdentical,
+  setUserGoal,
+  checkGoalAlignment,
+  resetAllSafetyState,
+  checkRateLimit,
+  classifyError,
+  calculateBackoff,
+  validatePathSandbox,
+  isToolCircuitBroken,
+  recordToolFailure,
+  recordToolSuccess,
+  // R88: 工具结果元数据
+  addResultMetadata,
+  // R97: 错误模式学习
+  recordErrorPattern,
+  // R104: 工具结果去重
+  isDuplicateToolResult,
+  // R109: 工具参数消毒
+  sanitizeToolArgs,
+  // R112: 诊断系统
+  collectDiagnostics,
+  // R113: 命令安全检查
+  checkCommandSafety,
+  // R95: 按工具类型智能截断
+  smartTruncateByToolType,
+  // R99: 工具结果引用解析
+  checkArchivedReferences,
+} from './agent-safety.js';
 import { search, formatMemoryContext, loadAllEntries } from './memory-service.js';
 
 import { showToast } from '../components/toast.js';
 import { logInfo, logWarn, logSuccess, logError, logToolStart, logToolResult, logAgentLoop, logModelResponse, logStreamProgress, resetStreamProgress } from './log-service.js';
 import { getWorkspaceDirPath } from '../components/workspace-panel.js';
 import { generateId } from '../utils/utils.js';
-import { buildContext, estimateTokens, shouldAutoCompress, compressWithLLM, AUTO_COMPRESS_THRESHOLD, recordActualTokens } from './context-manager.js';
+import {
+  buildContext, estimateTokens, shouldAutoCompress, compressWithLLM,
+  AUTO_COMPRESS_THRESHOLD, recordActualTokens, predictContextOverflow, recordTokenUsage,
+  // R91: 上下文压力分级评估
+  getContextPressureLevel,
+  // R93: Token 预算追踪器
+  recordBudgetUsage, setTokenBudgetNumCtx, resetTokenBudget,
+  // R96: 消息角色压缩
+  mergeConsecutiveMessages,
+  // R98: 压缩触发阈值优化
+  getTrendAwareCompressThreshold,
+  // R100: Token 使用统计报告
+  generateTokenReport, formatTokenReport,
+} from './context-manager.js';
 import { runCompletionGate } from './completion-gate.js';
 import { executeHooks } from './hooks.js';
 import { recordIteration, recordToolCall, recordCompletionGate, startSessionMetrics, endSessionMetrics } from './agent-metrics.js';
@@ -42,6 +88,12 @@ const MAX_RETRIES = 2;              // 工具错误自动重试次数
 const MAX_MESSAGES = 300;           // 上下文硬上限，超过则强制压缩
 const API_MAX_RETRIES = 2;          // Ollama API 调用失败重试次数
 const MAX_PARALLEL_TOOLS = 5;       // R6: 单批次最大并行工具数
+
+// R51-R54: 工具结果离线存储、震荡检测、死循环检测已迁移至 agent-safety.ts
+// R56: 目标对齐验证也已迁移至 agent-safety.ts
+
+// R55: 语义工具检索 — 缓存当前轮过滤后的工具定义，避免 handleThinking 重复计算
+let _filteredTools: import('../types.js').ToolDefinition[] = [];
 
 /**
  * 计算增量压缩触发阈值（按 token 数而非消息条数）
@@ -145,37 +197,83 @@ const SIDE_EFFECT_TOOLS = new Set([
  * 防止单个工具调用挂起导致整个 Agent Loop 卡死
  * 0 = 不限制（仅依赖全局 AbortController）
  */
-const TOOL_TIMEOUT_MAP: Record<string, number> = {
-  read_file: 30_000,          // 读取文件 30s
-  write_file: 15_000,         // 写入文件 15s
-  edit_file: 15_000,          // 编辑文件 15s
-  list_directory: 10_000,     // 列目录 10s
-  search_files: 60_000,       // 搜索文件 60s
-  create_directory: 5_000,    // 创建目录 5s
-  delete_file: 10_000,        // 删除文件 10s
-  move_file: 15_000,          // 移动文件 15s
-  copy_file: 30_000,          // 复制文件 30s（可能大文件）
-  get_file_info: 5_000,       // 获取文件信息 5s
-  tree: 15_000,               // 目录树 15s
-  diff_files: 15_000,         // 文件差异 15s
-  replace_in_files: 30_000,   // 批量替换 30s
-  read_multiple_files: 60_000,// 批量读取 60s
-  web_search: 30_000,         // 网页搜索 30s
-  web_fetch: 60_000,          // 网页抓取 60s
-  download_file: 120_000,     // 下载文件 120s
-  git: 30_000,                // Git 操作 30s
-  compress: 60_000,           // 压缩 60s
-  memory: 5_000,              // 记忆操作 5s
-  session_list: 5_000,        // 会话列表 5s
-  session_read: 10_000,       // 会话读取 10s
-  datetime: 1_000,            // 时间查询 1s
-  calculator: 3_000,          // 计算器 3s
-  random: 1_000,              // 随机数 1s
-  uuid: 1_000,                // UUID 1s
-  json_format: 3_000,         // JSON 格式化 3s
-  hash: 3_000,                // 哈希计算 3s
-  default: 60_000,            // 默认 60s
+/** R3/R108: 工具超时配置（基础超时 + 动态调整） */
+const TOOL_TIMEOUT_MAP: Record<string, { base: number; grade: 'fast' | 'medium' | 'slow' | 'long'; description: string }> = {
+  // fast (<5秒)
+  datetime: { base: 1_000, grade: 'fast', description: '时间查询' },
+  random: { base: 1_000, grade: 'fast', description: '随机数' },
+  uuid: { base: 1_000, grade: 'fast', description: 'UUID' },
+  calculator: { base: 3_000, grade: 'fast', description: '计算器' },
+  json_format: { base: 3_000, grade: 'fast', description: 'JSON 格式化' },
+  hash: { base: 3_000, grade: 'fast', description: '哈希计算' },
+  create_directory: { base: 5_000, grade: 'fast', description: '创建目录' },
+  get_file_info: { base: 5_000, grade: 'fast', description: '获取文件信息' },
+  memory: { base: 5_000, grade: 'fast', description: '记忆操作' },
+  session_list: { base: 5_000, grade: 'fast', description: '会话列表' },
+  
+  // medium (5-15秒)
+  list_directory: { base: 10_000, grade: 'medium', description: '列目录' },
+  delete_file: { base: 10_000, grade: 'medium', description: '删除文件' },
+  write_file: { base: 15_000, grade: 'medium', description: '写入文件' },
+  edit_file: { base: 15_000, grade: 'medium', description: '编辑文件' },
+  move_file: { base: 15_000, grade: 'medium', description: '移动文件' },
+  tree: { base: 15_000, grade: 'medium', description: '目录树' },
+  diff_files: { base: 15_000, grade: 'medium', description: '文件差异' },
+  session_read: { base: 10_000, grade: 'medium', description: '会话读取' },
+  web_search: { base: 30_000, grade: 'medium', description: '网页搜索' },
+  git: { base: 30_000, grade: 'medium', description: 'Git 操作' },
+  
+  // slow (15-60秒)
+  read_file: { base: 30_000, grade: 'slow', description: '读取文件' },
+  copy_file: { base: 30_000, grade: 'slow', description: '复制文件' },
+  replace_in_files: { base: 30_000, grade: 'slow', description: '批量替换' },
+  search_files: { base: 60_000, grade: 'slow', description: '搜索文件' },
+  read_multiple_files: { base: 60_000, grade: 'slow', description: '批量读取' },
+  web_fetch: { base: 60_000, grade: 'slow', description: '网页抓取' },
+  compress: { base: 60_000, grade: 'slow', description: '压缩' },
+  
+  // long (>60秒)
+  download_file: { base: 120_000, grade: 'long', description: '下载文件' },
+  default: { base: 60_000, grade: 'medium', description: '默认工具' },
 };
+
+/** R108: 根据工具参数动态调整超时时间 */
+function getAdjustedToolTimeout(toolName: string, args: Record<string, unknown>): number {
+  const config = TOOL_TIMEOUT_MAP[toolName] ?? TOOL_TIMEOUT_MAP.default;
+  let timeout = config.base;
+  
+  // run_command 特殊处理：根据命令类型调整
+  if (toolName === 'run_command' && args.command) {
+    const cmd = String(args.command);
+    if (cmd.includes('npm install') || cmd.includes('pip install') || cmd.includes('apt-get install')) {
+      timeout = 300_000; // 包安装：5分钟
+    } else if (cmd.includes('build') || cmd.includes('compile') || cmd.includes('make')) {
+      timeout = 180_000; // 编译：3分钟
+    } else if (cmd.includes('test')) {
+      timeout = 120_000; // 测试：2分钟
+    } else {
+      timeout = 120_000; // 默认命令：2分钟
+    }
+  }
+  
+  // web_fetch 特殊处理：视频/大型资源
+  if (toolName === 'web_fetch' && args.url) {
+    const url = String(args.url);
+    if (url.includes('youtube') || url.includes('video') || url.includes('mp4')) {
+      timeout = 90_000;
+    }
+  }
+  
+  // write_file 特殊处理：大文件
+  if (toolName === 'write_file' && args.content) {
+    const contentLen = String(args.content).length;
+    if (contentLen > 100_000) {
+      timeout = 30_000; // 大文件写入
+    }
+  }
+  
+  return timeout;
+}
 
 /** R3: 带超时的工具执行包装器 */
 async function executeToolWithTimeout(
@@ -183,7 +281,7 @@ async function executeToolWithTimeout(
   args: Record<string, unknown>,
   abortSignal?: AbortSignal,
 ): Promise<ToolResult> {
-  const timeoutMs = TOOL_TIMEOUT_MAP[toolName] ?? TOOL_TIMEOUT_MAP.default;
+  const timeoutMs = getAdjustedToolTimeout(toolName, args);
   if (timeoutMs <= 0) {
     return executeTool(toolName, args);
   }
@@ -1084,9 +1182,15 @@ async function handleInit(
 ): Promise<void> {
   // 新一轮对话，清空工具缓存
   toolResultCache.clear();
+resetAllSafetyState(); // R51-R56: 重置所有安全状态
+resetTokenBudget(); // R93: 重置 Token 预算追踪
+setTokenBudgetNumCtx(getEffectiveNumCtx()); // R93: 设置当前预算 numCtx
+setUserGoal(userContent); // R56: 设置用户原始目标
 
   const modelSupportsTools = state.get<boolean>('modelSupportsTools', false);
-  const tools = getEnabledToolDefinitions();
+  // R55: 语义工具检索 — 根据用户查询过滤相关工具，减少 token 占用
+  const tools = getRelevantToolDefinitions(userContent);
+  _filteredTools = tools; // 缓存供 handleThinking 使用
   const useTools = tools.length > 0;
 
   ctx.messages.length = 0;
@@ -1568,7 +1672,7 @@ async function handleThinking(
             num_ctx: getEffectiveNumCtx(),
             temperature: state.get<number>('temperature', 0.7)
           },
-          ...(getEnabledToolDefinitions().length > 0 && { tools: getEnabledToolDefinitions() })
+          ...(_filteredTools.length > 0 && { tools: _filteredTools })
         },
         (chunk: OllamaStreamChunk) => {
           if (chunk.message?.thinking) {
@@ -1710,6 +1814,8 @@ async function handleThinking(
       if (estimatedThisLoop > 0) {
         recordActualTokens(ctx.loopPromptEvalCount, ctx.loopEvalCount, estimatedThisLoop, model);
       }
+      // R93: 记录 Token 预算使用
+      recordBudgetUsage(ctx.loopCount, ctx.loopPromptEvalCount, ctx.loopEvalCount, estimatedThisLoop);
     }
   } catch { /* ignore */ }
 
@@ -1845,6 +1951,25 @@ async function handleExecuting(
       toolResultCache.delete(cacheKey);
     }
 
+    // R109: 工具参数消毒 — 防止通过工具参数注入恶意内容
+    call.function.arguments = sanitizeToolArgs(call.function.name, call.function.arguments);
+
+    // R113: 命令安全检查 — 对 run_command 进行风险评估
+    if (call.function.name === 'run_command') {
+      const cmdStr = String(call.function.arguments?.command || '');
+      if (cmdStr) {
+        const cmdSafety = checkCommandSafety(cmdStr);
+        if (cmdSafety.riskLevel === 'forbidden') {
+          logWarn(`R113: 命令安全拦截: ${cmdSafety.reason}`);
+          return [{
+            name: call.function.name, arguments: call.function.arguments,
+            result: { success: false, error: cmdSafety.reason || '命令被安全规则拦截' },
+            status: 'error' as const, timestamp: Date.now()
+          }, null];
+        }
+      }
+    }
+
     // P2-4: 工具参数前置校验 — 参数无效直接返回错误，不执行实际工具，节省一轮迭代
     const paramError = validateToolArgs(call.function.name, call.function.arguments);
     if (paramError) {
@@ -1854,6 +1979,62 @@ async function handleExecuting(
         result: { success: false, error: paramError },
         status: 'error' as const, timestamp: Date.now()
       }, null];
+    }
+
+    // R77: 工具调用速率限制 — 防止快速连续调用同一工具浪费资源
+    const rateLimitResult = checkRateLimit(call.function.name);
+    if (!rateLimitResult.allowed) {
+      const waitSec = Math.ceil(rateLimitResult.retryAfterMs / 1000);
+      logWarn(`R77: 速率限制拦截: ${call.function.name}，需等待 ${waitSec}s`);
+      return [{
+        name: call.function.name, arguments: call.function.arguments,
+        result: { success: false, error: `工具「${call.function.name}」调用频率过高，请等待 ${waitSec} 秒后重试。` },
+        status: 'error' as const, timestamp: Date.now()
+      }, null];
+    }
+
+    // R87: 工具熔断器检查 — 连续失败后自动禁用工具
+    const circuitBreaker = isToolCircuitBroken(call.function.name);
+    if (circuitBreaker.broken) {
+      const waitSec = Math.ceil(circuitBreaker.remainingMs / 1000);
+      logWarn(`R87: 熔断器拦截: ${call.function.name}，冷却中（还需 ${waitSec}s）`);
+      return [{
+        name: call.function.name, arguments: call.function.arguments,
+        result: { success: false, error: `工具「${call.function.name}」因连续失败已被暂时禁用，请等待 ${waitSec} 秒后重试，或使用其他方法。` },
+        status: 'error' as const, timestamp: Date.now()
+      }, null];
+    }
+
+    // R79: 路径沙箱验证 — 确保文件操作不超出工作空间边界
+    const FILE_PATH_TOOLS = new Set([
+      'read_file', 'write_file', 'edit_file', 'delete_file', 'create_directory',
+      'list_directory', 'search_files', 'get_file_info', 'tree', 'compress',
+      'move_file', 'copy_file', 'replace_in_files', 'download_file',
+    ]);
+    if (FILE_PATH_TOOLS.has(call.function.name)) {
+      const workspaceDir = getWorkspaceDirPath();
+      if (workspaceDir) {
+        const pathArg = String(call.function.arguments?.path || call.function.arguments?.source || call.function.arguments?.destination || call.function.arguments?.file1 || '');
+        if (pathArg) {
+          const sandboxResult = validatePathSandbox(pathArg, workspaceDir);
+          if (!sandboxResult.valid) {
+            logWarn(`R79: 路径沙箱拦截: ${call.function.name}(${pathArg}) — ${sandboxResult.reason}`);
+            return [{
+              name: call.function.name, arguments: call.function.arguments,
+              result: { success: false, error: sandboxResult.reason || '路径不在工作空间范围内' },
+              status: 'error' as const, timestamp: Date.now()
+            }, null];
+          }
+          // R79: 使用标准化路径替换原始路径，防止路径遍历
+          if (sandboxResult.normalizedPath && sandboxResult.normalizedPath !== pathArg) {
+            if (call.function.arguments?.path) {
+              call.function.arguments.path = sandboxResult.normalizedPath;
+            } else if (call.function.arguments?.source) {
+              call.function.arguments.source = sandboxResult.normalizedPath;
+            }
+          }
+        }
+      }
     }
 
     // P2-10 修复：queueMicrotask 替代 rAF，在隐藏窗口下不会降频
@@ -1887,8 +2068,9 @@ async function handleExecuting(
       }
     }
 
-    // ── P0-1 修复：区分瞬态错误和永久错误 ──
+    // ── R78: 增强错误分类重试 — 使用 classifyError 区分瞬态/永久/安全错误 ──
     let lastError = '';
+    let classifiedError: import('./agent-safety.js').ClassifiedError | null = null;
     for (let retry = 0; retry <= MAX_RETRIES; retry++) {
       // 重试前检查中止信号
       if (isAborted()) {
@@ -1903,6 +2085,12 @@ async function handleExecuting(
           state.get<AbortController | null>(KEYS.ABORT_CONTROLLER)?.signal)
           .catch(err => ({ success: false, error: err?.message || String(err) }) as ToolResult);
         logToolResult(call.function.name, result.success, result.success ? undefined : result.error);
+        // R87: 记录工具成功/失败到熔断器
+        if (result.success) {
+          recordToolSuccess(call.function.name);
+        } else {
+          recordToolFailure(call.function.name);
+        }
         // 记录 write_file 成功路径及内容指纹，供 FileWriteDedup Hook 做内容级去重
         if (call.function.name === 'write_file' && result.success && call.function.arguments?.path) {
           const { addWrittenFile } = await import('./hooks.js');
@@ -1914,27 +2102,47 @@ async function handleExecuting(
         }, result.success ? cacheKey : null];
       } catch (err) {
         lastError = (err as Error).message;
-        // 永久性错误不重试：文件不存在、权限拒绝、路径不可达
-        if (isPermanentError(lastError)) {
-          logWarn(`工具永久错误（不重试）: ${call.function.name}`, lastError);
+        // R78: 使用错误分类系统替代原有的 isPermanentError
+        classifiedError = classifyError(lastError);
+        
+        // 安全错误或永久错误：不重试
+        if (!classifiedError.shouldRetry) {
+          logWarn(`R78: 工具${classifiedError.class}错误（不重试）: ${call.function.name}`, classifiedError.userMessage);
           return [{
             name: call.function.name, arguments: call.function.arguments,
-            result: { success: false, error: lastError },
+            result: { success: false, error: classifiedError.userMessage },
             status: 'error' as const, timestamp: Date.now()
           }, null];
         }
+        
+        // R78: 检查是否超过最大重试次数
+        if (retry >= (classifiedError.maxRetries || MAX_RETRIES)) {
+          logError(`R78: 工具执行失败（已达最大重试 ${classifiedError.maxRetries}）: ${call.function.name}`, lastError);
+          // R97: 记录错误模式并获取改进建议
+          const errorSuggestion = recordErrorPattern(call.function.name, lastError);
+          if (errorSuggestion) {
+            logWarn(`R97: ${errorSuggestion}`);
+          }
+          return [{
+            name: call.function.name, arguments: call.function.arguments,
+            result: { success: false, error: classifiedError.userMessage },
+            status: 'error' as const, timestamp: Date.now()
+          }, null];
+        }
+        
         if (retry < MAX_RETRIES) {
-          // 瞬态错误：指数退避重试
-          const delay = 500 * Math.pow(2, retry);
-          logWarn(`工具重试 ${retry + 1}/${MAX_RETRIES}: ${call.function.name}（${delay}ms 后）`, lastError);
+          // R78: 使用 calculateBackoff 计算指数退避延迟
+          const delay = calculateBackoff(retry, classifiedError.backoffMs);
+          logWarn(`R78: 工具重试 ${retry + 1}/${classifiedError.maxRetries}: ${call.function.name}（${classifiedError.class}错误，${delay}ms 后）`, lastError);
           await new Promise(r => setTimeout(r, delay));
           continue;
         }
-        logError(`工具执行失败（已达最大重试）: ${call.function.name}`, lastError);
+                logError(`工具执行失败（已达最大重试）: ${call.function.name}`, lastError);
+        // R97: 记录错误模式
+        recordErrorPattern(call.function.name, lastError);
         return [{
           name: call.function.name, arguments: call.function.arguments,
-          result: { success: false, error: lastError },
-          status: 'error' as const, timestamp: Date.now()
+          result: { success: false, error: lastError }, status: 'error' as const, timestamp: Date.now()
         }, null];
       }
     }
@@ -1962,9 +2170,23 @@ async function handleExecuting(
 
     for (const [record, cacheKey] of results) {
       ctx.allToolRecords.push(record);
+      // R88: 为工具结果添加元数据提示（token 估算）
+      const formattedResult = addResultMetadata(formatToolResultForModel(record.name, record.result!));
+      // R104: 检测重复工具结果
+      if (record.status === 'success') {
+        const dedup = isDuplicateToolResult(record.name, formattedResult);
+        if (dedup.duplicate) {
+          logInfo(`R104: 检测到重复工具结果: ${record.name}，添加标记`);
+        }
+      }
+      // R92: 工具结果格式标准化 — 添加统一头信息（工具名、状态、耗时、结果大小）
+      const resultDuration = Date.now() - record.timestamp;
+      const resultSize = formattedResult.length;
+      const sizeCategory = resultSize > 10000 ? 'large' : resultSize > 2000 ? 'medium' : 'small';
+      const r92Header = `[工具:${record.name} 状态:${record.status} 耗时:${resultDuration}ms 大小:${sizeCategory}(${resultSize}字符)]`;
       ctx.messages.push({
         role: 'tool', tool_name: record.name,
-        content: `<<<TOOL_RESULT_START name="${record.name}">>>\n${formatToolResultForModel(record.name, record.result!)}\n<<<TOOL_RESULT_END>>>`
+        content: `<<<TOOL_RESULT_START name="${record.name}">>>\n${r92Header}\n${formattedResult}\n<<<TOOL_RESULT_END>>>`
       });
       // P1-3 优化：移除逐次 nudge 注入，改为 AGENT.md 通用规则
       // 原逻辑：memory/session_read/session_list/spawn_task 后注入额外 user 消息
@@ -2006,13 +2228,15 @@ async function handleObserving(
 ): Promise<void> {
   // 中止检查
   if (isAborted()) return;
-  // 硬限制工具消息数量 — 保留最近 80 条（token感知：压力大时自动缩减）
+  // R91: 上下文压力分级评估 — 根据压力等级选择压缩策略
+  const numCtx = getEffectiveNumCtx();
+  const pressureInfo = getContextPressureLevel(ctx.messages, numCtx);
   {
-    const numCtx = getEffectiveNumCtx();
-    const currentTokens = estimateTokens(ctx.messages.map(m => m.content || '').join(''));
-    const pressureRatio = numCtx > 0 ? currentTokens / numCtx : 0;
-    // 压力小时保留 80 条，压力大时缩减到 40 条
-    const maxToolMsgs = pressureRatio > 0.5 ? 40 : 80;
+    // R91: 根据压力等级动态调整工具消息保留数量
+    const maxToolMsgs = pressureInfo.level === 'critical' ? 30
+      : pressureInfo.level === 'high' ? 40
+      : pressureInfo.level === 'medium' ? 60
+      : 80;
     const toolIndices: number[] = [];
     for (let i = 0; i < ctx.messages.length; i++) {
       if (ctx.messages[i].role === 'tool') toolIndices.push(i);
@@ -2022,7 +2246,7 @@ async function handleObserving(
       for (let i = toRemove.length - 1; i >= 0; i--) {
         ctx.messages.splice(toRemove[i], 1);
       }
-      logInfo(`工具消息裁剪: ${toRemove.length} 条旧结果已移除 (保留最近 ${maxToolMsgs} 条, 压力 ${(pressureRatio * 100).toFixed(0)}%)`);
+      logInfo(`R91: 工具消息裁剪: ${toRemove.length} 条旧结果已移除 (压力:${pressureInfo.level}, 保留 ${maxToolMsgs} 条)`);
     }
   }
 
@@ -2033,6 +2257,75 @@ async function handleObserving(
 
   // 保存本轮工具调用
   ctx.prevToolCalls = [...ctx.toolCalls];
+
+  // R52: 状态震荡检测 — 检测 A→B→A→B 模式
+  for (const call of ctx.toolCalls) {
+    recordToolCallHistory(call.function.name, call.function.arguments);
+  }
+  if (detectOscillation()) {
+    logWarn('R52: 检测到工具调用震荡模式（A→B→A→B），注入终止信号');
+    ctx.messages.push({
+      role: 'user',
+      content: '⚠️ 检测到你在两种操作之间来回切换但没有进展。请停下来分析当前状态，换一种策略，或基于已有结果给出最终回答。',
+      ephemeral: true,
+    });
+    ctx.maxLoops = Math.min(ctx.maxLoops, ctx.loopCount + 2);
+  }
+
+  // R54: 增强死循环检测 — 连续 3 次完全相同的工具调用（文档标准）
+  const consecutive = detectConsecutiveIdentical(3);
+  if (consecutive.detected) {
+    logWarn(`R54: 检测到连续 ${consecutive.count} 次相同调用: ${consecutive.toolName}，强制终止`);
+    ctx.messages.push({
+      role: 'user',
+      content: `⛔ 检测到连续 ${consecutive.count} 次用完全相同参数调用「${consecutive.toolName}」。这已被系统识别为死循环。立即停止重复调用，基于已有结果给出最终回答。`,
+    });
+    ctx.maxLoops = Math.min(ctx.maxLoops, ctx.loopCount + 1);
+  }
+
+  // R53: 主动上下文压缩 — 使用预测系统提前触发压缩
+  {
+    const numCtx = getEffectiveNumCtx();
+    const currentTokens = estimateTokens(ctx.messages.map(m => m.content || '').join(''));
+    recordTokenUsage(currentTokens, numCtx);
+    const prediction = predictContextOverflow(numCtx);
+    if (prediction.level === 'critical' || (prediction.level === 'warning' && prediction.turnsToOverflow <= 2)) {
+      logWarn(`R53: 主动压缩触发 — ${prediction.message}`);
+      transition(ctx, S.COMPRESSING);
+      return;
+    }
+  }
+
+  // R51: 工具结果离线存储 — 将旧的大工具结果精简为引用
+  if (ctx.loopCount > 5 && ctx.loopCount % 3 === 0) {
+    const compactBefore = ctx.messages.length - 10; // 保留最近 10 条不动
+    let compactedCount = 0;
+    for (let i = 0; i < ctx.messages.length && i < compactBefore; i++) {
+      const m = ctx.messages[i];
+      if (m.role === 'tool' && m.content && m.content.length > 1500 && !m.content.startsWith('[工具结果已归档]')) {
+        ctx.messages[i] = compactOldToolResult(m);
+        compactedCount++;
+      }
+    }
+    if (compactedCount > 0) {
+      logInfo(`R51: 工具结果归档: ${compactedCount} 条旧结果已精简为引用`);
+    }
+  }
+
+  // R56: 目标对齐验证 — 每 8 轮检查 Agent 是否偏离用户原始目标
+  if (ctx.loopCount > 0 && ctx.loopCount % 8 === 0) {
+    const recentToolNames = ctx.allToolRecords.slice(-8).map(r => r.name);
+    const recentContent = ctx.messages.slice(-10).map(m => m.content || '').join(' ').slice(0, 2000);
+    const alignment = checkGoalAlignment(recentToolNames, recentContent, ctx.loopCount);
+    if (!alignment.aligned && alignment.suggestion) {
+      logWarn(`R56: 目标对齐检测 — ${alignment.reason}`);
+      ctx.messages.push({
+        role: 'user',
+        content: `[目标对齐提醒] ${alignment.suggestion}`,
+        ephemeral: true,
+      });
+    }
+  }
 
   // P2-1: 工具调用失败恢复指引 — 同一工具同一参数连续失败2次以上时注入恢复建议
   {
@@ -2057,30 +2350,43 @@ async function handleObserving(
     }
   }
 
+  // R112: 每 15 轮输出诊断报告 + R100: Token 使用统计报告
+  if (ctx.loopCount > 0 && ctx.loopCount % 15 === 0) {
+    try {
+      const { collectDiagnostics, formatDiagnosticsReport } = await import('./agent-safety.js');
+      const diag = collectDiagnostics();
+      logInfo('R112: 诊断报告\n' + formatDiagnosticsReport(diag));
+      // R100: Token 使用统计报告
+      const tokenReport = generateTokenReport(getEffectiveNumCtx());
+      logInfo('R100: ' + formatTokenReport(tokenReport));
+    } catch { /* 诊断失败不影响主流程 */ }
+  }
+
   // 记录本轮迭代度量
   recordIteration(ctx);
 
   // ── post_iteration Hook ──
   executeHooks('post_iteration', ctx, { iterationIndex: ctx.loopCount });
 
-  // ── P1-7: 智能工具结果截断 — 保留 JSON 结构，token 感知软上限 ──
-  // 仅在上下文压力较大时触发（token使用率 > 50%），且截断阈值按当前压力动态调整
+  // R95: 按工具类型智能截断 — 根据压力等级和工具类型选择截断策略
   if (ctx.loopCount > 10 && ctx.loopCount % 5 === 0) {
-    const numCtx = getEffectiveNumCtx();
-    const currentTokens = estimateTokens(ctx.messages.map(m => m.content || '').join(''));
-    const pressureRatio = numCtx > 0 ? currentTokens / numCtx : 0;
-    if (pressureRatio > 0.5) {
+    if (pressureInfo.level === 'high' || pressureInfo.level === 'critical') {
       // 上下文压力大时，截断旧的工具结果（保留最近15条不动）
-      // 截断阈值按压力动态调整：50%压力=8000字符，80%压力=3000字符
-      const maxLen = Math.max(2000, Math.floor(8000 - (pressureRatio - 0.5) * 10000));
+      // R91: 截断阈值按压力等级动态调整
+      const maxLen = pressureInfo.level === 'critical' ? 3000 : 5000;
       const truncateBefore = ctx.messages.length - 15;
+      let truncatedCount = 0;
       for (let i = 0; i < ctx.messages.length && i < truncateBefore; i++) {
         const m = ctx.messages[i];
         if (m.role === 'tool' && m.content && m.content.length > maxLen) {
-          ctx.messages[i] = { ...m, content: smartTruncate(m.content, maxLen) };
+          // R95: 使用按工具类型截断替代通用截断
+          ctx.messages[i] = { ...m, content: smartTruncateByToolType(m.tool_name || 'unknown', m.content, maxLen) };
+          truncatedCount++;
         }
       }
-      logInfo(`工具结果截断: 压力 ${(pressureRatio * 100).toFixed(0)}%, 阈值 ${maxLen} 字符`);
+      if (truncatedCount > 0) {
+        logInfo(`R95: 工具结果按类型截断: ${truncatedCount} 条, 压力 ${pressureInfo.level}, 阈值 ${maxLen} 字符`);
+      }
     }
   }
 
@@ -2139,14 +2445,15 @@ async function handleObserving(
     }
   }
 
-  // ── P0-4: 增量压缩 — 按token使用率触发，防止 Ollama context 超限 ──
-  const numCtx = getEffectiveNumCtx();
-  const currentTokens = estimateTokens(ctx.messages.map(m => m.content || '').join(''));
-  const tokenUsageRatio = numCtx > 0 ? currentTokens / numCtx : 0;
-  // 当 token 使用率超过 30% 或消息数超过动态阈值时触发压缩
-  const compressThreshold = getIncrementalCompressThreshold(numCtx);
-  if (tokenUsageRatio > 0.3 || ctx.messages.length >= compressThreshold) {
-    logWarn(`增量压缩触发: token使用率 ${(tokenUsageRatio * 100).toFixed(0)}%, 消息数 ${ctx.messages.length}/${compressThreshold}`);
+  // R96: 消息角色压缩 — 合并连续相同角色消息，减少消息条数开销
+  if (pressureInfo.level === 'medium' || pressureInfo.level === 'high') {
+    ctx.messages = mergeConsecutiveMessages(ctx.messages);
+  }
+
+  // R98: 趋势感知压缩触发 — 结合趋势预测动态调整压缩阈值
+  const compressDecision = getTrendAwareCompressThreshold(numCtx, ctx.messages);
+  if (compressDecision.shouldCompress) {
+    logWarn(`R98: 压缩触发 (${compressDecision.urgency}) — ${compressDecision.reason}`);
     transition(ctx, S.COMPRESSING);
     return;
   }
@@ -2339,6 +2646,10 @@ async function handleReflecting(
       logWarn(`Completion Gate: ${gateResult.reason}（仅记录，不阻断）`);
     } else {
       recordCompletionGate(true);
+    }
+    // R90: 记录完成门控评分到日志
+    if (gateResult.score < 100) {
+      logInfo(`R90: Completion Gate 评分: ${gateResult.score}/100`);
     }
   } catch { /* Gate 异常不影响主流程 */ }
 
