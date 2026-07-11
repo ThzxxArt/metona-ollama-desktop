@@ -262,10 +262,10 @@ export async function setupIPC(): Promise<void> {
   });
 
   ipcMain.handle('tool:setTimeouts', (_, timeouts: { http?: number; mcp?: number }) => {
-    if (typeof timeouts.http === 'number' && timeouts.http > 0) {
+    if (typeof timeouts.http === 'number' && timeouts.http >= 0) {
       setHTTPTimeout(timeouts.http);
     }
-    if (typeof timeouts.mcp === 'number' && timeouts.mcp > 0) {
+    if (typeof timeouts.mcp === 'number' && timeouts.mcp >= 0) {
       setMCPTimeout(timeouts.mcp);
     }
     return { success: true };

@@ -1336,12 +1336,21 @@ async function handleThinking(
 
 	  const abortController = registerAbortController();
 
-  // ── 流式超时保护 — 动态计算：基础 120s + 上下文 token 数 * 0.5s/1K tokens ──
+  // ── 流式超时保护 — 0=禁用, 正数=自定义, -1/未设置=动态计算 ──
   const baseTimeout = state.get<number>('streamTimeout', 0);
   const numCtxForTimeout = getEffectiveNumCtx();
-  const dynamicTimeout = baseTimeout > 0 ? baseTimeout : Math.max(120_000, 120_000 + Math.floor(numCtxForTimeout / 1000) * 500);
-  // 上限 10 分钟，避免极端值
-  const STREAM_TIMEOUT_MS = Math.min(dynamicTimeout, 600_000);
+  let STREAM_TIMEOUT_MS: number;
+  if (baseTimeout === 0) {
+    // 0 = 禁用流式超时
+    STREAM_TIMEOUT_MS = 0;
+  } else if (baseTimeout > 0) {
+    // 用户自定义超时，上限 10 分钟
+    STREAM_TIMEOUT_MS = Math.min(baseTimeout, 600_000);
+  } else {
+    // -1 或未设置 = 动态计算：基础 120s + 上下文 token 数 * 0.5s/1K tokens
+    const dynamicTimeout = Math.max(120_000, 120_000 + Math.floor(numCtxForTimeout / 1000) * 500);
+    STREAM_TIMEOUT_MS = Math.min(dynamicTimeout, 600_000);
+  }
 
   let totalTimer: ReturnType<typeof setTimeout> | null = null;
 

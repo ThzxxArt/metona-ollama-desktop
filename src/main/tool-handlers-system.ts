@@ -127,9 +127,9 @@ export function killToolProcess(): boolean {
 /** HTTP 请求超时（毫秒），默认 30s，可通过 IPC 设置 */
 let HTTP_TIMEOUT = 30_000;
 
-/** 设置 HTTP 请求超时（毫秒） */
+/** 设置 HTTP 请求超时（毫秒），0=禁用超时 */
 export function setHTTPTimeout(ms: number): void {
-  HTTP_TIMEOUT = Math.max(5000, ms);
+  HTTP_TIMEOUT = ms === 0 ? 0 : Math.max(5000, ms);
 }
 
 // ── LRU 搜索缓存 ──────────────────────────────────
@@ -233,9 +233,16 @@ function buildFetchHeaders(url: string, attemptIndex: number, useMobileUA: boole
   };
 }
 
-/** 带超时的 fetch 封装 */
+/** 带超时的 fetch 封装，timeout=0 表示不超时 */
 async function fetchWithTimeout(url: string, timeout = HTTP_TIMEOUT, headers?: Record<string,string>, attemptIndex = 0): Promise<Response | null> {
   const _headers = headers || buildFetchHeaders(url, attemptIndex);
+
+  if (timeout <= 0) {
+    // 0 = 禁用超时
+    try {
+      return await fetch(url, { headers: _headers, redirect: 'follow' });
+    } catch { return null; }
+  }
 
   const controller = new AbortController();
   const tid = setTimeout(() => controller.abort(), timeout);
@@ -444,13 +451,18 @@ export async function handleWebFetch(params: { url: string; max_chars?: number; 
     const headers = buildFetchHeaders(url, attempt, useMobileUA);
 
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), HTTP_TIMEOUT);
       let resp: Response;
-      try {
-        resp = await fetch(url, { headers, signal: controller.signal, redirect: 'follow' });
-      } finally {
-        clearTimeout(timeoutId);
+      if (HTTP_TIMEOUT > 0) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), HTTP_TIMEOUT);
+        try {
+          resp = await fetch(url, { headers, signal: controller.signal, redirect: 'follow' });
+        } finally {
+          clearTimeout(timeoutId);
+        }
+      } else {
+        // 0 = 禁用超时
+        resp = await fetch(url, { headers, redirect: 'follow' });
       }
 
       if (!resp.ok) {
@@ -566,7 +578,7 @@ export async function handleWebFetch(params: { url: string; max_chars?: number; 
     } catch (err) {
       const errMsg = (err as Error).message;
       if (errMsg.includes('abort') && attempt < maxAttempts - 1) {
-        lastError = `请求超时 (${HTTP_TIMEOUT / 1000}s)（将重试）`;
+        lastError = `请求超时 (${HTTP_TIMEOUT > 0 ? HTTP_TIMEOUT / 1000 : '∞'}s)（将重试）`;
         continue;
       }
       if (errMsg.includes('abort')) {

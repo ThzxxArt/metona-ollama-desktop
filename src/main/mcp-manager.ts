@@ -42,7 +42,7 @@ interface MCPServerInstance {
   config: { name: string; command: string; args: string[]; enabled: boolean; description?: string };
   process: ChildProcess;
   requestId: number;
-  pendingRequests: Map<number, { resolve: (value: unknown) => void; reject: (reason: Error) => void; timer: ReturnType<typeof setTimeout> }>;
+  pendingRequests: Map<number, { resolve: (value: unknown) => void; reject: (reason: Error) => void; timer: ReturnType<typeof setTimeout> | null }>;
   buffer: string;
   tools: MCPTool[];
   initialized: boolean;
@@ -55,9 +55,9 @@ const servers = new Map<string, MCPServerInstance>();
 /** MCP 请求超时（毫秒），默认 60s，可通过 IPC 设置 */
 let MCP_TIMEOUT = 60_000;
 
-/** 设置 MCP 请求超时（毫秒） */
+/** 设置 MCP 请求超时（毫秒），0=禁用超时 */
 export function setMCPTimeout(ms: number): void {
-  MCP_TIMEOUT = Math.max(10_000, ms);
+  MCP_TIMEOUT = ms === 0 ? 0 : Math.max(10_000, ms);
 }
 
 // ─── JSON-RPC 通信 ───
@@ -67,10 +67,10 @@ function sendRequest(server: MCPServerInstance, method: string, params?: Record<
     const id = ++server.requestId;
     const request: JSONRPCRequest = { jsonrpc: '2.0', id, method, params };
 
-    const timer = setTimeout(() => {
+    const timer = MCP_TIMEOUT > 0 ? setTimeout(() => {
       server.pendingRequests.delete(id);
       reject(new Error(`MCP 请求超时: ${server.config.name} / ${method} (${MCP_TIMEOUT}ms)`));
-    }, MCP_TIMEOUT);
+    }, MCP_TIMEOUT) : null;
 
     server.pendingRequests.set(id, { resolve, reject, timer });
 
@@ -79,7 +79,7 @@ function sendRequest(server: MCPServerInstance, method: string, params?: Record<
       server.process.stdin!.write(line);
     } catch (err) {
       server.pendingRequests.delete(id);
-      clearTimeout(timer);
+      if (timer) clearTimeout(timer);
       reject(new Error(`MCP 写入失败: ${(err as Error).message}`));
     }
   });
@@ -89,7 +89,7 @@ function handleResponse(server: MCPServerInstance, response: JSONRPCResponse): v
   const pending = server.pendingRequests.get(response.id);
   if (!pending) return;
 
-  clearTimeout(pending.timer);
+  if (pending.timer) clearTimeout(pending.timer);
   server.pendingRequests.delete(response.id);
 
   if (response.error) {
@@ -201,7 +201,7 @@ export async function startServer(config: { name: string; command: string; args:
 
 function cleanupServer(server: MCPServerInstance): void {
   for (const [, pending] of server.pendingRequests) {
-    clearTimeout(pending.timer);
+    if (pending.timer) clearTimeout(pending.timer);
     pending.reject(new Error('MCP 服务器已关闭'));
   }
   server.pendingRequests.clear();
