@@ -2601,25 +2601,66 @@ async function handleReflecting(
 
   // ── 异常3: 模型说了要做但没调用工具 → 注入提醒再给一次机会 ──
   // 场景：AI 回复"我来写入文件"但未发出 write_file 工具调用
+  // 优化：区分"意图声明"（将来时）与"结果描述"（完成时），避免对总结性回复误判
   if (ctx.toolCalls.length === 0 && ctx.content.trim() && ctx.loopCount <= 3) {
     const text = ctx.content.toLowerCase();
-    const actionHints: Array<{ pattern: RegExp; tool: string; hint: string }> = [
-      { pattern: /写入|写文件|写入文件|保存.*文件|创建.*文件|生成.*文件|输出.*文件|write.*file/i, tool: 'write_file', hint: '你提到了写入/创建文件，但没有调用 write_file 工具。请直接调用 write_file 工具执行写入操作。' },
-      { pattern: /搜索|查找|搜一下|查一下|检索|search/i, tool: 'web_search', hint: '你提到了搜索，但没有调用 web_search 工具。请直接调用 web_search 工具执行搜索。' },
-      { pattern: /抓取|获取.*内容|fetch|获取.*网页/i, tool: 'web_fetch', hint: '你提到了抓取网页，但没有调用 web_fetch 工具。请直接调用 web_fetch 工具获取网页内容。' },
-      { pattern: /运行.*命令|执行.*命令|run.*command/i, tool: 'run_command', hint: '你提到了运行命令，但没有调用 run_command 工具。请直接调用 run_command 工具执行命令。' },
-      { pattern: /下载/i, tool: 'download_file', hint: '你提到了下载，但没有调用 download_file 工具。请直接调用 download_file 工具执行下载。' },
+    const contentLen = ctx.content.trim().length;
+
+    // 结果描述迹象 — 回复中包含这些，说明模型在总结/描述而非空谈
+    const resultIndicators = [
+      /根据.*(结果|内容|返回|输出)/, /搜索结果/, /查询结果/, /查找结果/,
+      /结果显示/, /结果如下/, /已找到/, /已获取/, /已完成/, /已经.*(写入|保存|创建|搜索|执行)/,
+      /从.*获取/, /已写入/, /已保存/, /已创建/, /已执行/,
+      /search result/, /found that/, /according to/i,
     ];
-    const matched = actionHints.find(h => h.pattern.test(text) && !ctx.allToolRecords.some(r => r.name === h.tool));
-    if (matched) {
-      logWarn(`Reflecting: 检测到"说了做但没做" → ${matched.tool}，注入提醒`);
-      ctx.messages.push({
-        role: 'user',
-        content: matched.hint,
-        ephemeral: true,
+    const isDescribingResult = resultIndicators.some(p => p.test(text));
+
+    // 意图声明模式 — 只有明确表达"将要做"时才视为"说了没做"
+    const intentPatterns = [
+      /我来.*(写入|写文件|创建|生成|保存|搜索|查找|抓取|运行|执行|下载)/,
+      /让我.*(写入|写文件|创建|生成|保存|搜索|查找|抓取|运行|执行|下载)/,
+      /我将.*(写入|写文件|创建|生成|保存|搜索|查找|抓取|运行|执行|下载)/,
+      /接下来.*(写入|写文件|创建|生成|保存|搜索|查找|抓取|运行|执行|下载)/,
+      /现在.*(写入|写文件|创建|生成|保存|搜索|查找|抓取|运行|执行|下载)/,
+      /需要.*(写入|写文件|创建|生成|保存|搜索|查找|抓取|运行|执行|下载)/,
+      /i('?)ll (write|create|search|fetch|run|execute|download)/i,
+      /let me (write|create|search|fetch|run|execute|download)/i,
+      /i will (write|create|search|fetch|run|execute|download)/i,
+      /i need to (write|create|search|fetch|run|execute|download)/i,
+    ];
+    const hasIntentStatement = intentPatterns.some(p => p.test(text));
+
+    // 上一轮已调用的工具 — 本轮可能在总结结果，不触发
+    const lastLoopToolNames = (ctx.prevToolCalls || []).map(c => c.function.name);
+
+    // 触发条件：有意图声明（高置信度），或短回复中匹配关键词且非结果描述（低置信度）
+    const shouldCheck = hasIntentStatement || (contentLen < 300 && !isDescribingResult);
+
+    if (shouldCheck) {
+      const actionHints: Array<{ pattern: RegExp; tool: string; hint: string }> = [
+        { pattern: /写入|写文件|写入文件|保存.*文件|创建.*文件|生成.*文件|输出.*文件|write.*file/i, tool: 'write_file', hint: '你提到了写入/创建文件，但没有调用 write_file 工具。请直接调用 write_file 工具执行写入操作。' },
+        // web_search 正则保持宽泛，由 resultIndicators + lastLoopToolNames 两层防护避免误判
+        { pattern: /搜索|搜一下|检索|search/i, tool: 'web_search', hint: '你提到了搜索，但没有调用 web_search 工具。请直接调用 web_search 工具执行搜索。' },
+        { pattern: /抓取|获取.*内容|fetch|获取.*网页/i, tool: 'web_fetch', hint: '你提到了抓取网页，但没有调用 web_fetch 工具。请直接调用 web_fetch 工具获取网页内容。' },
+        { pattern: /运行.*命令|执行.*命令|run.*command/i, tool: 'run_command', hint: '你提到了运行命令，但没有调用 run_command 工具。请直接调用 run_command 工具执行命令。' },
+        { pattern: /下载/i, tool: 'download_file', hint: '你提到了下载，但没有调用 download_file 工具。请直接调用 download_file 工具执行下载。' },
+      ];
+      const matched = actionHints.find(h => {
+        if (!h.pattern.test(text)) return false;
+        if (ctx.allToolRecords.some(r => r.name === h.tool)) return false; // 整个会话已调用过
+        if (lastLoopToolNames.includes(h.tool)) return false; // 上一轮调用过，本轮可能在总结
+        return true;
       });
-      transition(ctx, S.THINKING);
-      return;
+      if (matched) {
+        logWarn(`Reflecting: 检测到"说了做但没做" → ${matched.tool}，注入提醒`);
+        ctx.messages.push({
+          role: 'user',
+          content: matched.hint,
+          ephemeral: true,
+        });
+        transition(ctx, S.THINKING);
+        return;
+      }
     }
   }
 
