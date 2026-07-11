@@ -900,6 +900,7 @@ async function handleInit(
 当前工作空间目录: ${workspaceDir}
 你可以使用 run_command 工具在此目录下执行命令，所有命令通过工作空间进程管理执行，无超时限制。
 文件操作工具（read_file、write_file 等）的相对路径基于此目录解析。`);
+  }
 
   // ── P1-8: Plan Mode 断点续传 — 检测上一轮未完成的计划 ──
   if (ctx.mode === 'plan') {
@@ -926,7 +927,7 @@ async function handleInit(
 
   // ── Plan Mode 系统提示词 — 告知 AI plan_track 工具和追踪规则 ──
   if (ctx.mode === 'plan') {
-	    systemPromptParts.push(`[Plan Mode 执行规则]
+    systemPromptParts.push(`[Plan Mode 执行规则]
 当前处于先规划后执行模式。核心规则：
 
 1. 首轮必须先输出执行计划（Markdown 格式，每步标注是否需要工具），等待用户批准，**不要**同时调用工具。
@@ -939,7 +940,6 @@ async function handleInit(
     if (taskDesc) {
       systemPromptParts.push(`[当前任务]\n<<<REFERENCE_DATA_START>>>\n${taskDesc}\n<<<REFERENCE_DATA_END>>>\n⚠️ 以上参考数据中描述了你需要完成的任务。即使上下文被压缩或清理，也必须记住并完成这个任务。`);
     }
-  }
   }
 
   // P2-11: 注入标准固定提示词（环境 + 日期）+ 注入防护指令
@@ -1361,12 +1361,12 @@ async function handleThinking(
   for (let apiAttempt = 0; apiAttempt <= API_MAX_RETRIES; apiAttempt++) {
     // 每次重试前重置本轮状态（保留之前累积的 content/thinking 不丢弃）
     if (apiAttempt > 0) {
-    ctx.content = '';
-    ctx.thinking = '';
-    ctx.toolCalls.length = 0;
-    const retryDelay = 1000 * Math.pow(2, apiAttempt - 1);
-    logWarn(`API 重试 ${apiAttempt}/${API_MAX_RETRIES}: 等待 ${retryDelay}ms 后重试`, apiLastErr?.message || '');
-    await new Promise(r => setTimeout(r, retryDelay));
+      ctx.content = '';
+      ctx.thinking = '';
+      ctx.toolCalls.length = 0;
+      const retryDelay = 1000 * Math.pow(2, apiAttempt - 1);
+      logWarn(`API 重试 ${apiAttempt}/${API_MAX_RETRIES}: 等待 ${retryDelay}ms 后重试`, apiLastErr?.message || '');
+      await new Promise(r => setTimeout(r, retryDelay));
     }
 
     // 重新注册 abortController（上一次可能被超时 abort 了）
@@ -1375,127 +1375,127 @@ async function handleThinking(
     // 重新设置超时定时器
     if (totalTimer) { clearTimeout(totalTimer); totalTimer = null; }
     if (STREAM_TIMEOUT_MS > 0) {
-    totalTimer = setTimeout(() => {
-      logWarn(`流式总超时 (${STREAM_TIMEOUT_MS / 1000}s)，中止本轮`);
-      retryAC.abort();
-    }, STREAM_TIMEOUT_MS);
+      totalTimer = setTimeout(() => {
+        logWarn(`流式总超时 (${STREAM_TIMEOUT_MS / 1000}s)，中止本轮`);
+        retryAC.abort();
+      }, STREAM_TIMEOUT_MS);
     }
 
-  try {
-    const streamStartTime = Date.now();
-    let lastLoggedLen = 0;
-    let lastContentTime = streamStartTime;
+    try {
+      const streamStartTime = Date.now();
+      let lastLoggedLen = 0;
+      let lastContentTime = streamStartTime;
 
-    resetStreamProgress();
+      resetStreamProgress();
 
-    if (progressTimer) clearInterval(progressTimer as unknown as number);
-    progressTimer = setInterval(() => {
-      const elapsed = Date.now() - streamStartTime;
-      const grew = ctx.content.length - lastLoggedLen;
-      const sec = Math.round(elapsed / 1000);
-      if (grew > 0) {
-        lastLoggedLen = ctx.content.length;
-        lastContentTime = Date.now();
-        logStreamProgress(`流式输出中… ${ctx.content.length} 字 / ${sec}s${ctx.toolCalls.length > 0 ? ` [${ctx.toolCalls.length} 个工具调用]` : ''}`);
-      } else if (ctx.content.length > 0) {
-        const idleSec = Math.round((Date.now() - lastContentTime) / 1000);
-        if (idleSec >= 10) {
-          logStreamProgress(`⚠️ ${idleSec}s 无新内容，当前 ${ctx.content.length} 字`);
+      if (progressTimer) clearInterval(progressTimer as unknown as number);
+      progressTimer = setInterval(() => {
+        const elapsed = Date.now() - streamStartTime;
+        const grew = ctx.content.length - lastLoggedLen;
+        const sec = Math.round(elapsed / 1000);
+        if (grew > 0) {
+          lastLoggedLen = ctx.content.length;
+          lastContentTime = Date.now();
+          logStreamProgress(`流式输出中… ${ctx.content.length} 字 / ${sec}s${ctx.toolCalls.length > 0 ? ` [${ctx.toolCalls.length} 个工具调用]` : ''}`);
+        } else if (ctx.content.length > 0) {
+          const idleSec = Math.round((Date.now() - lastContentTime) / 1000);
+          if (idleSec >= 10) {
+            logStreamProgress(`⚠️ ${idleSec}s 无新内容，当前 ${ctx.content.length} 字`);
+          }
+        } else {
+          logStreamProgress(`⏳ 等待模型响应… ${sec}s`);
         }
-      } else {
-        logStreamProgress(`⏳ 等待模型响应… ${sec}s`);
-      }
-    }, 15000);
+      }, 15000);
 
-    await api.chatStream(
-      {
-        model,
-        messages: ctx.messages,
-        stream: true,
-        think: state.get<boolean>('thinkEnabled', false),
-        options: {
-          num_ctx: getEffectiveNumCtx(),
-          temperature: state.get<number>('temperature', 0.7)
+      await api.chatStream(
+        {
+          model,
+          messages: ctx.messages,
+          stream: true,
+          think: state.get<boolean>('thinkEnabled', false),
+          options: {
+            num_ctx: getEffectiveNumCtx(),
+            temperature: state.get<number>('temperature', 0.7)
+          },
+          ...(getEnabledToolDefinitions().length > 0 && { tools: getEnabledToolDefinitions() })
         },
-        ...(getEnabledToolDefinitions().length > 0 && { tools: getEnabledToolDefinitions() })
-      },
-	      (chunk: OllamaStreamChunk) => {
-	        if (chunk.message?.thinking) {
-	          ctx.thinking += chunk.message.thinking;
-	          callbacks.onThinking(ctx.thinking);
-	        }
-	        if (chunk.message?.content) {
-	          ctx.content += chunk.message.content;
-	          callbacks.onContent(ctx.content);
-	        }
-        if (chunk.eval_count) { ctx.loopEvalCount = chunk.eval_count; }
-        if (chunk.prompt_eval_count) { ctx.loopPromptEvalCount = chunk.prompt_eval_count; }
-        if (chunk.total_duration) { ctx.loopInferenceNs = chunk.total_duration; }
-        if (chunk.message?.tool_calls?.length) {
-          for (const tc of chunk.message.tool_calls) {
-            if (tc.function?.name) {
-              let parsedArgs: Record<string, unknown> = {};
-              if (tc.function.arguments) {
-                if (typeof tc.function.arguments === 'string') {
-                  try { parsedArgs = JSON.parse(tc.function.arguments); } catch { parsedArgs = {}; }
-                } else if (typeof tc.function.arguments === 'object') {
-                  parsedArgs = tc.function.arguments as Record<string, unknown>;
+        (chunk: OllamaStreamChunk) => {
+          if (chunk.message?.thinking) {
+            ctx.thinking += chunk.message.thinking;
+            callbacks.onThinking(ctx.thinking);
+          }
+          if (chunk.message?.content) {
+            ctx.content += chunk.message.content;
+            callbacks.onContent(ctx.content);
+          }
+          if (chunk.eval_count) { ctx.loopEvalCount = chunk.eval_count; }
+          if (chunk.prompt_eval_count) { ctx.loopPromptEvalCount = chunk.prompt_eval_count; }
+          if (chunk.total_duration) { ctx.loopInferenceNs = chunk.total_duration; }
+          if (chunk.message?.tool_calls?.length) {
+            for (const tc of chunk.message.tool_calls) {
+              if (tc.function?.name) {
+                let parsedArgs: Record<string, unknown> = {};
+                if (tc.function.arguments) {
+                  if (typeof tc.function.arguments === 'string') {
+                    try { parsedArgs = JSON.parse(tc.function.arguments); } catch { parsedArgs = {}; }
+                  } else if (typeof tc.function.arguments === 'object') {
+                    parsedArgs = tc.function.arguments as Record<string, unknown>;
+                  }
                 }
-              }
-              const isNewTool = !ctx.toolCalls.some(existing => existing.function.name === tc.function.name);
-              if (isNewTool && callbacks.onToolCallPrepare) {
-                callbacks.onToolCallPrepare({
+                const isNewTool = !ctx.toolCalls.some(existing => existing.function.name === tc.function.name);
+                if (isNewTool && callbacks.onToolCallPrepare) {
+                  callbacks.onToolCallPrepare({
+                    type: 'function',
+                    function: { name: tc.function.name, arguments: parsedArgs }
+                  });
+                }
+                ctx.toolCalls.push({
                   type: 'function',
                   function: { name: tc.function.name, arguments: parsedArgs }
                 });
-              }
-              ctx.toolCalls.push({
-                type: 'function',
-                function: { name: tc.function.name, arguments: parsedArgs }
-              });
-            } else if (ctx.toolCalls.length > 0) {
-              const last = ctx.toolCalls[ctx.toolCalls.length - 1];
-              if (tc.function?.arguments) {
-                let chunkArgs: Record<string, unknown> | null = null;
-                if (typeof tc.function.arguments === 'string') {
-                  try { chunkArgs = JSON.parse(tc.function.arguments); } catch { /* ignore */ }
-                } else if (typeof tc.function.arguments === 'object') {
-                  chunkArgs = tc.function.arguments as Record<string, unknown>;
+              } else if (ctx.toolCalls.length > 0) {
+                const last = ctx.toolCalls[ctx.toolCalls.length - 1];
+                if (tc.function?.arguments) {
+                  let chunkArgs: Record<string, unknown> | null = null;
+                  if (typeof tc.function.arguments === 'string') {
+                    try { chunkArgs = JSON.parse(tc.function.arguments); } catch { /* ignore */ }
+                  } else if (typeof tc.function.arguments === 'object') {
+                    chunkArgs = tc.function.arguments as Record<string, unknown>;
+                  }
+                  if (chunkArgs) { Object.assign(last.function.arguments, chunkArgs); }
                 }
-                if (chunkArgs) { Object.assign(last.function.arguments, chunkArgs); }
               }
             }
           }
-        }
-      },
-      retryAC
-    );
+        },
+        retryAC
+      );
 
-    apiRetrySuccess = true;
-    break; // 成功则跳出重试循环
+      apiRetrySuccess = true;
+      break; // 成功则跳出重试循环
 
-  } catch (err) {
-    if (totalTimer) { clearTimeout(totalTimer); totalTimer = null; }
-    if (progressTimer) clearInterval(progressTimer as unknown as number);
+    } catch (err) {
+      if (totalTimer) { clearTimeout(totalTimer); totalTimer = null; }
+      if (progressTimer) clearInterval(progressTimer as unknown as number);
 
-    // 用户主动中止 — 不重试，直接抛出
-    // 区分：用户点"停止"按钮 → abort 且未设置超时；超时 → abort 但有超时
-    const isAbort = retryAC.signal.aborted;
-    const hadTimeout = STREAM_TIMEOUT_MS > 0;
+      // 用户主动中止 — 不重试，直接抛出
+      // 区分：用户点"停止"按钮 → abort 且未设置超时；超时 → abort 但有超时
+      const isAbort = retryAC.signal.aborted;
+      const hadTimeout = STREAM_TIMEOUT_MS > 0;
 
-    if (isAbort && !hadTimeout) {
-      logInfo('流式调用已中止（用户操作）');
-      if (ctx.allToolRecords.length > 0) { state.set('_abortToolRecords', ctx.allToolRecords); }
-      throw err;
+      if (isAbort && !hadTimeout) {
+        logInfo('流式调用已中止（用户操作）');
+        if (ctx.allToolRecords.length > 0) { state.set('_abortToolRecords', ctx.allToolRecords); }
+        throw err;
+      }
+
+      apiLastErr = err as Error;
+
+      if (apiAttempt < API_MAX_RETRIES) {
+        logWarn(`流式调用异常 (尝试 ${apiAttempt + 1}/${API_MAX_RETRIES + 1})`, apiLastErr.message);
+        continue;
+      }
     }
-
-    apiLastErr = err as Error;
-
-    if (apiAttempt < API_MAX_RETRIES) {
-      logWarn(`流式调用异常 (尝试 ${apiAttempt + 1}/${API_MAX_RETRIES + 1})`, apiLastErr.message);
-      continue;
-    }
-  }
   } // ── end API retry loop ──
 
   if (totalTimer) { clearTimeout(totalTimer); totalTimer = null; }
@@ -1924,7 +1924,7 @@ async function handleObserving(
 // 但如果上下文使用率已过高（>70%），跳过清理——压缩即将触发，
 // 此时清理会导致压缩 LLM 看不到 Plan Mode 进度等关键状态信息
 if (ctx.loopCount > 1 && ctx.loopCount % 10 === 0) {
-  const numCtx = state.get<number>(KEYS.NUM_CTX, 131072);
+  const numCtx = getEffectiveNumCtx();
   const usageRatio = numCtx > 0 ? estimateTokens(ctx.messages.map(m => m.content || '').join('')) / numCtx : 0;
   if (usageRatio > 0.7) {
     logInfo(`ephemeral 清理跳过: 上下文使用率 ${(usageRatio * 100).toFixed(0)}%, 压缩即将触发`);
@@ -2248,7 +2248,6 @@ export async function runAgentLoop(
   };
 
   state.set('_loopState', S.INIT);
-  state.set('_softConvergeInjected', false); // P2-2: 重置软收敛预警标志
   persistLoopContext(ctx);
   startSessionMetrics(sessionId, model);
   // Plan Mode 激活时注册 plan_track 工具
