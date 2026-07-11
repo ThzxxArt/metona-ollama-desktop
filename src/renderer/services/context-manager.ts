@@ -65,11 +65,11 @@ export function getTokenCalibration(): { ratio: number; samples: number } {
 }
 
 /** 自动压缩阈值：当消息 token 占 context window 比例超过此值时触发自动压缩 */
-export const AUTO_COMPRESS_THRESHOLD = 0.5;
+export const AUTO_COMPRESS_THRESHOLD = 0.3;
 
 /** 压缩后保留首尾消息数 */
-const COMPRESS_KEEP_HEAD = 2;
-const COMPRESS_KEEP_TAIL = 2;
+const COMPRESS_KEEP_HEAD = 5;
+const COMPRESS_KEEP_TAIL = 8;
 
 // ── 消息重要性评分（纯规则，不调用 LLM）──
 
@@ -143,8 +143,8 @@ export interface ContextBuildOptions {
 }
 
 const DEFAULT_OPTIONS: Required<ContextBuildOptions> = {
-  windowSize: 20,
-  summaryBatchSize: 20,
+  windowSize: 40,
+  summaryBatchSize: 30,
   maxTokens: 131072,
   memoryContext: '',
   workspaceContext: ''
@@ -309,7 +309,7 @@ export async function compressWithLLM(
   const conversationText = uncompressedMiddle.map(m => {
     const role = m.role === 'user' ? '用户' : 'AI';
     let content = m.content || '';
-    if (content.length > 500) content = content.slice(0, 500) + '...';
+    if (content.length > 2000) content = content.slice(0, 2000) + '...';
     if (m.tool_calls?.length) {
       const toolNames = m.tool_calls.map(t => t.function.name).join(', ');
       content += ` [工具调用: ${toolNames}]`;

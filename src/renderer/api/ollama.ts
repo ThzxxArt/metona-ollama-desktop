@@ -119,7 +119,6 @@ export class OllamaAPI {
           const chunk: OllamaStreamChunk = JSON.parse(line);
           if (onChunk) onChunk(chunk);
           if (chunk.done) {
-            // 不调用 reader.cancel() — TCP RST 可能导致 Ollama 不执行 keep_alive
             return;
           }
         } catch {

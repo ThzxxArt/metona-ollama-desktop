@@ -39,8 +39,19 @@ import type {
 } from '../types.js';
 
 const MAX_RETRIES = 2;              // 工具错误自动重试次数
-const MAX_MESSAGES = 200;           // 上下文硬上限，超过则强制压缩（P0-4: 从500降到200，防止Ollama context超限）
-const INCREMENTAL_COMPRESS_AT = 80; // P1-C4: 增量压缩触发点降低到 80，防止 Ollama context 超限
+const MAX_MESSAGES = 300;           // 上下文硬上限，超过则强制压缩
+const API_MAX_RETRIES = 2;          // Ollama API 调用失败重试次数
+
+/**
+ * 计算增量压缩触发阈值（按 token 数而非消息条数）
+ * 当上下文 token 占比超过 numCtx 的 30% 时触发压缩
+ */
+function getIncrementalCompressThreshold(numCtx: number): number {
+  // 30% of numCtx 转换为估算字符数（token * 1.5 近似）
+  // 同时保留一个最低消息条数兜底（避免极少消息但单条极大的情况漏触发）
+  const tokenThreshold = Math.floor(numCtx * 0.3);
+  return Math.max(20, Math.min(120, Math.floor(tokenThreshold / 100)));
+}
 
 /** S1/S6: 清洗不可信文本，移除提示词注入模式 */
 function sanitizeUntrustedInput(text: string): string {
@@ -1325,8 +1336,12 @@ async function handleThinking(
 
 	  const abortController = registerAbortController();
 
-  // ── 流式超时保护 ──
-  const STREAM_TIMEOUT_MS = state.get<number>('streamTimeout', 300_000);   // 总超时 300s
+  // ── 流式超时保护 — 动态计算：基础 120s + 上下文 token 数 * 0.5s/1K tokens ──
+  const baseTimeout = state.get<number>('streamTimeout', 0);
+  const numCtxForTimeout = getEffectiveNumCtx();
+  const dynamicTimeout = baseTimeout > 0 ? baseTimeout : Math.max(120_000, 120_000 + Math.floor(numCtxForTimeout / 1000) * 500);
+  // 上限 10 分钟，避免极端值
+  const STREAM_TIMEOUT_MS = Math.min(dynamicTimeout, 600_000);
 
   let totalTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -1339,6 +1354,33 @@ async function handleThinking(
 
   let progressTimer: ReturnType<typeof setInterval> | null = null;
 
+  // ── API 调用重试循环 — 瞬态错误时指数退避重试，不轻易终止 Agent Loop ──
+  let apiRetrySuccess = false;
+  let apiLastErr: Error | null = null;
+
+  for (let apiAttempt = 0; apiAttempt <= API_MAX_RETRIES; apiAttempt++) {
+    // 每次重试前重置本轮状态（保留之前累积的 content/thinking 不丢弃）
+    if (apiAttempt > 0) {
+    ctx.content = '';
+    ctx.thinking = '';
+    ctx.toolCalls.length = 0;
+    const retryDelay = 1000 * Math.pow(2, apiAttempt - 1);
+    logWarn(`API 重试 ${apiAttempt}/${API_MAX_RETRIES}: 等待 ${retryDelay}ms 后重试`, apiLastErr?.message || '');
+    await new Promise(r => setTimeout(r, retryDelay));
+    }
+
+    // 重新注册 abortController（上一次可能被超时 abort 了）
+    const retryAC = apiAttempt > 0 ? registerAbortController() : abortController;
+
+    // 重新设置超时定时器
+    if (totalTimer) { clearTimeout(totalTimer); totalTimer = null; }
+    if (STREAM_TIMEOUT_MS > 0) {
+    totalTimer = setTimeout(() => {
+      logWarn(`流式总超时 (${STREAM_TIMEOUT_MS / 1000}s)，中止本轮`);
+      retryAC.abort();
+    }, STREAM_TIMEOUT_MS);
+    }
+
   try {
     const streamStartTime = Date.now();
     let lastLoggedLen = 0;
@@ -1346,6 +1388,7 @@ async function handleThinking(
 
     resetStreamProgress();
 
+    if (progressTimer) clearInterval(progressTimer as unknown as number);
     progressTimer = setInterval(() => {
       const elapsed = Date.now() - streamStartTime;
       const grew = ctx.content.length - lastLoggedLen;
@@ -1425,57 +1468,79 @@ async function handleThinking(
           }
         }
       },
-      abortController
+      retryAC
     );
 
-    // P0 修复：保存本轮独立 stats（供 onNewIteration / makeStats 使用，避免累计值导致重复计算）
-    ctx.lastLoopStats = {
-      eval_count: ctx.loopEvalCount || undefined,
-      prompt_eval_count: ctx.loopPromptEvalCount || undefined,
-      total_duration: ctx.loopInferenceNs || undefined,
-    };
-
-    // 累加 token 统计
-    ctx.totalEvalCount += ctx.loopEvalCount;
-    ctx.totalPromptEvalCount += ctx.loopPromptEvalCount;
-    ctx.totalInferenceNs += ctx.loopInferenceNs;
-    state.set('_currentEvalCount', ctx.totalEvalCount);
-
-    // Token 校准
-    try {
-      if (ctx.loopEvalCount > 0 || ctx.loopPromptEvalCount > 0) {
-        const estimatedThisLoop = estimateTokens(ctx.messages.map(m => m.content || '').join(''));
-        if (estimatedThisLoop > 0) {
-          recordActualTokens(ctx.loopPromptEvalCount, ctx.loopEvalCount, estimatedThisLoop, model);
-        }
-      }
-    } catch { /* ignore */ }
-
-    // 重置本轮计数器
-    ctx.loopEvalCount = 0;
-    ctx.loopPromptEvalCount = 0;
-    ctx.loopInferenceNs = 0;
-
-    if (totalTimer) { clearTimeout(totalTimer); totalTimer = null; }
-    if (progressTimer) clearInterval(progressTimer as unknown as number);
-
-    transition(ctx, S.PARSING);
+    apiRetrySuccess = true;
+    break; // 成功则跳出重试循环
 
   } catch (err) {
     if (totalTimer) { clearTimeout(totalTimer); totalTimer = null; }
     if (progressTimer) clearInterval(progressTimer as unknown as number);
-    if (abortController.signal.aborted) {
-      logInfo('流式调用已中止');
+
+    // 用户主动中止 — 不重试，直接抛出
+    // 区分：用户点"停止"按钮 → abort 且未设置超时；超时 → abort 但有超时
+    const isAbort = retryAC.signal.aborted;
+    const hadTimeout = STREAM_TIMEOUT_MS > 0;
+
+    if (isAbort && !hadTimeout) {
+      logInfo('流式调用已中止（用户操作）');
       if (ctx.allToolRecords.length > 0) { state.set('_abortToolRecords', ctx.allToolRecords); }
       throw err;
     }
-    logError('流式调用异常', (err as Error).message);
+
+    apiLastErr = err as Error;
+
+    if (apiAttempt < API_MAX_RETRIES) {
+      logWarn(`流式调用异常 (尝试 ${apiAttempt + 1}/${API_MAX_RETRIES + 1})`, apiLastErr.message);
+      continue;
+    }
+  }
+  } // ── end API retry loop ──
+
+  if (totalTimer) { clearTimeout(totalTimer); totalTimer = null; }
+  if (progressTimer) clearInterval(progressTimer as unknown as number);
+
+  // 所有重试都失败
+  if (!apiRetrySuccess) {
+    logError('流式调用异常（已达最大重试）', apiLastErr?.message || '未知错误');
     if (ctx.content || ctx.thinking) {
       ctx.messages.push({ role: 'assistant', content: ctx.content || '（模型响应异常）', ...(ctx.thinking && { thinking: ctx.thinking }) });
     }
     callbacks.onDone(ctx.content || '（模型响应异常，已自动中断）', ctx.allToolRecords.length > 0 ? ctx.allToolRecords : undefined, makeStats(ctx));
     transition(ctx, S.TERMINATED);
+    return;
   }
+
+  // ── 成功路径：保存本轮 stats ──
+  ctx.lastLoopStats = {
+    eval_count: ctx.loopEvalCount || undefined,
+    prompt_eval_count: ctx.loopPromptEvalCount || undefined,
+    total_duration: ctx.loopInferenceNs || undefined,
+  };
+
+  // 累加 token 统计
+  ctx.totalEvalCount += ctx.loopEvalCount;
+  ctx.totalPromptEvalCount += ctx.loopPromptEvalCount;
+  ctx.totalInferenceNs += ctx.loopInferenceNs;
+  state.set('_currentEvalCount', ctx.totalEvalCount);
+
+  // Token 校准
+  try {
+    if (ctx.loopEvalCount > 0 || ctx.loopPromptEvalCount > 0) {
+      const estimatedThisLoop = estimateTokens(ctx.messages.map(m => m.content || '').join(''));
+      if (estimatedThisLoop > 0) {
+        recordActualTokens(ctx.loopPromptEvalCount, ctx.loopEvalCount, estimatedThisLoop, model);
+      }
+    }
+  } catch { /* ignore */ }
+
+  // 重置本轮计数器
+  ctx.loopEvalCount = 0;
+  ctx.loopPromptEvalCount = 0;
+  ctx.loopInferenceNs = 0;
+
+  transition(ctx, S.PARSING);
 }
 
 /**
@@ -1751,18 +1816,23 @@ async function handleObserving(
 ): Promise<void> {
   // 中止检查
   if (isAborted()) return;
-  // 硬限制工具消息数量 — 保留最近 40 条
+  // 硬限制工具消息数量 — 保留最近 80 条（token感知：压力大时自动缩减）
   {
+    const numCtx = getEffectiveNumCtx();
+    const currentTokens = estimateTokens(ctx.messages.map(m => m.content || '').join(''));
+    const pressureRatio = numCtx > 0 ? currentTokens / numCtx : 0;
+    // 压力小时保留 80 条，压力大时缩减到 40 条
+    const maxToolMsgs = pressureRatio > 0.5 ? 40 : 80;
     const toolIndices: number[] = [];
     for (let i = 0; i < ctx.messages.length; i++) {
       if (ctx.messages[i].role === 'tool') toolIndices.push(i);
     }
-    if (toolIndices.length > 40) {
-      const toRemove = toolIndices.slice(0, toolIndices.length - 40);
+    if (toolIndices.length > maxToolMsgs) {
+      const toRemove = toolIndices.slice(0, toolIndices.length - maxToolMsgs);
       for (let i = toRemove.length - 1; i >= 0; i--) {
         ctx.messages.splice(toRemove[i], 1);
       }
-      logInfo(`工具消息裁剪: ${toRemove.length} 条旧结果已移除 (保留最近 40 条)`);
+      logInfo(`工具消息裁剪: ${toRemove.length} 条旧结果已移除 (保留最近 ${maxToolMsgs} 条, 压力 ${(pressureRatio * 100).toFixed(0)}%)`);
     }
   }
 
@@ -1803,14 +1873,24 @@ async function handleObserving(
   // ── post_iteration Hook ──
   executeHooks('post_iteration', ctx, { iterationIndex: ctx.loopCount });
 
-  // ── P1-7: 智能工具结果截断 — 保留 JSON 结构，2000 字符软上限 ──
-  if (ctx.loopCount > 10 && ctx.loopCount % 3 === 0) {
-    const truncateBefore = ctx.messages.length - 15;
-    for (let i = 0; i < ctx.messages.length && i < truncateBefore; i++) {
-      const m = ctx.messages[i];
-      if (m.role === 'tool' && m.content && m.content.length > 2000) {
-        ctx.messages[i] = { ...m, content: smartTruncate(m.content, 2000) };
+  // ── P1-7: 智能工具结果截断 — 保留 JSON 结构，token 感知软上限 ──
+  // 仅在上下文压力较大时触发（token使用率 > 50%），且截断阈值按当前压力动态调整
+  if (ctx.loopCount > 10 && ctx.loopCount % 5 === 0) {
+    const numCtx = getEffectiveNumCtx();
+    const currentTokens = estimateTokens(ctx.messages.map(m => m.content || '').join(''));
+    const pressureRatio = numCtx > 0 ? currentTokens / numCtx : 0;
+    if (pressureRatio > 0.5) {
+      // 上下文压力大时，截断旧的工具结果（保留最近15条不动）
+      // 截断阈值按压力动态调整：50%压力=8000字符，80%压力=3000字符
+      const maxLen = Math.max(2000, Math.floor(8000 - (pressureRatio - 0.5) * 10000));
+      const truncateBefore = ctx.messages.length - 15;
+      for (let i = 0; i < ctx.messages.length && i < truncateBefore; i++) {
+        const m = ctx.messages[i];
+        if (m.role === 'tool' && m.content && m.content.length > maxLen) {
+          ctx.messages[i] = { ...m, content: smartTruncate(m.content, maxLen) };
+        }
       }
+      logInfo(`工具结果截断: 压力 ${(pressureRatio * 100).toFixed(0)}%, 阈值 ${maxLen} 字符`);
     }
   }
 
@@ -1869,9 +1949,14 @@ if (ctx.loopCount > 1 && ctx.loopCount % 10 === 0) {
   }
 }
 
-  // ── P0-4: 增量压缩 — 消息数达到 120 条时提前触发压缩，防止 Ollama context 超限 ──
-  if (ctx.messages.length >= INCREMENTAL_COMPRESS_AT) {
-    logWarn(`增量压缩触发: ${ctx.messages.length} 条消息 > ${INCREMENTAL_COMPRESS_AT}`);
+  // ── P0-4: 增量压缩 — 按token使用率触发，防止 Ollama context 超限 ──
+  const numCtx = getEffectiveNumCtx();
+  const currentTokens = estimateTokens(ctx.messages.map(m => m.content || '').join(''));
+  const tokenUsageRatio = numCtx > 0 ? currentTokens / numCtx : 0;
+  // 当 token 使用率超过 30% 或消息数超过动态阈值时触发压缩
+  const compressThreshold = getIncrementalCompressThreshold(numCtx);
+  if (tokenUsageRatio > 0.3 || ctx.messages.length >= compressThreshold) {
+    logWarn(`增量压缩触发: token使用率 ${(tokenUsageRatio * 100).toFixed(0)}%, 消息数 ${ctx.messages.length}/${compressThreshold}`);
     transition(ctx, S.COMPRESSING);
     return;
   }
@@ -2180,7 +2265,7 @@ export async function runAgentLoop(
     while (ctx.state !== S.TERMINATED) {
       // ── 看门狗 — 全局超时熔断（可通过设置 loopWatchdogMs 配置，0=禁用）──
       // 默认 30 分钟，用户强调不要随意加超时限制
-      const WATCHDOG_MS = state.get<number>('loopWatchdogMs', 1_800_000);
+      const WATCHDOG_MS = state.get<number>('loopWatchdogMs', 3_600_000);
       if (WATCHDOG_MS > 0 && Date.now() - ctx.startTime > WATCHDOG_MS) {
         logWarn(`看门狗触发: Agent Loop 运行超过 ${WATCHDOG_MS / 60000} 分钟，强制终止`);
         ctx.messages.push({
@@ -2214,21 +2299,12 @@ export async function runAgentLoop(
       const numCtx = getEffectiveNumCtx();
       const usageRatio = estimateTokens(ctx.messages.map(m => m.content || '').join('')) / numCtx;
 
-      // P2-2: 上下文健康度软收敛 — 60% 时提前预警，让 AI 主动收敛
-      if (usageRatio > 0.6 && usageRatio <= 0.8 && !state.get<boolean>('_softConvergeInjected', false)) {
-        ctx.messages.push({
-          role: 'user',
-          content: '[上下文提醒] 上下文窗口使用率已达60%，建议尽快总结已有信息并给出最终回答，避免上下文压缩导致信息丢失。',
-          ephemeral: true,
-        });
-        state.set('_softConvergeInjected', true);
-        logInfo(`软收敛预警: 上下文使用率 ${(usageRatio * 100).toFixed(0)}%`);
-      }
-
-      if (usageRatio > 0.8 && (ctx.maxLoops - ctx.loopCount) > 3) {
-        const newMax = ctx.loopCount + 3;
-        logWarn(`上下文使用率 ${(usageRatio * 100).toFixed(0)}%, 限制剩余迭代为 ${newMax - ctx.loopCount} 轮（原 ${ctx.maxLoops - ctx.loopCount} 轮）`);
-        ctx.maxLoops = newMax;
+      // 上下文使用率过高时触发紧急压缩（不限制轮次，而是回收上下文空间）
+      if (usageRatio > 0.8 && ctx.state === S.THINKING) {
+        logWarn(`上下文使用率 ${(usageRatio * 100).toFixed(0)}%, 触发紧急压缩`);
+        transition(ctx, S.COMPRESSING);
+        ctx.state = S.COMPRESSING;
+        state.set('_loopState', S.COMPRESSING);
       }
 
       // 仅在 THINKING 阶段通知 UI（一次迭代只通知一次，不是每个状态切换都通知）
