@@ -2035,6 +2035,30 @@ async function handleReflecting(
     return;
   }
 
+  // ── 异常3: 模型说了要做但没调用工具 → 注入提醒再给一次机会 ──
+  // 场景：AI 回复"我来写入文件"但未发出 write_file 工具调用
+  if (ctx.toolCalls.length === 0 && ctx.content.trim() && ctx.loopCount <= 3) {
+    const text = ctx.content.toLowerCase();
+    const actionHints: Array<{ pattern: RegExp; tool: string; hint: string }> = [
+      { pattern: /写入|写文件|写入文件|保存.*文件|创建.*文件|生成.*文件|输出.*文件|write.*file/i, tool: 'write_file', hint: '你提到了写入/创建文件，但没有调用 write_file 工具。请直接调用 write_file 工具执行写入操作。' },
+      { pattern: /搜索|查找|搜一下|查一下|检索|search/i, tool: 'web_search', hint: '你提到了搜索，但没有调用 web_search 工具。请直接调用 web_search 工具执行搜索。' },
+      { pattern: /抓取|获取.*内容|fetch|获取.*网页/i, tool: 'web_fetch', hint: '你提到了抓取网页，但没有调用 web_fetch 工具。请直接调用 web_fetch 工具获取网页内容。' },
+      { pattern: /运行.*命令|执行.*命令|run.*command/i, tool: 'run_command', hint: '你提到了运行命令，但没有调用 run_command 工具。请直接调用 run_command 工具执行命令。' },
+      { pattern: /下载/i, tool: 'download_file', hint: '你提到了下载，但没有调用 download_file 工具。请直接调用 download_file 工具执行下载。' },
+    ];
+    const matched = actionHints.find(h => h.pattern.test(text) && !ctx.allToolRecords.some(r => r.name === h.tool));
+    if (matched) {
+      logWarn(`Reflecting: 检测到"说了做但没做" → ${matched.tool}，注入提醒`);
+      ctx.messages.push({
+        role: 'user',
+        content: matched.hint,
+        ephemeral: true,
+      });
+      transition(ctx, S.THINKING);
+      return;
+    }
+  }
+
   // ── 本轮调用了工具 → 模型需要处理工具结果 → 继续循环 ──
   if (ctx.toolCalls.length > 0) {
     transition(ctx, S.THINKING);

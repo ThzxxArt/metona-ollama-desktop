@@ -136,6 +136,8 @@ export function renderMessages(): void {
 
   for (let i = 0; i < msgs.length; i++) {
     const msg = msgs[i];
+    // 跳过 system 消息（Plan Mode 进度等内部状态消息不展示给用户）
+    if (msg.role === 'system') continue;
     // 只跳过既无内容也无 think 也无工具的空消息
     if (msg.role === 'assistant' && !msg.content && !msg.think && (!msg.toolCalls || msg.toolCalls.length === 0)) continue;
     appendMessageDOM(msgs[i], i);

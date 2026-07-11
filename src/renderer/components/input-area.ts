@@ -634,16 +634,8 @@ async function handleRetry(): Promise<void> {
           // renderMessages 统一渲染 session 数据，先清掉流式 placeholder 避免 DOM 重复
           clearMessagesDOM();
           renderMessages();
-          // ── 保存 Plan Mode 最终进度到会话（供下一轮 Loop 注入）──
-          const lastPlanStatus = state.get<string>('_lastPlanStatus', '');
-          if (lastPlanStatus) {
-            state.set('_lastPlanStatus', '');
-            state.update(KEYS.CURRENT_SESSION, (s: any) => ({
-              ...s,
-              messages: [...s.messages, { role: 'system', content: lastPlanStatus, timestamp: Date.now() }],
-              updatedAt: Date.now()
-            }));
-          }
+          // ── 消费 _lastPlanStatus（不再保存为 session 消息，避免 system 消息渲染到聊天界面）──
+          state.set('_lastPlanStatus', '');
         await saveCurrentSession();
       }
     });
@@ -1352,16 +1344,8 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
 
         renderMessages();
 
-        // ── 保存 Plan Mode 最终进度到会话（供下一轮 Loop 注入）──
-        const lastPlanStatus2 = state.get<string>('_lastPlanStatus', '');
-        if (lastPlanStatus2) {
-          state.set('_lastPlanStatus', '');
-          state.update(KEYS.CURRENT_SESSION, (session: any) => ({
-            ...session,
-            messages: [...session.messages, { role: 'system', content: lastPlanStatus2, timestamp: Date.now() }],
-            updatedAt: Date.now()
-          }));
-        }
+        // ── 消费 _lastPlanStatus（不再保存为 session 消息，避免 system 消息渲染到聊天界面）──
+        state.set('_lastPlanStatus', '');
         await saveCurrentSession();
       }
     });
