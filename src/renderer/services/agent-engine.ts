@@ -1075,70 +1075,6 @@ function extractPlanSteps(content: string): string[] {
 }
 
 /**
- * 多步骤任务待办检测 — 解析用户请求中的动作动词，对比已完成的工具调用
- * 返回尚未完成的任务描述列表
- */
-function detectPendingActions(
-  userText: string,
-  allToolRecords: Array<{ name: string }>,
-): string[] {
-  const called = new Set(allToolRecords.map(r => r.name));
-  const pending: string[] = [];
-  const txt = userText.toLowerCase();
-
-  // 动作 → 必需工具映射
-  const ACTION_MAP: Array<{ keywords: string[]; tools: string[]; label: string }> = [
-    { keywords: ['搜索', '查找', '查一下', '搜一下', 'search', '检索', '查询'], tools: ['web_search'], label: '搜索/查找信息' },
-    { keywords: ['抓取', 'fetch', '获取内容', '抓取全文'], tools: ['web_fetch'], label: '抓取网页详细内容' },
-    { keywords: ['生成', '写入', '创建文件', '保存', '输出.*文件', '放到.*工作空间', '写.*文件', '生成.*文件', '存入'], tools: ['write_file'], label: '创建/写入文件' },
-    { keywords: ['运行', '执行', 'run', '启动', '编译'], tools: ['run_command'], label: '执行命令/脚本' },
-    { keywords: ['下载', 'download'], tools: ['download_file'], label: '下载文件' },
-    { keywords: ['提交', 'commit', '推送', 'push', '暂存', 'add'], tools: ['git'], label: 'Git 操作' },
-    { keywords: ['删除', '移除', 'delete', 'remove'], tools: ['delete_file'], label: '删除文件' },
-    { keywords: ['移动', 'move', '重命名', 'rename'], tools: ['move_file'], label: '移动/重命名文件' },
-    { keywords: ['复制', 'copy'], tools: ['copy_file'], label: '复制文件' },
-    { keywords: ['压缩', '解压', 'compress', 'zip', 'tar'], tools: ['compress'], label: '压缩/解压' },
-    { keywords: ['打开网页', '浏览器', 'browser', '截图'], tools: ['browser_open', 'browser_screenshot', 'browser_extract'], label: '浏览器操作' },
-  ];
-
-  for (const action of ACTION_MAP) {
-    const mentioned = action.keywords.some(kw => new RegExp(kw, 'i').test(txt));
-    if (mentioned) {
-      const completed = action.tools.some(t => called.has(t));
-      if (!completed) {
-        pending.push(action.label);
-      }
-    }
-  }
-
-  return pending;
-}
-
-/** 获取用户请求中提到的全部动作标签（不论是否完成），用于全部完成时生成确认信号 */
-function detectAllMentionedActions(userText: string): string[] {
-  const txt = userText.toLowerCase();
-  const mentioned: string[] = [];
-  const ACTION_MAP: Array<{ keywords: string[]; label: string }> = [
-    { keywords: ['搜索', '查找', '查一下', '搜一下', 'search', '检索', '查询'], label: '搜索/查找' },
-    { keywords: ['生成', '写入', '创建文件', '保存', '写.*文件', '生成.*文件', '存入', '输出'], label: '写入文件' },
-    { keywords: ['运行', '执行', 'run', '启动', '编译'], label: '执行命令' },
-    { keywords: ['下载', 'download'], label: '下载文件' },
-    { keywords: ['提交', 'commit', '推送', 'push'], label: 'Git 操作' },
-    { keywords: ['删除', '移除', 'delete', 'remove'], label: '删除文件' },
-    { keywords: ['移动', 'move', '重命名', 'rename'], label: '移动/重命名' },
-    { keywords: ['复制', 'copy'], label: '复制文件' },
-    { keywords: ['压缩', '解压', 'compress', 'zip', 'tar'], label: '压缩/解压' },
-    { keywords: ['打开网页', '浏览器', 'browser', '截图'], label: '浏览器操作' },
-  ];
-  for (const action of ACTION_MAP) {
-    if (action.keywords.some(kw => new RegExp(kw, 'i').test(txt))) {
-      mentioned.push(action.label);
-    }
-  }
-  return mentioned;
-}
-
-/**
  * 通用工具结果核验 — 对所有写类工具执行后验证
  * 读取/搜索类工具已有返回结果作为验证，此处只核验会产生副作用的操作
  */
@@ -1305,20 +1241,8 @@ async function handleThinking(
     }
   }
 
-  // 多步骤任务待办追踪 — 用户一句话里有多个动作时，提醒未完成的
-  // Plan Mode 下由 Plan Tracker 统一追踪进度，跳过避免信息冗余
-  if (ctx.mode !== 'plan' && ctx.loopCount >= 2 && ctx.allToolRecords.length > 0) {
-    const firstUserMsg = ctx.messages.find(m => m.role === 'user');
-    const userText = firstUserMsg?.content || '';
-    const pending = detectPendingActions(userText, ctx.allToolRecords);
-    if (pending.length > 0) {
-      _reminders.push(`待办: ${pending.join('、')}`);
-      logInfo('待办追踪', pending.join(', '));
-    }
-    // 注：不再注入"全部完成"确认信号。工具调用数量≠任务完成度，
-    // 例如"删除3个文件"调用1次 delete_file 不能算完成。
-    // AI 应根据工具返回的实际结果自行判断任务是否完成。
-  }
+  // 任务感知和待办追踪仅在 Plan Mode 下通过 Plan Tracker 统一管理
+  // 非 Plan 模式下信任 AI 自主根据用户请求和工具结果判断进度
 
   // Token 预算警告
   const remaining = ctx.maxLoops - ctx.loopCount + 1;
