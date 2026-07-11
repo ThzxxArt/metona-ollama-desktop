@@ -460,6 +460,12 @@ async function init(): Promise<void> {
       }
     }
 
+    // ── Plan 自动确认设置 ──
+    {
+      const planAutoConfirm = await db.getSetting<boolean>('planAutoConfirm', false);
+      state.set('planAutoConfirm', planAutoConfirm);
+    }
+
     // ── MCP 工具注册 ──
     await startAllMCPServers();
     await refreshMCPTools();

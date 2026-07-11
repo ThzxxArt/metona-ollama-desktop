@@ -585,6 +585,12 @@ async function handleRetry(): Promise<void> {
         },
         onConfirmTool: async (call) => showToolConfirm(call),
         onPlanReady: async (plan: string, steps: string[]) => {
+          // 检查是否启用了自动确认计划
+          const autoConfirm = state.get<boolean>('planAutoConfirm', false);
+          if (autoConfirm) {
+            logInfo('Plan Mode: 自动确认计划（用户已启用自动确认）');
+            return true;
+          }
           try {
             const { showHtmlConfirm } = await import('./prompt-modal.js');
             const html = buildPlanConfirmHtml(plan, steps);
@@ -1305,6 +1311,12 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
       },
       /** Plan Mode — 计划生成后等待用户确认（Markdown 渲染） */
       onPlanReady: async (plan: string, steps: string[]) => {
+        // 检查是否启用了自动确认计划
+        const autoConfirm = state.get<boolean>('planAutoConfirm', false);
+        if (autoConfirm) {
+          logInfo('Plan Mode: 自动确认计划（用户已启用自动确认）');
+          return true;
+        }
         try {
           const { showHtmlConfirm } = await import('./prompt-modal.js');
           const html = buildPlanConfirmHtml(plan, steps);

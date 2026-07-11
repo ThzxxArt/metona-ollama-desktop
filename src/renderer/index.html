@@ -705,8 +705,15 @@
                     <div class="tool-card-desc">哈希计算（MD5/SHA1/SHA256/SHA384/SHA512）</div>
                 </div>
                 <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">📋</span><span class="tool-card-name">plan_track</span><span class="tool-card-badge plan-mode">Plan</span></div>
+                    <div class="tool-card-header"><span class="tool-card-icon">📋</span><span class="tool-card-name">plan_track</span><span class="tool-card-badge confirm" id="badge_plan_track">需确认</span></div>
                     <div class="tool-card-desc">Plan 模式专属：追踪执行进度，标记/查看步骤完成状态</div>
+                    <div style="margin-top:6px;display:flex;align-items:center;gap:8px;">
+                        <label style="margin:0;font-size:11px;color:var(--text-secondary);">计划确认：</label>
+                        <select id="select_plan_confirm" style="font-size:11px;padding:2px 6px;background:var(--bg-card);color:var(--text-primary);border:1px solid var(--border-default);border-radius:4px;">
+                            <option value="confirm">需确认</option>
+                            <option value="auto">自动确认</option>
+                        </select>
+                    </div>
                 </div>
             </div>
         </div>

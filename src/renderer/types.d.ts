@@ -289,7 +289,8 @@ export type StateKey =
   | '_planResumeData'
   | '_lastPlanStatus'
   | '_planLastInjectedDone'
-  | 'toolModes';
+  | 'toolModes'
+  | 'planAutoConfirm';
 
 // ═══════════════════════════════════════════════════════════
 // Tool Calling 类型

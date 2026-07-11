@@ -32,6 +32,18 @@ function updateToolBadge(toolName: string, mode: ToolMode): void {
   badge.className = `tool-card-badge ${info.cls}`;
 }
 
+function updatePlanBadge(autoConfirm: boolean): void {
+  const badge = modalEl.querySelector('#badge_plan_track') as HTMLElement;
+  if (!badge) return;
+  if (autoConfirm) {
+    badge.textContent = '自动确认';
+    badge.className = 'tool-card-badge auto';
+  } else {
+    badge.textContent = '需确认';
+    badge.className = 'tool-card-badge confirm';
+  }
+}
+
 export function initToolsModal(): void {
   modalEl = document.querySelector('#toolsModal')!;
 
@@ -65,6 +77,22 @@ export function initToolsModal(): void {
       logInfo(`工具模式切换: ${toolName} → ${mode}`);
     });
   });
+
+  // Plan 确认模式下拉框
+  const planSelect = modalEl.querySelector<HTMLSelectElement>('#select_plan_confirm');
+  if (planSelect) {
+    planSelect.addEventListener('change', async () => {
+      const autoConfirm = planSelect.value === 'auto';
+      const db = state.get<ChatDB | null>(KEYS.DB);
+
+      state.set('planAutoConfirm', autoConfirm);
+      if (db) await db.saveSetting('planAutoConfirm', autoConfirm);
+      updatePlanBadge(autoConfirm);
+
+      showToast(`计划确认：${autoConfirm ? '自动确认' : '需确认'}`, 'info');
+      logInfo(`计划确认模式切换: → ${autoConfirm ? 'auto' : 'confirm'}`);
+    });
+  }
 }
 
 export function openToolsModal(): void {
@@ -78,6 +106,14 @@ export function openToolsModal(): void {
     selectEl.value = mode;
     updateToolBadge(toolName, mode);
   });
+
+  // 同步 Plan 确认模式下拉框
+  const planSelect = modalEl.querySelector<HTMLSelectElement>('#select_plan_confirm');
+  if (planSelect) {
+    const autoConfirm = state.get<boolean>('planAutoConfirm', false);
+    planSelect.value = autoConfirm ? 'auto' : 'confirm';
+    updatePlanBadge(autoConfirm);
+  }
 
   modalEl.style.display = '';
 }
