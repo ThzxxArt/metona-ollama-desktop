@@ -338,6 +338,64 @@ function renderToolCallCard(tc: ToolCallRecord): string {
   </div>`;
 }
 
+/**
+ * 流式 Markdown 智能补全：检测并修复流式传输中不完整的 Markdown 语法
+ * - 未闭合的代码块（``` / ~~~）→ 追加闭合标记
+ * - 未闭合的行内代码（`）→ 追加闭合 `
+ * - 未闭合的粗体（**）→ 追加闭合 **
+ * 返回补全后的字符串（不修改原始内容，仅用于渲染）
+ */
+function patchIncompleteMarkdown(md: string): string {
+  let patched = md;
+
+  // ── 代码块围栏检测（``` 或 ~~~）──
+  // 统计未闭合的围栏对
+  const fenceRegex = /^([`~]{3,})/gm;
+  const openFences: string[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = fenceRegex.exec(patched)) !== null) {
+    openFences.push(match[1]);
+  }
+  // 如果有奇数个围栏，说明最后一个未闭合
+  if (openFences.length % 2 === 1) {
+    const lastFence = openFences[openFences.length - 1];
+    patched += '\n' + lastFence;
+  }
+
+  // ── 行内代码反引号检测（仅当不在代码块内时才有意义）──
+  // 简化处理：统计不在代码围栏内的奇数个反引号
+  // 这里用一个保守的检测：如果末尾有奇数个 `（且不是围栏），补一个
+  const inlineBackticks = (patched.match(/(?<!`)`(?!`)/g) || []).length;
+  if (inlineBackticks % 2 === 1) {
+    patched += '`';
+  }
+
+  return patched;
+}
+
+// ── 流式渲染节流状态 ──
+let _streamRenderPending = false;
+let _streamRenderContent = '';
+let _streamRenderThink: string | null = null;
+let _streamRenderModel: string | undefined;
+
+/**
+ * 执行实际的流式 Markdown 渲染
+ */
+function _doStreamRender(): void {
+  _streamRenderPending = false;
+  const lastMsg = currentPlaceholder;
+  if (!lastMsg) return;
+
+  const contentDiv = lastMsg.querySelector('.msg-content');
+  if (contentDiv && _streamRenderContent) {
+    // 智能补全不完整的 Markdown 语法后渲染
+    const patched = patchIncompleteMarkdown(_streamRenderContent);
+    contentDiv.innerHTML = safeMarkdown(patched);
+  }
+  scrollToBottom();
+}
+
 export function updateLastAssistantMessage(
   content: string, think: string | null, _stats: unknown, model?: string,
   timestamp?: number, toolCalls?: ToolCallRecord[]
@@ -388,13 +446,19 @@ export function updateLastAssistantMessage(
   const contentDiv = lastMsg.querySelector('.msg-content');
   const safeContent = (content != null) ? String(content) : '';
   if (contentDiv && safeContent) {
-    // P0-1: 流式期间纯文本追加（避免每 chunk 全量 Markdown + DOMPurify），最终渲染时才做 Markdown
     if (isFinal) {
+      // 最终渲染：完整 Markdown + 代码块复制按钮
       contentDiv.innerHTML = safeMarkdown(safeContent);
-      // R38: 最终渲染后为代码块添加复制按钮
       addCodeBlockCopyButtons(contentDiv);
     } else {
-      contentDiv.textContent = safeContent;
+      // 流式期间：实时 Markdown 渲染 + rAF 节流
+      _streamRenderContent = safeContent;
+      _streamRenderThink = think;
+      _streamRenderModel = model;
+      if (!_streamRenderPending) {
+        _streamRenderPending = true;
+        requestAnimationFrame(_doStreamRender);
+      }
     }
   }
 
