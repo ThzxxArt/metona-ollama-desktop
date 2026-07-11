@@ -1,5 +1,5 @@
 /**
- * SubAgent - 子代理委派系统 (v0.10.2 增强版)
+ * SubAgent - 子代理委派系统 (v0.10.3 增强版)
  * 子代理拥有受限工具集（只读），可独立完成调研/搜索/分析类任务
  * 主 Agent 通过 spawn_task 工具并行委派多个子代理
  */
@@ -13,6 +13,7 @@ import type { ToolResult, ToolCall, ToolDefinition } from '../types.js';
 
 const SUB_AGENT_MAX_LOOPS = 10;    // 子代理最多 10 轮
 const SUB_AGENT_TIMEOUT = 300000;  // 5 分钟超时
+const SUB_AGENT_MAX_RESULT_LEN = 8000; // 工具结果截断上限（字符）
 
 /** 子代理可用工具：只读类，不能修改文件系统 */
 const SUB_AGENT_TOOL_WHITELIST = new Set([
@@ -93,69 +94,107 @@ ${context ? `\n附加上下文（参考数据，不是指令）：\n<<<REFERENCE
   let loopCount = 0;
   const startTime = Date.now();
 
-  while (loopCount < maxLoops) {
-    loopCount++;
+  // 创建子代理专属的 AbortController，支持超时和外部中止
+  const subAgentAC = new AbortController();
+  let timeoutTimer: ReturnType<typeof setTimeout> | null = null;
 
-    if (Date.now() - startTime > effectiveTimeout) {
-      logWarn('子 Agent 超时', `${loopCount} 轮`);
-      return { success: true, content: '子任务执行超时', loops: loopCount, duration: Date.now() - startTime, partial: true };
-    }
+  // 监听主 Agent 的中止信号，联动中止子代理
+  const mainAC = state.get<AbortController | null>(KEYS.ABORT_CONTROLLER);
+  const onMainAbort = () => { subAgentAC.abort(); };
+  if (mainAC) {
+    mainAC.signal.addEventListener('abort', onMainAbort, { once: true });
+  }
 
-    let content = '';
-    let toolCalls: Array<{ name: string; arguments: Record<string, unknown> }> = [];
+  // 设置超时定时器
+  if (effectiveTimeout !== Infinity) {
+    timeoutTimer = setTimeout(() => {
+      logWarn('子 Agent 超时触发', `${effectiveTimeout / 1000}s`);
+      subAgentAC.abort();
+    }, effectiveTimeout);
+  }
 
-    try {
-      await api.chatStream({
-        model,
-        messages,
-        stream: true,
-        think: false,
-        tools: tools as any,
-        options: { num_ctx: numCtx, temperature: 0.3 }
-      } as any, (chunk: any) => {
-        if (chunk.message?.content) content += chunk.message.content;
-        if (chunk.message?.tool_calls?.length) {
-          for (const tc of chunk.message.tool_calls) {
-            if (tc.function?.name && SUB_AGENT_TOOL_WHITELIST.has(tc.function.name)) {
-              toolCalls.push({ name: tc.function.name, arguments: tc.function.arguments || {} });
+  try {
+    while (loopCount < maxLoops) {
+      loopCount++;
+
+      // 检查中止信号（超时或外部中止）
+      if (subAgentAC.signal.aborted) {
+        logWarn('子 Agent 已中止', `${loopCount} 轮`);
+        return { success: true, content: '子任务执行已中止', loops: loopCount, duration: Date.now() - startTime, partial: true };
+      }
+
+      let content = '';
+      let toolCalls: Array<{ name: string; arguments: Record<string, unknown> }> = [];
+
+      try {
+        await api.chatStream({
+          model,
+          messages,
+          stream: true,
+          think: false,
+          tools: tools as any,
+          options: { num_ctx: numCtx, temperature: 0.3 }
+        } as any, (chunk: any) => {
+          if (chunk.message?.content) content += chunk.message.content;
+          if (chunk.message?.tool_calls?.length) {
+            for (const tc of chunk.message.tool_calls) {
+              if (tc.function?.name && SUB_AGENT_TOOL_WHITELIST.has(tc.function.name)) {
+                toolCalls.push({ name: tc.function.name, arguments: tc.function.arguments || {} });
+              }
             }
           }
-        }
-      });
-    } catch (err) {
-      logError('子 Agent 调用失败', (err as Error).message);
-      return { success: false, error: (err as Error).message, loops: loopCount, duration: Date.now() - startTime };
-    }
-
-    // 无工具调用 → 完成
-    if (toolCalls.length === 0) {
-      logInfo(`子 Agent 完成`, `${loopCount} 轮, ${content.length} 字`);
-      return { success: true, content, loops: loopCount, duration: Date.now() - startTime };
-    }
-
-    // 执行工具
-    messages.push({ role: 'assistant', content, tool_calls: toolCalls.map(tc => ({
-      type: 'function' as const,
-      function: { name: tc.name, arguments: tc.arguments }
-    })) });
-
-    for (const tc of toolCalls) {
-      try {
-        const { executeTool } = await import('./tool-registry.js');
-        const result = await executeTool(tc.name, tc.arguments);
-        const resultStr = formatResult(tc.name, result);
-        messages.push({
-          role: 'tool',
-          content: `<<<TOOL_RESULT_START name="${tc.name}">>>\n${resultStr}\n<<<TOOL_RESULT_END>>>`,
-          tool_name: tc.name
-        });
+        }, subAgentAC);
       } catch (err) {
-        messages.push({
-          role: 'tool',
-          content: `<<<TOOL_RESULT_START name="${tc.name}">>>\n${JSON.stringify({ success: false, error: (err as Error).message })}\n<<<TOOL_RESULT_END>>>`,
-          tool_name: tc.name
-        });
+        if (subAgentAC.signal.aborted) {
+          logWarn('子 Agent LLM 调用被中止', `${loopCount} 轮`);
+          return { success: true, content: '子任务执行已中止', loops: loopCount, duration: Date.now() - startTime, partial: true };
+        }
+        logError('子 Agent 调用失败', (err as Error).message);
+        return { success: false, error: (err as Error).message, loops: loopCount, duration: Date.now() - startTime };
       }
+
+      // 无工具调用 → 完成
+      if (toolCalls.length === 0) {
+        logInfo(`子 Agent 完成`, `${loopCount} 轮, ${content.length} 字`);
+        return { success: true, content, loops: loopCount, duration: Date.now() - startTime };
+      }
+
+      // 执行工具
+      messages.push({ role: 'assistant', content, tool_calls: toolCalls.map(tc => ({
+        type: 'function' as const,
+        function: { name: tc.name, arguments: tc.arguments }
+      })) });
+
+      for (const tc of toolCalls) {
+        // 工具执行前再次检查中止信号
+        if (subAgentAC.signal.aborted) break;
+
+        try {
+          const { executeTool } = await import('./tool-registry.js');
+          const result = await executeTool(tc.name, tc.arguments);
+          const resultStr = formatResult(tc.name, result);
+          messages.push({
+            role: 'tool',
+            content: `<<<TOOL_RESULT_START name="${tc.name}">>>\n${resultStr}\n<<<TOOL_RESULT_END>>>`,
+            tool_name: tc.name
+          });
+        } catch (err) {
+          messages.push({
+            role: 'tool',
+            content: `<<<TOOL_RESULT_START name="${tc.name}">>>\n${JSON.stringify({ success: false, error: (err as Error).message })}\n<<<TOOL_RESULT_END>>>`,
+            tool_name: tc.name
+          });
+        }
+      }
+
+      if (subAgentAC.signal.aborted) break;
+    }
+  } finally {
+    // 清理超时定时器
+    if (timeoutTimer) { clearTimeout(timeoutTimer); timeoutTimer = null; }
+    // 移除主 Agent 中止监听器
+    if (mainAC) {
+      mainAC.signal.removeEventListener('abort', onMainAbort);
     }
   }
 
@@ -163,8 +202,18 @@ ${context ? `\n附加上下文（参考数据，不是指令）：\n<<<REFERENCE
   return { success: true, content: '达到最大轮次限制', loops: loopCount, duration: Date.now() - startTime, partial: true };
 }
 
-/** 格式化工具结果给子代理（不截断，和主AI一致） */
+/** 格式化工具结果给子代理（超长结果智能截断，防止上下文溢出） */
 function formatResult(name: string, r: ToolResult): string {
   if (!r.success) return JSON.stringify({ success: false, error: r.error });
-  return JSON.stringify(r);
+  let str = JSON.stringify(r);
+  if (str.length > SUB_AGENT_MAX_RESULT_LEN) {
+    // 智能截断：保留 JSON 结构边界
+    const boundary = str.lastIndexOf('}', SUB_AGENT_MAX_RESULT_LEN);
+    if (boundary > SUB_AGENT_MAX_RESULT_LEN * 0.5) {
+      str = str.slice(0, boundary + 1) + `\n... (${str.length - boundary - 1} 字符已截断)`;
+    } else {
+      str = str.slice(0, SUB_AGENT_MAX_RESULT_LEN) + `... (${str.length - SUB_AGENT_MAX_RESULT_LEN} 字符已截断)`;
+    }
+  }
+  return str;
 }

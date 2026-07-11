@@ -20,6 +20,8 @@ export interface LogEntry {
 let logBodyEl: HTMLElement | null = null;
 let logPanelEl: HTMLElement | null = null;
 const MAX_LOGS = 500;
+// R46: 日志轮转 — 旧日志自动清理
+const LOG_MAX_AGE_MS = 3600000; // 1 小时
 let logs: LogEntry[] = [];
 let autoScroll = true;
 let idCounter = 0;
@@ -28,6 +30,26 @@ const pendingEntries: LogEntry[] = [];
 let panelInitialized = false;
 /** initLogPanel 前的日志暂存区 */
 const earlyBuffer: LogEntry[] = [];
+
+// R46: 定期清理旧日志
+let _logCleanupTimer: ReturnType<typeof setInterval> | null = null;
+function startLogRotation(): void {
+  if (_logCleanupTimer) clearInterval(_logCleanupTimer);
+  _logCleanupTimer = setInterval(() => {
+    const now = Date.now();
+    const before = logs.length;
+    const oldLogs = logs.filter(l => now - l.time >= LOG_MAX_AGE_MS);
+    logs = logs.filter(l => now - l.time < LOG_MAX_AGE_MS);
+    const removed = before - logs.length;
+    if (removed > 0 && logBodyEl) {
+      // 从 DOM 中移除旧日志条目
+      for (const old of oldLogs) {
+        const el = logBodyEl.querySelector(`#${old.id}`);
+        if (el) el.remove();
+      }
+    }
+  }, 60000); // 每分钟检查一次
+}
 
 const LEVEL_ICONS: Record<LogLevel, string> = {
   info: 'ℹ️',
@@ -56,6 +78,8 @@ export function initLogPanel(): void {
     document.querySelector('#btnExportLog')?.addEventListener('click', exportLog);
 
     panelInitialized = true;
+    // R46: 启动日志轮转
+    startLogRotation();
     if (earlyBuffer.length > 0 && logBodyEl) {
       const frag = document.createDocumentFragment();
       for (const entry of earlyBuffer) {

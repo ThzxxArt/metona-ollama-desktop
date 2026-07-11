@@ -4180,3 +4180,50 @@ html, body {
     margin-top: 4px;
     font-weight: 500;
 }
+
+/* ═══ R31-R40: UI/UX 增强 ═══ */
+
+/* R38: 代码块复制按钮 */
+.code-copy-btn {
+    font-family: inherit;
+    color: var(--text-secondary);
+    transition: opacity 0.2s, background 0.2s;
+}
+.code-copy-btn:hover {
+    background: var(--bg-tertiary, rgba(128, 128, 128, 0.15)) !important;
+    color: var(--text-primary);
+}
+
+/* R40: 消息操作按钮 */
+.msg-actions {
+    z-index: 5;
+}
+.msg-action-btn {
+    font-family: inherit;
+    color: var(--text-secondary);
+    transition: background 0.2s, transform 0.1s;
+}
+.msg-action-btn:hover {
+    background: var(--bg-tertiary, rgba(128, 128, 128, 0.2)) !important;
+    transform: scale(1.1);
+}
+.msg-action-btn:active {
+    transform: scale(0.95);
+}
+
+/* R31: 消息截断提示 */
+.msg-truncated-notice {
+    border-top: 1px dashed var(--border-color);
+    border-bottom: 1px dashed var(--border-color);
+    margin: 8px 0;
+    background: var(--bg-secondary, rgba(128, 128, 128, 0.05));
+}
+
+/* R34: 加载提示文本动画 */
+.loading-text {
+    display: inline-block;
+    margin-left: 8px;
+    color: var(--text-muted);
+    font-size: 13px;
+    transition: opacity 0.3s;
+}

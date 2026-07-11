@@ -90,6 +90,40 @@ export function initInputArea(): void {
     }
   });
 
+  // R39: 全局键盘快捷键
+  document.addEventListener('keydown', (e) => {
+    // Ctrl+K: 清空聊天（需要确认）
+    if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+      e.preventDefault();
+      if (confirm('确定要清空当前对话吗？')) {
+        clearMessages();
+      }
+    }
+    // Escape: 停止生成（当正在流式输出时）
+    if (e.key === 'Escape' && state.get<boolean>(KEYS.IS_STREAMING)) {
+      e.preventDefault();
+      stopGeneration();
+    }
+    // Ctrl+/: 聚焦输入框
+    if ((e.ctrlKey || e.metaKey) && e.key === '/') {
+      e.preventDefault();
+      chatInputEl.focus();
+    }
+    // Ctrl+Shift+C: 复制最后一条 AI 消息
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'C') {
+      e.preventDefault();
+      const session = state.get<ChatSession | null>(KEYS.CURRENT_SESSION);
+      if (session && session.messages.length > 0) {
+        const lastAssistant = [...session.messages].reverse().find(m => m.role === 'assistant' && m.content);
+        if (lastAssistant) {
+          navigator.clipboard.writeText(lastAssistant.content).then(() => {
+            showToast('已复制最后一条 AI 回复', 'success');
+          }).catch(() => {});
+        }
+      }
+    }
+  });
+
   chatInputEl.addEventListener('input', autoResizeTextarea);
 
   // ── 图片上传：原生文件对话框 ──

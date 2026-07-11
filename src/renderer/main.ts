@@ -28,6 +28,7 @@ import { initToolConfirmModal } from './components/tool-confirm-modal.js';
 import { initWorkspacePanel, clearToolCardsExternal, clearTerminalExternal, switchToTab } from './components/workspace-panel.js';
 import { initLogPanel, addLog } from './services/log-service.js';
 import { logInfo, logSuccess, logError, logDebug, logInit, logWarn } from './services/log-service.js';
+import { initGlobalErrorHandler, validateConfig } from './services/infra-service.js';
 import { initSearxngModal, closeSearxngModal, loadSearxngConfig } from './components/searxng-modal.js';
 import { initHarnessHooks } from './services/hooks.js';
 import { setAppVersion } from './services/agent-metrics.js';
@@ -319,6 +320,7 @@ async function init(): Promise<void> {
     state.set('thinkEnabled', false);
 
     initLogPanel();  // ← 日志面板最先初始化，确保后续 init 日志能显示
+    initGlobalErrorHandler();  // R42: 全局错误处理器（紧随日志面板之后）
     initToast();
     initLightbox();
     initHeader();

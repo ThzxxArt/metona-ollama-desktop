@@ -41,6 +41,7 @@ import type {
 const MAX_RETRIES = 2;              // 工具错误自动重试次数
 const MAX_MESSAGES = 300;           // 上下文硬上限，超过则强制压缩
 const API_MAX_RETRIES = 2;          // Ollama API 调用失败重试次数
+const MAX_PARALLEL_TOOLS = 5;       // R6: 单批次最大并行工具数
 
 /**
  * 计算增量压缩触发阈值（按 token 数而非消息条数）
@@ -139,6 +140,85 @@ const SIDE_EFFECT_TOOLS = new Set([
   'browser_open', 'browser_click', 'browser_type', 'browser_close',
 ]);
 
+/**
+ * R3: 工具执行超时配置（毫秒）
+ * 防止单个工具调用挂起导致整个 Agent Loop 卡死
+ * 0 = 不限制（仅依赖全局 AbortController）
+ */
+const TOOL_TIMEOUT_MAP: Record<string, number> = {
+  read_file: 30_000,          // 读取文件 30s
+  write_file: 15_000,         // 写入文件 15s
+  edit_file: 15_000,          // 编辑文件 15s
+  list_directory: 10_000,     // 列目录 10s
+  search_files: 60_000,       // 搜索文件 60s
+  create_directory: 5_000,    // 创建目录 5s
+  delete_file: 10_000,        // 删除文件 10s
+  move_file: 15_000,          // 移动文件 15s
+  copy_file: 30_000,          // 复制文件 30s（可能大文件）
+  get_file_info: 5_000,       // 获取文件信息 5s
+  tree: 15_000,               // 目录树 15s
+  diff_files: 15_000,         // 文件差异 15s
+  replace_in_files: 30_000,   // 批量替换 30s
+  read_multiple_files: 60_000,// 批量读取 60s
+  web_search: 30_000,         // 网页搜索 30s
+  web_fetch: 60_000,          // 网页抓取 60s
+  download_file: 120_000,     // 下载文件 120s
+  git: 30_000,                // Git 操作 30s
+  compress: 60_000,           // 压缩 60s
+  memory: 5_000,              // 记忆操作 5s
+  session_list: 5_000,        // 会话列表 5s
+  session_read: 10_000,       // 会话读取 10s
+  datetime: 1_000,            // 时间查询 1s
+  calculator: 3_000,          // 计算器 3s
+  random: 1_000,              // 随机数 1s
+  uuid: 1_000,                // UUID 1s
+  json_format: 3_000,         // JSON 格式化 3s
+  hash: 3_000,                // 哈希计算 3s
+  default: 60_000,            // 默认 60s
+};
+
+/** R3: 带超时的工具执行包装器 */
+async function executeToolWithTimeout(
+  toolName: string,
+  args: Record<string, unknown>,
+  abortSignal?: AbortSignal,
+): Promise<ToolResult> {
+  const timeoutMs = TOOL_TIMEOUT_MAP[toolName] ?? TOOL_TIMEOUT_MAP.default;
+  if (timeoutMs <= 0) {
+    return executeTool(toolName, args);
+  }
+
+  const timeoutAC = new AbortController();
+  const timer = setTimeout(() => {
+    timeoutAC.abort(new Error(`工具 ${toolName} 执行超时 (${timeoutMs / 1000}s)`));
+  }, timeoutMs);
+
+  // 如果外部 abort 触发，也中止工具
+  const onExternalAbort = () => { timeoutAC.abort(); };
+  if (abortSignal) {
+    if (abortSignal.aborted) {
+      clearTimeout(timer);
+      return { success: false, error: '用户中止' };
+    }
+    abortSignal.addEventListener('abort', onExternalAbort, { once: true });
+  }
+
+  try {
+    const result = await executeTool(toolName, args);
+    return result;
+  } catch (err) {
+    if (timeoutAC.signal.aborted && !abortSignal?.aborted) {
+      return { success: false, error: `工具 ${toolName} 执行超时 (${timeoutMs / 1000}s)，请尝试拆分任务或优化参数` };
+    }
+    return { success: false, error: (err as Error)?.message || String(err) };
+  } finally {
+    clearTimeout(timer);
+    if (abortSignal) {
+      abortSignal.removeEventListener('abort', onExternalAbort);
+    }
+  }
+}
+
 /** D2/D3: 只读工具白名单 — 允许同参数重复调用（验证场景：写文件后重读、git status、run_command 监控等） */
 const RE_READ_ALLOWED = new Set([
   'read_file', 'list_directory', 'search_files', 'get_file_info', 'tree',
@@ -146,18 +226,60 @@ const RE_READ_ALLOWED = new Set([
   'browser_screenshot', 'browser_extract', 'run_command',
 ]);
 
-/** P0-2: 检测工具调用之间是否存在路径依赖（写入 → 读取/写入同一路径） */
+/** P0-2: 检测工具调用之间是否存在路径依赖（写入 → 读取/写入同一路径）
+ * R27: 增强 — 也检测读-写依赖（读取刚写入的文件需要串行化）
+ */
 function hasPathDependency(call: ToolCall, prevBatch: ToolCall[]): boolean {
-  const callPath = extractWritePath(call);
-  if (!callPath) return false; // 非写操作，无依赖
+  const callWritePath = extractWritePath(call);
+  const callReadPath = extractReadPath(call);
+
   for (const prev of prevBatch) {
-    const prevPath = extractAffectedPath(prev);
-    if (prevPath && pathsConflict(callPath, prevPath)) {
-      logInfo(`串行化: ${prev.function.name}(${prevPath}) → ${call.function.name}(${callPath})`);
+    const prevWritePath = extractWritePath(prev);
+    const prevAffectedPath = extractAffectedPath(prev);
+
+    // 写 → 写：同路径冲突
+    if (callWritePath && prevWritePath && pathsConflict(callWritePath, prevWritePath)) {
+      logInfo(`R27: 串行化(写-写): ${prev.function.name}(${prevWritePath}) → ${call.function.name}(${callWritePath})`);
       return true;
+    }
+
+    // R27: 读 → 写：读取刚被修改的路径（需要等待写入完成）
+    if (callWritePath && prevAffectedPath && pathsConflict(callWritePath, prevAffectedPath)) {
+      logInfo(`R27: 串行化(读-写): ${prev.function.name}(${prevAffectedPath}) → ${call.function.name}(${callWritePath})`);
+      return true;
+    }
+
+    // R27: 写 → 读：写入后立即读取同一路径（需要串行化）
+    if (callReadPath && prevWritePath && pathsConflict(callReadPath, prevWritePath)) {
+      logInfo(`R27: 串行化(写-读): ${prev.function.name}(${prevWritePath}) → ${call.function.name}(${callReadPath})`);
+      return true;
+    }
+
+    // R27: run_command 路径依赖 — 如果命令 cwd 指向被修改的路径
+    if (call.function.name === 'run_command' && prevWritePath) {
+      const cmdCwd = String(call.function.arguments?.cwd || '');
+      if (cmdCwd && pathsConflict(cmdCwd, prevWritePath)) {
+        logInfo(`R27: 串行化(命令依赖): ${prev.function.name}(${prevWritePath}) → run_command(${cmdCwd})`);
+        return true;
+      }
     }
   }
   return false;
+}
+
+/** R27: 提取工具的读取路径（纯读操作，非写操作） */
+function extractReadPath(call: ToolCall): string | null {
+  const args = call.function.arguments;
+  switch (call.function.name) {
+    case 'read_file': return String(args.path || '');
+    case 'list_directory': return String(args.path || '');
+    case 'search_files': return String(args.path || '');
+    case 'get_file_info': return String(args.path || '');
+    case 'tree': return String(args.path || '');
+    case 'diff_files': return String(args.file1 || args.file2 || '');
+    case 'read_multiple_files': return null; // 多文件，难以精确判断
+    default: return null;
+  }
 }
 
 /** 提取工具写入的目标路径（会修改文件系统的操作） */
@@ -407,10 +529,42 @@ function parseToolCallsFromText(content: string): ToolCall[] {
   }
 
   // ── 格式4: 函数调用语法 func_name({"key": "value"}) ──
-  // 匹配 read_file({"path": "xxx"})
-  const funcCallRegex = /\b(\w+)\s*\(\s*(\{[^}]*\})\s*\)/g;
-  while ((match = funcCallRegex.exec(content)) !== null) {
-    tryAddCall(match[1], match[2]);
+  // R5: 修复嵌套大括号问题 — 使用平衡括号匹配替代 [^}]*
+  // 旧正则 /\b(\w+)\s*\(\s*(\{[^}]*\})\s*\)/g 无法匹配嵌套 JSON 如 {"a": {"b": 1}}
+  {
+    const funcCallStart = /\b(\w+)\s*\(\s*\{/g;
+    let fcMatch;
+    while ((fcMatch = funcCallStart.exec(content)) !== null) {
+      const toolName = fcMatch[1];
+      const braceStart = fcMatch.index + fcMatch[0].length - 1; // 指向 '{'
+      // 手动平衡匹配大括号
+      let depth = 0;
+      let endIdx = -1;
+      let inString = false;
+      let escapeNext = false;
+      for (let i = braceStart; i < content.length; i++) {
+        const ch = content[i];
+        if (escapeNext) { escapeNext = false; continue; }
+        if (ch === '\\') { escapeNext = true; continue; }
+        if (ch === '"') { inString = !inString; continue; }
+        if (inString) continue;
+        if (ch === '{') depth++;
+        else if (ch === '}') {
+          depth--;
+          if (depth === 0) { endIdx = i; break; }
+        }
+      }
+      if (endIdx > 0) {
+        const jsonStr = content.slice(braceStart, endIdx + 1);
+        // 检查后面是否有闭合括号
+        const afterClose = content.slice(endIdx + 1).match(/^\s*\)/);
+        if (afterClose) {
+          tryAddCall(toolName, jsonStr);
+          // 移动 regex 位置到匹配结束后
+          funcCallStart.lastIndex = endIdx + 1;
+        }
+      }
+    }
   }
 
   if (calls.length > 0) {
@@ -420,7 +574,41 @@ function parseToolCallsFromText(content: string): ToolCall[] {
   return calls;
 }
 
+/** R1: 工具缓存最大条目数，超出时按 LRU 策略淘汰最旧条目 */
+const MAX_TOOL_CACHE_SIZE = 100;
 const toolResultCache = new Map<string, { result: ToolResult; timestamp: number }>();
+
+/**
+ * R1: 向工具缓存写入条目，超出上限时按 LRU 策略淘汰最旧条目。
+ * Map 在 JS 中保持插入顺序，删除+重新插入即实现 LRU 更新。
+ */
+function setToolCache(key: string, entry: { result: ToolResult; timestamp: number }): void {
+  // 如果已存在，先删除以便重新插入到末尾（LRU 更新）
+  if (toolResultCache.has(key)) {
+    toolResultCache.delete(key);
+  }
+  toolResultCache.set(key, entry);
+  // 超出上限时淘汰最旧条目（Map 迭代顺序 = 插入顺序）
+  if (toolResultCache.size > MAX_TOOL_CACHE_SIZE) {
+    const oldestKey = toolResultCache.keys().next().value;
+    if (oldestKey !== undefined) {
+      toolResultCache.delete(oldestKey);
+    }
+  }
+}
+
+/**
+ * R1: 从工具缓存读取条目，命中时将其移到末尾（LRU 更新）。
+ */
+function getToolCache(key: string): { result: ToolResult; timestamp: number } | undefined {
+  const entry = toolResultCache.get(key);
+  if (entry) {
+    // 命中时移到末尾，标记为最近使用
+    toolResultCache.delete(key);
+    toolResultCache.set(key, entry);
+  }
+  return entry;
+}
 
 /** 工具缓存 TTL（毫秒），按工具类型设定。P1-6: default 从 Infinity 改为 60s */
 const CACHE_TTL_MAP: Record<string, number> = {
@@ -665,7 +853,11 @@ async function flushTraces(): Promise<void> {
   if (_traceBuffer.length === 0) return;
   const batch = _traceBuffer.splice(0, _traceBuffer.length);
   const bridge = window.metonaDesktop;
-  if (!bridge?.db) return;
+  if (!bridge?.db) {
+    // R9: 无 DB 桥接时，降级到 localStorage
+    _fallbackSaveTraces(batch);
+    return;
+  }
 
   for (const trace of batch) {
     const entry = {
@@ -680,10 +872,12 @@ async function flushTraces(): Promise<void> {
       error_pattern: trace.errorPattern || null,
       created_at: trace.createdAt
     };
+    let saved = false;
     // 重试最多 TRACE_MAX_RETRIES 次
     for (let attempt = 0; attempt < TRACE_MAX_RETRIES; attempt++) {
       try {
         await bridge.db.saveTrace(entry);
+        saved = true;
         break;
       } catch {
         if (attempt < TRACE_MAX_RETRIES - 1) {
@@ -691,6 +885,28 @@ async function flushTraces(): Promise<void> {
         }
       }
     }
+    // R9: 所有重试都失败时，降级到 localStorage
+    if (!saved) {
+      _fallbackSaveTraces([trace]);
+    }
+  }
+}
+
+/** R9: 轨迹降级存储 — 当 SQLite 写入失败时，将轨迹保存到 localStorage */
+const TRACE_FALLBACK_KEY = '_metona_trace_fallback';
+const TRACE_FALLBACK_MAX = 200; // 最多保留 200 条降级轨迹
+
+function _fallbackSaveTraces(traces: Array<Record<string, any>>): void {
+  try {
+    const existing = JSON.parse(localStorage.getItem(TRACE_FALLBACK_KEY) || '[]');
+    const combined = [...existing, ...traces].slice(-TRACE_FALLBACK_MAX);
+    localStorage.setItem(TRACE_FALLBACK_KEY, JSON.stringify(combined));
+    if (traces.length > 0) {
+      logWarn(`R9: ${traces.length} 条轨迹降级到 localStorage（共 ${combined.length} 条）`);
+    }
+  } catch {
+    // localStorage 也失败时，仅记录日志
+    logWarn(`R9: 轨迹降级存储也失败，${traces.length} 条轨迹丢失`);
   }
 }
 
@@ -778,10 +994,6 @@ function persistLoopContext(ctx: LoopContext): void {
   });
 }
 
-/** 从 state 恢复 LoopContext（暂未实现完整恢复，预留接口） */
-function restoreLoopContext(_sessionId: string): Partial<LoopContext> | null {
-  return state.get<Partial<LoopContext> | null>('_loopContext', null);
-}
 
 // ═══════════════════════════════════════════════════════════════
 // Harness: 状态处理器
@@ -981,15 +1193,13 @@ async function handleInit(
 
   // 上下文窗口管理：滑动窗口 + 摘要压缩 + token 裁剪
   // 钳制：取 min(模型支持值, 用户设置值)，防止手动设置超过模型能力
-  const numCtx = getEffectiveNumCtx();
-  const contextResult = buildContext(ctx.messages, { maxTokens: numCtx, windowSize: 20 });
+  const effectiveNumCtx = getEffectiveNumCtx();
+  const contextResult = buildContext(ctx.messages, { maxTokens: effectiveNumCtx, windowSize: 20 });
   ctx.messages.length = 0;
   ctx.messages.push(...contextResult);
 
-  // 钳制：取 min(模型支持值, 用户设置值)
-  const effectiveNumCtx = getEffectiveNumCtx();
   if (shouldAutoCompress(ctx.messages, effectiveNumCtx)) {
-    logInfo(`自动上下文压缩触发: tokens≈${estimateTokens(ctx.messages.map(m => m.content || '').join(''))} > ${Math.floor(effectiveNumCtx * AUTO_COMPRESS_THRESHOLD)} (50% of ${effectiveNumCtx})`);
+    logInfo(`自动上下文压缩触发: tokens≈${estimateTokens(ctx.messages.map(m => m.content || '').join(''))} > ${Math.floor(effectiveNumCtx * AUTO_COMPRESS_THRESHOLD)} (${Math.round(AUTO_COMPRESS_THRESHOLD * 100)}% of ${effectiveNumCtx})`);
     const compressAC = state.get<AbortController | null>(KEYS.ABORT_CONTROLLER) || new AbortController();
     try {
       const compressed = await compressWithLLM(ctx.messages, api as any, model, { abortController: compressAC });
@@ -1290,10 +1500,18 @@ async function handleThinking(
   // ── API 调用重试循环 — 瞬态错误时指数退避重试，不轻易终止 Agent Loop ──
   let apiRetrySuccess = false;
   let apiLastErr: Error | null = null;
+  // R4: 保留最佳部分内容 — 重试前保存最长的 partial content，全部失败时作为 fallback
+  let _bestPartialContent = '';
+  let _bestPartialThinking = '';
 
   for (let apiAttempt = 0; apiAttempt <= API_MAX_RETRIES; apiAttempt++) {
-    // 每次重试前重置本轮状态（保留之前累积的 content/thinking 不丢弃）
+    // 每次重试前重置本轮状态
     if (apiAttempt > 0) {
+      // R4: 保存本次尝试的部分内容（取最长的）
+      if (ctx.content.length > _bestPartialContent.length) {
+        _bestPartialContent = ctx.content;
+        _bestPartialThinking = ctx.thinking;
+      }
       ctx.content = '';
       ctx.thinking = '';
       ctx.toolCalls.length = 0;
@@ -1424,6 +1642,27 @@ async function handleThinking(
 
       apiLastErr = err as Error;
 
+      // R8: 检测 Ollama 上下文溢出错误 — 自动压缩并重试
+      const errMsg = apiLastErr.message || '';
+      const isContextOverflow = /context.*length|prompt.*too.*long|context.*window|maximum.*context|num_ctx|上下文.*超/i.test(errMsg);
+      if (isContextOverflow && ctx.messages.length > 10) {
+        logWarn(`R8: 检测到上下文溢出错误，触发紧急压缩`, errMsg.slice(0, 100));
+        try {
+          const compressAC = new AbortController();
+          const compressed = await compressWithLLM(ctx.messages, api as any, model, { abortController: compressAC });
+          if (compressed.length < ctx.messages.length) {
+            ctx.messages.length = 0;
+            ctx.messages.push(...compressed);
+            logSuccess(`R8: 紧急压缩完成，剩余 ${ctx.messages.length} 条消息`);
+            // 压缩后直接重试，不消耗重试计数
+            apiAttempt--;
+            continue;
+          }
+        } catch (compressErr) {
+          logWarn('R8: 紧急压缩失败', (compressErr as Error).message);
+        }
+      }
+
       if (apiAttempt < API_MAX_RETRIES) {
         logWarn(`流式调用异常 (尝试 ${apiAttempt + 1}/${API_MAX_RETRIES + 1})`, apiLastErr.message);
         continue;
@@ -1437,6 +1676,12 @@ async function handleThinking(
   // 所有重试都失败
   if (!apiRetrySuccess) {
     logError('流式调用异常（已达最大重试）', apiLastErr?.message || '未知错误');
+    // R4: 使用最佳部分内容作为 fallback（如果当前内容为空但之前有部分内容）
+    if (!ctx.content && _bestPartialContent) {
+      ctx.content = _bestPartialContent;
+      ctx.thinking = _bestPartialThinking || ctx.thinking;
+      logInfo(`R4: 使用最佳部分内容 (${_bestPartialContent.length} 字) 作为回退`);
+    }
     if (ctx.content || ctx.thinking) {
       ctx.messages.push({ role: 'assistant', content: ctx.content || '（模型响应异常）', ...(ctx.thinking && { thinking: ctx.thinking }) });
     }
@@ -1576,7 +1821,7 @@ async function handleExecuting(
       // D4: 有副作用的工具不返回缓存，需实际执行（如 write_file、run_command）
       if (!SIDE_EFFECT_TOOLS.has(call.function.name)) {
         logWarn(`跳过重复工具调用: ${call.function.name}`);
-        const cached = toolResultCache.get(cacheKey);
+        const cached = getToolCache(cacheKey);
         if (cached) {
           return [{
             name: call.function.name, arguments: call.function.arguments,
@@ -1588,7 +1833,7 @@ async function handleExecuting(
       }
     }
 
-    const cachedEntry = toolResultCache.get(cacheKey);
+    const cachedEntry = getToolCache(cacheKey);
     if (cachedEntry && isCacheValid(call.function.name, cachedEntry.timestamp)) {
       logInfo(`工具缓存命中: ${call.function.name}`);
       return [{
@@ -1596,7 +1841,7 @@ async function handleExecuting(
         result: cachedEntry.result, status: 'success' as const, timestamp: Date.now()
       }, null];
     }
-    if (cachedEntry) {
+    if (cachedEntry && !isCacheValid(call.function.name, cachedEntry.timestamp)) {
       toolResultCache.delete(cacheKey);
     }
 
@@ -1623,8 +1868,8 @@ async function handleExecuting(
       logWarn(`pre_tool Hook 阻断: ${call.function.name}`, reasons);
       return [{
         name: call.function.name, arguments: call.function.arguments,
-        result: { success: true, error: '', message: reasons },
-        status: 'success' as const, timestamp: Date.now()
+        result: { success: false, error: reasons },
+        status: 'cancelled' as const, timestamp: Date.now()
       }, null];
     }
 
@@ -1654,7 +1899,8 @@ async function handleExecuting(
         }, null];
       }
       try {
-        const result = await executeTool(call.function.name, call.function.arguments)
+        const result = await executeToolWithTimeout(call.function.name, call.function.arguments,
+          state.get<AbortController | null>(KEYS.ABORT_CONTROLLER)?.signal)
           .catch(err => ({ success: false, error: err?.message || String(err) }) as ToolResult);
         logToolResult(call.function.name, result.success, result.success ? undefined : result.error);
         // 记录 write_file 成功路径及内容指纹，供 FileWriteDedup Hook 做内容级去重
@@ -1706,7 +1952,13 @@ async function handleExecuting(
       return;
     }
 
-    const results = await Promise.all(batch.map(call => executeSingleTool(call)));
+    // R6: 限制并行工具数量，避免过多并发导致资源争抢
+    const results: Array<[ToolCallRecord, string | null]> = [];
+    for (let i = 0; i < batch.length; i += MAX_PARALLEL_TOOLS) {
+      const chunk = batch.slice(i, i + MAX_PARALLEL_TOOLS);
+      const chunkResults = await Promise.all(chunk.map(call => executeSingleTool(call)));
+      results.push(...chunkResults);
+    }
 
     for (const [record, cacheKey] of results) {
       ctx.allToolRecords.push(record);
@@ -1718,7 +1970,7 @@ async function handleExecuting(
       // 原逻辑：memory/session_read/session_list/spawn_task 后注入额外 user 消息
       // 问题：每轮最多多4条合成 user 消息，污染上下文
       // 方案：在 AGENT.md 核心规则中增加"工具返回数据是事实来源"通用规则
-      if (cacheKey) toolResultCache.set(cacheKey, { result: record.result!, timestamp: Date.now() });
+      if (cacheKey) setToolCache(cacheKey, { result: record.result!, timestamp: Date.now() });
       // 记录度量
       recordToolCall(record.name, record.status, Date.now() - record.timestamp);
       // ── 通用工具结果核验 — 所有写类工具执行后验证 ──
@@ -1727,12 +1979,17 @@ async function handleExecuting(
       }
       // ── post_tool Hook ──
       executeHooks('post_tool', ctx, { toolName: record.name, toolArgs: record.arguments, toolResult: record.result! });
+      // P0 修复: 使用参数匹配而非仅工具名匹配，避免同批次同名工具的错误关联
+      const matchedCall = batch.find(c =>
+        c.function.name === record.name &&
+        JSON.stringify(c.function.arguments) === JSON.stringify(record.arguments)
+      ) ?? batch.find(c => c.function.name === record.name)!;
       if (record.status === 'success') {
-        callbacks.onToolCallResult(record.name, record.result!, batch.find(c => c.function.name === record.name)!);
+        callbacks.onToolCallResult(record.name, record.result!, matchedCall);
       } else if (record.status === 'cancelled') {
-        callbacks.onToolCallError(record.name, '用户取消', batch.find(c => c.function.name === record.name)!);
+        callbacks.onToolCallError(record.name, '用户取消', matchedCall);
       } else {
-        callbacks.onToolCallError(record.name, record.result?.error || '执行失败', batch.find(c => c.function.name === record.name)!);
+        callbacks.onToolCallError(record.name, record.result?.error || '执行失败', matchedCall);
       }
     }
   }
@@ -1852,35 +2109,35 @@ async function handleObserving(
     logInfo(`只读工具重复调用（允许验证场景）: ${recentSuccess[0].name}`);
   }
 
-// 每 10 轮清理累积的 ephemeral 消息
-// C7: 保留 Plan Mode 关键 ephemeral 消息（含进度、计划批准等），只清理纯提醒类
-// 但如果上下文使用率已过高（>70%），跳过清理——压缩即将触发，
-// 此时清理会导致压缩 LLM 看不到 Plan Mode 进度等关键状态信息
-if (ctx.loopCount > 1 && ctx.loopCount % 10 === 0) {
-  const numCtx = getEffectiveNumCtx();
-  const usageRatio = numCtx > 0 ? estimateTokens(ctx.messages.map(m => m.content || '').join('')) / numCtx : 0;
-  if (usageRatio > 0.7) {
-    logInfo(`ephemeral 清理跳过: 上下文使用率 ${(usageRatio * 100).toFixed(0)}%, 压缩即将触发`);
-  } else {
-    // C7: 保留含 Plan Mode 关键信息的 ephemeral 消息
-    const PRESERVE_PATTERNS = [
-      /Plan Mode/, /计划已批准/, /计划已拒绝/, /最大计划重试/, 
-      /plan_track/, /当前进度/, /断点续传/,
-    ];
-    let removed = 0;
-    ctx.messages = ctx.messages.filter(m => {
-      if (m.ephemeral) {
-        // 检查是否包含 Plan Mode 关键信息
-        const shouldPreserve = PRESERVE_PATTERNS.some(p => p.test(m.content || ''));
-        if (shouldPreserve) return true;
-        removed++;
-        return false;
-      }
-      return true;
-    });
-    if (removed > 0) logInfo(`ephemeral 清理: ${removed} 条临时消息已移除 (Plan Mode 关键消息已保留)`);
+  // 每 10 轮清理累积的 ephemeral 消息
+  // C7: 保留 Plan Mode 关键 ephemeral 消息（含进度、计划批准等），只清理纯提醒类
+  // 但如果上下文使用率已过高（>70%），跳过清理——压缩即将触发，
+  // 此时清理会导致压缩 LLM 看不到 Plan Mode 进度等关键状态信息
+  if (ctx.loopCount > 1 && ctx.loopCount % 10 === 0) {
+    const numCtx = getEffectiveNumCtx();
+    const usageRatio = numCtx > 0 ? estimateTokens(ctx.messages.map(m => m.content || '').join('')) / numCtx : 0;
+    if (usageRatio > 0.7) {
+      logInfo(`ephemeral 清理跳过: 上下文使用率 ${(usageRatio * 100).toFixed(0)}%, 压缩即将触发`);
+    } else {
+      // C7: 保留含 Plan Mode 关键信息的 ephemeral 消息
+      const PRESERVE_PATTERNS = [
+        /Plan Mode/, /计划已批准/, /计划已拒绝/, /最大计划重试/,
+        /plan_track/, /当前进度/, /断点续传/,
+      ];
+      let removed = 0;
+      ctx.messages = ctx.messages.filter(m => {
+        if (m.ephemeral) {
+          // 检查是否包含 Plan Mode 关键信息
+          const shouldPreserve = PRESERVE_PATTERNS.some(p => p.test(m.content || ''));
+          if (shouldPreserve) return true;
+          removed++;
+          return false;
+        }
+        return true;
+      });
+      if (removed > 0) logInfo(`ephemeral 清理: ${removed} 条临时消息已移除 (Plan Mode 关键消息已保留)`);
+    }
   }
-}
 
   // ── P0-4: 增量压缩 — 按token使用率触发，防止 Ollama context 超限 ──
   const numCtx = getEffectiveNumCtx();
@@ -2066,6 +2323,15 @@ async function handleReflecting(
   }
 
   // ── 正常终止: 模型停止调工具 → 信任模型的判断 ──
+  // pre_completion Hook（可执行最终检查、内容修改等，不阻断但记录结果）
+  try {
+    const hookResult = await executeHooks('pre_completion', ctx);
+    if (!hookResult.allPassed) {
+      const reasons = hookResult.results.filter(r => !r.passed).map(r => r.message).join('; ');
+      logWarn(`pre_completion Hook 提示: ${reasons}`);
+    }
+  } catch { /* Hook 异常不影响主流程 */ }
+
   try {
     const gateResult = await runCompletionGate(ctx);
     if (!gateResult.passed) {
@@ -2117,6 +2383,7 @@ async function handleCompressing(
   model: string,
 ): Promise<void> {
   const numCtx = getEffectiveNumCtx();
+  let actuallyCompressed = false;
   if (shouldAutoCompress(ctx.messages, numCtx)) {
     logInfo('COMPRESSING: 上下文压缩触发');
     const compressAC = state.get<AbortController | null>(KEYS.ABORT_CONTROLLER) || new AbortController();
@@ -2125,6 +2392,7 @@ async function handleCompressing(
       if (compressed.length < ctx.messages.length || estimateTokens(compressed.map(m => m.content || '').join('')) < estimateTokens(ctx.messages.map(m => m.content || '').join(''))) {
         ctx.messages.length = 0;
         ctx.messages.push(...compressed);
+        actuallyCompressed = true;
         logSuccess('COMPRESSING: 完成');
       }
     } catch (err) {
@@ -2132,7 +2400,14 @@ async function handleCompressing(
       logWarn('COMPRESSING: 失败', (err as Error).message);
     }
   }
-  transition(ctx, S.REFLECTING);
+  // P0 修复: 如果压缩未实际发生（如 shouldAutoCompress 返回 false 或压缩未减小体积），
+  // 且当前内容/工具调用为空（说明是从主循环紧急压缩路径进入，而非从 OBSERVING 正常进入），
+  // 则回到 THINKING 而非 REFLECTING，避免模型尚未思考就被错误终止
+  if (!actuallyCompressed && ctx.toolCalls.length === 0 && !ctx.content.trim()) {
+    transition(ctx, S.THINKING);
+  } else {
+    transition(ctx, S.REFLECTING);
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -2211,6 +2486,13 @@ export async function runAgentLoop(
   const { setPlanModeActive } = await import('./tool-registry.js');
   setPlanModeActive(mode === 'plan');
 
+  // ── R2: 无进展循环检测 — 跟踪连续无新内容/无新工具调用的迭代 ──
+  let _lastProgressContentLen = 0;
+  let _lastProgressToolCount = 0;
+  let _lastProgressMsgCount = 0;
+  let _noProgressCount = 0;
+  const MAX_NO_PROGRESS = 5; // 连续 5 轮无进展则注入提醒
+
   // ── 状态机主循环 ──
   try {
     // Phase 1: INIT
@@ -2253,7 +2535,7 @@ export async function runAgentLoop(
 
       // Token 感知的动态迭代预算
       const numCtx = getEffectiveNumCtx();
-      const usageRatio = estimateTokens(ctx.messages.map(m => m.content || '').join('')) / numCtx;
+      const usageRatio = numCtx > 0 ? estimateTokens(ctx.messages.map(m => m.content || '').join('')) / numCtx : 0;
 
       // 上下文使用率过高时触发紧急压缩（不限制轮次，而是回收上下文空间）
       if (usageRatio > 0.8 && ctx.state === S.THINKING) {
@@ -2300,12 +2582,49 @@ export async function runAgentLoop(
           // handleCompressing 内部会 transition 到 REFLECTING
           break;
 
-        default:
-          logWarn(`未知状态: ${ctx.state}，强制终止`);
-          transition(ctx, S.TERMINATED);
+default:
+  // R7: 状态机恢复 — 尝试恢复到安全状态而非直接终止
+  logWarn(`未知状态: ${ctx.state}，尝试恢复`);
+  // 尝试恢复到 THINKING（最安全的状态，会重新调用 LLM）
+  if (ctx.loopCount < ctx.maxLoops && ctx.messages.length > 0) {
+    logInfo(`R7: 从未知状态 ${ctx.state} 恢复到 THINKING`);
+    ctx.state = S.THINKING;
+    state.set('_loopState', S.THINKING);
+  } else {
+    logWarn(`R7: 恢复条件不满足，强制终止`);
+    transition(ctx, S.TERMINATED);
+  }
       }
 
       persistLoopContext(ctx);
+
+      // ── R2: 无进展循环检测 ──
+      // 每轮结束时检查是否有新内容生成、新工具调用或新消息
+      const currentContentLen = ctx.content.length;
+      const currentToolCount = ctx.allToolRecords.length;
+      const currentMsgCount = ctx.messages.length;
+      const hasProgress =
+        currentContentLen > _lastProgressContentLen ||
+        currentToolCount > _lastProgressToolCount ||
+        currentMsgCount > _lastProgressMsgCount + 2; // +2 容差：允许少量系统注入
+      if (hasProgress) {
+        _noProgressCount = 0;
+        _lastProgressContentLen = currentContentLen;
+        _lastProgressToolCount = currentToolCount;
+        _lastProgressMsgCount = currentMsgCount;
+      } else {
+        _noProgressCount++;
+        if (_noProgressCount >= MAX_NO_PROGRESS) {
+          logWarn(`R2: 检测到连续 ${_noProgressCount} 轮无进展，注入强制终止信号`);
+          ctx.messages.push({
+            role: 'user',
+            content: '⚠️ 系统检测到连续多轮无新进展。请基于已有结果立即给出最终回答，不要再重复之前的操作。',
+            ephemeral: true,
+          });
+          ctx.maxLoops = Math.min(ctx.maxLoops, ctx.loopCount + 1);
+          _noProgressCount = 0; // 重置，避免重复注入
+        }
+      }
     }
   } catch (err) {
     if ((err as Error).name === 'AbortError') {

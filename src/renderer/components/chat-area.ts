@@ -112,20 +112,22 @@ export function resetAutoScroll(): void {
 /** P1-1: 已渲染消息索引集合，用于稳定增量 diff（替代 DOM querySelectorAll 计数） */
 const _renderedMsgIndices = new Set<number>();
 
+/** R31: 最大渲染消息数（超过此数时仅渲染最近的消息，避免 DOM 过载） */
+const MAX_RENDERED_MESSAGES = 200;
+
 /** 标记当前渲染批次中系统提示词卡片是否已渲染（每会话仅首条 assistant 消息展示） */
 let _sysPromptRendered = false;
 
+/** R31: 增量渲染 — 仅追加新消息，避免全量重建 */
 export function renderMessages(): void {
   const currentSession = state.get<ChatSession | null>(KEYS.CURRENT_SESSION);
   const msgs = currentSession ? currentSession.messages : [];
 
-  // 全量清空重建，避免增量 diff 的边界 bug
-  messagesContainerEl.innerHTML = '';
-  currentPlaceholder = null;
-  _renderedMsgIndices.clear();
-  _sysPromptRendered = false; // 重置：每轮全量渲染时重新判定首条 assistant
-
   if (msgs.length === 0) {
+    messagesContainerEl.innerHTML = '';
+    currentPlaceholder = null;
+    _renderedMsgIndices.clear();
+    _sysPromptRendered = false;
     emptyStateEl.style.display = '';
     messagesContainerEl.style.display = 'none';
     return;
@@ -134,15 +136,51 @@ export function renderMessages(): void {
   emptyStateEl.style.display = 'none';
   messagesContainerEl.style.display = '';
 
-  for (let i = 0; i < msgs.length; i++) {
-    const msg = msgs[i];
-    // 跳过 system 消息（Plan Mode 进度等内部状态消息不展示给用户）
-    if (msg.role === 'system') continue;
-    // 只跳过既无内容也无 think 也无工具的空消息
-    if (msg.role === 'assistant' && !msg.content && !msg.think && (!msg.toolCalls || msg.toolCalls.length === 0)) continue;
-    appendMessageDOM(msgs[i], i);
-    _renderedMsgIndices.add(i);
+  // R31: 增量渲染 — 检查是否需要全量重建
+  const needsFullRebuild = _renderedMsgIndices.size === 0
+    || _renderedMsgIndices.size > msgs.length
+    || Array.from(_renderedMsgIndices).some(idx => idx >= msgs.length);
+
+  if (needsFullRebuild) {
+    // 全量重建（首次加载或消息被截断/压缩后）
+    messagesContainerEl.innerHTML = '';
+    currentPlaceholder = null;
+    _renderedMsgIndices.clear();
+    _sysPromptRendered = false;
+
+    // R31: 仅渲染最近 MAX_RENDERED_MESSAGES 条消息，避免 DOM 过载
+    const startIdx = Math.max(0, msgs.length - MAX_RENDERED_MESSAGES);
+    if (startIdx > 0) {
+      const noticeDiv = document.createElement('div');
+      noticeDiv.className = 'msg-truncated-notice';
+      noticeDiv.style.cssText = 'text-align:center;padding:8px;font-size:12px;color:var(--text-muted);';
+      noticeDiv.textContent = `⋯ 已折叠前 ${startIdx} 条消息，仅显示最近 ${MAX_RENDERED_MESSAGES} 条 ⋯`;
+      messagesContainerEl.appendChild(noticeDiv);
+    }
+
+    for (let i = startIdx; i < msgs.length; i++) {
+      const msg = msgs[i];
+      if (msg.role === 'system') continue;
+      if (msg.role === 'assistant' && !msg.content && !msg.think && (!msg.toolCalls || msg.toolCalls.length === 0)) continue;
+      appendMessageDOM(msgs[i], i);
+      _renderedMsgIndices.add(i);
+    }
+  } else {
+    // R31: 增量追加 — 只渲染新增的消息
+    for (let i = 0; i < msgs.length; i++) {
+      if (_renderedMsgIndices.has(i)) continue;
+      const msg = msgs[i];
+      if (msg.role === 'system') continue;
+      if (msg.role === 'assistant' && !msg.content && !msg.think && (!msg.toolCalls || msg.toolCalls.length === 0)) continue;
+      appendMessageDOM(msgs[i], i);
+      _renderedMsgIndices.add(i);
+    }
   }
+
+  // R38: 为代码块添加复制按钮
+  addCodeBlockCopyButtons();
+  // R40: 为消息添加操作按钮
+  addMessageActions();
 
   scrollToBottom();
 }
@@ -353,6 +391,8 @@ export function updateLastAssistantMessage(
     // P0-1: 流式期间纯文本追加（避免每 chunk 全量 Markdown + DOMPurify），最终渲染时才做 Markdown
     if (isFinal) {
       contentDiv.innerHTML = safeMarkdown(safeContent);
+      // R38: 最终渲染后为代码块添加复制按钮
+      addCodeBlockCopyButtons(contentDiv);
     } else {
       contentDiv.textContent = safeContent;
     }
@@ -459,19 +499,51 @@ export function updateToolCallCardInPlaceholder(tc: ToolCallRecord): void {
 export function appendAssistantPlaceholder(): void {
   const div = document.createElement('div');
   div.className = 'message assistant loading';
+  // R34: 增强加载状态 — 添加旋转提示文本
   div.innerHTML = `
     <div class="msg-avatar">🤖</div>
     <div class="msg-body">
       <div class="msg-role">AI</div>
       <div class="msg-content">
         <div class="loading-dots"><span></span><span></span><span></span></div>
-        <span class="loading-text">正在思考...</span>
+        <span class="loading-text" data-hint-index="0">正在思考...</span>
       </div>
     </div>
   `;
   messagesContainerEl.appendChild(div);
   currentPlaceholder = div;
+
+  // R34: 启动旋转提示
+  startLoadingHintRotation(div);
+
   scrollToBottom();
+}
+
+// R34: 加载提示旋转动画
+const LOADING_HINTS = [
+  '正在思考...',
+  '正在分析问题...',
+  '正在组织回答...',
+  '正在查找信息...',
+  '正在生成回复...',
+];
+let _loadingHintInterval: ReturnType<typeof setInterval> | null = null;
+
+function startLoadingHintRotation(el: HTMLElement): void {
+  if (_loadingHintInterval) clearInterval(_loadingHintInterval);
+  let idx = 0;
+  _loadingHintInterval = setInterval(() => {
+    if (!el.isConnected) {
+      if (_loadingHintInterval) clearInterval(_loadingHintInterval);
+      _loadingHintInterval = null;
+      return;
+    }
+    idx = (idx + 1) % LOADING_HINTS.length;
+    const hintEl = el.querySelector('.loading-text');
+    if (hintEl) {
+      hintEl.textContent = LOADING_HINTS[idx];
+    }
+  }, 3000);
 }
 
 export function appendSystemMessage(text: string, tempClass?: string): void {
@@ -502,6 +574,11 @@ export function resetCurrentPlaceholder(): void {
   if (currentPlaceholder && !currentPlaceholder.isConnected) {
     currentPlaceholder = null;
   }
+  // R34: 清理加载提示旋转
+  if (_loadingHintInterval) {
+    clearInterval(_loadingHintInterval);
+    _loadingHintInterval = null;
+  }
 }
 
 /** 从 DOM 移除当前 placeholder 并清空引用 */
@@ -515,6 +592,83 @@ export function removeCurrentPlaceholder(): void {
 export function enableAutoScroll(): void {
   autoScroll = true;
   if (scrollBtnEl) scrollBtnEl.style.display = 'none';
+}
+
+// ── R38: 代码块复制按钮 ──
+
+/** R38: 为代码块添加复制按钮 */
+function addCodeBlockCopyButtons(scope?: ParentNode): void {
+  const root = scope || messagesContainerEl;
+  const codeBlocks = root.querySelectorAll('pre:not([data-copy-added])');
+  for (const pre of codeBlocks) {
+    pre.setAttribute('data-copy-added', 'true');
+    const btn = document.createElement('button');
+    btn.className = 'code-copy-btn';
+    btn.textContent = '📋 复制';
+    btn.style.cssText = 'position:absolute;top:4px;right:4px;padding:2px 8px;font-size:11px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:4px;cursor:pointer;opacity:0;transition:opacity 0.2s;';
+    // 确保 pre 是相对定位
+    if (getComputedStyle(pre).position === 'static') {
+      (pre as HTMLElement).style.position = 'relative';
+    }
+    pre.addEventListener('mouseenter', () => { btn.style.opacity = '1'; });
+    pre.addEventListener('mouseleave', () => { btn.style.opacity = '0'; });
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      const code = pre.querySelector('code');
+      const text = code ? code.textContent : pre.textContent;
+      if (text) {
+        navigator.clipboard.writeText(text).then(() => {
+          btn.textContent = '✅ 已复制';
+          setTimeout(() => { btn.textContent = '📋 复制'; }, 2000);
+        }).catch(() => {
+          btn.textContent = '❌ 失败';
+          setTimeout(() => { btn.textContent = '📋 复制'; }, 2000);
+        });
+      }
+    });
+    pre.appendChild(btn);
+  }
+}
+
+// ── R40: 消息操作按钮 ──
+
+/** R40: 为消息添加操作按钮（复制、重试） */
+function addMessageActions(): void {
+  const messages = messagesContainerEl.querySelectorAll('.message:not([data-actions-added])');
+  for (const msg of messages) {
+    msg.setAttribute('data-actions-added', 'true');
+    const actionBar = document.createElement('div');
+    actionBar.className = 'msg-actions';
+    actionBar.style.cssText = 'position:absolute;top:4px;right:4px;display:flex;gap:4px;opacity:0;transition:opacity 0.2s;';
+
+    // 确保 message 是相对定位
+    if (getComputedStyle(msg).position === 'static') {
+      (msg as HTMLElement).style.position = 'relative';
+    }
+
+    // 复制按钮
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'msg-action-btn msg-copy-btn';
+    copyBtn.textContent = '📋';
+    copyBtn.title = '复制消息';
+    copyBtn.style.cssText = 'padding:2px 6px;font-size:12px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:4px;cursor:pointer;';
+    copyBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      const contentEl = msg.querySelector('.msg-content');
+      const text = contentEl ? contentEl.textContent : '';
+      if (text) {
+        navigator.clipboard.writeText(text).then(() => {
+          copyBtn.textContent = '✅';
+          setTimeout(() => { copyBtn.textContent = '📋'; }, 2000);
+        }).catch(() => {});
+      }
+    });
+    actionBar.appendChild(copyBtn);
+
+    msg.addEventListener('mouseenter', () => { actionBar.style.opacity = '1'; });
+    msg.addEventListener('mouseleave', () => { actionBar.style.opacity = '0'; });
+    msg.appendChild(actionBar);
+  }
 }
 
 // ── 导出功能 ──

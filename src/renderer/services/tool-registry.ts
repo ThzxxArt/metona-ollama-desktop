@@ -781,6 +781,479 @@ export async function refreshMCPTools(): Promise<void> {
   }
 }
 
+// ══════════════════════════════════════════════
+// R21-R30: 工具系统增强
+// ══════════════════════════════════════════════
+
+// ── R28: 工具安全检查增强 ──
+
+/** R28: 路径遍历攻击检测 — 检查路径中是否包含恶意 ../ 序列 */
+function hasPathTraversal(path: string): boolean {
+  if (!path) return false;
+  // 检测 ../ 或 ..\ 模式（路径遍历攻击）
+  const normalized = path.replace(/\\/g, '/');
+  // 连续的 ../ 超过 2 层（正常相对路径很少超过 2 层）
+  const traversalCount = (normalized.match(/\.\.\//g) || []).length;
+  if (traversalCount > 3) return true;
+  // 检测 ..\..\..\ 模式
+  if (normalized.includes('../../../')) return true;
+  return false;
+}
+
+/** R28: 命令注入检测 — 检查命令中是否包含危险的 shell 注入模式 */
+function hasCommandInjection(command: string): boolean {
+  if (!command) return false;
+  const dangerousPatterns = [
+    /;\s*(rm|del|format|mkfs|dd)\s/i,       // 命令链中的删除操作
+    /\|\s*(rm|del|format|mkfs)\s/i,         // 管道到删除操作
+    /&&\s*(rm|del|format|mkfs)\s/i,         // AND链中的删除操作
+    /\$\{.*IFS.*\}/i,                        // IFS 变量注入
+    /\$\([^)]*\)/,                           // 命令替换 $(...)
+    /`[^`]*`/,                               // 反引号命令替换
+    /\x00/,                                  // null 字节注入
+  ];
+  return dangerousPatterns.some(p => p.test(command));
+}
+
+/** R28: 工具安全验证 — 在执行前检查安全风险 */
+export function validateToolSecurity(toolName: string, args: Record<string, unknown>): string | null {
+  // 路径遍历检查
+  const pathFields = ['path', 'source', 'destination', 'file1', 'file2', 'cwd'];
+  for (const field of pathFields) {
+    if (typeof args[field] === 'string' && hasPathTraversal(args[field] as string)) {
+      return `安全警告: 参数 "${field}" 包含可疑的路径遍历模式: ${args[field]}`;
+    }
+  }
+
+  // 多路径参数检查（read_multiple_files）
+  if (Array.isArray(args.paths)) {
+    for (const p of args.paths) {
+      if (typeof p === 'string' && hasPathTraversal(p)) {
+        return `安全警告: paths 数组中包含可疑的路径遍历模式: ${p}`;
+      }
+    }
+  }
+
+  // 命令注入检查
+  if (toolName === 'run_command' && typeof args.command === 'string') {
+    if (hasCommandInjection(args.command as string)) {
+      return `安全警告: 命令中包含潜在的注入模式: ${args.command}`;
+    }
+  }
+
+  // web_fetch / download_file URL 验证
+  const urlFields = ['url'];
+  for (const field of urlFields) {
+    if (typeof args[field] === 'string') {
+      const url = args[field] as string;
+      // 阻止 file:// 协议（可能读取敏感本地文件）
+      if (url.toLowerCase().startsWith('file://')) {
+        return `安全警告: 不允许 file:// 协议`;
+      }
+      // 阻止内网 IP 访问（可选，取决于安全策略）
+      // 192.168.x.x, 10.x.x.x, 172.16-31.x.x
+      const internalIpPattern = /^(https?:\/\/)?(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|127\.|localhost)/i;
+      if (internalIpPattern.test(url)) {
+        // 内网访问仅警告不阻止
+        logWarn(`R28: 访问内网地址: ${url}`);
+      }
+    }
+  }
+
+  return null; // 无安全风险
+}
+
+// ── R30: 工具使用统计导出 ──
+
+/** R30: 工具使用统计热力图数据 */
+export interface ToolHeatmapData {
+  toolName: string;
+  displayName: string;
+  icon: string;
+  totalCalls: number;
+  successRate: number;
+  avgDurationMs: number;
+  heatLevel: number;  // 0-4, 0=未使用, 4=最常用
+  lastUsed: number;
+  errorCount: number;
+}
+
+/** R30: 获取工具使用热力图数据 */
+export function getToolHeatmap(): ToolHeatmapData[] {
+  const analytics = getToolAnalytics();
+  const maxCalls = Math.max(1, ...analytics.map(a => a.totalCalls));
+
+  // 合并所有已定义工具（包括未使用的）
+  const allTools = new Map<string, ToolHeatmapData>();
+  for (const def of TOOL_DEFINITIONS) {
+    const name = def.function.name;
+    allTools.set(name, {
+      toolName: name,
+      displayName: formatToolName(name),
+      icon: getToolIcon(name),
+      totalCalls: 0,
+      successRate: 0,
+      avgDurationMs: 0,
+      heatLevel: 0,
+      lastUsed: 0,
+      errorCount: 0,
+    });
+  }
+
+  // 填入分析数据
+  for (const a of analytics) {
+    const entry = allTools.get(a.toolName);
+    if (entry) {
+      entry.totalCalls = a.totalCalls;
+      entry.successRate = a.successRate;
+      entry.avgDurationMs = a.avgDurationMs;
+      entry.lastUsed = a.lastUsed;
+      entry.errorCount = a.errorCount;
+    } else {
+      // MCP 工具或未定义工具
+      allTools.set(a.toolName, {
+        toolName: a.toolName,
+        displayName: a.toolName,
+        icon: '🔧',
+        totalCalls: a.totalCalls,
+        successRate: a.successRate,
+        avgDurationMs: a.avgDurationMs,
+        heatLevel: 0,
+        lastUsed: a.lastUsed,
+        errorCount: a.errorCount,
+      });
+    }
+  }
+
+  // 计算热力等级
+  const result = Array.from(allTools.values());
+  for (const entry of result) {
+    if (entry.totalCalls === 0) {
+      entry.heatLevel = 0;
+    } else {
+      const ratio = entry.totalCalls / maxCalls;
+      if (ratio > 0.75) entry.heatLevel = 4;
+      else if (ratio > 0.5) entry.heatLevel = 3;
+      else if (ratio > 0.25) entry.heatLevel = 2;
+      else entry.heatLevel = 1;
+    }
+  }
+
+  // 按使用次数降序排列
+  result.sort((a, b) => b.totalCalls - a.totalCalls);
+  return result;
+}
+
+// ── R21: 工具参数验证 ──
+
+/** R21: 根据 schema 验证工具参数，返回错误消息列表 */
+export function validateToolArgs(toolName: string, args: Record<string, unknown>): string[] {
+  const def = TOOL_DEFINITIONS.find(d => d.function.name === toolName);
+  if (!def) return []; // MCP 工具或未找到定义，跳过验证
+
+  const params = def.function.parameters;
+  const errors: string[] = [];
+
+  // 检查必填参数
+  if (params.required) {
+    for (const req of params.required) {
+      if (!(req in args) || args[req] === undefined || args[req] === null) {
+        errors.push(`缺少必填参数: "${req}"`);
+      }
+    }
+  }
+
+  // 检查参数类型和枚举值
+  for (const [key, value] of Object.entries(args)) {
+    if (value === undefined || value === null) continue;
+    const prop = params.properties[key];
+    if (!prop) continue; // 未定义的参数，跳过
+
+    // 类型检查
+    if (prop.type === 'string' && typeof value !== 'string') {
+      errors.push(`参数 "${key}" 应为字符串类型，实际为 ${typeof value}`);
+    } else if (prop.type === 'integer' && (!Number.isInteger(Number(value)) || typeof value === 'boolean')) {
+      errors.push(`参数 "${key}" 应为整数，实际为 ${JSON.stringify(value)}`);
+    } else if (prop.type === 'boolean' && typeof value !== 'boolean') {
+      errors.push(`参数 "${key}" 应为布尔值，实际为 ${typeof value}`);
+    } else if (prop.type === 'array' && !Array.isArray(value)) {
+      errors.push(`参数 "${key}" 应为数组，实际为 ${typeof value}`);
+    } else if (prop.type === 'object' && (typeof value !== 'object' || Array.isArray(value))) {
+      errors.push(`参数 "${key}" 应为对象，实际为 ${typeof value}`);
+    }
+
+    // 枚举值检查
+    if (prop.enum && !prop.enum.includes(String(value))) {
+      errors.push(`参数 "${key}" 值 "${value}" 不在允许范围内: ${prop.enum.join(', ')}`);
+    }
+  }
+
+  return errors;
+}
+
+// ── R22: 工具结果截断 ──
+
+/** R22: 工具结果最大字符数 */
+const MAX_TOOL_RESULT_CHARS = 30000;
+
+/** R22: 截断大输出结果，保留首尾并添加截断标记 */
+export function truncateToolResult(result: ToolResult, toolName: string): ToolResult {
+  const jsonStr = JSON.stringify(result);
+  if (jsonStr.length <= MAX_TOOL_RESULT_CHARS) return result;
+
+  // 不同工具有不同的截断策略
+  const truncated = { ...result };
+
+  // 截断 stdout/content 类的大字段
+  const largeFields = ['stdout', 'content', 'text', 'result', 'output', 'data'];
+  for (const field of largeFields) {
+    if (typeof truncated[field] === 'string' && (truncated[field] as string).length > 10000) {
+      const original = truncated[field] as string;
+      const head = original.slice(0, 8000);
+      const tail = original.slice(-3000);
+      const omitted = original.length - 11000;
+      truncated[field] = `${head}\n\n... [已截断 ${omitted} 字符，共 ${original.length} 字符] ...\n\n${tail}`;
+    }
+  }
+
+  // 截断数组类结果
+  if (Array.isArray(truncated.entries) && truncated.entries.length > 100) {
+    const total = truncated.entries.length;
+    truncated.entries = truncated.entries.slice(0, 50);
+    truncated._truncated = true;
+    truncated._totalEntries = total;
+    truncated._truncatedMessage = `结果已截断：显示前 50 条，共 ${total} 条`;
+  }
+  if (Array.isArray(truncated.results) && truncated.results.length > 100) {
+    const total = truncated.results.length;
+    truncated.results = truncated.results.slice(0, 50);
+    truncated._truncated = true;
+    truncated._totalResults = total;
+  }
+
+  logWarn(`R22: 工具 ${toolName} 结果已截断 (${jsonStr.length} → ~${JSON.stringify(truncated).length} 字符)`);
+  return truncated;
+}
+
+// ── R23: 工具参数自动类型转换 ──
+
+/** R23: 根据工具定义自动转换参数类型 */
+export function coerceToolArgs(toolName: string, args: Record<string, unknown>): Record<string, unknown> {
+  const def = TOOL_DEFINITIONS.find(d => d.function.name === toolName);
+  if (!def) return args;
+
+  const params = def.function.parameters;
+  const coerced = { ...args };
+
+  for (const [key, value] of Object.entries(coerced)) {
+    if (value === undefined || value === null) continue;
+    const prop = params.properties[key];
+    if (!prop) continue;
+
+    // 字符串数字 → 整数
+    if (prop.type === 'integer' && typeof value === 'string') {
+      const num = parseInt(value, 10);
+      if (!isNaN(num)) {
+        coerced[key] = num;
+      }
+    }
+    // 字符串数字 → 数字
+    else if (prop.type === 'number' && typeof value === 'string') {
+      const num = parseFloat(value);
+      if (!isNaN(num)) {
+        coerced[key] = num;
+      }
+    }
+    // 字符串布尔 → 布尔
+    else if (prop.type === 'boolean' && typeof value === 'string') {
+      if (value === 'true' || value === '1') coerced[key] = true;
+      else if (value === 'false' || value === '0') coerced[key] = false;
+    }
+    // 数组：字符串 → 数组（逗号分隔）
+    else if (prop.type === 'array' && typeof value === 'string') {
+      try {
+        coerced[key] = JSON.parse(value);
+      } catch {
+        // 如果不是 JSON，按逗号分隔
+        coerced[key] = value.split(',').map(s => s.trim()).filter(Boolean);
+      }
+    }
+    // 对象：字符串 → 对象
+    else if (prop.type === 'object' && typeof value === 'string') {
+      try {
+        coerced[key] = JSON.parse(value);
+      } catch {
+        // 解析失败，保持原样
+      }
+    }
+  }
+
+  return coerced;
+}
+
+// ── R24: 工具错误恢复建议 ──
+
+/** R24: 分析工具错误并给出修复建议 */
+export function suggestToolFix(toolName: string, args: Record<string, unknown>, error: string): string {
+  const err = error.toLowerCase();
+
+  // 文件未找到
+  if (err.includes('no such file') || err.includes('not found') || err.includes('文件不存在') || err.includes('enoent')) {
+    const path = args.path || args.source || args.file1 || '';
+    return `文件路径可能不正确: "${path}"。建议：1) 使用 list_directory 检查路径是否存在; 2) 检查拼写; 3) 尝试绝对路径。`;
+  }
+
+  // 权限拒绝
+  if (err.includes('permission denied') || err.includes('eacces') || err.includes('权限')) {
+    return `权限不足。建议：1) 检查文件/目录权限; 2) 确认工作空间路径是否正确; 3) 某些系统目录可能需要管理员权限。`;
+  }
+
+  // 路径无效
+  if (err.includes('invalid path') || err.includes('illegal characters') || err.includes('路径无效')) {
+    const path = args.path || args.destination || '';
+    return `路径格式可能不正确: "${path}"。建议：1) 检查特殊字符; 2) Windows 路径使用反斜杠或正斜杠; 3) 确认路径在工作空间内。`;
+  }
+
+  // 网络错误
+  if (err.includes('network') || err.includes('timeout') || err.includes('econnrefused') || err.includes('fetch')) {
+    return `网络请求失败。建议：1) 检查 URL 是否正确; 2) 确认网络连接; 3) 某些站点可能需要使用 browser_open 工具代替 web_fetch。`;
+  }
+
+  // JSON 解析错误
+  if (err.includes('json') || err.includes('parse') || err.includes('syntax')) {
+    return `数据解析失败。建议：1) 使用 json_format 工具验证 JSON 格式; 2) 检查参数是否为有效的 JSON 字符串。`;
+  }
+
+  // Git 错误
+  if (err.includes('git') || err.includes('not a repository')) {
+    return `Git 操作失败。建议：1) 确认当前目录是 Git 仓库; 2) 使用 git status 检查仓库状态; 3) 检查分支名是否正确。`;
+  }
+
+  // 命令执行失败
+  if (err.includes('command') || err.includes('exit code')) {
+    return `命令执行失败。建议：1) 检查命令拼写; 2) 确认命令在当前系统可用; 3) 使用 cwd 参数指定正确的工作目录。`;
+  }
+
+  // 通用建议
+  return '';
+}
+
+// ── R25: 工具执行分析追踪 ──
+
+export interface ToolAnalytics {
+  toolName: string;
+  totalCalls: number;
+  successCount: number;
+  errorCount: number;
+  avgDurationMs: number;
+  lastUsed: number;
+  commonErrors: Map<string, number>;
+}
+
+const _toolAnalytics = new Map<string, ToolAnalytics>();
+
+/** R25: 记录工具执行分析数据 */
+function recordToolAnalytics(toolName: string, success: boolean, durationMs: number, error?: string): void {
+  let analytics = _toolAnalytics.get(toolName);
+  if (!analytics) {
+    analytics = {
+      toolName,
+      totalCalls: 0,
+      successCount: 0,
+      errorCount: 0,
+      avgDurationMs: 0,
+      lastUsed: 0,
+      commonErrors: new Map(),
+    };
+    _toolAnalytics.set(toolName, analytics);
+  }
+
+  analytics.totalCalls++;
+  if (success) analytics.successCount++;
+  else {
+    analytics.errorCount++;
+    if (error) {
+      // 记录常见错误模式（取前 100 字符作为 key）
+      const errorKey = error.slice(0, 100);
+      analytics.commonErrors.set(errorKey, (analytics.commonErrors.get(errorKey) || 0) + 1);
+    }
+  }
+
+  // 更新平均执行时间（指数移动平均）
+  const alpha = 0.2;
+  analytics.avgDurationMs = analytics.avgDurationMs === 0
+    ? durationMs
+    : analytics.avgDurationMs * (1 - alpha) + durationMs * alpha;
+
+  analytics.lastUsed = Date.now();
+}
+
+/** R25: 获取工具分析数据 */
+export function getToolAnalytics(): Array<ToolAnalytics & { successRate: number; commonErrorsArray: Array<{ error: string; count: number }> }> {
+  return Array.from(_toolAnalytics.values()).map(a => ({
+    ...a,
+    successRate: a.totalCalls > 0 ? a.successCount / a.totalCalls : 0,
+    commonErrorsArray: Array.from(a.commonErrors.entries())
+      .map(([error, count]) => ({ error, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5),
+    commonErrors: undefined as any, // 避免序列化 Map
+  }));
+}
+
+/** R25: 重置工具分析数据 */
+export function resetToolAnalytics(): void {
+  _toolAnalytics.clear();
+}
+
+// ── R26: 工具结果格式优化 ──
+
+/** R26: 优化工具结果格式，提升 LLM 理解能力 */
+function formatToolResult(toolName: string, result: ToolResult): ToolResult {
+  if (!result.success) return result;
+
+  // 为特定工具添加结构化摘要
+  switch (toolName) {
+    case 'list_directory':
+    case 'tree': {
+      // 目录列表添加统计摘要
+      const entries = (result as any).entries || (result as any).items;
+      if (Array.isArray(entries)) {
+        const dirs = entries.filter((e: any) => e.type === 'directory').length;
+        const files = entries.filter((e: any) => e.type === 'file').length;
+        (result as any)._summary = `共 ${entries.length} 项 (${dirs} 个目录, ${files} 个文件)`;
+      }
+      break;
+    }
+    case 'search_files': {
+      const results = (result as any).results || (result as any).matches;
+      if (Array.isArray(results)) {
+        (result as any)._summary = `找到 ${results.length} 个匹配结果`;
+      }
+      break;
+    }
+    case 'read_file': {
+      // 读取文件添加行数统计
+      const content = (result as any).content || '';
+      if (typeof content === 'string') {
+        const lines = content.split('\n').length;
+        const chars = content.length;
+        (result as any)._meta = `文件内容: ${lines} 行, ${chars} 字符`;
+      }
+      break;
+    }
+    case 'web_search': {
+      const results = (result as any).results;
+      if (Array.isArray(results)) {
+        (result as any)._summary = `搜索返回 ${results.length} 条结果`;
+      }
+      break;
+    }
+  }
+
+  return result;
+}
+
 export async function executeTool(toolName: string, args: Record<string, unknown>): Promise<ToolResult> {
   // MCP 工具路由
   if (toolName.startsWith('mcp_')) {
@@ -798,6 +1271,25 @@ export async function executeTool(toolName: string, args: Record<string, unknown
     logError(`工具调用仅支持桌面版: ${toolName}`);
     return { success: false, error: '工具调用仅支持桌面版' };
   }
+
+  // R23: 参数自动类型转换
+  args = coerceToolArgs(toolName, args);
+
+  // R21: 参数验证
+  const validationErrors = validateToolArgs(toolName, args);
+  if (validationErrors.length > 0) {
+    logError(`工具参数验证失败: ${toolName}`, validationErrors.join('; '));
+    return { success: false, error: `参数验证失败: ${validationErrors.join('; ')}` };
+  }
+
+  // R28: 安全验证 — 路径遍历、命令注入防护
+  const securityWarning = validateToolSecurity(toolName, args);
+  if (securityWarning) {
+    logError(`R28: 工具安全拦截: ${toolName}`, securityWarning);
+    return { success: false, error: securityWarning };
+  }
+
+  const startTime = Date.now();
 
   try {
     // 内存工具（不走 IPC，直接处理 MEMORY.md）
@@ -992,10 +1484,28 @@ const results = await search(query, limit);
     // 其他工具：IPC 调用（无超时，由 renderer 内部处理）
     const result = await bridge.tool.execute(toolName, args);
     logToolResult(toolName, result.success, result.success ? undefined : result.error);
-    return result;
+
+    // R22: 截断大输出结果
+    const truncatedResult = truncateToolResult(result, toolName);
+    // R26: 优化结果格式
+    const formattedResult = formatToolResult(toolName, truncatedResult);
+
+    // R25: 记录分析数据
+    const duration = Date.now() - startTime;
+    recordToolAnalytics(toolName, formattedResult.success, duration, formattedResult.error);
+
+    return formattedResult;
   } catch (err) {
-    logError(`工具异常: ${toolName}`, (err as Error).message);
-    return { success: false, error: (err as Error).message };
+    const duration = Date.now() - startTime;
+    const errorMsg = (err as Error).message;
+    logError(`工具异常: ${toolName}`, errorMsg);
+
+    // R24: 生成错误恢复建议
+    const suggestion = suggestToolFix(toolName, args, errorMsg);
+    // R25: 记录分析数据
+    recordToolAnalytics(toolName, false, duration, errorMsg);
+
+    return { success: false, error: suggestion ? `${errorMsg}\n\n💡 建议: ${suggestion}` : errorMsg };
   }
 }
 
