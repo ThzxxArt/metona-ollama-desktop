@@ -925,17 +925,7 @@ function buildPlanConfirmHtml(plan: string, steps: string[]): string {
   `;
 }
 
-/** Base64 编码（支持 UTF-8） */
-function base64Encode(str: string): string {
-  const bytes = new TextEncoder().encode(str);
-  let binary = '';
-  for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return btoa(binary);
-}
-
-function buildFileContentParts(fileContents: Array<{ language: string; content: string }>): string[] {
+function buildFileContentParts(fileContents: Array<{ name: string; language: string; content: string }>): string[] {
   const numCtx = state.get<number>(KEYS.NUM_CTX, 24576);
   const fileBudget = Math.floor(numCtx * FILE_TOKEN_BUDGET_RATIO);
   let usedTokens = 0;
@@ -963,10 +953,9 @@ function buildFileContentParts(fileContents: Array<{ language: string; content: 
     usedTokens += finalTokens;
 
     return JSON.stringify({
-      file_name: `文件 ${i + 1}/${fileContents.length}`,
+      file_name: f.name,
       file_type: lang,
-      context_encode: 'base64',
-      context: base64Encode(text),
+      context: text,
     });
   }).filter(Boolean);
 }
@@ -1127,10 +1116,12 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
     // ── 聊天卡片：只显示用户自己的文字 + 附件视觉预览（缩略图/文件卡片/视频帧），不含代码生成的文本标记 ──
     const displayContent = text || '';
 
-    // ── Ollama API 用：附件 JSON 结构化数据在前，用户文字消息始终在最后 ──
+    // ── Ollama API 用：用户文字消息在最前，附件 JSON 结构化数据在后 ──
     const apiParts: string[] = [];
+    // 用户文字始终放最前
+    if (text) apiParts.push(text);
     if (userFiles.length > 0) {
-      const fileContents = pendingFiles.map(f => ({ language: f.language, content: f.content }));
+      const fileContents = pendingFiles.map(f => ({ name: f.name, language: f.language, content: f.content }));
       const fileParts = buildFileContentParts(fileContents);
       apiParts.push(...fileParts);
       logInfo('📄 文件内容已注入', `${fileParts.length} 段, 共 ${fileContents.reduce((s, f) => s + f.content.length, 0)} 字符`);
@@ -1150,8 +1141,7 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
         apiParts.push(JSON.stringify({
           file_name: v.name,
           file_type: v.name.split('.').pop() || 'video',
-          context_encode: 'base64',
-          context: base64Encode(JSON.stringify({
+          context: JSON.stringify({
             frame_count: v.count,
             fps: 1,
             duration: Math.round(v.dur),
@@ -1161,13 +1151,11 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
               timestamp: f.timestampSeconds,
               image_index: imageStart + fi,
             })),
-          })),
+          }),
         }));
         imageStart += v.count;
       }
     }
-    // 用户文字始终放最后
-    if (text) apiParts.push(text);
     apiContentForModel = apiParts.join('\n\n');
 
     const msg: ChatMessage = {
@@ -1184,7 +1172,7 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
     }
     if (userFiles.length > 0) {
       msg.files = userFiles;
-      msg._fileContents = pendingFiles.map(f => ({ language: f.language, content: f.content }));
+      msg._fileContents = pendingFiles.map(f => ({ name: f.name, language: f.language, content: f.content }));
     }
     msgsToAdd.push(msg);
   } else if (text || pendingFiles.length > 0) {
@@ -1196,7 +1184,7 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
     };
     if (userFiles.length > 0) {
       msg.files = userFiles;
-      msg._fileContents = pendingFiles.map(f => ({ language: f.language, content: f.content }));
+      msg._fileContents = pendingFiles.map(f => ({ name: f.name, language: f.language, content: f.content }));
     }
     msgsToAdd.push(msg);
   }

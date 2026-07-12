@@ -97,6 +97,7 @@ export interface ChatFile {
 }
 
 export interface FileContent {
+  name: string;
   language: string;
   content: string;
 }
