@@ -955,6 +955,7 @@ function buildFileContentParts(fileContents: Array<{ name: string; language: str
     return JSON.stringify({
       file_name: f.name,
       file_type: lang,
+      description: '用户上传的附件，内容已包含在 context 字段中，无需使用文件读取工具再次读取。',
       context: text,
     });
   }).filter(Boolean);
@@ -1141,6 +1142,7 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
         apiParts.push(JSON.stringify({
           file_name: v.name,
           file_type: v.name.split('.').pop() || 'video',
+          description: '用户上传的视频附件，帧图片已通过 images 数组传递，帧索引映射已包含在 context 字段中，无需使用文件读取工具再次读取。',
           context: JSON.stringify({
             frame_count: v.count,
             fps: 1,
