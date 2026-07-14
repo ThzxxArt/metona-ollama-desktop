@@ -42,9 +42,10 @@ export function formatSize(bytes: number): string {
   return `${size.toFixed(1)} ${units[i]}`;
 }
 
-/** HTML 转义 */
-export function escapeHtml(str: string): string {
-  return str.replace(/[&<>"']/g, (c) => ESCAPE_MAP[c]);
+/** HTML 转义（兼容 unknown 输入，null/undefined 返回空串） */
+export function escapeHtml(str: unknown): string {
+  if (str == null) return '';
+  return String(str).replace(/[&<>"']/g, (c) => ESCAPE_MAP[c]);
 }
 const ESCAPE_MAP: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 

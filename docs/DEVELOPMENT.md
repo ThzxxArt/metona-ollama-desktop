@@ -10,11 +10,11 @@ Metona Ollama Desktop 是基于 TypeScript + Electron 的 Windows 本地 AI 桌�
 
 核心架构：
 - **ReAct Agent Loop** — 8 状态机驱动的智能体循环（INIT→THINKING→PARSING→EXECUTING→OBSERVING→REFLECTING→COMPRESSING→TERMINATED），最大 85 轮（可配置）
-- **42 个内置工具** — 文件系统（16）、命令执行（1）、联网搜索（2）、浏览器控制（9）、Git（1）、记忆（4）、会话/子代理（3）、系统（6）
-- **Harness Engineering** — 5 层抗幻觉体系 + 4 阶段 Hook 系统 + Completion Gate（6 项检查）+ Agent Metrics + 渐进式披露
+- **40 个内置工具** — 文件系统（16）、命令执行（1）、联网搜索（2）、浏览器控制（9）、Git（1）、记忆（1）、会话/子代理（3）、系统（6）、Plan Mode（1）
+- **Harness Engineering** — 5 层抗幻觉体系 + 4 阶段 Hook 系统 + Completion Gate（5 项检查）+ Agent Metrics + 渐进式披露
 - **MCP 协议扩展** — JSON-RPC 2.0 over stdio，动态工具发现
 - **Plan Mode** — 开关切换，先规划后执行，步骤级进度追踪
-- **SQLite 存储** — sql.js WASM，6 张表，WAL 模式 + FTS5 全文搜索
+- **SQLite 存储** — sql.js WASM，5 张表，WAL 模式
 
 ---
 
@@ -52,7 +52,7 @@ src/
 │   ├── tool-handlers-git.ts           # Git 全操作
 │   ├── tool-handlers-shared.ts        # 共享类型和辅助函数
 │   └── db/
-│       ├── sqlite.ts                  # SQLite 数据库层（6 张表 + FTS5）
+│       ├── sqlite.ts                  # SQLite 数据库层（5 张表）
 │       └── sql.js.d.ts                # sql.js 类型声明
 │
 ├── renderer/                          # 渲染进程
@@ -78,24 +78,23 @@ src/
 │   │   ├── toast.ts                  # Toast 通知
 │   │   ├── token-dashboard.ts        # Token 消耗仪表盘（全局 + 会话统计）
 │   │   ├── tool-confirm-modal.ts     # 工具执行确认对话框
-│   │   ├── tools-modal.ts            # 工具列表面板（42 个工具卡片）
+│   │   ├── tools-modal.ts            # 工具列表面板（40 个工具卡片）
 │   │   └── workspace-panel.ts        # 工作空间面板（终端 + 工具卡片 + 文件浏览）
-│   ├── services/                      # 15 个服务模块
+│   ├── services/                      # 14 个服务模块
 │   │   ├── agent-engine.ts           # ★ ReAct Agent Loop 核心引擎（8 状态机）
-│   │   ├── tool-registry.ts          # 工具注册与调度中心（42 内置 + MCP 动态 + Plan Mode）
-│   │   ├── memory-manager.ts         # 记忆管理核心（FTS5 + 向量语义搜索）
-│   │   ├── vector-memory.ts          # 向量记忆索引（IVF）
-│   │   ├── vector-store.ts           # 向量存储 + IVF 索引引擎
+│   │   ├── tool-registry.ts          # 工具注册与调度中心（40 内置 + MCP 动态 + Plan Mode）
+│   │   ├── memory-service.ts         # 记忆管理（MEMORY.md 读写 + 格式校验 + 自动提取）
 │   │   ├── context-manager.ts        # 上下文窗口管理（滑动窗口 + Token 校准 + LLM 压缩）
 │   │   ├── sub-agent.ts              # 子代理委派（独立上下文 + 超时保护）
 │   │   ├── mcp-client.ts             # MCP 渲染端客户端
 │   │   ├── log-service.ts            # 结构化日志（9 级分类）
 │   │   ├── crypto.ts                 # AES-256-GCM 加密
 │   │   ├── hooks.ts                  # 4 阶段 Hook 系统（pre_tool/post_tool/post_iteration/pre_completion）
-│   │   ├── completion-gate.ts        # 完成门控（6 项检查，阻断/咨询两级）
+│   │   ├── completion-gate.ts        # 完成门控（5 项检查，阻断/咨询两级）
 │   │   ├── agent-metrics.ts          # Agent 度量采集 + 错误模式识别 + 改进建议
+│   │   ├── agent-safety.ts           # Agent 安全防护（工具阴影检测 + 路径校验）
 │   │   ├── context-indexer.ts        # 渐进式披露（索引层→接口层→实现层）
-│   │   └── verification.ts           # 验证系统（DiffAnalyzer + FileChangeAudit）
+│   │   └── infra-service.ts          # 基础设施（全局错误处理 + 配置校验）
 │   ├── db/
 │   │   └── chat-db.ts                # 渲染端数据库接口 + IndexedDB→SQLite 迁移
 │   ├── state/
@@ -179,11 +178,11 @@ logDebug('调试信息', '可选详情');
 ### 5.1 五大子系统
 
 ```
-① Agent 系统    → agent-engine.ts + tool-registry.ts（42 内置工具 + MCP 动态）
-② 记忆系统      → memory-manager.ts + vector-memory.ts + vector-store.ts
+① Agent 系统    → agent-engine.ts + tool-registry.ts（40 内置工具 + MCP 动态）
+② 记忆系统      → memory-service.ts（MEMORY.md 文件存储 + 格式校验 + 自动提取）
 ③ 上下文系统    → context-manager.ts + context-indexer.ts（渐进式披露）
 ④ 工作空间      → workspace.ts (主进程) + workspace-panel.ts (渲染进程)
-⑤ 数据层       → db/sqlite.ts（SQLite, 6 张表, FTS5）+ chat-db.ts（渲染端接口）
+⑤ 数据层       → db/sqlite.ts（SQLite, 5 张表）+ chat-db.ts（渲染端接口）
 ```
 
 ### 5.2 ReAct Agent Loop（8 状态机）
@@ -214,14 +213,13 @@ INIT → THINKING → PARSING → EXECUTING → OBSERVING → REFLECTING → (CO
 
 ### 5.3 SQLite 数据库
 
-6 张表，WAL 模式 + NORMAL 同步：
+5 张表，WAL 模式 + NORMAL 同步：
 
 | 表 | 用途 | 关键特性 |
 |---|---|---|
 | `sessions` | 会话 | parent_id 父子关系 |
 | `messages` | 消息 | 外键级联删除，thinking/tool_calls/attachments/eval_count |
 | `tool_calls` | 工具调用记录 | 按会话+工具名索引 |
-| `memories` | Agent 记忆 | FTS5 全文搜索，向量嵌入，容量 500 上限 |
 | `settings` | 设置 | JSON 序列化 |
 | `traces` | ReAct 执行轨迹 | Agent 可观测性 |
 

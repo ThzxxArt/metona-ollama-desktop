@@ -881,14 +881,44 @@ function trimByTokenLimit(messages: OllamaMessage[], maxTokens: number): OllamaM
   const recentMsgs = nonSystemMsgs.slice(-PROTECT_RECENT);
   const olderMsgs = nonSystemMsgs.slice(0, -PROTECT_RECENT);
 
-  // 计算每条消息的 token + 重要性
-  const scored = olderMsgs.map(m => ({
-    msg: m,
-    tokens: estimateTokens(m.content || '') +
-      (m.images ? m.images.length * 100 : 0) +
-      (m.tool_calls ? m.tool_calls.length * 50 : 0),
-    importance: scoreMessageImportance(m),
-  }));
+  // 原子组分组：assistant(带 tool_calls) + 其后续的 tool 消息作为一组
+  // 避免裁剪时破坏 assistant.tool_calls 与 tool 结果的配对关系
+  interface MsgGroup {
+    msgs: OllamaMessage[];
+    tokens: number;
+    importance: number;
+    originalIndex: number;
+  }
+
+  const groups: MsgGroup[] = [];
+  let i = 0;
+  while (i < olderMsgs.length) {
+    const msg = olderMsgs[i];
+    if (msg.role === 'assistant' && msg.tool_calls?.length) {
+      // 原子组：assistant(带 tool_calls) + 后续连续的 tool 消息
+      const groupMsgs: OllamaMessage[] = [msg];
+      let tokens = estimateTokens(msg.content || '') +
+        (msg.images ? msg.images.length * 100 : 0) +
+        (msg.tool_calls ? msg.tool_calls.length * 50 : 0);
+      let maxImportance = scoreMessageImportance(msg);
+      let j = i + 1;
+      while (j < olderMsgs.length && olderMsgs[j].role === 'tool') {
+        const toolMsg = olderMsgs[j];
+        groupMsgs.push(toolMsg);
+        tokens += estimateTokens(toolMsg.content || '');
+        maxImportance = Math.max(maxImportance, scoreMessageImportance(toolMsg));
+        j++;
+      }
+      groups.push({ msgs: groupMsgs, tokens, importance: maxImportance, originalIndex: i });
+      i = j;
+    } else {
+      const tokens = estimateTokens(msg.content || '') +
+        (msg.images ? msg.images.length * 100 : 0) +
+        (msg.tool_calls ? msg.tool_calls.length * 50 : 0);
+      groups.push({ msgs: [msg], tokens, importance: scoreMessageImportance(msg), originalIndex: i });
+      i++;
+    }
+  }
 
   // system 消息的 token 消耗
   const systemTokens = systemMsgs.reduce((sum, m) => sum + estimateTokens(m.content || ''), 0);
@@ -904,27 +934,29 @@ function trimByTokenLimit(messages: OllamaMessage[], maxTokens: number): OllamaM
   }
 
   // R94: 按综合评分降序排列（重要性 + 时近性），取能装下的最大数量
-  const totalOlder = olderMsgs.length;
-  scored.forEach((s, idx) => {
+  const totalGroups = groups.length;
+  groups.forEach((g, idx) => {
     // R94: 时近性因子 — 越靠近最近窗口的消息得分越高（0~2 分加成）
-    const recencyRatio = totalOlder > 1 ? idx / (totalOlder - 1) : 1;
-    s.importance += Math.round(recencyRatio * 2);
+    const recencyRatio = totalGroups > 1 ? idx / (totalGroups - 1) : 1;
+    g.importance += Math.round(recencyRatio * 2);
   });
-  scored.sort((a, b) => b.importance - a.importance);
+  // 按重要性排序（降序），但保留原始索引用于重建
+  const sortedGroups = [...groups].sort((a, b) => b.importance - a.importance);
 
   let usedTokens = 0;
-  const kept = new Set<number>(); // 保留的索引
-  for (let i = 0; i < scored.length; i++) {
-    if (usedTokens + scored[i].tokens > availableTokens && kept.size >= 2) break;
-    usedTokens += scored[i].tokens;
-    kept.add(i);
+  const keptOriginalIndices = new Set<number>();
+  for (let i = 0; i < sortedGroups.length; i++) {
+    if (usedTokens + sortedGroups[i].tokens > availableTokens && keptOriginalIndices.size >= 2) break;
+    usedTokens += sortedGroups[i].tokens;
+    keptOriginalIndices.add(sortedGroups[i].originalIndex);
   }
 
-  // 按原始顺序重建：system → 按重要性保留的旧消息 → 最近的 protected 消息
+  // 按原始顺序重建：system → 按重要性保留的旧消息组 → 最近的 protected 消息
   const result: OllamaMessage[] = [...systemMsgs];
-  const keptSet = new Set(scored.filter((_, i) => kept.has(i)).map(s => s.msg));
-  for (const m of olderMsgs) {
-    if (keptSet.has(m)) result.push(m);
+  for (const g of groups) {
+    if (keptOriginalIndices.has(g.originalIndex)) {
+      result.push(...g.msgs);
+    }
   }
   result.push(...recentMsgs);
 

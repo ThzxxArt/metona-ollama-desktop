@@ -555,6 +555,12 @@ function renderTerminal(): void {
     _termRenderedCount = 0;
   }
 
+  // 从 idle 状态切换到有内容时，清空 idle DOM
+  // idle 状态用 position:absolute 覆盖在内容上方，不清空会同时显示
+  if (_termRenderedCount === 0 && container.querySelector('.ws-idle-state')) {
+    container.innerHTML = '';
+  }
+
   // 增量追加新行
   const fragment = document.createDocumentFragment();
   for (let i = _termRenderedCount; i < session.lines.length; i++) {
@@ -1068,7 +1074,16 @@ function renderToolCard(tc: ToolCallRecord): string {
       } else if (tc.name === 'write_file') {
         resultHtml = `<div class="tool-result-entry">✅ 已写入 ${escapeHtml(String(r.path || ''))}</div>`;
       } else if (tc.name === 'delete_file') {
-        resultHtml = `<div class="tool-result-entry">✅ 已删除 ${escapeHtml(String(r.path || ''))}</div>`;
+        if (r.batch) {
+          resultHtml = `<div class="tool-result-entry">✅ 批量删除 ${r.successCount}/${r.totalPaths} 个路径</div>`;
+          if (r.results) {
+            for (const res of r.results) {
+              resultHtml += `<div class="tool-result-entry">${res.success ? '✅' : '❌'} ${escapeHtml(String(res.path || ''))}${res.success ? '' : ' — ' + escapeHtml(String(res.error || ''))}</div>`;
+            }
+          }
+        } else {
+          resultHtml = `<div class="tool-result-entry">✅ 已删除 ${escapeHtml(String(r.path || ''))}</div>`;
+        }
       } else if (tc.name === 'create_directory') {
         resultHtml = `<div class="tool-result-entry">✅ 已创建 ${escapeHtml(String(r.path || ''))}</div>`;
       } else {

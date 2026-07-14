@@ -5,7 +5,7 @@
 import { state, KEYS } from '../state/state.js';
 import { formatSize } from '../utils/utils.js';
 import { OllamaAPI } from '../api/ollama.js';
-import { logConnection, logError, logDebug } from '../services/log-service.js';
+import { logConnection, logError, logDebug, logInfo } from '../services/log-service.js';
 
 let connStatusEl: HTMLElement;
 
@@ -54,7 +54,7 @@ export async function updateConnectionInfo(): Promise<void> {
     badge.className = 'status-badge success';
     verEl.textContent = `v${version.version}`;
     corsHint.style.display = 'none';
-    logConnection('info', `Ollama v${version.version}`);
+    logInfo(`Ollama 服务器版本: v${version.version}`);
   } catch (err) {
     badge.textContent = '✗ 未连接';
     badge.className = 'status-badge error';

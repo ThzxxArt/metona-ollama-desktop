@@ -91,7 +91,7 @@ function persist(): void {
     fs.writeFileSync(tmpPath, buf);
     fs.renameSync(tmpPath, dbPath);
   } catch (err) {
-    // 记录到启动日志文件（console.error 会被 main.ts 的 uncaughtException 捕获）
+    // 主进程无 log-service，使用 console.error 输出到 stderr（会被 Electron 日志捕获）
     console.error(`[SQLite persist] 写入失败: ${(err as Error).message}`);
   }
 }

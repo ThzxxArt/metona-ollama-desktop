@@ -111,8 +111,7 @@ class AppState {
   private _notify(key: string, value: unknown, old: unknown): void {
     if (!this._listeners.has(key)) return;
     for (const cb of this._listeners.get(key)!) {
-      try { cb(value, old); } catch (e) {
-      }
+      try { cb(value, old); } catch { /* 回调异常不影响其他监听器 */ }
     }
   }
 

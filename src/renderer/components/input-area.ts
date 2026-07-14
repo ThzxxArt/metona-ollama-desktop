@@ -15,9 +15,10 @@ import { showToast } from './toast.js';
 import { addToolCard, startToolCard, updateToolCard, clearToolCardsExternal, clearTerminalExternal, getWorkspaceDirPath, hasActiveCards, showWorkingHint, clearWorkingHint } from './workspace-panel.js';
 import { ChatDB } from '../db/chat-db.js';
 import { OllamaAPI } from '../api/ollama.js';
-import { runAgentLoop } from '../services/agent-engine.js';
+import { runAgentLoop, formatToolResultForModel } from '../services/agent-engine.js';
 import { estimateTokens } from '../services/context-manager.js';
 import { showToolConfirm } from './tool-confirm-modal.js';
+import { showConfirm } from './prompt-modal.js';
 import { logInfo, logStream, logError, logSuccess, logWarn, resetVideoProgress, updateVideoProgress } from '../services/log-service.js';
 import type { ChatSession, ChatMessage, OllamaStreamChunk, OllamaMessage, FileContent, ChatFile, ToolCallRecord, AgentMode } from '../types.js';
 
@@ -95,9 +96,9 @@ export function initInputArea(): void {
     // Ctrl+K: 清空聊天（需要确认）
     if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
       e.preventDefault();
-      if (confirm('确定要清空当前对话吗？')) {
-        clearMessages();
-      }
+      showConfirm('确定要清空当前对话吗？', '清空对话').then(ok => {
+        if (ok) clearMessages();
+      });
     }
     // Escape: 停止生成（当正在流式输出时）
     if (e.key === 'Escape' && state.get<boolean>(KEYS.IS_STREAMING)) {
@@ -1023,17 +1024,21 @@ function buildHistoryMessages(msgs: ChatMessage[], maxCount = 20): OllamaMessage
       result.push(assistantMsg);
 
       // ── 注入 tool 结果消息（role: 'tool'）──
+      // 复用 formatToolResultForModel 保持与当前 Loop 格式一致
       if (msg.toolCalls?.length) {
         for (const tc of msg.toolCalls) {
           if (!tc.result) continue;
           if (result.length >= maxCount) break;
-          const resultContent = tc.status === 'success'
-            ? JSON.stringify(tc.result)
-            : JSON.stringify({ success: false, error: tc.result.error || '工具执行失败' });
+          const formattedResult = formatToolResultForModel(tc.name, tc.result);
+          // R92: 工具结果格式标准化 — 添加统一头信息 + 数据边界标记
+          const resultDuration = Date.now() - tc.timestamp;
+          const resultSize = formattedResult.length;
+          const sizeCategory = resultSize > 10000 ? 'large' : resultSize > 2000 ? 'medium' : 'small';
+          const r92Header = `[工具:${tc.name} 状态:${tc.status} 耗时:${resultDuration}ms 大小:${sizeCategory}(${resultSize}字符)]`;
           result.push({
             role: 'tool',
             tool_name: tc.name,
-            content: resultContent,
+            content: `<<<TOOL_RESULT_START name="${tc.name}">>>\n${r92Header}\n${formattedResult}\n<<<TOOL_RESULT_END>>>`,
           });
         }
       }

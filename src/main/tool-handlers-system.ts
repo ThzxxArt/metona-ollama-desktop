@@ -11,11 +11,12 @@ import { mainWindow } from './main.js';
 import { sendLog, resolvePath, type ToolResult } from './tool-handlers-shared.js';
 import { getWorkspaceDir } from './workspace.js';
 import { getSetting } from './db/sqlite.js';
+import { browserOpen, browserExtract, browserClose } from './browser.js';
 
 /** 当前工具命令进程（用于用户手动终止） */
 let _toolProc: ReturnType<typeof spawn> | null = null;
 
-export async function handleRunCommand(params: { command: string; cwd?: string; timeout?: number }): Promise<ToolResult> {
+export async function handleRunCommand(params: { command: string; cwd?: string }): Promise<ToolResult> {
   try {
     const cmdCheck = checkCommandAllowed(params.command);
     if (!cmdCheck.ok) {
@@ -375,8 +376,6 @@ function htmlToMarkdown(html: string): string {
   return text.trim();
 }
 
-import { browserOpen, browserExtract, browserClose } from './browser.js';
-
 // ──────────────────────────────────────────────────
 // web_fetch 重试配置
 // ──────────────────────────────────────────────────
@@ -407,7 +406,7 @@ async function browserFallback(url: string, maxChars: number): Promise<{ text: s
     if (!openResult.success) return null;
     await new Promise(r => setTimeout(r, 2500)); // 等待 JS 渲染
     const extractResult = await browserExtract();
-    browserClose();
+    await browserClose();
     if (extractResult.success && extractResult.text && extractResult.text.length > 0) {
       let text = extractResult.text;
       if (maxChars > 0 && text.length > maxChars) text = text.slice(0, maxChars);
@@ -419,7 +418,7 @@ async function browserFallback(url: string, maxChars: number): Promise<{ text: s
     }
     return null;
   } catch {
-    try { browserClose(); } catch { /* */ }
+    try { await browserClose(); } catch { /* */ }
     return null;
   }
 }
@@ -1649,7 +1648,7 @@ export function handleCalculator(params: { expression: string }): ToolResult {
 
 function safeCalc(expr: string): number {
   expr = expr.replace(/\s+/g, '');
-  if (!/^[\d+\-*/().%^]+$/.test(expr)) {
+  if (!/^[\d+\-*/().%]+$/.test(expr)) {
     throw new Error('表达式包含非法字符');
   }
   let pos = 0;

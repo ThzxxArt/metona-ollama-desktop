@@ -290,7 +290,7 @@ export type StateKey =
   | '_planResumeData'
   | '_lastPlanStatus'
   | '_planLastInjectedDone'
-  | 'toolModes'
+  | 'globalToolMode'
   | 'planAutoConfirm';
 
 // ═══════════════════════════════════════════════════════════

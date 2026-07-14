@@ -3,7 +3,7 @@
  * 通过隐藏 BrowserWindow 实现网页加载、截图、JS 执行
  */
 
-import { BrowserWindow } from 'electron';
+import { BrowserWindow, session } from 'electron';
 import { mainWindow } from './main.js';
 
 function sendLog(level: 'info' | 'success' | 'warn' | 'error', message: string, detail?: string): void {
@@ -11,6 +11,12 @@ function sendLog(level: 'info' | 'success' | 'warn' | 'error', message: string, 
 }
 
 let agentBrowser: BrowserWindow | null = null;
+
+/** Agent 浏览器使用的独立 session partition（内存隔离，重启清空） */
+const AGENT_PARTITION = 'agent';
+
+/** 伪装的 User-Agent — 移除 Electron 字样，使用常见 Chrome UA */
+const AGENT_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
 
 /** 浏览器是否已打开且可用 */
 export function isBrowserOpen(): boolean {
@@ -41,9 +47,13 @@ function getAgentBrowser(): BrowserWindow {
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
-      webSecurity: false,
+      webSecurity: true,       // 开启同源策略（防跨域攻击）
+      partition: AGENT_PARTITION, // 独立 session：与主窗口隔离 cookie/storage/缓存
     }
   });
+
+  // 设置伪装 User-Agent
+  agentBrowser.webContents.setUserAgent(AGENT_UA);
 
   agentBrowser.on('closed', () => { agentBrowser = null; });
   return agentBrowser;
@@ -385,11 +395,21 @@ export async function browserWait(params: { selector?: string; time_ms?: number 
   }
 }
 
-/** 关闭浏览器 */
-export function browserClose(): void {
+/** 关闭浏览器并清理 session 资源 */
+export async function browserClose(): Promise<void> {
   if (agentBrowser && !agentBrowser.isDestroyed()) {
     agentBrowser.close();
-    sendLog('info', '🌐 browser 已关闭');
+    agentBrowser = null;
+    // 清理 Agent session 的缓存和存储数据（内存 partition 关闭后自动清空，这里做显式清理确保彻底）
+    try {
+      const agentSession = session.fromPartition(AGENT_PARTITION);
+      await Promise.all([
+        agentSession.clearCache(),
+        agentSession.clearStorageData({ storages: ['cookies', 'localstorage', 'indexdb', 'shadercache', 'serviceworkers', 'cachestorage'] }),
+      ]);
+    } catch { /* 清理失败不阻塞 */ }
+    sendLog('info', '🌐 browser 已关闭，session 已清理');
+  } else {
+    agentBrowser = null;
   }
-  agentBrowser = null;
 }

@@ -59,6 +59,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
           recursive: { type: 'boolean', description: 'List recursively. Default: false.' },
           max_depth: { type: 'integer', description: 'Max recursion depth. Default: 3.' },
           include_hidden: { type: 'boolean', description: 'Include hidden files. Default: false.' },
+          filter_extension: { type: 'string', description: 'Filter files by extension (e.g. ".txt"). Only files matching this extension are returned. Default: no filter.' },
           offset: { type: 'integer', description: 'Skip first N entries for pagination. Default: 0.' }
         }
       }
@@ -77,7 +78,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
           query: { type: 'string', description: 'Search query (glob, text, or regex).' },
           search_type: { type: 'string', enum: ['filename', 'content', 'both'], description: 'Search target. Default: both.' },
           case_sensitive: { type: 'boolean', description: 'Case sensitive. Default: false.' },
-          max_results: { type: 'integer', description: 'Max results. Default: 50.' },
+          max_results: { type: 'integer', description: 'Max results. Default: 0 (no limit).' },
           file_extensions: { type: 'array', items: { type: 'string' }, description: 'Filter extensions, e.g. [".ts", ".js"]' },
           use_regex: { type: 'boolean', description: 'Treat query as regular expression. Default: false.' }
         }
@@ -102,12 +103,12 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'delete_file',
-      description: 'Delete a file or directory. Returns deleted item count and total size. Use recursive=true for non-empty directories.',
+      description: 'Delete a file or directory. Supports batch deletion via paths parameter. At least one of path or paths must be provided. Returns deleted item count and total size. Use recursive=true for non-empty directories.',
       parameters: {
         type: 'object',
-        required: ['path'],
         properties: {
-          path: { type: 'string', description: 'Path to delete.' },
+          path: { type: 'string', description: 'Single path to delete. Use this for deleting one file/directory.' },
+          paths: { type: 'array', items: { type: 'string' }, description: 'Multiple paths to delete in batch. Use this when deleting multiple files at once.' },
           recursive: { type: 'boolean', description: 'Recursive delete for directories. Returns filesDeleted count and total deletedSize.' }
         }
       }
@@ -117,7 +118,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'run_command',
-      description: 'Execute a shell command via workspace. No timeout limit — runs until the process exits. Requires user confirmation. Output is streamed in real-time through the workspace process.',
+      description: 'Execute a shell command via workspace. Timeout configurable (default 300s for general, 600s for long-running). cwd defaults to workspace directory. Requires user confirmation. Output is streamed in real-time through the workspace process.',
       parameters: {
         type: 'object',
         required: ['command'],
@@ -219,7 +220,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         required: ['path'],
         properties: {
           path: { type: 'string', description: 'Root directory path.' },
-          max_depth: { type: 'integer', description: 'Max depth. Default: 3.' },
+          max_depth: { type: 'integer', description: 'Max depth. Default: 5.' },
           include_hidden: { type: 'boolean', description: 'Include hidden files. Default: false.' }
         }
       }
@@ -715,6 +716,13 @@ export function setToolMode(toolName: string, mode: ToolMode): void {
 /** 兼容旧接口：设置 run_command 执行模式 */
 export function setRunCommandMode(mode: ToolMode): void {
   setToolMode('run_command', mode);
+}
+
+/** 初始化全局工具模式（从数据库加载） */
+export function initGlobalToolMode(mode: ToolMode): void {
+  for (const toolName of MODE_TOOLS) {
+    setToolMode(toolName, mode);
+  }
 }
 
 let enabledTools: Set<string> = new Set([

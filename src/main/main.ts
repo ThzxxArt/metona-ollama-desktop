@@ -197,7 +197,7 @@ app.on('window-all-closed', () => {
 app.on('before-quit', async () => {
   isQuitting = true;
   // 清理浏览器
-  browserClose();
+  browserClose().catch(() => {});
   // 清理 MCP 服务器
   stopAllServers();
   // 清理所有工作空间进程

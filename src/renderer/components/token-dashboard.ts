@@ -4,7 +4,7 @@
  */
 
 import { state, KEYS } from '../state/state.js';
-import { formatTime } from '../utils/utils.js';
+import { formatTime, escapeHtml } from '../utils/utils.js';
 import { logError } from '../services/log-service.js';
 import { getEffectiveNumCtx, getModelContextLength } from './model-bar.js';
 import { estimateTokens } from '../services/context-manager.js';
@@ -37,17 +37,6 @@ interface GlobalTokenTotals {
 interface AllSessionsTokenStats {
   sessions: SessionTokenStat[];
   totals: GlobalTokenTotals;
-}
-
-/** P1 #5: HTML 转义，防止 XSS */
-function escapeHtml(s: unknown): string {
-  if (s == null) return '';
-  return String(s)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
 }
 
 /** 打开仪表盘 */
@@ -198,7 +187,7 @@ async function fetchGlobalStats(): Promise<AllSessionsTokenStats | null> {
       return result;
     }
   } catch (err) {
-    logError('Token Dashboard: 获取全局统计失败', String(err));
+    logError('Token Dashboard: 获取全局统计失败', (err as Error).message);
   }
   return null;
 }

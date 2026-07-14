@@ -213,7 +213,6 @@ export function validateMemoryMd(content: string): { valid: boolean; error?: str
     return { valid: false, error: `文件必须以 "# METONA MEMORY" 开头，当前: "${firstLine?.slice(0, 50) || '(空)'}"`, line: 1 };
   }
 
-  let entryCount = 0;
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i];
 
@@ -227,8 +226,6 @@ export function validateMemoryMd(content: string): { valid: boolean; error?: str
       // 非元数据行的内容行（属于上一个条目）
       continue;
     }
-
-    entryCount++;
 
     // 验证类型
     const type = headerMatch[1].toLowerCase();
@@ -257,10 +254,6 @@ export function validateMemoryMd(content: string): { valid: boolean; error?: str
     if (tags.length === 0) {
       return { valid: false, error: `第 ${i + 1} 行: tags 至少需要一个标签`, line: i + 1 };
     }
-  }
-
-  if (entryCount === 0 && content.includes('## ')) {
-    // 有 ## 但没匹配到，格式可能有问题
   }
 
   return { valid: true };

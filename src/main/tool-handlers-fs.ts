@@ -243,21 +243,24 @@ export async function handleListDir(params: { path: string; recursive?: boolean;
     if (!allowed.ok) return { success: false, error: allowed.reason };
 
     const startOffset = params.offset || 0;
+    const MAX_ENTRIES = 2000;
     const entries: Array<{ name: string; type: string; size: number | null; modified: string }> = [];
     let truncated = false;
     let skipped = 0;
 
     async function scanDir(dir: string, depth: number): Promise<void> {
+      if (truncated) return;
       if (params.recursive && params.max_depth && depth > params.max_depth) return;
 
       const items = await fs.readdir(dir, { withFileTypes: true });
       for (const item of items) {
+        if (truncated) return;
         if (!params.include_hidden && item.name.startsWith('.')) continue;
         if (params.filter_extension && item.isFile() && !item.name.endsWith(params.filter_extension)) continue;
 
         const fullPath = path.join(dir, item.name);
 
-        // P0 修复：递归模式下先递归子目录，再做分页跳过（避免跳过目录时丢失子树）
+        // 递归模式下先递归子目录，再做分页跳过（避免跳过目录时丢失子树）
         if (params.recursive && item.isDirectory()) {
           await scanDir(fullPath, depth + 1);
           continue;
@@ -265,6 +268,9 @@ export async function handleListDir(params: { path: string; recursive?: boolean;
 
         // 分页：跳过前 offset 个条目（仅对非目录条目计数）
         if (skipped < startOffset) { skipped++; continue; }
+
+        // 截断保护：超过 2000 条标记 truncated
+        if (entries.length >= MAX_ENTRIES) { truncated = true; return; }
 
         const stat = await fs.stat(fullPath);
         entries.push({
@@ -413,9 +419,67 @@ export async function handleCreateDir(params: { path: string }): Promise<ToolRes
   }
 }
 
-export async function handleDeleteFile(params: { path: string; recursive?: boolean }): Promise<ToolResult> {
+export async function handleDeleteFile(params: { path?: string; paths?: string[]; recursive?: boolean }): Promise<ToolResult> {
+  // 收集所有要删除的路径
+  const allPaths: string[] = [];
+  if (params.paths && Array.isArray(params.paths) && params.paths.length > 0) {
+    allPaths.push(...params.paths);
+  }
+  if (params.path) {
+    allPaths.push(params.path);
+  }
+  if (allPaths.length === 0) {
+    return { success: false, error: '未提供 path 或 paths 参数' };
+  }
+
+  // 单个路径 — 保持原逻辑（返回单个结果）
+  if (allPaths.length === 1) {
+    return handleDeleteSingle(allPaths[0], params.recursive);
+  }
+
+  // 批量删除
+  const results: Array<{ path: string; success: boolean; error?: string; type?: string; deletedSize?: number; filesDeleted?: number }> = [];
+  let totalDeletedSize = 0;
+  let totalFilesDeleted = 0;
+  let successCount = 0;
+  let failCount = 0;
+
+  for (const p of allPaths) {
+    const result = await handleDeleteSingle(p, params.recursive);
+    if (result.success) {
+      successCount++;
+      totalDeletedSize += (result as Record<string, unknown>).deletedSize as number || 0;
+      totalFilesDeleted += (result as Record<string, unknown>).filesDeleted as number || 1;
+      results.push({
+        path: (result as Record<string, unknown>).path as string,
+        success: true,
+        type: (result as Record<string, unknown>).type as string,
+        deletedSize: (result as Record<string, unknown>).deletedSize as number,
+        ...((result as Record<string, unknown>).filesDeleted !== undefined && { filesDeleted: (result as Record<string, unknown>).filesDeleted as number }),
+      });
+    } else {
+      failCount++;
+      results.push({ path: p, success: false, error: (result as Record<string, unknown>).error as string });
+    }
+  }
+
+  return {
+    success: failCount === 0,
+    batch: true,
+    totalPaths: allPaths.length,
+    successCount,
+    failCount,
+    results,
+    deletedSize: totalDeletedSize,
+    ...(totalFilesDeleted > 0 && { filesDeleted: totalFilesDeleted }),
+    ...(failCount > 0 && { error: `${failCount} 个路径删除失败` }),
+  };
+}
+
+/** 删除单个文件或目录 */
+async function handleDeleteSingle(rawPath: string, recursive?: boolean): Promise<ToolResult> {
   try {
-    const filePath = resolvePath(params.path);
+    const filePath = resolvePath(rawPath);
     const allowed = checkPathAllowed(filePath, 'write');
     if (!allowed.ok) return { success: false, error: allowed.reason };
 
@@ -442,7 +506,7 @@ export async function handleDeleteFile(params: { path: string; recursive?: boole
       await countDir(filePath);
       deletedCount = fileCount;
 
-      if (params.recursive) {
+      if (recursive) {
         await fs.rm(filePath, { recursive: true, force: true });
       } else {
         await fs.rmdir(filePath);
@@ -453,6 +517,7 @@ export async function handleDeleteFile(params: { path: string; recursive?: boole
 
     return {
       success: true, path: filePath, deleted: true,
+      message: `已删除${isDir ? '目录' : '文件'}：${filePath}`,
       type: isDir ? 'directory' : 'file',
       ...(isDir && { filesDeleted: deletedCount }),
       deletedSize,

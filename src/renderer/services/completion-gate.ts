@@ -16,18 +16,6 @@ import type { LoopContext, CompletionCheck } from '../types.js';
 // 内置检查项
 // ═══════════════════════════════════════════════════════════════
 
-/** 内容质量检查：回复不应过短或不完整 */
-const contentQualityCheck: CompletionCheck = {
-  name: 'contentQuality',
-  description: '检查回复长度和质量是否达到最低标准',
-  check: async (ctx: LoopContext) => {
-    if (ctx.content.length < 50) {
-      return { passed: false, reason: '回复内容过短（<50字），可能不完整。请给出更详细的最终回答。' };
-    }
-    return { passed: true, reason: '' };
-  },
-};
-
 /** 工具结果审查：是否存在未处理的工具错误 */
 const toolResultReviewCheck: CompletionCheck = {
   name: 'toolResultReview',
@@ -137,7 +125,6 @@ const planModeCompletionCheck: CompletionCheck = {
 
 /** 默认启用的检查项 */
 const DEFAULT_ENABLED_CHECKS = new Set([
-  'contentQuality',
   'toolResultReview',
   'notThinking',
   'planModeCompletion',
@@ -145,7 +132,6 @@ const DEFAULT_ENABLED_CHECKS = new Set([
 
 /** 注册表 */
 const checkRegistry = new Map<string, CompletionCheck>([
-  ['contentQuality', contentQualityCheck],
   ['toolResultReview', toolResultReviewCheck],
   ['notThinking', notThinkingCheck],
   ['contextEfficiency', contextEfficiencyCheck],
@@ -203,7 +189,6 @@ export interface GateResult {
 
 /** R127: 各检查项的权重分配 */
 const CHECK_WEIGHTS: Record<string, number> = {
-  contentQuality: 30,
   toolResultReview: 25,
   notThinking: 20,
   contextEfficiency: 15,
@@ -259,20 +244,23 @@ export async function runCompletionGate(ctx: LoopContext): Promise<GateResult> {
         };
       }
     } catch (err) {
+      // 检查项本身抛异常：容错不阻塞流程，但语义上标记为未通过且不得分
       const weight = CHECK_WEIGHTS[check.name] ?? 10;
       maxScore += weight;
+      const errMsg = `检查异常: ${(err as Error).message}`;
+      logWarn(`Completion Gate: "${check.name}" 检查项抛出异常 — ${errMsg}`);
       details.push({
         name: check.name,
-        passed: true,
-        reason: `检查异常: ${(err as Error).message}`,
+        passed: false,
+        reason: errMsg,
         durationMs: Date.now() - start,
       });
       scoreBreakdown.push({
         check: check.name,
-        passed: true,
-        points: weight,
+        passed: false,
+        points: 0,
       });
-      totalScore += weight;
+      // 注意：此处不 return，继续执行后续检查项（容错设计）
     }
   }
 

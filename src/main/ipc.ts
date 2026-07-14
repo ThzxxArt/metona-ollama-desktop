@@ -75,11 +75,11 @@ function summarizeResult(toolName: string, result: Record<string, unknown>): str
     case 'list_directory': return `${result.path} (${result.total} 项${result.truncated ? ', 已截断' : ''})`;
     case 'search_files': return `"${result.query}" → ${result.total_matches} 匹配 / ${result.total_files} 文件`;
     case 'create_directory': return String(result.path);
-    case 'delete_file': return String(result.path);
+    case 'delete_file': return result.batch ? `批量删除 ${result.successCount}/${result.totalPaths} 个路径` : String(result.path);
     case 'move_file': return `${result.source} → ${result.destination}`;
     case 'copy_file': return `${result.source} → ${result.destination}`;
     case 'web_fetch': return `${result.status} | ${result.length} chars`;
-    case 'web_search': return `[${(result as any)._mode === 'searxng' ? 'SearXNG' : '内置'}] "${result.query}" → ${result.total} 条结果`;
+    case 'web_search': return `[${String(result._mode) === 'searxng' ? 'SearXNG' : '内置'}] "${result.query}" → ${result.total} 条结果`;
     case 'edit_file': return `${result.path} (${result.replaceCount} 处替换)`;
     case 'get_file_info': return `${result.name} (${result.type}, ${result.size}B)`;
     case 'tree': return `${result.path} (${result.fileCount} 文件 / ${result.dirCount} 目录)`;
@@ -89,12 +89,12 @@ function summarizeResult(toolName: string, result: Record<string, unknown>): str
     case 'read_multiple_files': return `${result.total} 个文件`;
     case 'git': return `${result.action} ✓`;
     case 'compress': return `${result.action} → ${result.archive || result.destination}`;
-    case 'datetime': return `${(result as any).date || (result as any).iso}`;
-    case 'calculator': return `${(result as any).expression} = ${(result as any).result}`;
-    case 'random': return `${(result as any).type === 'pick' ? '🎲 ' + String((result as any).result) : String((result as any).result)}`;
-    case 'uuid': return `${(result as any).result}`;
-    case 'json_format': return `${(result as any).keys || 0} keys, ${(result as any).formatted_size}B`;
-    case 'hash': return `${(result as any).algorithm}: ${(result as any).hash?.slice(0, 16)}...`;
+    case 'datetime': return `${result.date || result.iso}`;
+    case 'calculator': return `${result.expression} = ${result.result}`;
+    case 'random': return `${String(result.type) === 'pick' ? '🎲 ' : ''}${result.result}`;
+    case 'uuid': return `${result.result}`;
+    case 'json_format': return `${Number(result.keys) || 0} keys, ${result.formatted_size}B`;
+    case 'hash': return `${result.algorithm}: ${String(result.hash ?? '').slice(0, 16)}...`;
     default: return '完成';
   }
 }
@@ -206,8 +206,8 @@ export async function setupIPC(): Promise<void> {
         case 'list_directory':     result = await handleListDir(args as { path: string; recursive?: boolean; max_depth?: number; include_hidden?: boolean; filter_extension?: string; limit?: number; offset?: number }); break;
         case 'search_files':       result = await handleSearchFiles(args as { path: string; query: string; search_type?: string; case_sensitive?: boolean; use_regex?: boolean; max_results?: number; file_extensions?: string[] }); break;
         case 'create_directory':   result = await handleCreateDir(args as { path: string }); break;
-        case 'delete_file':        result = await handleDeleteFile(args as { path: string; recursive?: boolean }); break;
-        case 'run_command':        return await handleRunCommand(args as { command: string; cwd?: string; timeout?: number }); // run_command 自身管理日志
+        case 'delete_file':        result = await handleDeleteFile(args as { path?: string; paths?: string[]; recursive?: boolean }); break;
+        case 'run_command':        return await handleRunCommand(args as { command: string; cwd?: string }); // run_command 自身管理日志
         case 'move_file':          result = await handleMoveFile(args as { source: string; destination: string }); break;
         case 'copy_file':          result = await handleCopyFile(args as { source: string; destination: string; recursive?: boolean }); break;
         case 'web_fetch':          result = await handleWebFetch(args as { url: string; max_chars?: number; extract_mode?: string; mobile_ua?: boolean; retry?: boolean }); break;
@@ -236,7 +236,7 @@ export async function setupIPC(): Promise<void> {
         case 'browser_type':       result = await browserType(args.selector as string, args.text as string, args.clear !== false, args.submit as boolean || false); break;
         case 'browser_scroll':     result = await browserScroll({ direction: args.direction as string, selector: args.selector as string }); break;
         case 'browser_wait':       result = await browserWait({ selector: args.selector as string, time_ms: args.time_ms as number }); break;
-        case 'browser_close':      browserClose(); result = { success: true }; break;
+        case 'browser_close':      await browserClose(); result = { success: true }; break;
         default:                   return { success: false, error: `未知工具: ${toolName}` };
       }
       // 结果日志
@@ -588,14 +588,12 @@ function validateMemoryContent(content: string): boolean {
   const firstLine = lines[0]?.trim();
   if (firstLine !== '# METONA MEMORY') return false;
 
-  // 检查是否有 ## 条目头，且格式正确
-  let entryCount = 0;
+  // 检查 ## 条目头格式是否正确
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('>')) continue;
     const match = trimmed.match(/^##\s+(fact|preference|rule)\s*\|\s*id:\s*(mem_\d{8}_\d{3})\s*\|\s*importance:\s*(\d{1,2})\s*\|\s*tags:\s*(.+)$/i);
     if (match) {
-      entryCount++;
       const importance = parseInt(match[3], 10);
       if (importance < 1 || importance > 10) return false;
       const tagsStr = match[4]?.trim();
@@ -635,89 +633,86 @@ function parseVideoInfo(stderr: string): { duration: number; width: number; heig
   return { duration, width, height };
 }
 
-function extractVideoFrames(filePath: string, maxFrames: number, maxWidth: number): Promise<{ success: boolean; frames?: ExtractedFrame[]; videoInfo?: VideoInfo; error?: string }> {
-  return new Promise(async (resolve) => {
-    const tmpDir = path.join(os.tmpdir(), `metona-video-${crypto.randomBytes(6).toString('hex')}`);
-    try {
-      await fs.promises.mkdir(tmpDir, { recursive: true });
+async function extractVideoFrames(filePath: string, maxFrames: number, maxWidth: number): Promise<{ success: boolean; frames?: ExtractedFrame[]; videoInfo?: VideoInfo; error?: string }> {
+  const tmpDir = path.join(os.tmpdir(), `metona-video-${crypto.randomBytes(6).toString('hex')}`);
+  try {
+    await fs.promises.mkdir(tmpDir, { recursive: true });
 
-      // ffmpeg 提取帧：1fps，同时捕获 stderr 解析进度和视频信息
-      const outPattern = path.join(tmpDir, 'frame_%04d.jpg');
-      let ffmpegStderr = '';
-      let lastProgressFrame = 0;
-      let lastProgressTime = Date.now();
+    // ffmpeg 提取帧：1fps，同时捕获 stderr 解析进度和视频信息
+    const outPattern = path.join(tmpDir, 'frame_%04d.jpg');
+    let ffmpegStderr = '';
+    let lastProgressFrame = 0;
+    let lastProgressTime = Date.now();
 
-      await new Promise<void>((ffResolve, ffReject) => {
-        const child = execFile(getFFmpegPath(), [
-          '-y',
-          '-i', filePath,
-          '-vf', `scale=${maxWidth}:-1,fps=1`,
-          '-q:v', '3',
-          '-frames:v', String(maxFrames),
-          '-threads', '2',
-          '-progress', 'pipe:1',  // 结构化进度输出到 stdout
-          outPattern
-        ], { timeout: 120_000 }, (err) => {
-          if (err) { ffReject(new Error(`ffmpeg 执行失败: ${err.message}`)); return; }
-          ffResolve();
-        });
-        child.stderr?.on('data', (data: Buffer) => {
-          ffmpegStderr += data.toString();
-          // 实时推送进度到渲染进程（每秒一次，覆盖更新）
-          const match = ffmpegStderr.match(/frame=\s*(\d+)/g);
-          if (match) {
-            const last = match[match.length - 1];
-            const currentFrame = parseInt(last.replace(/\D/g, ''));
-            if (currentFrame > lastProgressFrame && Date.now() - lastProgressTime > 1000) {
-              lastProgressFrame = currentFrame;
-              lastProgressTime = Date.now();
-              mainWindow?.webContents.send('video:progress', { current: currentFrame });
-            }
-          }
-        });
+    await new Promise<void>((ffResolve, ffReject) => {
+      const child = execFile(getFFmpegPath(), [
+        '-y',
+        '-i', filePath,
+        '-vf', `scale=${maxWidth}:-1,fps=1`,
+        '-q:v', '3',
+        '-frames:v', String(maxFrames),
+        '-threads', '2',
+        '-progress', 'pipe:1',  // 结构化进度输出到 stdout
+        outPattern
+      ], { timeout: 120_000 }, (err) => {
+        if (err) { ffReject(new Error(`ffmpeg 执行失败: ${err.message}`)); return; }
+        ffResolve();
       });
+      child.stderr?.on('data', (data: Buffer) => {
+        ffmpegStderr += data.toString();
+        // 实时推送进度到渲染进程（每秒一次，覆盖更新）
+        const match = ffmpegStderr.match(/frame=\s*(\d+)/g);
+        if (match) {
+          const last = match[match.length - 1];
+          const currentFrame = parseInt(last.replace(/\D/g, ''));
+          if (currentFrame > lastProgressFrame && Date.now() - lastProgressTime > 1000) {
+            lastProgressFrame = currentFrame;
+            lastProgressTime = Date.now();
+            mainWindow?.webContents.send('video:progress', { current: currentFrame });
+          }
+        }
+      });
+    });
 
-      // 从 stderr 解析视频信息，失败则从帧数估算
-      let videoInfo = parseVideoInfo(ffmpegStderr);
-      if (!videoInfo) {
-        videoInfo = { duration: 0, width: 0, height: 0 };
-      }
-
-      // 读取提取的帧
-      const files = await fs.promises.readdir(tmpDir);
-      const jpegs = files.filter(f => f.endsWith('.jpg')).sort();
-      if (jpegs.length === 0) {
-        await fs.promises.rm(tmpDir, { recursive: true, force: true });
-        resolve({ success: false, error: '没有提取到视频帧' });
-        return;
-      }
-
-      // 如果没解析到时长，从帧数估算（fps=1）
-      if (videoInfo.duration <= 0) {
-        videoInfo.duration = jpegs.length;
-      }
-
-      const frames: ExtractedFrame[] = [];
-      for (let i = 0; i < jpegs.length; i++) {
-        const f = jpegs[i];
-        const buf = await fs.promises.readFile(path.join(tmpDir, f));
-        if (buf.length < 200) continue;
-        const timestampSec = i; // fps=1，帧索引 = 秒数
-        frames.push({
-          name: `frame_${String(i + 1).padStart(2, '0')}_${timestampSec.toFixed(1)}s.jpg`,
-          base64: buf.toString('base64'),
-          timestampSeconds: timestampSec
-        });
-      }
-
-      await fs.promises.rm(tmpDir, { recursive: true, force: true });
-
-      resolve({ success: true, frames, videoInfo });
-
-    } catch (err) {
-      try { await fs.promises.rm(tmpDir, { recursive: true, force: true }); } catch { /* ignore */ }
-      sendLog('error', '视频帧提取失败', (err as Error).message);
-      resolve({ success: false, error: (err as Error).message });
+    // 从 stderr 解析视频信息，失败则从帧数估算
+    let videoInfo = parseVideoInfo(ffmpegStderr);
+    if (!videoInfo) {
+      videoInfo = { duration: 0, width: 0, height: 0 };
     }
-  });
+
+    // 读取提取的帧
+    const files = await fs.promises.readdir(tmpDir);
+    const jpegs = files.filter(f => f.endsWith('.jpg')).sort();
+    if (jpegs.length === 0) {
+      await fs.promises.rm(tmpDir, { recursive: true, force: true });
+      return { success: false, error: '没有提取到视频帧' };
+    }
+
+    // 如果没解析到时长，从帧数估算（fps=1）
+    if (videoInfo.duration <= 0) {
+      videoInfo.duration = jpegs.length;
+    }
+
+    const frames: ExtractedFrame[] = [];
+    for (let i = 0; i < jpegs.length; i++) {
+      const f = jpegs[i];
+      const buf = await fs.promises.readFile(path.join(tmpDir, f));
+      if (buf.length < 200) continue;
+      const timestampSec = i; // fps=1，帧索引 = 秒数
+      frames.push({
+        name: `frame_${String(i + 1).padStart(2, '0')}_${timestampSec.toFixed(1)}s.jpg`,
+        base64: buf.toString('base64'),
+        timestampSeconds: timestampSec
+      });
+    }
+
+    await fs.promises.rm(tmpDir, { recursive: true, force: true });
+
+    return { success: true, frames, videoInfo };
+
+  } catch (err) {
+    try { await fs.promises.rm(tmpDir, { recursive: true, force: true }); } catch { /* ignore */ }
+    sendLog('error', '视频帧提取失败', (err as Error).message);
+    return { success: false, error: (err as Error).message };
+  }
 }

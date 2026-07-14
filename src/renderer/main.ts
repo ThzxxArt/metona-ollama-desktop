@@ -22,7 +22,7 @@ import { initHistoryModal, closeHistoryModal } from './components/history-modal.
 import { initMemoryModal } from './components/memory-modal.js';
 import { initToolsModal, closeToolsModal } from './components/tools-modal.js';
 import { initTokenDashboard, closeTokenDashboard } from './components/token-dashboard.js';
-import { setToolEnabled, setToolMode, refreshMCPTools } from './services/tool-registry.js';
+import { initGlobalToolMode, refreshMCPTools } from './services/tool-registry.js';
 import { startAllMCPServers } from './services/mcp-client.js';
 import { initToolConfirmModal } from './components/tool-confirm-modal.js';
 import { initWorkspacePanel, clearToolCardsExternal, clearTerminalExternal, switchToTab } from './components/workspace-panel.js';
@@ -296,6 +296,52 @@ async function init(): Promise<void> {
 
   logInit('启动...');
 
+  // ── UI 组件初始化（不依赖数据库，先初始化以避免 catch 路径重复绑定）──
+  initLogPanel();  // ← 日志面板最先初始化，确保后续 init 日志能显示
+  initGlobalErrorHandler();  // R42: 全局错误处理器（紧随日志面板之后）
+  initToast();
+  initLightbox();
+  initHeader();
+  initModelBar();
+  initChatArea();
+  initInputArea();
+  initSettingsModal();
+  initHistoryModal();
+  initHelpModal();
+  initToolConfirmModal();
+  initMemoryModal();
+  initToolsModal();
+  initTokenDashboard();
+  initWorkspacePanel();
+  setupDesktopIntegration();
+  initSearxngModal();
+
+  bindGlobalEvents();
+
+  // ── Harness Engineering 系统初始化（幂等，UI 就绪后即可注册）──
+  initHarnessHooks();
+  // Agent Metrics 无需显式初始化（按需启动）
+  // Context Indexer 在 Agent INIT 状态按需构建
+
+  // ── 状态默认值（不依赖数据库）──
+  state.set(KEYS.CURRENT_SESSION, createNewSession());
+  state.set(KEYS.IS_STREAMING, false);
+  state.set(KEYS.IS_HISTORY_VIEW, false);
+  state.set(KEYS.NUM_CTX, 131072); // 默认 128K
+
+  // ── 防御性重置：确保首次启动不会遗留脏状态 ──
+  state.set('toolCallingEnabled', true);
+  state.set('runCommandMode', 'confirm');  // 兼容旧代码读取
+  state.set('thinkEnabled', false);
+
+  // ── 注入应用版本号到 Agent Metrics ──
+  const _bridge = window.metonaDesktop;
+  if (_bridge?.info) {
+    _bridge.info().then((info: { version?: string }) => {
+      if (info?.version) setAppVersion(info.version);
+    }).catch(() => {});
+  }
+
   try {
     db = new ChatDB();
     await db.init();
@@ -309,37 +355,6 @@ async function init(): Promise<void> {
     state.set(KEYS.API, api);
     logInit(`Ollama 地址: ${serverUrl}`);
 
-    state.set(KEYS.CURRENT_SESSION, createNewSession());
-    state.set(KEYS.IS_STREAMING, false);
-    state.set(KEYS.IS_HISTORY_VIEW, false);
-    state.set(KEYS.NUM_CTX, 131072); // 默认 128K
-
-    // ── 防御性重置：确保首次启动不会遗留脏状态 ──
-    state.set('toolCallingEnabled', true);
-    state.set('runCommandMode', 'confirm');  // 兼容旧代码读取
-    state.set('thinkEnabled', false);
-
-    initLogPanel();  // ← 日志面板最先初始化，确保后续 init 日志能显示
-    initGlobalErrorHandler();  // R42: 全局错误处理器（紧随日志面板之后）
-    initToast();
-    initLightbox();
-    initHeader();
-    initModelBar();
-    initChatArea();
-    initInputArea();
-    initSettingsModal();
-    initHistoryModal();
-    initHelpModal();
-    initToolConfirmModal();
-    initMemoryModal();
-    initToolsModal();
-    initTokenDashboard();
-    initWorkspacePanel();
-    setupDesktopIntegration();
-    initSearxngModal();
-
-    bindGlobalEvents();
-
     await checkConnection();
     await loadModels();
     await loadSearxngConfig(db);
@@ -348,19 +363,6 @@ async function init(): Promise<void> {
     import('./services/memory-service.js').then(({ initMemoryFile }) => {
       initMemoryFile().catch(() => {});
     });
-
-    // ── Harness Engineering 系统初始化 ──
-    initHarnessHooks();
-    // Agent Metrics 无需显式初始化（按需启动）
-    // Context Indexer 在 Agent INIT 状态按需构建
-
-    // ── 注入应用版本号到 Agent Metrics ──
-    const _bridge = window.metonaDesktop;
-    if (_bridge?.info) {
-      _bridge.info().then((info: { version?: string }) => {
-        if (info?.version) setAppVersion(info.version);
-      }).catch(() => {});
-    }
 
     logInit('所有组件已就绪（含 Harness）');
 
@@ -444,22 +446,29 @@ async function init(): Promise<void> {
 
     // ── Tool Calling 设置（永久开启，不可关闭）──
     state.set('toolCallingEnabled', true);
-    // 统一加载所有工具的执行模式（auto/confirm/disabled）
+    // 全局工具执行模式（统一管理所有工具，不区分工具）
     {
-      // 优先读取合并存储的 toolModes JSON
-      const savedModes = await db.getSetting<Record<string, 'auto' | 'confirm' | 'disabled'>>('toolModes', {});
-      // 兼容旧版：如果 toolModes 中没有 run_command 但有独立的 runCommandMode，则迁移
-      if (!savedModes['run_command']) {
-        const legacy = await db.getSetting('runCommandMode', 'confirm') as 'auto' | 'confirm' | 'disabled';
-        savedModes['run_command'] = legacy;
-        await db.saveSetting('toolModes', savedModes);
-        await db.saveSetting('runCommandMode', null); // 清除旧键
+      // 读取全局模式，默认 confirm
+      let globalMode = await db.getSetting<'auto' | 'confirm'>('globalToolMode', 'confirm');
+      // 兼容旧版：从旧的 toolModes 迁移（如果存在）
+      // 注意：之前用 saveSetting('toolModes', null) 清除旧键，JSON.parse("null") 返回 null
+      // 所以这里必须做 null 防御，否则 Object.keys(null) 会抛出 "Cannot convert undefined or null to object"
+      const savedModes = await db.getSetting<Record<string, 'auto' | 'confirm' | 'disabled'>>('toolModes', {}) ?? {};
+      if (savedModes && Object.keys(savedModes).length > 0) {
+        // 如果旧 toolModes 中所有被管理工具都是 auto，则迁移为 auto；否则 confirm
+        const allAuto = [
+          'run_command', 'write_file', 'create_directory', 'delete_file',
+          'edit_file', 'replace_in_files', 'move_file', 'copy_file',
+          'download_file', 'compress',
+        ].every(t => savedModes[t] === 'auto');
+        globalMode = allAuto ? 'auto' : 'confirm';
+        await db.saveSetting('globalToolMode', globalMode);
+        // 清除旧键：用空对象而非 null，避免 JSON.parse("null") 返回 null 的陷阱
+        await db.saveSetting('toolModes', {});
       }
-      state.set('toolModes', savedModes);
-      // 为每个工具应用模式
-      for (const [toolName, mode] of Object.entries(savedModes)) {
-        setToolMode(toolName, mode);
-      }
+      state.set('globalToolMode', globalMode);
+      // 应用全局模式到所有被管理工具
+      initGlobalToolMode(globalMode);
     }
 
     // ── Plan 自动确认设置 ──
@@ -478,7 +487,8 @@ async function init(): Promise<void> {
     logSuccess('应用初始化完成');
   } catch (err) {
     logError('初始化失败', (err as Error).message);
-    if (!api!) {
+    // UI 组件已在 try 块之前初始化，此处不重复调用以避免重复绑定事件监听器
+    if (!api) {
       api = new OllamaAPI();
       state.set(KEYS.API, api);
     }
@@ -486,24 +496,6 @@ async function init(): Promise<void> {
     state.set(KEYS.IS_STREAMING, false);
     state.set(KEYS.IS_HISTORY_VIEW, false);
     state.set(KEYS.CURRENT_SESSION, createNewSession());
-    initLogPanel();
-    bindGlobalEvents();
-    initToast();
-    initLightbox();
-    initHeader();
-    initModelBar();
-    initChatArea();
-    initInputArea();
-    initSettingsModal();
-    initHistoryModal();
-    initHelpModal();
-    initToolConfirmModal();
-    initMemoryModal();
-    initToolsModal();
-    initTokenDashboard();
-    initWorkspacePanel();
-    setupDesktopIntegration();
-    initHarnessHooks();
     // ── MEMORY.md 初始化（fallback 路径）──
     import('./services/memory-service.js').then(({ initMemoryFile }) => {
       initMemoryFile().catch(() => {});

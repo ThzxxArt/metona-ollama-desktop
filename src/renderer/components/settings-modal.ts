@@ -285,6 +285,51 @@ export function initSettingsModal(): void {
       }
     });
   }
+
+  // ── 子代理相关设置（原顶层事件监听器移入此处，确保 DOM 已就绪）──
+  // 子代理模型设置保存
+  document.querySelector('#selectSubAgentModel')?.addEventListener('change', async () => {
+    const db = state.get<ChatDB | null>(KEYS.DB);
+    if (!db) return;
+    const val = (document.querySelector('#selectSubAgentModel') as HTMLSelectElement).value;
+    await db.saveSetting('subAgentModel', val);
+    logSetting('子代理默认模型', val || '跟随当前模型');
+  });
+
+  // 子代理最大轮次
+  const saveSubAgentMaxLoops = debounce(async () => {
+    const db = state.get<ChatDB | null>(KEYS.DB);
+    const val = (document.querySelector('#inputSubAgentMaxLoops') as HTMLInputElement).value.trim();
+    const maxLoops = val ? parseInt(val) : 10;
+    state.set('subAgentMaxLoops', maxLoops);
+    if (db) await db.saveSetting('subAgentMaxLoops', maxLoops);
+    logSetting('子代理最大轮次', `${maxLoops} 轮`);
+  }, 500);
+  document.querySelector('#inputSubAgentMaxLoops')!.addEventListener('input', saveSubAgentMaxLoops);
+
+  // 子代理超时（秒）
+  const saveSubAgentTimeout = debounce(async () => {
+    const db = state.get<ChatDB | null>(KEYS.DB);
+    const val = (document.querySelector('#inputSubAgentTimeout') as HTMLInputElement).value.trim();
+    const sec = val ? parseInt(val) : -1; // -1=默认
+    const ms = sec >= 0 ? sec * 1000 : 300_000;
+    state.set('subAgentTimeout', ms);
+    if (db) await db.saveSetting('subAgentTimeout', sec);
+    logSetting('子代理超时', sec >= 0 ? (sec === 0 ? '已禁用' : `${sec}s`) : '默认(300s)');
+  }, 500);
+  document.querySelector('#inputSubAgentTimeout')!.addEventListener('input', saveSubAgentTimeout);
+
+  // ── 看门狗超时（分钟，0=禁用）──
+  const saveLoopWatchdog = debounce(async () => {
+    const db = state.get<ChatDB | null>(KEYS.DB);
+    const val = (document.querySelector('#inputLoopWatchdog') as HTMLInputElement).value.trim();
+    const minutes = val ? parseInt(val) : -1;
+    const ms = minutes > 0 ? minutes * 60_000 : (minutes === 0 ? 0 : 1_800_000); // 默认30分钟
+    state.set('loopWatchdogMs', ms);
+    if (db) await db.saveSetting('loopWatchdogMs', ms);
+    logSetting('看门狗超时', minutes >= 0 ? (minutes === 0 ? '已禁用' : `${minutes}分钟`) : '默认(30分钟)');
+  }, 500);
+  document.querySelector('#inputLoopWatchdog')!.addEventListener('input', saveLoopWatchdog);
 }
 
 export function openSettingsModal(): void {
@@ -428,50 +473,6 @@ async function populateSubAgentModels(): Promise<void> {
     logWarn('加载子代理模型列表失败', (err as Error).message);
   }
 }
-
-// 子代理模型设置保存
-document.querySelector('#selectSubAgentModel')?.addEventListener('change', async () => {
-  const db = state.get<ChatDB | null>(KEYS.DB);
-  if (!db) return;
-  const val = (document.querySelector('#selectSubAgentModel') as HTMLSelectElement).value;
-  await db.saveSetting('subAgentModel', val);
-  logSetting('子代理默认模型', val || '跟随当前模型');
-});
-
-// 子代理最大轮次
-const saveSubAgentMaxLoops = debounce(async () => {
-  const db = state.get<ChatDB | null>(KEYS.DB);
-  const val = (document.querySelector('#inputSubAgentMaxLoops') as HTMLInputElement).value.trim();
-  const maxLoops = val ? parseInt(val) : 10;
-  state.set('subAgentMaxLoops', maxLoops);
-  if (db) await db.saveSetting('subAgentMaxLoops', maxLoops);
-  logSetting('子代理最大轮次', `${maxLoops} 轮`);
-}, 500);
-document.querySelector('#inputSubAgentMaxLoops')!.addEventListener('input', saveSubAgentMaxLoops);
-
-// 子代理超时（秒）
-const saveSubAgentTimeout = debounce(async () => {
-  const db = state.get<ChatDB | null>(KEYS.DB);
-  const val = (document.querySelector('#inputSubAgentTimeout') as HTMLInputElement).value.trim();
-  const sec = val ? parseInt(val) : -1; // -1=默认
-  const ms = sec >= 0 ? sec * 1000 : 300_000;
-  state.set('subAgentTimeout', ms);
-  if (db) await db.saveSetting('subAgentTimeout', sec);
-  logSetting('子代理超时', sec >= 0 ? (sec === 0 ? '已禁用' : `${sec}s`) : '默认(300s)');
-}, 500);
-document.querySelector('#inputSubAgentTimeout')!.addEventListener('input', saveSubAgentTimeout);
-
-// ── 看门狗超时（分钟，0=禁用）──
-const saveLoopWatchdog = debounce(async () => {
-  const db = state.get<ChatDB | null>(KEYS.DB);
-  const val = (document.querySelector('#inputLoopWatchdog') as HTMLInputElement).value.trim();
-  const minutes = val ? parseInt(val) : -1;
-  const ms = minutes > 0 ? minutes * 60_000 : (minutes === 0 ? 0 : 1_800_000); // 默认30分钟
-  state.set('loopWatchdogMs', ms);
-  if (db) await db.saveSetting('loopWatchdogMs', ms);
-  logSetting('看门狗超时', minutes >= 0 ? (minutes === 0 ? '已禁用' : `${minutes}分钟`) : '默认(30分钟)');
-}, 500);
-document.querySelector('#inputLoopWatchdog')!.addEventListener('input', saveLoopWatchdog);
 
 async function importSessions(filePath: string): Promise<void> {
   const db = state.get<ChatDB | null>(KEYS.DB);

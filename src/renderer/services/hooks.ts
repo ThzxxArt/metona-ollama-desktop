@@ -147,12 +147,18 @@ export const securityCheckHook: HarnessHook = {
     }
 
     // 受保护路径不可删除
-    if (toolName === 'delete_file' && typeof toolArgs?.path === 'string') {
-      const p = (toolArgs.path as string).toLowerCase();
+    if (toolName === 'delete_file') {
       const protectedPaths = ['/etc', '/sys', '/proc', '/dev', '/boot', 'c:\\windows', '.ssh', '.gnupg'];
-      for (const pp of protectedPaths) {
-        if (p.includes(pp)) {
-          return { passed: false, message: `受保护路径不可删除: ${p}` };
+      // 检查 path 和 paths 数组中的所有路径
+      const pathsToCheck: string[] = [];
+      if (typeof toolArgs?.path === 'string') pathsToCheck.push(toolArgs.path);
+      if (Array.isArray(toolArgs?.paths)) pathsToCheck.push(...(toolArgs.paths as unknown[]).map(p => String(p)));
+      for (const p of pathsToCheck) {
+        const lower = p.toLowerCase();
+        for (const pp of protectedPaths) {
+          if (lower.includes(pp)) {
+            return { passed: false, message: `受保护路径不可删除: ${p}` };
+          }
         }
       }
     }

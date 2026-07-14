@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Agent Safety — Agent 安全防护与行为治理模块
  * 
  * 从 agent-engine.ts 提取的 R51-R56 功能：
@@ -1355,12 +1355,17 @@ export function inferToolDependencies(
     }
     
     // read_file/edit_file/delete_file 消费文件
-    if (['read_file', 'edit_file', 'delete_file'].includes(call.name) && call.arguments.path) {
-      const path = String(call.arguments.path);
-      dep.consumes.push(path);
-      const producer = fileProducers.get(path);
-      if (producer) {
-        dep.dependsOn.push(producer);
+    if (['read_file', 'edit_file', 'delete_file'].includes(call.name)) {
+      // 支持 path 单个路径和 paths 数组
+      const pathsToCheck: string[] = [];
+      if (call.arguments.path) pathsToCheck.push(String(call.arguments.path));
+      if (Array.isArray(call.arguments.paths)) pathsToCheck.push(...(call.arguments.paths as unknown[]).map(p => String(p)));
+      for (const path of pathsToCheck) {
+        dep.consumes.push(path);
+        const producer = fileProducers.get(path);
+        if (producer) {
+          dep.dependsOn.push(producer);
+        }
       }
     }
     
