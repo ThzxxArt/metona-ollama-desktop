@@ -37,7 +37,6 @@ interface SessionMetrics {
   toolCalls: Array<{ name: string; status: string; duration?: number }>;
   totalInputTokens: number;
   totalOutputTokens: number;
-  completionGatePassed: boolean;
   errorPatterns: string[];
 }
 
@@ -55,7 +54,6 @@ export function startSessionMetrics(sessionId: string, model: string): void {
     toolCalls: [],
     totalInputTokens: 0,
     totalOutputTokens: 0,
-    completionGatePassed: false,
     errorPatterns: [],
   };
   logDebug(`Agent Metrics: 开始采集会话 ${sessionId}`);
@@ -80,12 +78,6 @@ export function recordToolCall(name: string, status: string, durationMs?: number
       currentMetrics.errorPatterns.push(pattern);
     }
   }
-}
-
-/** 完成门控结果 */
-export function recordCompletionGate(passed: boolean): void {
-  if (!currentMetrics) return;
-  currentMetrics.completionGatePassed = passed;
 }
 
 /** 结束会话度量 */
@@ -124,7 +116,6 @@ function persistMetricsHistory(): void {
       iterations: m.totalIterations,
       toolCallCount: m.toolCalls.length,
       toolSuccessRate: getToolSuccessRate(m),
-      completionGatePassed: m.completionGatePassed,
       errorPatterns: m.errorPatterns,
       inputTokens: m.totalInputTokens,
       outputTokens: m.totalOutputTokens,
@@ -152,7 +143,6 @@ export function loadMetricsHistory(): void {
         toolCalls: [],
         totalInputTokens: item.inputTokens || 0,
         totalOutputTokens: item.outputTokens || 0,
-        completionGatePassed: item.completionGatePassed || false,
         errorPatterns: item.errorPatterns || [],
       });
     }
@@ -192,7 +182,6 @@ export function aggregateMetrics(): AgentMetrics {
       totalSessions: 0,
       avgIterationsPerTask: 0,
       toolSuccessRate: 0,
-      avgCompletionScore: 0,
       frequentErrors: [],
       tokenEfficiency: 0,
       collectedAt: Date.now(),
@@ -221,7 +210,6 @@ export function aggregateMetrics(): AgentMetrics {
     totalSessions: history.length,
     avgIterationsPerTask: Math.round(totalIterations / history.length),
     toolSuccessRate: allToolCalls.length > 0 ? successCalls / allToolCalls.length : 0,
-    avgCompletionScore: history.filter(m => m.completionGatePassed).length / history.length,
     frequentErrors,
     tokenEfficiency: totalInputTokens > 0 ? totalOutputTokens / totalInputTokens : 0,
     collectedAt: Date.now(),
@@ -330,7 +318,6 @@ export function formatMetricsReport(metrics: AgentMetrics): string {
     `总会话数:         ${metrics.totalSessions}`,
     `平均迭代/任务:    ${metrics.avgIterationsPerTask}`,
     `工具成功率:       ${formatPercent(metrics.toolSuccessRate)}`,
-    `完成门控通过率:   ${formatPercent(metrics.avgCompletionScore)}`,
     `Token 效率:       ${formatPercent(metrics.tokenEfficiency)}`,
     `高频错误:         ${metrics.frequentErrors.length > 0 ? metrics.frequentErrors.map(e => `${e.pattern}(${e.count}次)`).join(', ') : '无'}`,
   ].join('\n');
@@ -347,7 +334,6 @@ export function exportMetricsJSON(): string {
       sessions_total: metrics.totalSessions,
       avg_iterations_per_task: metrics.avgIterationsPerTask,
       tool_success_rate: parseFloat(metrics.toolSuccessRate.toFixed(4)),
-      completion_gate_pass_rate: parseFloat(metrics.avgCompletionScore.toFixed(4)),
       token_efficiency: parseFloat(metrics.tokenEfficiency.toFixed(4)),
       top_errors: metrics.frequentErrors.slice(0, 5),
       improvement_suggestions: generateImprovementSuggestions().slice(0, 3).map(s => ({
@@ -373,9 +359,6 @@ export function exportMetricsPrometheus(): string {
   lines.push('# HELP metona_tool_success_rate Tool call success rate (0-1)');
   lines.push('# TYPE metona_tool_success_rate gauge');
   lines.push(`metona_tool_success_rate ${metrics.toolSuccessRate.toFixed(4)}`);
-  lines.push('# HELP metona_completion_gate_pass_rate Completion gate pass rate (0-1)');
-  lines.push('# TYPE metona_completion_gate_pass_rate gauge');
-  lines.push(`metona_completion_gate_pass_rate ${metrics.avgCompletionScore.toFixed(4)}`);
   lines.push('# HELP metona_token_efficiency Token output/input efficiency ratio');
   lines.push('# TYPE metona_token_efficiency gauge');
   lines.push(`metona_token_efficiency ${metrics.tokenEfficiency.toFixed(4)}`);

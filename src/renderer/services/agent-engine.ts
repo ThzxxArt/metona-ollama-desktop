@@ -18,21 +18,14 @@ import {
 } from './tool-registry.js';
 import {
   compactOldToolResult,
-  setUserGoal,
   resetAllSafetyState,
-  checkRateLimit,
   classifyError,
   calculateBackoff,
   validatePathSandbox,
-  isToolCircuitBroken,
-  recordToolFailure,
-  recordToolSuccess,
   // R88: 工具结果元数据
   addResultMetadata,
   // R97: 错误模式学习
   recordErrorPattern,
-  // R104: 工具结果去重
-  isDuplicateToolResult,
   // R109: 工具参数消毒
   sanitizeToolArgs,
   // R113: 命令安全检查
@@ -60,9 +53,8 @@ import {
   // R100: Token 使用统计报告
   generateTokenReport, formatTokenReport,
 } from './context-manager.js';
-import { runCompletionGate } from './completion-gate.js';
 import { executeHooks } from './hooks.js';
-import { recordIteration, recordToolCall, recordCompletionGate, startSessionMetrics, endSessionMetrics } from './agent-metrics.js';
+import { recordIteration, recordToolCall, startSessionMetrics, endSessionMetrics } from './agent-metrics.js';
 import { getEffectiveNumCtx } from '../components/model-bar.js';
 import type {
   OllamaMessage,
@@ -185,57 +177,11 @@ const SIDE_EFFECT_TOOLS = new Set([
 ]);
 
 // ═══════════════════════════════════════════════════════════════
-// 跨轮次死循环检测
-// 追踪每轮工具调用签名，检测连续重复以防止模型陷入死循环
-// 与 R104（仅记录日志）不同，本机制在达到阈值时主动干预：
-//   - 连续 3 轮相同 → 注入事实性提示（不修改模型输出）
-//   - 注入提示后仍连续 5 轮相同 → 硬性熔断，强制终止
+// 跨轮次死循环检测已删除 — 硬熔断过于激进，软提示干扰 AI 判断
+// AI 应自行判断是否需要继续调用相同工具
 // ═══════════════════════════════════════════════════════════════
-const _loopToolSignatures: string[] = [];
-const LOOP_HISTORY_MAX = 10;
-let _deadlockHintInjected = false;
 // P1-E6 修复：待清理的记忆提取 timer 列表，finally 块统一清理
 const _pendingMemoryTimers: ReturnType<typeof setTimeout>[] = [];
-
-/** 记录本轮工具调用签名（每轮 handleThinking 成功后调用一次） */
-function recordLoopSignature(toolCalls: ToolCall[]): void {
-  if (toolCalls.length === 0) {
-    _loopToolSignatures.push('__no_tools__');
-    _deadlockHintInjected = false; // 无工具调用，模型已改变行为，重置提示标志
-    return;
-  }
-  const sig = toolCalls.map(tc =>
-    `${tc.function.name}:${JSON.stringify(tc.function.arguments, Object.keys(tc.function.arguments || {}).sort())}`
-  ).join('|');
-  // 签名变化时重置提示标志（模型已改变行为）
-  if (_loopToolSignatures.length > 0 && _loopToolSignatures[_loopToolSignatures.length - 1] !== sig) {
-    _deadlockHintInjected = false;
-  }
-  _loopToolSignatures.push(sig);
-  if (_loopToolSignatures.length > LOOP_HISTORY_MAX) {
-    _loopToolSignatures.shift();
-  }
-}
-
-/** 检测连续 N 轮相同的工具调用签名 */
-function detectLoopDeadlock(minCount: number): { detected: boolean; toolName: string; count: number } {
-  if (_loopToolSignatures.length < minCount) return { detected: false, toolName: '', count: 0 };
-  const recent = _loopToolSignatures.slice(-minCount);
-  if (recent[0] === '__no_tools__') return { detected: false, toolName: '', count: 0 };
-  const allSame = recent.every(s => s === recent[0]);
-  if (allSame) {
-    const firstSig = recent[0];
-    const toolName = firstSig.split(':')[0] || 'unknown';
-    return { detected: true, toolName, count: minCount };
-  }
-  return { detected: false, toolName: '', count: 0 };
-}
-
-/** 重置死循环检测状态（新会话开始时调用） */
-function resetLoopDeadlockDetector(): void {
-  _loopToolSignatures.length = 0;
-  _deadlockHintInjected = false;
-}
 
 /**
  * R3: 工具执行超时配置（毫秒）
@@ -1214,8 +1160,6 @@ function snapshotLoopContext(ctx: LoopContext): void {
     // P0-P3 修复：补全关键字段，至少保证运行时调试可见
     mode: ctx.mode,
     emergencyCompressCount: ctx.emergencyCompressCount,
-    completionGateFailCount: ctx.completionGateFailCount,
-    verifyWarnings: ctx.verifyWarnings,
     compressedThisCycle: ctx.compressedThisCycle,
     messageCount: ctx.messages.length,
   });
@@ -1306,11 +1250,9 @@ async function handleInit(
 ): Promise<void> {
   // 新一轮对话，清空工具缓存
   toolResultCache.clear();
-resetAllSafetyState(); // R51-R56: 重置所有安全状态
-resetLoopDeadlockDetector(); // 重置跨轮次死循环检测
-resetTokenBudget(); // R93: 重置 Token 预算追踪
-setTokenBudgetNumCtx(getEffectiveNumCtx()); // R93: 设置当前预算 numCtx
-setUserGoal(userContent); // R56: 设置用户原始目标
+  resetAllSafetyState(); // R51-R56: 重置所有安全状态
+  resetTokenBudget(); // R93: 重置 Token 预算追踪
+  setTokenBudgetNumCtx(getEffectiveNumCtx()); // R93: 设置当前预算 numCtx
 
   const modelSupportsTools = state.get<boolean>('modelSupportsTools', false);
   // R55: 语义工具检索 — 根据用户查询过滤相关工具，减少 token 占用
@@ -1520,134 +1462,8 @@ function extractPlanSteps(content: string): string[] {
   return steps.slice(0, 8);
 }
 
-/**
- * 通用工具结果核验 — 对所有写类工具执行后验证
- * 读取/搜索类工具已有返回结果作为验证，此处只核验会产生副作用的操作
- */
-const TOOLS_NEED_VERIFY = new Set([
-  'write_file', 'edit_file', 'delete_file', 'create_directory',
-  'move_file', 'copy_file', 'download_file',
-]);
-
-async function verifyToolResult(
-  toolName: string,
-  args: Record<string, unknown>,
-  result: Record<string, unknown>,
-): Promise<string | null> {
-  // P3 #13 修复：返回警告字符串供 Completion Gate 使用
-  if (!TOOLS_NEED_VERIFY.has(toolName) || !result.success) return null;
-
-  const bridge = window.metonaDesktop;
-  if (!bridge?.isDesktop) return null;
-
-  try {
-    switch (toolName) {
-      case 'write_file': {
-        const path = String(args.path || '');
-        const expected = String(args.content || '');
-        const read = await bridge.tool.execute('read_file', { path, mode: 'text' });
-        if (read.success) {
-          const actual = String(read.content || '');
-          if (actual.length === 0) {
-            logWarn(`核验 write_file: ${path} 内容为空`);
-            return `write_file 核验: ${path} 写入后内容为空`;
-          } else if (Math.abs(actual.length - expected.length) > expected.length * 0.5) {
-            logWarn(`核验 write_file: ${path} 期望 ${expected.length}B 实际 ${actual.length}B`);
-            return `write_file 核验: ${path} 写入内容大小不符 (期望 ${expected.length}B, 实际 ${actual.length}B)`;
-          } else {
-            logInfo(`核验 write_file ✅: ${path} (${actual.length}B)`);
-          }
-        }
-        break;
-      }
-      case 'edit_file': {
-        const path = String(args.path || '');
-        const newText = String(args.new_text || '');
-        const read = await bridge.tool.execute('read_file', { path, mode: 'text' });
-        if (read.success) {
-          const actual = String(read.content || '');
-          if (!actual.includes(newText)) {
-            logWarn(`核验 edit_file: ${path} 不包含期望的新内容`);
-            return `edit_file 核验: ${path} 编辑后文件不包含期望的新内容`;
-          } else {
-            logInfo(`核验 edit_file ✅: ${path}`);
-          }
-        }
-        break;
-      }
-      case 'delete_file': {
-        // 支持批量删除核验：检查 paths 数组和单个 path
-        const pathsToCheck: string[] = [];
-        if (args.paths && Array.isArray(args.paths)) {
-          pathsToCheck.push(...args.paths.map((p: unknown) => String(p)));
-        }
-        if (args.path) pathsToCheck.push(String(args.path));
-        for (const p of pathsToCheck) {
-          const info = await bridge.tool.execute('get_file_info', { path: p });
-          if (info.success) {
-            logWarn(`核验 delete_file: ${p} 仍然存在，删除未生效`);
-            return `delete_file 核验: ${p} 删除后仍然存在`;
-          } else {
-            logInfo(`核验 delete_file ✅: ${p} 已不存在`);
-          }
-        }
-        break;
-      }
-      case 'create_directory': {
-        const path = String(args.path || '');
-        const info = await bridge.tool.execute('get_file_info', { path });
-        if (info.success && (info as any).type === 'directory') {
-          logInfo(`核验 create_directory ✅: ${path}`);
-        } else {
-          logWarn(`核验 create_directory: ${path} 未成功创建`);
-          return `create_directory 核验: ${path} 目录未成功创建`;
-        }
-        break;
-      }
-      case 'move_file': {
-        const src = String(args.source || '');
-        const dest = String(args.destination || '');
-        const [srcInfo, destInfo] = await Promise.all([
-          bridge.tool.execute('get_file_info', { path: src }),
-          bridge.tool.execute('get_file_info', { path: dest }),
-        ]);
-        if (srcInfo.success) {
-          logWarn(`核验 move_file: 源文件 ${src} 仍然存在`);
-          return `move_file 核验: 源文件 ${src} 移动后仍然存在`;
-        } else if (destInfo.success) {
-          logInfo(`核验 move_file ✅: ${src} → ${dest}`);
-        } else {
-          logWarn(`核验 move_file: ${src}→${dest} 源和目标均不存在`);
-          return `move_file 核验: ${src}→${dest} 移动后源和目标均不存在`;
-        }
-        break;
-      }
-      case 'copy_file': {
-        const dest = String(args.destination || '');
-        const destInfo = await bridge.tool.execute('get_file_info', { path: dest });
-        if (destInfo.success) {
-          logInfo(`核验 copy_file ✅: ${dest} (${(destInfo as any).size}B)`);
-        } else {
-          logWarn(`核验 copy_file: 目标 ${dest} 不存在`);
-          return `copy_file 核验: 目标 ${dest} 复制后不存在`;
-        }
-        break;
-      }
-      case 'download_file': {
-        const dest = String(args.destination || '');
-        const info = await bridge.tool.execute('get_file_info', { path: dest });
-        if (info.success && (info as any).size > 0) {
-          logInfo(`核验 download_file ✅: ${dest} (${(info as any).size}B)`);
-        } else {
-          logWarn(`核验 download_file: ${dest} 不存在或为空`);
-          return `download_file 核验: ${dest} 下载后不存在或为空`;
-        }
-        break;
-      }
-    }
-  } catch { /* 核验失败不阻塞主流程 */ }
-  return null;
-}
+// verifyToolResult 已删除 — 工具结果核验过于粗糙，误报边界情况
+// AI 应基于工具返回的 success/error 字段自行判断结果有效性
 
 /**
  * THINKING 状态：调用 LLM 流式
@@ -1667,33 +1483,6 @@ async function handleThinking(
   ctx.content = '';
   ctx.thinking = '';
   ctx.toolCalls.length = 0;
-
-  // ── 跨轮次死循环检测 ──
-  // 硬性熔断：已注入提示后仍连续 5 轮相同 → 强制终止
-  if (_deadlockHintInjected) {
-    const hardBreak = detectLoopDeadlock(5);
-    if (hardBreak.detected) {
-      logWarn(`死循环熔断: 连续 ${hardBreak.count} 轮相同工具调用 (${hardBreak.toolName})，已注入提示但仍未改善，强制终止`);
-      const fallbackReply = `已执行工具调用但模型未能生成最终回复。最后执行的工具: ${hardBreak.toolName}。请尝试重新描述任务或切换模型。`;
-      ctx.content = fallbackReply;
-      callbacks.onDone(fallbackReply, ctx.allToolRecords.length > 0 ? ctx.allToolRecords : undefined, makeStats(ctx));
-      transition(ctx, S.TERMINATED);
-      return;
-    }
-  }
-  // 软性提示：连续 3 轮相同工具调用 → 注入事实性提示（不修改模型输出）
-  if (!_deadlockHintInjected) {
-    const softWarn = detectLoopDeadlock(3);
-    if (softWarn.detected) {
-      logWarn(`死循环提示: 连续 ${softWarn.count} 轮相同工具调用 (${softWarn.toolName})，注入事实性提示`);
-      ctx.messages.push({
-        role: 'user',
-        content: `[系统提示] 你已连续 ${softWarn.count} 轮调用相同的工具 (${softWarn.toolName}) 并获得相同结果。任务可能已完成，请基于已有工具结果直接回复用户，不要再调用工具。`,
-        ephemeral: true,
-      });
-      _deadlockHintInjected = true;
-    }
-  }
 
   // ── Plan Mode 执行进度注入 — 仅在进度变化时注入，避免每轮重复 ──
   if (ctx.mode === 'plan' && ctx.loopCount >= 1) {
@@ -1970,9 +1759,6 @@ async function handleThinking(
   ctx.loopPromptEvalCount = 0;
   ctx.loopInferenceNs = 0;
 
-  // 记录本轮工具调用签名（用于跨轮次死循环检测）
-  recordLoopSignature(ctx.toolCalls);
-
   transition(ctx, S.PARSING);
 }
 
@@ -2108,29 +1894,8 @@ async function handleExecuting(
       }, null];
     }
 
-    // R77: 工具调用速率限制 — 防止快速连续调用同一工具浪费资源
-    const rateLimitResult = checkRateLimit(call.function.name);
-    if (!rateLimitResult.allowed) {
-      const waitSec = Math.ceil(rateLimitResult.retryAfterMs / 1000);
-      logWarn(`R77: 速率限制拦截: ${call.function.name}，需等待 ${waitSec}s`);
-      return [{
-        name: call.function.name, arguments: call.function.arguments,
-        result: { success: false, error: `工具「${call.function.name}」调用频率过高，请等待 ${waitSec} 秒后重试。` },
-        status: 'error' as const, timestamp: Date.now()
-      }, null];
-    }
-
-    // R87: 工具熔断器检查 — 连续失败后自动禁用工具
-    const circuitBreaker = isToolCircuitBroken(call.function.name);
-    if (circuitBreaker.broken) {
-      const waitSec = Math.ceil(circuitBreaker.remainingMs / 1000);
-      logWarn(`R87: 熔断器拦截: ${call.function.name}，冷却中（还需 ${waitSec}s）`);
-      return [{
-        name: call.function.name, arguments: call.function.arguments,
-        result: { success: false, error: `工具「${call.function.name}」因连续失败已被暂时禁用，请等待 ${waitSec} 秒后重试，或使用其他方法。` },
-        status: 'error' as const, timestamp: Date.now()
-      }, null];
-    }
+    // R77/R87 已删除：速率限制 + 熔断器 — 剥夺 AI 试错空间，误伤密集型任务
+    // AI 应基于工具返回的错误信息自行调整策略
 
     // R79: 路径沙箱验证 — 确保文件操作不超出工作空间边界
     const FILE_PATH_TOOLS = new Set([
@@ -2221,12 +1986,6 @@ async function handleExecuting(
           state.get<AbortController | null>(KEYS.ABORT_CONTROLLER)?.signal)
           .catch(err => ({ success: false, error: err?.message || String(err) }) as ToolResult);
         logToolResult(call.function.name, result.success, result.success ? undefined : result.error);
-        // R87: 记录工具成功/失败到熔断器
-        if (result.success) {
-          recordToolSuccess(call.function.name);
-        } else {
-          recordToolFailure(call.function.name);
-        }
         // 记录 write_file 成功路径及内容指纹，供 FileWriteDedup Hook 做内容级去重
         if (call.function.name === 'write_file' && result.success && call.function.arguments?.path) {
           const { addWrittenFile } = await import('./hooks.js');
@@ -2310,13 +2069,6 @@ async function handleExecuting(
       ctx.allToolRecords.push(record);
       // R88: 为工具结果添加元数据提示（token 估算）
       const formattedResult = addResultMetadata(formatToolResultForModel(record.name, record.result!));
-      // R104: 检测重复工具结果（仅记录日志，不修改结果内容）
-      if (record.status === 'success') {
-        const dedup = isDuplicateToolResult(record.name, formattedResult);
-        if (dedup.duplicate) {
-          logInfo(`R104: 检测到重复工具结果: ${record.name}，已记录`);
-        }
-      }
       // R92: 工具结果格式标准化 — 添加统一头信息（工具名、状态、耗时、结果大小）
       const resultDuration = Date.now() - record.timestamp;
       const resultSize = formattedResult.length;
@@ -2333,15 +2085,6 @@ async function handleExecuting(
       if (cacheKey) setToolCache(cacheKey, { result: record.result!, timestamp: Date.now() });
       // 记录度量
       recordToolCall(record.name, record.status, Date.now() - record.timestamp);
-      // ── 通用工具结果核验 — 所有写类工具执行后验证 ──
-      // P3 #13 修复：收集核验警告到 ctx.verifyWarnings，供 Completion Gate 使用
-      if (record.status === 'success') {
-        const warning = await verifyToolResult(record.name, record.arguments, record.result!);
-        if (warning) {
-          ctx.verifyWarnings.push(warning);
-          logWarn(warning);
-        }
-      }
       // ── post_tool Hook ──
       executeHooks('post_tool', ctx, { toolName: record.name, toolArgs: record.arguments, toolResult: record.result! }).catch(err => logWarn('post_tool hook 异常', String(err)));
       // P0 修复: 使用参数匹配而非仅工具名匹配，避免同批次同名工具的错误关联
@@ -2695,35 +2438,9 @@ async function handleReflecting(
     }
   } catch { /* Hook 异常不影响主流程 */ }
 
-  try {
-    const gateResult = await runCompletionGate(ctx);
-    if (!gateResult.passed) {
-      recordCompletionGate(false);
-      logWarn(`Completion Gate: ${gateResult.reason}`);
-
-      // P1 #5 修复：Gate 失败时注入纠正提示并重试（最多 1 次），而非仅记录日志
-      const MAX_GATE_RETRIES = 1;
-      if (ctx.completionGateFailCount < MAX_GATE_RETRIES && ctx.loopCount < ctx.maxLoops) {
-        ctx.completionGateFailCount++;
-        logInfo(`Completion Gate: 注入纠正提示，重试 (${ctx.completionGateFailCount}/${MAX_GATE_RETRIES})`);
-        ctx.messages.push({
-          role: 'user',
-          content: `[系统提示] ${gateResult.reason}\n请基于已有信息补充完整你的回答，不要重复之前的工具调用。`,
-          ephemeral: true,
-        });
-        transition(ctx, S.THINKING);
-        return;
-      } else {
-        logWarn(`Completion Gate: 已达重试上限或循环上限，接受当前结果`);
-      }
-    } else {
-      recordCompletionGate(true);
-    }
-    // R90: 记录完成门控评分到日志
-    if (gateResult.score < 100) {
-      logInfo(`R90: Completion Gate 评分: ${gateResult.score}/100`);
-    }
-  } catch { /* Gate 异常不影响主流程 */ }
+  // Completion Gate 已删除 — 所有检查项（notThinking/toolResultReview/contextEfficiency/planModeCompletion）均已删除
+  // AI 应基于工具结果和上下文自行判断是否需要继续或完成
+  // Plan Mode 下 AI 可通过 formatPlanStatus() 看到剩余步骤，应自行决定是否继续
 
   logInfo('模型停止工具调用 → ReAct Agent Loop 结束');
   // ── 保存 Plan Mode 最终进度到状态，供下一轮 Loop 注入历史 ──
@@ -2881,8 +2598,6 @@ export async function runAgentLoop(
     startTime: Date.now(),
     lastLoopStats: undefined,
     emergencyCompressCount: 0,
-    completionGateFailCount: 0,
-    verifyWarnings: [],
     compressedThisCycle: false,
   };
 

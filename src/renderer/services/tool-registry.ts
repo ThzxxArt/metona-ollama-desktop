@@ -893,7 +893,10 @@ function hasPathTraversal(path: string): boolean {
   return false;
 }
 
-/** R28: 命令注入检测 — 检查命令中是否包含危险的 shell 注入模式 */
+/** R28: 危险命令关键词 — 命令替换中包含这些词才拦截 */
+const DANGEROUS_CMD_KEYWORDS = 'rm|del|format|mkfs|dd|fdisk|shred|umount|chmod\\s+777|chown|shutdown|reboot|halt';
+
+/** R28: 命令注入检测 — 仅拦截命令替换中包含危险命令的情况，避免误伤 $(date) 等合法用法 */
 function hasCommandInjection(command: string): boolean {
   if (!command) return false;
   const dangerousPatterns = [
@@ -901,8 +904,9 @@ function hasCommandInjection(command: string): boolean {
     /\|\s*(rm|del|format|mkfs)\s/i,         // 管道到删除操作
     /&&\s*(rm|del|format|mkfs)\s/i,         // AND链中的删除操作
     /\$\{.*IFS.*\}/i,                        // IFS 变量注入
-    /\$\([^)]*\)/,                           // 命令替换 $(...)
-    /`[^`]*`/,                               // 反引号命令替换
+    // 仅拦截命令替换中包含危险命令的情况，放行 $(date) 等合法用法
+    new RegExp(`\\$\\([^)]*\\b(?:${DANGEROUS_CMD_KEYWORDS})\\b[^)]*\\)`, 'i'),
+    new RegExp('`[^`]*\\b(?:' + DANGEROUS_CMD_KEYWORDS + ')\\b[^`]*`', 'i'),
     /\x00/,                                  // null 字节注入
   ];
   return dangerousPatterns.some(p => p.test(command));

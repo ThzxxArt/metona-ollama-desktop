@@ -295,18 +295,11 @@ export function scoreMessageImportance(msg: OllamaMessage): number {
     /完成|done|✓|success|成功|结果|result/i,
     /项目|project|工作空间|workspace|git|repo|仓库/i,
   ];
-  // R10: 修复低价值模式误报 — 移除单字“好”（匹配几乎所有中文文本）
-  // 仅匹配明确的短语回复，且仅对短消息（<100字）生效
-  const lowValuePatterns = [/^(好的|明白|ok|知道了|嗯|哦|好[的呀吧]|收到)$/i,
-    /^(继续|请继续|帮帮我|可以吗|行吗|好的谢谢)$/i,
-    /^(谢谢|感谢|不客气|多谢|thanks?)$/i,
-  ];
+  // 低价值关键词黑名单已删除 — 误伤边界情况（如"好的，我发现了一个 bug"）
+  // AI 应自行判断消息价值，长度加分机制已足够区分短回复
 
   for (const p of highValuePatterns) {
     if (p.test(content)) { score += 1; break; }
-  }
-  for (const p of lowValuePatterns) {
-    if (p.test(content) && content.length < 100) { score -= 2; break; }
   }
 
   // 工具调用 → 高价值
@@ -850,8 +843,9 @@ function summarizeOlderMessages(messages: OllamaMessage[], batchSize: number): O
   for (let i = 0; i < messages.length; i += batchSize) {
     const batch = messages.slice(i, i + batchSize);
     const summary = createQuickSummary(batch);
+    // 使用 user role 而非 system role — 摘要是对话历史的延续，用 system 会与系统指令语义混淆
     summaries.push({
-      role: 'system',
+      role: 'user',
       content: `【更早的对话摘要（第 ${Math.floor(i / batchSize) + 1} 部分）】\n${summary}`,
       compressed: true
     });

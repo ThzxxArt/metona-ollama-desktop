@@ -97,226 +97,9 @@ export function detectConsecutiveIdentical(minCount: number): { detected: boolea
 }
 
 // ═══════════════════════════════════════════════════════════════
-// R56: 目标对齐验证
+// R56 已删除：目标对齐验证 — 关键词匹配粗糙，反复注入干扰 AI 判断
+// R63 已删除：工具调用速率限制 — 剥夺 AI 试错空间，误伤密集型任务
 // ═══════════════════════════════════════════════════════════════
-
-/** 用户原始目标（在 handleInit 时设置） */
-let _userGoal: string = '';
-
-/** 设置用户原始目标 */
-export function setUserGoal(goal: string): void {
-  _userGoal = goal.slice(0, 500); // 限制长度防止占用过多内存
-}
-
-/** 获取用户原始目标 */
-export function getUserGoal(): string {
-  return _userGoal;
-}
-
-/** 重置用户目标 */
-export function resetUserGoal(): void {
-  _userGoal = '';
-}
-
-/** 目标对齐检测结果 */
-export interface GoalAlignmentResult {
-  aligned: boolean;
-  reason: string;
-  suggestion?: string;
-}
-
-/**
- * R56: 检测 Agent 是否偏离用户原始目标
- * 
- * 检测策略：
- * 1. 提取用户目标中的关键动词和名词
- * 2. 检查最近 5 轮的工具调用是否与目标关键词相关
- * 3. 如果连续多轮工具调用都与目标无关，判定为偏离
- * 
- * @param recentToolNames 最近 N 轮的工具调用名称列表
- * @param recentContent 最近 N 轮的模型输出内容摘要
- * @param loopCount 当前循环计数
- */
-export function checkGoalAlignment(
-  recentToolNames: string[],
-  recentContent: string,
-  loopCount: number,
-): GoalAlignmentResult {
-  if (!_userGoal || _userGoal.length < 10) {
-    return { aligned: true, reason: '目标太短，跳过对齐检测' };
-  }
-
-  // 仅在循环数 >= 6 时开始检测（前几轮可能是探索阶段）
-  if (loopCount < 6) {
-    return { aligned: true, reason: '前期探索阶段，跳过检测' };
-  }
-
-  const goalLower = _userGoal.toLowerCase();
-  
-  // 提取目标关键词
-  const goalKeywords = extractGoalKeywords(_userGoal);
-  
-  // 检查最近内容是否包含目标关键词
-  const contentLower = recentContent.toLowerCase();
-  const contentMatches = goalKeywords.filter(kw => contentLower.includes(kw.toLowerCase()));
-  
-  // 检查最近的工具调用是否与目标相关
-  // 每种工具与特定目标类型的关联度
-  const toolGoalRelevance = assessToolGoalRelevance(recentToolNames, goalLower);
-  
-  // 如果最近内容中包含目标关键词，认为是对齐的
-  if (contentMatches.length >= 1) {
-    return { aligned: true, reason: `内容中包含目标关键词: ${contentMatches.join(', ')}` };
-  }
-  
-  // 如果工具调用与目标高度相关，认为是对齐的
-  if (toolGoalRelevance.relevant) {
-    return { aligned: true, reason: toolGoalRelevance.reason };
-  }
-  
-  // 偏离判定：内容无关键词 + 工具不相关 + 已过探索阶段
-  return {
-    aligned: false,
-    reason: `最近 ${recentToolNames.length} 轮工具调用 (${recentToolNames.slice(-3).join(', ')}) 与用户目标"${_userGoal.slice(0, 60)}..."可能不相关`,
-    suggestion: `请回顾用户原始任务: "${_userGoal.slice(0, 100)}"。如果当前操作是在为任务做准备，请继续；如果已经偏离，请调整方向。`,
-  };
-}
-
-/** 从用户目标中提取关键词 */
-function extractGoalKeywords(goal: string): string[] {
-  const keywords: string[] = [];
-  
-  // 中文关键词
-  const cnPatterns = [
-    /搜索|查找|查一下|搜一下|检索|查询/g,
-    /写入|创建|生成|保存|输出/g,
-    /运行|执行|编译|构建/g,
-    /读取|查看|打开/g,
-    /修改|编辑|更新|替换/g,
-    /删除|移除|清理/g,
-    /下载|安装/g,
-    /分析|研究|评估|对比/g,
-    /测试|验证|检查/g,
-    /部署|发布/g,
-  ];
-  
-  // 英文关键词
-  const enPatterns = [
-    /\b(search|find|lookup)\b/gi,
-    /\b(write|create|generate|save)\b/gi,
-    /\b(run|execute|build|compile)\b/gi,
-    /\b(read|view|open)\b/gi,
-    /\b(edit|modify|update|replace)\b/gi,
-    /\b(delete|remove|clean)\b/gi,
-    /\b(download|install)\b/gi,
-    /\b(analyze|research|evaluate|compare)\b/gi,
-    /\b(test|verify|check)\b/gi,
-    /\b(deploy|publish)\b/gi,
-  ];
-  
-  for (const p of [...cnPatterns, ...enPatterns]) {
-    const matches = goal.match(p);
-    if (matches) keywords.push(...matches);
-  }
-  
-  // 提取路径/文件名（如果目标中包含）
-  const pathMatches = goal.match(/[\w-]+\.(ts|js|py|json|md|txt|html|css|go|rs|java|cpp|c)/gi);
-  if (pathMatches) keywords.push(...pathMatches);
-  
-  // 提取引号中的内容
-  const quotedMatches = goal.match(/[""']([^""']{3,30})[""']/g);
-  if (quotedMatches) {
-    for (const q of quotedMatches) {
-      keywords.push(q.replace(/[""']/g, ''));
-    }
-  }
-  
-  return [...new Set(keywords)];
-}
-
-/** 评估工具调用与用户目标的相关性 */
-function assessToolGoalRelevance(toolNames: string[], goalLower: string): { relevant: boolean; reason: string } {
-  if (toolNames.length === 0) return { relevant: true, reason: '无工具调用，跳过' };
-  
-  // 文件操作类目标
-  const isFileTask = /文件|目录|file|directory|path|路径/.test(goalLower);
-  // 搜索类目标
-  const isSearchTask = /搜索|查找|查|search|find|grep/.test(goalLower);
-  // 命令执行类目标
-  const isCommandTask = /运行|执行|命令|终端|run|execute|command|shell/.test(goalLower);
-  // 网络类目标
-  const isWebTask = /网页|网站|url|web|fetch|搜索|search/.test(goalLower);
-  // Git 类目标
-  const isGitTask = /git|提交|推送|分支|commit|push|pull/.test(goalLower);
-  // 浏览器类目标
-  const isBrowserTask = /浏览器|网页|截图|browser|screenshot/.test(goalLower);
-  
-  const recentTools = toolNames.slice(-5);
-  
-  if (isFileTask && recentTools.some(t => /read_file|write_file|edit_file|list_directory|search_files|tree/.test(t))) {
-    return { relevant: true, reason: '文件操作与文件类目标相关' };
-  }
-  if (isSearchTask && recentTools.some(t => /search_files|web_search|grep/.test(t))) {
-    return { relevant: true, reason: '搜索操作与搜索类目标相关' };
-  }
-  if (isCommandTask && recentTools.some(t => /run_command/.test(t))) {
-    return { relevant: true, reason: '命令执行与命令类目标相关' };
-  }
-  if (isWebTask && recentTools.some(t => /web_search|web_fetch|browser_open/.test(t))) {
-    return { relevant: true, reason: '网络操作与网络类目标相关' };
-  }
-  if (isGitTask && recentTools.some(t => /git/.test(t))) {
-    return { relevant: true, reason: 'Git 操作与 Git 类目标相关' };
-  }
-  if (isBrowserTask && recentTools.some(t => /browser_/.test(t))) {
-    return { relevant: true, reason: '浏览器操作与浏览器类目标相关' };
-  }
-  
-  // memory 和 plan_track 始终认为相关
-  if (recentTools.some(t => /memory|plan_track/.test(t))) {
-    return { relevant: true, reason: '记忆/计划操作始终相关' };
-  }
-  
-  return { relevant: false, reason: '最近工具调用与目标类型不匹配' };
-}
-
-// ═══════════════════════════════════════════════════════════════
-// R63: 工具调用速率限制 — 防止快速连续调用同一工具浪费资源
-// ═══════════════════════════════════════════════════════════════
-
-const _toolCallTimestamps = new Map<string, number[]>();
-const RATE_LIMIT_WINDOW = 60_000; // 60 秒窗口
-const RATE_LIMIT_DEFAULT = 20;    // 默认每分钟最多 20 次
-
-/** R63: 工具特定的速率限制配置 */
-const TOOL_RATE_LIMITS: Record<string, number> = {
-  web_search: 10,      // 每分钟最多 10 次搜索
-  web_fetch: 8,        // 每分钟最多 8 次抓取
-  run_command: 15,     // 每分钟最多 15 次命令
-  browser_open: 8,     // 每分钟最多 8 次浏览器打开
-  download_file: 5,    // 每分钟最多 5 次下载
-};
-
-/** R63: 检查工具调用是否超过速率限制 */
-export function checkRateLimit(toolName: string): { allowed: boolean; retryAfterMs: number } {
-  const limit = TOOL_RATE_LIMITS[toolName] ?? RATE_LIMIT_DEFAULT;
-  const now = Date.now();
-  const timestamps = _toolCallTimestamps.get(toolName) || [];
-  
-  // 清理过期时间戳
-  const valid = timestamps.filter(t => now - t < RATE_LIMIT_WINDOW);
-  
-  if (valid.length >= limit) {
-    // 计算最早过期时间
-    const oldest = valid[0];
-    const retryAfterMs = RATE_LIMIT_WINDOW - (now - oldest);
-    return { allowed: false, retryAfterMs: Math.max(1000, retryAfterMs) };
-  }
-  
-  valid.push(now);
-  _toolCallTimestamps.set(toolName, valid);
-  return { allowed: true, retryAfterMs: 0 };
-}
 
 // ═══════════════════════════════════════════════════════════════
 // R66-R67: 错误分类系统 — 区分瞬态/永久错误，指导重试策略
@@ -451,7 +234,12 @@ export function validatePathSandbox(
     }
     
     // 检查路径遍历攻击
-    const relativePath = normalized.toLowerCase().replace(normalizedWs.toLowerCase(), '').replace(/^[\\/]/, '');
+    // P0 修复：用前缀锚定 replace，避免工作空间路径是另一路径子串时误判
+    const wsLower = normalizedWs.toLowerCase();
+    const normLower = normalized.toLowerCase();
+    const relativePath = normLower.startsWith(wsLower)
+      ? normLower.slice(wsLower.length).replace(/^[\\/]/, '')
+      : normLower;
     if (relativePath.includes('..')) {
       // 允许在工作空间内部的相对路径引用
       const segments = relativePath.split(/[\\/]/);
@@ -485,44 +273,8 @@ function isAbsolute(p: string): boolean {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// R87: 工具熔断器 — 连续失败后自动禁用工具，防止雪崩
+// R87 已删除：工具熔断器 — 剥夺 AI 试错空间，连续失败可能是参数调试过程
 // ═══════════════════════════════════════════════════════════════
-
-/** 工具失败计数器 */
-const _toolFailureCount = new Map<string, number>();
-const CIRCUIT_BREAKER_THRESHOLD = 5;  // 连续失败 5 次后熔断
-const CIRCUIT_BREAKER_COOLDOWN = 60_000; // 熔断冷却 60 秒
-const _circuitBreakerTripped = new Map<string, number>(); // toolName → trip timestamp
-
-/** R87: 记录工具失败 */
-export function recordToolFailure(toolName: string): void {
-  const count = (_toolFailureCount.get(toolName) || 0) + 1;
-  _toolFailureCount.set(toolName, count);
-  if (count >= CIRCUIT_BREAKER_THRESHOLD) {
-    _circuitBreakerTripped.set(toolName, Date.now());
-    logWarn(`R87: 熔断器触发 — ${toolName} 连续失败 ${count} 次，禁用 60 秒`);
-  }
-}
-
-/** R87: 记录工具成功（重置失败计数） */
-export function recordToolSuccess(toolName: string): void {
-  _toolFailureCount.delete(toolName);
-  _circuitBreakerTripped.delete(toolName);
-}
-
-/** R87: 检查工具是否被熔断 */
-export function isToolCircuitBroken(toolName: string): { broken: boolean; remainingMs: number } {
-  const tripTime = _circuitBreakerTripped.get(toolName);
-  if (!tripTime) return { broken: false, remainingMs: 0 };
-  const elapsed = Date.now() - tripTime;
-  if (elapsed >= CIRCUIT_BREAKER_COOLDOWN) {
-    // 冷却期过了，半开状态：允许调用但保持失败计数
-    _circuitBreakerTripped.delete(toolName);
-    _toolFailureCount.set(toolName, CIRCUIT_BREAKER_THRESHOLD - 1); // 只给一次机会
-    return { broken: false, remainingMs: 0 };
-  }
-  return { broken: true, remainingMs: CIRCUIT_BREAKER_COOLDOWN - elapsed };
-}
 
 // ═══════════════════════════════════════════════════════════════
 // R88: 工具结果元数据 — 为模型提供结果大小的上下文提示
@@ -621,55 +373,8 @@ export function recordErrorPattern(toolName: string, errorMsg: string): string |
 }
 
 // ═══════════════════════════════════════════════════════════════
-// R104: 工具结果去重 — 相似结果检测，减少上下文中的冗余
+// R104 已删除：工具结果去重 — 误伤轮询类任务（如反复 run_command 检查构建状态）
 // ═══════════════════════════════════════════════════════════════
-
-export interface ToolResultFingerprint {
-  toolName: string;
-  contentHash: string;
-  timestamp: number;
-  resultLength: number;
-}
-
-const _resultFingerprints: ToolResultFingerprint[] = [];
-const MAX_FINGERPRINTS = 50;
-
-/** R104: 计算内容的简化指纹（用于相似度检测） */
-function computeResultFingerprint(content: string): string {
-  // 取内容的前200字符 + 后100字符作为指纹
-  const head = content.slice(0, 200);
-  const tail = content.slice(-100);
-  let hash = 5381;
-  const combined = head + tail;
-  for (let i = 0; i < combined.length; i++) {
-    hash = ((hash << 5) + hash + combined.charCodeAt(i)) & 0x7fffffff;
-  }
-  return hash.toString(36);
-}
-
-/** R104: 检查工具结果是否与最近的结果高度相似 */
-export function isDuplicateToolResult(toolName: string, resultContent: string): { duplicate: boolean; similarTo?: string } {
-  const hash = computeResultFingerprint(resultContent);
-  const now = Date.now();
-  const DEDUP_WINDOW = 60_000; // 60 秒内的结果视为候选
-
-  // 查找相同工具+相同指纹的结果
-  for (const fp of _resultFingerprints) {
-    if (fp.toolName === toolName && fp.contentHash === hash && (now - fp.timestamp) < DEDUP_WINDOW) {
-      return { duplicate: true, similarTo: `${fp.timestamp}` };
-    }
-  }
-
-  // 记录当前结果
-  _resultFingerprints.push({
-    toolName, contentHash: hash, timestamp: now, resultLength: resultContent.length,
-  });
-  if (_resultFingerprints.length > MAX_FINGERPRINTS) {
-    _resultFingerprints.shift();
-  }
-
-  return { duplicate: false };
-}
 
 // ═══════════════════════════════════════════════════════════════
 // R109: 工具参数消毒 — 防止通过工具参数注入恶意内容
@@ -718,55 +423,25 @@ export interface AgentDiagnostics {
   timestamp: number;
   toolResultStoreSize: number;
   toolCallHistoryLength: number;
-  rateLimitActiveTools: string[];
-  circuitBreakerStatus: Array<{ tool: string; broken: boolean; failures: number }>;
   errorPatternCount: number;
   topErrorPatterns: Array<{ tool: string; signature: string; count: number }>;
-  resultFingerprintCount: number;
-  duplicateResultCount: number;
-  userGoal: string;
 }
 
 /** R112: 收集 Agent 诊断信息 */
 export function collectDiagnostics(): AgentDiagnostics {
-  const rateLimitActive: string[] = [];
   const now = Date.now();
-  for (const [tool, timestamps] of _toolCallTimestamps) {
-    const valid = timestamps.filter(t => now - t < RATE_LIMIT_WINDOW);
-    if (valid.length > 0) {
-      rateLimitActive.push(`${tool}(${valid.length}/${TOOL_RATE_LIMITS[tool] ?? RATE_LIMIT_DEFAULT})`);
-    }
-  }
-
-  const circuitBreakerStatus = Array.from(_toolFailureCount.entries()).map(([tool, count]) => ({
-    tool,
-    broken: _circuitBreakerTripped.has(tool),
-    failures: count,
-  }));
 
   const topErrorPatterns = Array.from(_errorPatterns.values())
     .sort((a, b) => b.count - a.count)
     .slice(0, 5)
     .map(e => ({ tool: e.toolName, signature: e.errorSignature, count: e.count }));
 
-  const duplicateCount = _resultFingerprints.filter(fp => {
-    // 同一工具同一指纹出现多次
-    return _resultFingerprints.some(other =>
-      other !== fp && other.toolName === fp.toolName && other.contentHash === fp.contentHash
-    );
-  }).length;
-
   return {
     timestamp: now,
     toolResultStoreSize: _toolResultStore.size,
     toolCallHistoryLength: _toolCallHistory.length,
-    rateLimitActiveTools: rateLimitActive,
-    circuitBreakerStatus,
     errorPatternCount: _errorPatterns.size,
     topErrorPatterns,
-    resultFingerprintCount: _resultFingerprints.length,
-    duplicateResultCount: duplicateCount,
-    userGoal: _userGoal.slice(0, 80),
   };
 }
 
@@ -777,18 +452,11 @@ export function formatDiagnosticsReport(diag: AgentDiagnostics): string {
     `${'─'.repeat(50)}`,
     `Tool Result Store: ${diag.toolResultStoreSize} entries`,
     `Tool Call History: ${diag.toolCallHistoryLength} entries`,
-    `Rate Limit Active: ${diag.rateLimitActiveTools.length > 0 ? diag.rateLimitActiveTools.join(', ') : 'none'}`,
-    `Circuit Breakers:`,
+    `Error Patterns: ${diag.errorPatternCount}`,
   ];
-  for (const cb of diag.circuitBreakerStatus) {
-    lines.push(`  ${cb.broken ? '🔴' : '🟢'} ${cb.tool}: ${cb.failures} failures${cb.broken ? ' (BROKEN)' : ''}`);
-  }
-  lines.push(`Error Patterns: ${diag.errorPatternCount}`);
   for (const ep of diag.topErrorPatterns) {
     lines.push(`  ⚠️ ${ep.tool}: "${ep.signature}" (${ep.count}x)`);
   }
-  lines.push(`Result Fingerprints: ${diag.resultFingerprintCount} (duplicates: ${diag.duplicateResultCount})`);
-  lines.push(`User Goal: "${diag.userGoal}"`);
   return lines.join('\n');
 }
 
@@ -1007,14 +675,8 @@ export function checkArchivedReferences(messages: Array<{ content?: string }>): 
 export function resetAllSafetyState(): void {
   _toolResultStore.clear();
   _toolCallHistory.length = 0;
-  _userGoal = '';
-  _toolCallTimestamps.clear();
-  _toolFailureCount.clear();
-  _circuitBreakerTripped.clear();
   // R97: 清理错误模式
   _errorPatterns.clear();
-  // R104: 清理结果指纹
-  _resultFingerprints.length = 0;
   // R118: 清理性能分析数据
   _loopTimings.length = 0;
   logInfo('Agent Safety: 所有安全状态已重置');
@@ -1027,12 +689,7 @@ export function resetAllSafetyState(): void {
 export interface SafetyStateSnapshot {
   toolResultStore: Map<string, { toolName: string; fullContent: string; timestamp: number }>;
   toolCallHistory: string[];
-  userGoal: string;
-  toolCallTimestamps: Map<string, number[]>;
-  toolFailureCount: Map<string, number>;
-  circuitBreakerTripped: Map<string, number>;
   errorPatterns: Map<string, ErrorPatternEntry>;
-  resultFingerprints: ToolResultFingerprint[];
   loopTimings: LoopTiming[];
 }
 
@@ -1041,12 +698,7 @@ export function snapshotSafetyState(): SafetyStateSnapshot {
   return {
     toolResultStore: new Map(_toolResultStore),
     toolCallHistory: [..._toolCallHistory],
-    userGoal: _userGoal,
-    toolCallTimestamps: new Map(_toolCallTimestamps),
-    toolFailureCount: new Map(_toolFailureCount),
-    circuitBreakerTripped: new Map(_circuitBreakerTripped),
     errorPatterns: new Map(_errorPatterns),
-    resultFingerprints: [..._resultFingerprints],
     loopTimings: [..._loopTimings],
   };
 }
@@ -1057,17 +709,8 @@ export function restoreSafetyState(snapshot: SafetyStateSnapshot): void {
   snapshot.toolResultStore.forEach((v, k) => _toolResultStore.set(k, v));
   _toolCallHistory.length = 0;
   _toolCallHistory.push(...snapshot.toolCallHistory);
-  _userGoal = snapshot.userGoal;
-  _toolCallTimestamps.clear();
-  snapshot.toolCallTimestamps.forEach((v, k) => _toolCallTimestamps.set(k, [...v]));
-  _toolFailureCount.clear();
-  snapshot.toolFailureCount.forEach((v, k) => _toolFailureCount.set(k, v));
-  _circuitBreakerTripped.clear();
-  snapshot.circuitBreakerTripped.forEach((v, k) => _circuitBreakerTripped.set(k, v));
   _errorPatterns.clear();
   snapshot.errorPatterns.forEach((v, k) => _errorPatterns.set(k, v));
-  _resultFingerprints.length = 0;
-  _resultFingerprints.push(...snapshot.resultFingerprints);
   _loopTimings.length = 0;
   _loopTimings.push(...snapshot.loopTimings);
 }
@@ -1499,85 +1142,8 @@ export function autoTuneMemorySearch(
 }
 
 // ═══════════════════════════════════════════════════════════════
-// R119: 工具执行队列优先级 — 按重要性排序工具执行
+// R119 已删除：工具优先级排序 — 强制重排可能打乱 AI 设计的执行顺序
 // ═══════════════════════════════════════════════════════════════
-
-export type ToolPriority = 'critical' | 'high' | 'normal' | 'low';
-
-const TOOL_PRIORITY_MAP: Record<string, ToolPriority> = {
-  // 关键：用户直接请求的操作
-  write_file: 'critical',
-  edit_file: 'critical',
-  delete_file: 'high',
-  
-  // 高：信息获取类
-  read_file: 'high',
-  list_directory: 'high',
-  search_files: 'high',
-  
-  // 普通：辅助工具
-  run_command: 'normal',
-  web_search: 'normal',
-  web_fetch: 'normal',
-  git: 'normal',
-  
-  // 低：非关键
-  memory: 'low',
-  datetime: 'low',
-  calculator: 'low',
-  random: 'low',
-  uuid: 'low',
-};
-
-/** R119: 获取工具优先级 */
-export function getToolPriority(toolName: string): ToolPriority {
-  return TOOL_PRIORITY_MAP[toolName] || 'normal';
-}
-
-/** R119: 按优先级排序工具调用 */
-export function sortToolsByPriority<T extends { name: string }>(
-  tools: T[]
-): T[] {
-  const priorityOrder: Record<ToolPriority, number> = {
-    critical: 0,
-    high: 1,
-    normal: 2,
-    low: 3,
-  };
-  
-  return [...tools].sort((a, b) => {
-    const pa = priorityOrder[getToolPriority(a.name)];
-    const pb = priorityOrder[getToolPriority(b.name)];
-    return pa - pb;
-  });
-}
-
-/** R119: 按优先级分批（同优先级可并行） */
-export function batchToolsByPriority<T extends { name: string }>(
-  tools: T[]
-): T[][] {
-  const batches: T[][] = [];
-  const sorted = sortToolsByPriority(tools);
-  
-  let currentBatch: T[] = [];
-  let currentPriority: ToolPriority | null = null;
-  
-  for (const tool of sorted) {
-    const priority = getToolPriority(tool.name);
-    if (currentPriority === null) {
-      currentPriority = priority;
-    }
-    if (priority !== currentPriority) {
-      if (currentBatch.length > 0) batches.push(currentBatch);
-      currentBatch = [];
-      currentPriority = priority;
-    }
-    currentBatch.push(tool);
-  }
-  
-  if (currentBatch.length > 0) batches.push(currentBatch);
-  return batches;
-}
 
 // ═══════════════════════════════════════════════════════════════
 // R124: 压缩上下文中工具引用解析 — 恢复被压缩的工具结果引用

@@ -413,10 +413,6 @@ export interface LoopContext {
   };
   /** R8 紧急压缩重试计数（防止溢出→压缩→重试无限循环） */
   emergencyCompressCount: number;
-  /** Completion Gate 连续失败次数（达到上限后不再重试） */
-  completionGateFailCount: number;
-  /** 工具结果核验警告列表（供 Completion Gate 使用） */
-  verifyWarnings: string[];
   /** 上下文压缩标记 — 防止同一轮重复触发压缩 */
   compressedThisCycle: boolean;
 }
@@ -463,19 +459,11 @@ export interface HookData {
   [key: string]: unknown;
 }
 
-/** 完成门控检查项 */
-export interface CompletionCheck {
-  name: string;
-  description: string;
-  check: (ctx: LoopContext) => Promise<{ passed: boolean; reason: string }>;
-}
-
 /** Agent 度量指标 */
 export interface AgentMetrics {
   totalSessions: number;
   avgIterationsPerTask: number;
   toolSuccessRate: number;
-  avgCompletionScore: number;
   frequentErrors: Array<{ pattern: string; count: number }>;
   tokenEfficiency: number;
   collectedAt: number;
