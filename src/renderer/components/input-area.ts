@@ -9,7 +9,7 @@ import { getSelectedModel, isThinkEnabled, isVisionAvailable, isToolCallingSuppo
 import {
   renderMessages, clearMessagesDOM, appendAssistantPlaceholder, appendSystemMessage,
   updateLastAssistantMessage, clearMessages, safeMarkdown, enableAutoScroll, resetAutoScroll,
-  appendToolCallCardToPlaceholder, updateToolCallCardInPlaceholder, resetCurrentPlaceholder, removeCurrentPlaceholder
+  resetCurrentPlaceholder, removeCurrentPlaceholder
 } from './chat-area.js';
 import { showToast } from './toast.js';
 import { addToolCard, startToolCard, updateToolCard, clearToolCardsExternal, clearTerminalExternal, getWorkspaceDirPath, hasActiveCards, showWorkingHint, clearWorkingHint } from './workspace-panel.js';
@@ -1098,10 +1098,6 @@ export async function sendMessage(): Promise<void> {
   return;
 }
 
-/** 更新当前会话消息中最近一个 'running' 状态的同名工具记录 */
-function updateMessageToolRecord(toolName: string, status: 'success' | 'error', result: Record<string, unknown>): void {
-  // 工具卡片统一由 onDone 挂载，不在执行中更新消息记录
-}
 
 async function sendMessageWithAgentLoop(text: string, currentSession: ChatSession, model: string): Promise<void> {
   const now = Date.now();
@@ -1286,6 +1282,9 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
           messages: [...session.messages, prevMsg],
           updatedAt: Date.now()
         }));
+        // P0-P1 修复：中间迭代消息必须持久化，否则崩溃时前几轮的 assistant 消息全丢失
+        saveCurrentSession().catch(e => logError('onNewIteration 保存失败', String(e)));
+        // P1-R3 修复：先移除旧 placeholder → 渲染历史 → 创建新 placeholder，避免渲染空隙
         removeCurrentPlaceholder();
         renderMessages();
         appendAssistantPlaceholder();
@@ -1432,6 +1431,25 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
       let errMsg = `❌ 错误: ${(err as Error).message}`;
       if ((err as Error).message.includes('Failed to fetch') || (err as Error).message.includes('NetworkError')) {
         errMsg = '❌ 连接失败。请检查 Ollama 是否正在运行';
+      }
+      // P0-P2 修复：非 AbortError 异常时也保存已生成的 partial 消息，避免网络断开/Ollama 崩溃时内容丢失
+      if (assistantContent) {
+        const partialMsg: ChatMessage = {
+          role: 'assistant',
+          content: assistantContent,
+          model: getSelectedModel(),
+          timestamp: Date.now(),
+          ...(thinkContent && { think: thinkContent }),
+          ...(currentIterationToolRecords.length > 0 && { toolCalls: [...currentIterationToolRecords] }),
+          interrupted: true,
+        };
+        currentIterationToolRecords = [];
+        state.update(KEYS.CURRENT_SESSION, (session: any) => ({
+          ...session,
+          messages: [...session.messages, partialMsg],
+          updatedAt: Date.now()
+        }));
+        await saveCurrentSession();
       }
       appendSystemMessage(errMsg);
     }

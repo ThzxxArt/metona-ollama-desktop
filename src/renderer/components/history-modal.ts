@@ -177,6 +177,8 @@ async function loadHistorySession(sessionId: string): Promise<void> {
   logSession('加载', `${session.title} (${session.messages.length}条消息)`);
   state.set(KEYS.CURRENT_SESSION, session);
   state.set(KEYS.IS_HISTORY_VIEW, true);
+  // P1-P1 修复：切换会话时重置已保存消息追踪
+  db.resetSavedMsgTracking();
 
   (document.querySelector('#historyBar') as HTMLElement).style.display = '';
   (document.querySelector('#inputArea') as HTMLElement).style.display = 'none';

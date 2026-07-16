@@ -632,6 +632,30 @@ export async function compressWithLLM(
   const tail = nonSystemMsgs.slice(-keepTail);
   const middle = nonSystemMsgs.slice(keepHead, nonSystemMsgs.length - keepTail);
 
+  // P1-C6 修复：head 中最早的 assistant+tool_calls 组在多次压缩后无法清除，导致 token 膨胀。
+  // 对 head 中已压缩过的消息（compressed=true），移除其 tool_calls 和后续 tool 消息（保留 content 作为上下文）。
+  // 这些旧工具调用的结果已不再需要，但 assistant 的文本内容仍有上下文价值。
+  if (head.length > 0) {
+    for (let i = 0; i < head.length; i++) {
+      const m = head[i];
+      if (m.compressed && m.tool_calls?.length) {
+        // 移除 tool_calls（降级为纯文本 assistant）
+        const newMsg: OllamaMessage = { ...m };
+        delete newMsg.tool_calls;
+        head[i] = newMsg;
+      }
+      if (m.compressed && m.role === 'tool') {
+        // 旧的 tool 消息标记为空（保留位置但内容为空，避免破坏数组结构）
+        // 后续 mergeConsecutiveMessages 会合并这些空消息
+        head[i] = { ...m, content: '', compressed: true };
+      }
+    }
+    // 过滤掉 head 中被清空的 tool 消息
+    const filteredHead = head.filter(m => !(m.compressed && m.role === 'tool' && !m.content));
+    head.length = 0;
+    head.push(...filteredHead);
+  }
+
   // R15: 对话轮次边界保护 — 调整 head/tail 切分点，避免在对话轮次中间切割
   // 如果 head 末尾是带 tool_calls 的 assistant，将后续 tool 消息也纳入 head
   if (head.length > 0 && head[head.length - 1].tool_calls?.length) {
@@ -651,6 +675,10 @@ export async function compressWithLLM(
     if (extendBack >= 0) {
       const moved = middle.splice(extendBack);
       tail.unshift(...moved);
+    } else {
+      // P1-C3 修复：middle 中无 assistant 时，tail[0] 是孤立 tool 消息，
+      // Ollama 会拒绝或忽略。将其从 tail 移除（它无对应 assistant.tool_calls）
+      tail.shift();
     }
   }
 
@@ -765,7 +793,8 @@ export async function compressWithLLM(
   // R16: 保留已压缩的中间消息（system 消息单独处理）+ 新摘要
   // R12: 标记这批消息为已压缩
   markAsCompressed(uncompressedMiddle);
-  // R16: 已压缩的旧摘要已被合并到新摘要中，不再保留它们
+  // P0-C1 修复：原代码保留 nonSystemCompressed（旧摘要），但新摘要已通过 mergeSummaries 合并了旧摘要内容，
+  // 保留旧摘要会导致信息重复 + token 累积浪费。正确做法是不保留旧摘要（system 的已在 mergedSystemContent 中合并）
   const alreadyCompressed = middle.filter(m => m.compressed && m.role === 'system');
 
   // C1: 合并 system 消息为一条，但保留不可压缩的 system 消息完整内容
@@ -775,12 +804,11 @@ export async function compressWithLLM(
     ...alreadyCompressed.filter(m => m.role === 'system').map(m => m.content || ''),
   ].filter(Boolean).join('\n\n');
 
-  const nonSystemCompressed = alreadyCompressed.filter(m => m.role !== 'system');
+  // P0-C1 修复：不再保留 nonSystemCompressed，旧摘要内容已合并到 summaryMsg 中
 
   const result: OllamaMessage[] = [
     { role: 'system', content: mergedSystemContent },
     ...head,
-    ...nonSystemCompressed,
     summaryMsg,
     ...tail
   ];

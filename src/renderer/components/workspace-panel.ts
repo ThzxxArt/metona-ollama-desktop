@@ -878,11 +878,15 @@ function updateToolCardDOM(tc: ToolCallRecord): void {
   const container = document.querySelector('#wsToolsOutput') as HTMLElement;
   if (!container) return;
 
-  // 查找同名且状态为 pending 或 running 的卡片 DOM 节点
-  const runningCard = (
-    container.querySelector(`.tool-call-card[data-tool-name="${escapeAttr(tc.name)}"].tool-call-running`) ||
-    container.querySelector(`.tool-call-card[data-tool-name="${escapeAttr(tc.name)}"].tool-call-pending`)
-  ) as HTMLElement | null;
+  // P1-R4 修复：同名工具并发执行时 querySelector 只返回第一个匹配，可能更新到错误的卡片。
+  // 改为 querySelectorAll 查找所有同名 pending/running 卡片，取最后一个（最新的那个）更新。
+  // 这与 updateToolCard 函数（行 839-853）在 JS 数组层面反向遍历找最后一个 running/pending 的逻辑一致。
+  const escapedName = escapeAttr(tc.name);
+  const allRunningCards = Array.from(container.querySelectorAll(
+    `.tool-call-card[data-tool-name="${escapedName}"].tool-call-running,` +
+    `.tool-call-card[data-tool-name="${escapedName}"].tool-call-pending`
+  )) as HTMLElement[];
+  const runningCard = allRunningCards.length > 0 ? allRunningCards[allRunningCards.length - 1] : null;
 
   if (runningCard) {
     const wrapper = document.createElement('div');

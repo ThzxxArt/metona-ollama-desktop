@@ -327,6 +327,17 @@ export function saveSetting(key: string, value: unknown): void {
   persist();
 }
 
+/** P1-P2 修复：批量保存设置，只触发一次 persist，避免每个 setting 都全库写盘 */
+export function saveSettingsBatch(entries: Array<{ key: string; value: unknown }>): void {
+  const d = getDb();
+  for (const { key, value } of entries) {
+    runExec(d, 'INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)',
+      [key, JSON.stringify(value), Date.now()]
+    );
+  }
+  persist(); // 只写盘一次
+}
+
 export function getSetting<T = unknown>(key: string, defaultValue: T | null = null): T {
   const row = queryOne(getDb(), 'SELECT value FROM settings WHERE key = ?', [key]) as { value: string } | null;
   if (!row) return defaultValue as T;
@@ -338,19 +349,10 @@ export function getSetting<T = unknown>(key: string, defaultValue: T | null = nu
 }
 
 // ─── Tool Calls CRUD ───
-
-export function saveToolCall(tc: ToolCallRow): string {
-  runExec(getDb(), `INSERT OR REPLACE INTO tool_calls (id, message_id, session_id, tool_name, arguments, result, status, duration_ms, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [tc.id, tc.message_id, tc.session_id, tc.tool_name, tc.arguments, tc.result, tc.status, tc.duration_ms, tc.created_at]
-  );
-  persist();
-  return tc.id;
-}
-
-export function getToolCallsBySession(sessionId: string): ToolCallRow[] {
-  return queryAll(getDb(), 'SELECT * FROM tool_calls WHERE session_id = ? ORDER BY created_at ASC', [sessionId]) as unknown as ToolCallRow[];
-}
+// P1-P3 修复：saveToolCall 和 getToolCallsBySession 是死代码（渲染进程从未调用）。
+// tool_calls 表保留（已有数据库可能包含此表，删除表定义会导致升级时报错），
+// 但删除未使用的函数和 IPC handler。
+// 工具调用记录实际通过 messages.tool_calls JSON 列存储。
 
 // ─── Traces CRUD ───
 

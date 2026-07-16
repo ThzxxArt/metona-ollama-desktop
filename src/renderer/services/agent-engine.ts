@@ -194,6 +194,8 @@ const SIDE_EFFECT_TOOLS = new Set([
 const _loopToolSignatures: string[] = [];
 const LOOP_HISTORY_MAX = 10;
 let _deadlockHintInjected = false;
+// P1-E6 修复：待清理的记忆提取 timer 列表，finally 块统一清理
+const _pendingMemoryTimers: ReturnType<typeof setTimeout>[] = [];
 
 /** 记录本轮工具调用签名（每轮 handleThinking 成功后调用一次） */
 function recordLoopSignature(toolCalls: ToolCall[]): void {
@@ -319,7 +321,9 @@ function getAdjustedToolTimeout(toolName: string, args: Record<string, unknown>)
 }
 
 /** R3: 带超时的工具执行包装器
- * P0 修复：executeTool 不接受 AbortSignal，使用 Promise.race 实现真正的超时中断
+ * P0-E1 修正：executeTool 不接受 AbortSignal，此处用 Promise + settled 标志实现"伪超时"。
+ * 注意：超时/中止后底层 executeTool 仍在后台执行（fire-and-forget），对有副作用的工具
+ * （write_file/run_command 等）用户应知晓"中止"只是不再等待结果，副作用可能已发生。
  */
 async function executeToolWithTimeout(
   toolName: string,
@@ -1193,10 +1197,11 @@ function transition(ctx: LoopContext, newState: LoopState): void {
   state.set('_loopState', ctx.state);
 }
 
-/** 持久化 LoopContext 到 state（用于暂停/恢复） */
-function persistLoopContext(ctx: LoopContext): void {
-  // P1 #4 修复：中止时持久化 TERMINATED 状态，避免恢复时状态不一致
-  const persistedState = isAborted() ? 'TERMINATED' : ctx.state;
+/** 快照 LoopContext 到内存 state（P0-P3 修复：原 persistLoopContext 名不副实，实际只写内存不落盘）
+ * 用途：运行时状态快照，供 UI 显示和调试；不用于跨会话恢复（应用重启后全丢） */
+function snapshotLoopContext(ctx: LoopContext): void {
+  // 中止时强制标记为 TERMINATED，避免 UI 显示错误状态
+  const snapshotState = isAborted() ? 'TERMINATED' : ctx.state;
   state.set('_loopContext', {
     sessionId: ctx.sessionId,
     loopCount: ctx.loopCount,
@@ -1205,7 +1210,14 @@ function persistLoopContext(ctx: LoopContext): void {
     totalPromptEvalCount: ctx.totalPromptEvalCount,
     allToolRecords: ctx.allToolRecords,
     startTime: ctx.startTime,
-    state: persistedState,
+    state: snapshotState,
+    // P0-P3 修复：补全关键字段，至少保证运行时调试可见
+    mode: ctx.mode,
+    emergencyCompressCount: ctx.emergencyCompressCount,
+    completionGateFailCount: ctx.completionGateFailCount,
+    verifyWarnings: ctx.verifyWarnings,
+    compressedThisCycle: ctx.compressedThisCycle,
+    messageCount: ctx.messages.length,
   });
 }
 
@@ -1312,6 +1324,8 @@ setUserGoal(userContent); // R56: 设置用户原始目标
 
   // P2-11: 加载自定义文件
   await loadCustomFiles(workspaceDir || '', systemPromptParts);
+  // P1-E1 修复：handleInit 中的异步操作后检查中止信号，避免大型工作空间中止延迟
+  if (isAborted()) { throw new DOMException('Aborted', 'AbortError'); }
 
   // 注入记忆上下文
   if (userContent) {
@@ -1321,6 +1335,8 @@ setUserGoal(userContent); // R56: 设置用户原始目标
         systemPromptParts.push(formatMemoryContext(relevantMemories));
       }
     } catch { /* 记忆搜索失败不影响主流程 */ }
+    // P1-E1 修复：记忆搜索后检查中止
+    if (isAborted()) { throw new DOMException('Aborted', 'AbortError'); }
   }
 
   // 注入工作空间上下文
@@ -1420,7 +1436,10 @@ setUserGoal(userContent); // R56: 设置用户原始目标
     const compressAC = state.get<AbortController | null>(KEYS.ABORT_CONTROLLER) || new AbortController();
     try {
       const compressed = await compressWithLLM(ctx.messages, api as any, model, { abortController: compressAC });
-      if (compressed.length < ctx.messages.length || estimateTokens(compressed.map(m => m.content || '').join('')) < estimateTokens(ctx.messages.map(m => m.content || '').join(''))) {
+      // P1-C4 修复：handleInit 中的自动压缩也使用 AND 条件
+      const initBeforeTokens = estimateTokens(ctx.messages.map(m => m.content || '').join(''));
+      const initAfterTokens = estimateTokens(compressed.map(m => m.content || '').join(''));
+      if (compressed.length < ctx.messages.length && initAfterTokens < initBeforeTokens) {
         ctx.messages.length = 0;
         ctx.messages.push(...compressed);
         logSuccess(`自动上下文压缩完成: 剩余 ${ctx.messages.length} 条消息`);
@@ -1876,7 +1895,10 @@ async function handleThinking(
         try {
           const compressAC = new AbortController();
           const compressed = await compressWithLLM(ctx.messages, api as any, model, { abortController: compressAC });
-          if (compressed.length < ctx.messages.length) {
+          // P1-C4 修复：R8 紧急压缩也使用 AND 条件，避免接受 token 增加的结果
+          const r8BeforeTokens = estimateTokens(ctx.messages.map(m => m.content || '').join(''));
+          const r8AfterTokens = estimateTokens(compressed.map(m => m.content || '').join(''));
+          if (compressed.length < ctx.messages.length && r8AfterTokens < r8BeforeTokens) {
             ctx.messages.length = 0;
             ctx.messages.push(...compressed);
             logSuccess(`R8: 紧急压缩完成，剩余 ${ctx.messages.length} 条消息`);
@@ -2163,6 +2185,15 @@ async function handleExecuting(
 
     if (needsConfirmation(call.function.name)) {
       const confirmed = await callbacks.onConfirmTool(call);
+      // P1-E3 修复：用户在确认对话框期间可能点了"停止"，确认后检查中止信号
+      if (isAborted()) {
+        logInfo(`用户在工具确认期间中止: ${call.function.name}`);
+        return [{
+          name: call.function.name, arguments: call.function.arguments,
+          result: { success: false, error: '用户中止' },
+          status: 'cancelled' as const, timestamp: Date.now()
+        }, null];
+      }
       if (!confirmed) {
         logWarn(`工具取消: ${call.function.name}`);
         const cancelResult = { success: false, error: '用户取消了操作' };
@@ -2259,9 +2290,12 @@ async function handleExecuting(
   // 按批次执行
   for (const batch of batches) {
     if (state.get<AbortController | null>(KEYS.ABORT_CONTROLLER)?.signal.aborted) {
-      callbacks.onDone(ctx.content, ctx.allToolRecords.length > 0 ? ctx.allToolRecords : undefined, makeStats(ctx));
-      transition(ctx, S.TERMINATED);
-      return;
+      // P0-R1 + P1-R5 修复：中止时设置 _abortToolRecords 并 throw AbortError，
+      // 让主循环 catch 块统一处理 UI 反馈（[已停止] 标记、系统消息等），避免 onDone 被重复调用
+      if (ctx.allToolRecords.length > 0) {
+        state.set('_abortToolRecords', ctx.allToolRecords);
+      }
+      throw new DOMException('Aborted', 'AbortError');
     }
 
     // R6: 限制并行工具数量，避免过多并发导致资源争抢
@@ -2358,7 +2392,7 @@ async function handleObserving(
       const toRemove = new Set<number>(toRemoveToolIndices);
       const toStripToolCalls = new Set<number>();
 
-      // 检查每个带 tool_calls 的 assistant：如果其所有 tool 消息都被删除，处理 assistant
+      // 检查每个带 tool_calls 的 assistant：如果其 tool 消息被部分或全部删除，处理 assistant
       for (let i = 0; i < ctx.messages.length; i++) {
         const msg = ctx.messages[i];
         if (msg.role === 'assistant' && msg.tool_calls?.length) {
@@ -2367,7 +2401,9 @@ async function handleObserving(
             followingToolIndices.push(j);
           }
           if (followingToolIndices.length === 0) continue;
-          const allRemoved = followingToolIndices.every(idx => toRemoveToolIndices.has(idx));
+          const removedCount = followingToolIndices.filter(idx => toRemoveToolIndices.has(idx)).length;
+          const allRemoved = removedCount === followingToolIndices.length;
+          const someRemoved = removedCount > 0 && !allRemoved;
           if (allRemoved) {
             if (msg.content && msg.content.trim()) {
               // 有内容：保留 assistant 但移除 tool_calls
@@ -2376,6 +2412,10 @@ async function handleObserving(
               // 无内容：删除整个 assistant
               toRemove.add(i);
             }
+          } else if (someRemoved) {
+            // P0-C2 修复：部分 tool 消息被删除时，assistant.tool_calls 仍引用被删除的 tool_call_id，
+            // 会导致 Ollama API 报错。必须移除 tool_calls（降级为纯文本 assistant）
+            toStripToolCalls.add(i);
           }
         }
       }
@@ -2483,6 +2523,8 @@ async function handleObserving(
       const PRESERVE_PATTERNS = [
         /Plan Mode/, /计划已批准/, /计划已拒绝/, /最大计划重试/,
         /plan_track/, /当前进度/, /断点续传/,
+        // P1-E5 修复：保留死锁检测器注入的 ephemeral 提示，否则提示被清理后死锁会硬性熔断
+        /系统提示.*连续.*轮调用相同的工具/,
       ];
       let removed = 0;
       ctx.messages = ctx.messages.filter(m => {
@@ -2705,11 +2747,16 @@ async function handleReflecting(
       .filter(m => m.role === 'user' || m.role === 'assistant')
       .map(m => ({ role: m.role, content: m.content || '' }));
     // 使用 setTimeout 延迟执行，确保 onDone 先触发，用户先看到回复
-    setTimeout(() => {
+    // P1-E6 修复：存储 timer ID 到 ctx，finally 块可清理，避免新会话启动时旧提取污染
+    const memTimer = setTimeout(() => {
+      // 执行前再次检查 signal，可能已被新会话的 registerAbortController 中止
+      if (memorySignal?.aborted) return;
       import('./memory-service.js').then(({ extractAndSaveMemories }) => {
         extractAndSaveMemories(msgsForMemory, _api, _model, memorySignal).catch(() => {});
       }).catch(() => {});
     }, 500);
+    // 存储 timer，finally 块在 cleanupAbortController 之后清理
+    _pendingMemoryTimers.push(memTimer);
   }
 
   callbacks.onDone(ctx.content || '（模型未返回内容）', ctx.allToolRecords.length > 0 ? ctx.allToolRecords : undefined, makeStats(ctx));
@@ -2726,12 +2773,24 @@ async function handleCompressing(
 ): Promise<void> {
   const numCtx = getEffectiveNumCtx();
   let actuallyCompressed = false;
-  if (shouldAutoCompress(ctx.messages, numCtx)) {
+  // P1-C1 修复：OBSERVING 基于 getTrendAwareCompressThreshold 触发 COMPRESSING，
+  // 此处不应再用 shouldAutoCompress 二次判断（两者阈值不一致会导致跳过压缩形成低效循环）。
+  // 既然已进入 COMPRESSING 状态，直接执行压缩。
+  // P1-C2 修复：进入时检查中止信号
+  if (isAborted()) {
+    transition(ctx, S.REFLECTING);
+    return;
+  }
+  {
     logInfo('COMPRESSING: 上下文压缩触发');
     const compressAC = state.get<AbortController | null>(KEYS.ABORT_CONTROLLER) || new AbortController();
     try {
       const compressed = await compressWithLLM(ctx.messages, api as any, model, { abortController: compressAC });
-      if (compressed.length < ctx.messages.length || estimateTokens(compressed.map(m => m.content || '').join('')) < estimateTokens(ctx.messages.map(m => m.content || '').join(''))) {
+      // P1-C4 修复：原条件用 OR（消息数减少 OR token 减少），可能接受 token 增加的结果。
+      // 改为 AND：只有消息数减少且 token 减少时才接受，确保压缩真正生效
+      const beforeTokens = estimateTokens(ctx.messages.map(m => m.content || '').join(''));
+      const afterTokens = estimateTokens(compressed.map(m => m.content || '').join(''));
+      if (compressed.length < ctx.messages.length && afterTokens < beforeTokens) {
         ctx.messages.length = 0;
         ctx.messages.push(...compressed);
         actuallyCompressed = true;
@@ -2828,7 +2887,7 @@ export async function runAgentLoop(
   };
 
   state.set('_loopState', S.INIT);
-  persistLoopContext(ctx);
+  snapshotLoopContext(ctx);
   startSessionMetrics(sessionId, model);
   // Plan Mode 激活时注册 plan_track 工具
   const { setPlanModeActive } = await import('./tool-registry.js');
@@ -2929,7 +2988,7 @@ default:
   }
       }
 
-      persistLoopContext(ctx);
+      snapshotLoopContext(ctx);
     }
   } catch (err) {
     if ((err as Error).name === 'AbortError') {
@@ -2940,6 +2999,8 @@ default:
       callbacks.onDone(ctx.content || '（Agent Loop 异常终止）', ctx.allToolRecords.length > 0 ? ctx.allToolRecords : undefined, makeStats(ctx));
     }
     transition(ctx, S.TERMINATED);
+    // P1-E2 修复：catch 块也需快照，确保终止状态写入 state._loopContext
+    snapshotLoopContext(ctx);
   } finally {
     // ── P1-8: Plan Mode 断点续传 — 保存完整追踪器到 session，支持跨轮次恢复 ──
     if (ctx.mode === 'plan') {
@@ -2960,6 +3021,12 @@ default:
     clearPlanTracker();
     endSessionMetrics();
     cleanupAbortController();
-    flushAllTraces(); // P3-13: 确保所有轨迹写入 SQLite
+    // P1-E6 修复：清理未执行的记忆提取 timer，避免新会话启动时旧提取污染
+    while (_pendingMemoryTimers.length > 0) {
+      const t = _pendingMemoryTimers.pop();
+      if (t) clearTimeout(t);
+    }
+    // P1-E4 修复：await 确保轨迹写入完成，避免应用立即关闭时丢失
+    await flushAllTraces().catch(() => {});
   }
 }

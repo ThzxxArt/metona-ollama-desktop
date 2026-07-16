@@ -69,6 +69,9 @@ export class ChatDB {
 
   // ── Sessions ──
 
+  // P1-P1 修复：追踪已保存的消息 ID，避免每次 saveSession 全量重写所有消息
+  private _savedMsgIds = new Set<string>();
+
   async saveSession(session: ChatSession): Promise<string> {
     if (isDesktop()) {
       const row = {
@@ -82,11 +85,14 @@ export class ChatDB {
         updated_at: session.updatedAt
       };
       await dbBridge().saveSession(row);
-      // 同步保存消息
+      // P1-P1 修复：只保存新增消息（不在 _savedMsgIds 中的），避免全量重写
       for (let mi = 0; mi < session.messages.length; mi++) {
         const msg = session.messages[mi];
+        const msgId = `${session.id}_${msg.timestamp}_${msg.role}_${mi}`;
+        if (this._savedMsgIds.has(msgId)) continue; // 已保存，跳过
+        this._savedMsgIds.add(msgId);
         const msgRow = {
-          id: `${session.id}_${msg.timestamp}_${msg.role}_${mi}`,
+          id: msgId,
           session_id: session.id,
           role: msg.role,
           content: msg.content || null,
@@ -105,6 +111,11 @@ export class ChatDB {
       return session.id;
     }
     return this._idbSaveSession(session);
+  }
+
+  /** P1-P1 修复：切换会话时重置已保存消息追踪，释放内存 */
+  resetSavedMsgTracking(): void {
+    this._savedMsgIds.clear();
   }
 
   async getSession(id: string): Promise<ChatSession | null> {

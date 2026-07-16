@@ -11,8 +11,7 @@ import { showNotification } from './utils.js';
 import {
   initDatabase, saveSession, getSession, getAllSessions, deleteSession, clearAllSessions,
   saveMessage, getMessagesBySession,
-  saveSetting, getSetting,
-  saveToolCall, getToolCallsBySession,
+  saveSetting, getSetting, saveSettingsBatch,
   saveTrace, getTracesBySession,
   exportAllSessions, importSessions,
   getAllSessionsTokenStats
@@ -391,20 +390,17 @@ export async function setupIPC(): Promise<void> {
     try { saveSetting(key, value); return { success: true }; }
     catch (err) { return { success: false, error: (err as Error).message }; }
   });
+  // P1-P2 修复：批量保存设置，只触发一次 persist
+  ipcMain.handle('db:saveSettingsBatch', (_, entries: Array<{ key: string; value: unknown }>) => {
+    try { saveSettingsBatch(entries); return { success: true }; }
+    catch (err) { return { success: false, error: (err as Error).message }; }
+  });
   ipcMain.handle('db:getSetting', (_, key: string, defaultValue?: unknown) => {
     try { return getSetting(key, defaultValue ?? null); }
     catch { return defaultValue ?? null; }
   });
 
-  // Tool Calls
-  ipcMain.handle('db:saveToolCall', (_, tc) => {
-    try { return { success: true, id: saveToolCall(tc) }; }
-    catch (err) { return { success: false, error: (err as Error).message }; }
-  });
-  ipcMain.handle('db:getToolCalls', (_, sessionId) => {
-    try { return getToolCallsBySession(sessionId); }
-    catch { return []; }
-  });
+  // Tool Calls — P1-P3 修复：删除死代码（渲染进程从未调用，工具记录通过 messages.tool_calls 存储）
 
   // Traces
   ipcMain.handle('db:saveTrace', (_, trace) => {

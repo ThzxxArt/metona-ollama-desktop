@@ -376,8 +376,6 @@ function patchIncompleteMarkdown(md: string): string {
 // ── 流式渲染节流状态 ──
 let _streamRenderPending = false;
 let _streamRenderContent = '';
-let _streamRenderThink: string | null = null;
-let _streamRenderModel: string | undefined;
 // R58: 流式渲染优化 — 增量阈值 + 内容指纹，避免高频小片段冗余重渲染
 let _streamLastRenderedLen = 0;     // 上次渲染时的内容长度
 let _streamLastRenderedHash = 0;     // 上次渲染时的内容哈希（简单 DJB2）
@@ -400,6 +398,9 @@ function _doStreamRender(): void {
   _streamRenderPending = false;
   const lastMsg = currentPlaceholder;
   if (!lastMsg) return;
+  // P1-R1 修复：rAF 回调执行时 currentPlaceholder 可能已被 appendAssistantPlaceholder 替换为新节点，
+  // 且 _streamRenderContent 已被重置为 ''，此时不会误渲染。appendAssistantPlaceholder 中的
+  // _streamRenderContent = '' 重置确保了旧 rAF 回调拿到的是空内容，不会渲染到新 placeholder。
 
   // R58: 增量阈值检查 — 内容变化不足时跳过本次渲染
   const contentLen = _streamRenderContent.length;
@@ -551,44 +552,6 @@ export function updateLastAssistantMessage(
   scrollToBottom();
 }
 
-/** 实时追加工具调用卡片到当前 placeholder（直播聊天时使用） */
-export function appendToolCallCardToPlaceholder(tc: ToolCallRecord): void {
-  if (!currentPlaceholder) return;
-  let container = currentPlaceholder.querySelector('.tool-calls-container');
-  if (!container) {
-    container = document.createElement('div');
-    container.className = 'tool-calls-container';
-    const msgBody = currentPlaceholder.querySelector('.msg-body');
-    if (msgBody) msgBody.appendChild(container);
-  }
-  const cardDiv = document.createElement('div');
-  cardDiv.innerHTML = renderToolCallCard(tc);
-  const card = cardDiv.firstElementChild as HTMLElement;
-  card.dataset.toolName = tc.name;
-  container.appendChild(card);
-  scrollToBottom();
-}
-
-/** 更新 placeholder 中已有的工具卡片状态（running → success/error） */
-export function updateToolCallCardInPlaceholder(tc: ToolCallRecord): void {
-  if (!currentPlaceholder) return;
-  const container = currentPlaceholder.querySelector('.tool-calls-container');
-  if (!container) return;
-  // 找到第一个同名且状态为 running 的卡片（CSS.escape 防特殊字符）
-  const escapedName = CSS.escape(tc.name);
-  const existing = container.querySelector(`.tool-call-card[data-tool-name="${escapedName}"].tool-call-running`) as HTMLElement;
-  if (existing) {
-    const cardDiv = document.createElement('div');
-    cardDiv.innerHTML = renderToolCallCard(tc);
-    const newCard = cardDiv.firstElementChild as HTMLElement;
-    newCard.dataset.toolName = tc.name;
-    existing.replaceWith(newCard);
-  } else {
-    // 没找到 running 的卡片，直接追加
-    appendToolCallCardToPlaceholder(tc);
-  }
-}
-
 export function appendAssistantPlaceholder(): void {
   const div = document.createElement('div');
   div.className = 'message assistant loading';
@@ -605,6 +568,12 @@ export function appendAssistantPlaceholder(): void {
   `;
   messagesContainerEl.appendChild(div);
   currentPlaceholder = div;
+
+  // P0-R2 修复：新 placeholder 必须重置流式渲染状态，否则上一条的 _streamLastRenderedLen 会压制新消息渲染
+  _streamLastRenderedLen = 0;
+  _streamLastRenderedHash = 0;
+  _streamRenderContent = '';
+  _streamRenderPending = false;
 
   // R34: 启动旋转提示
   startLoadingHintRotation(div);
@@ -654,12 +623,16 @@ export function appendSystemMessage(text: string, tempClass?: string): void {
 export function clearMessagesDOM(): void {
   messagesContainerEl.innerHTML = '';
   _renderedMsgIndices.clear(); // P1-1: 重置 diff 状态
+  // P1-R2 修复：重置系统提示词标记，否则清空后首条消息不再显示系统卡片
+  _sysPromptRendered = false;
 }
 
 export function clearMessages(): void {
   messagesContainerEl.innerHTML = '';
   currentPlaceholder = null;
   _renderedMsgIndices.clear(); // P1-1: 重置 diff 状态
+  // P1-R2 修复：与 clearMessagesDOM 保持一致
+  _sysPromptRendered = false;
 }
 
 /** 清理 currentPlaceholder 引用（当 placeholder 从外部被移除时调用） */
