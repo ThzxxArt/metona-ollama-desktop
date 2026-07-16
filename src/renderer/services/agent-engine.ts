@@ -87,20 +87,30 @@ const MAX_PARALLEL_TOOLS = 5;       // R6: 单批次最大并行工具数
 // R55: 语义工具检索 — 缓存当前轮过滤后的工具定义，避免 handleThinking 重复计算
 let _filteredTools: import('../types.js').ToolDefinition[] = [];
 
-/** S1/S6: 清洗不可信文本，移除提示词注入模式 */
+/** S1/S6: 清洗不可信文本，移除提示词注入模式
+ * P3 #10 增强：先标准化 Unicode/零宽字符，再匹配更多变体
+ */
 function sanitizeUntrustedInput(text: string): string {
   if (!text) return '';
-  return text
-    .replace(/ignore\s+(all\s+)?previous/gi, '...')
-    .replace(/forget\s+(all\s+)?instructions/gi, '...')
+  // 先标准化：移除零宽字符、全角→半角，避免同形字符绕过
+  let normalized = text
+    .replace(/[\u200B-\u200D\uFEFF\u00AD]/g, '') // 零宽字符
+    .replace(/[\uFF01-\uFF5E]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0)); // 全角→半角
+  return normalized
+    .replace(/ignore\s+(all\s+)?(previous|prior|above)\s*(instructions?|prompts?|rules?)?/gi, '...')
+    .replace(/forget\s+(all\s+)?(instructions?|prompts?|rules?|everything)/gi, '...')
     .replace(/you\s+are\s+now\s+a/gi, '...')
     .replace(/new\s+system\s*prompt/gi, '...')
-    .replace(/override\s+(your|the)\s+/gi, '...')
-    .replace(/disregard\s+(all|any|previous)/gi, '...')
+    .replace(/override\s+(your|the|all)\s+/gi, '...')
+    .replace(/disregard\s+(all|any|previous|prior)\s*(instructions?|rules?)?/gi, '...')
+    .replace(/act\s+as\s+(if|a|an)\s+(you\s+are|different)/gi, '...')
     .replace(/忽略.{0,4}(之前|前面|以上|所有).{0,4}(指令|提示|规则|系统)/g, '...')
-    .replace(/忘记.{0,4}(所有|之前|前面).{0,4}(指令|提示)/g, '...')
+    .replace(/忘记.{0,4}(所有|之前|前面).{0,4}(指令|提示|规则)/g, '...')
     .replace(/你现在是一个/g, '...')
-    .replace(/覆盖.{0,4}(系统|你的).{0,4}(提示|指令|规则)/g, '...');
+    .replace(/覆盖.{0,4}(系统|你的).{0,4}(提示|指令|规则)/g, '...')
+    .replace(/从现在起.{0,4}(你是|你将|请)/g, '...')
+    .replace(/system\s*:\s*/gi, '...')
+    .replace(/\[system\]/gi, '...');
 }
 
 /** ── LoopState 常量 ── */
@@ -308,7 +318,9 @@ function getAdjustedToolTimeout(toolName: string, args: Record<string, unknown>)
   return timeout;
 }
 
-/** R3: 带超时的工具执行包装器 */
+/** R3: 带超时的工具执行包装器
+ * P0 修复：executeTool 不接受 AbortSignal，使用 Promise.race 实现真正的超时中断
+ */
 async function executeToolWithTimeout(
   toolName: string,
   args: Record<string, unknown>,
@@ -319,35 +331,51 @@ async function executeToolWithTimeout(
     return executeTool(toolName, args);
   }
 
-  const timeoutAC = new AbortController();
-  const timer = setTimeout(() => {
-    timeoutAC.abort(new Error(`工具 ${toolName} 执行超时 (${timeoutMs / 1000}s)`));
-  }, timeoutMs);
-
-  // 如果外部 abort 触发，也中止工具
-  const onExternalAbort = () => { timeoutAC.abort(); };
-  if (abortSignal) {
-    if (abortSignal.aborted) {
-      clearTimeout(timer);
-      return { success: false, error: '用户中止' };
-    }
-    abortSignal.addEventListener('abort', onExternalAbort, { once: true });
+  // 外部已中止
+  if (abortSignal?.aborted) {
+    return { success: false, error: '用户中止' };
   }
 
-  try {
-    const result = await executeTool(toolName, args);
-    return result;
-  } catch (err) {
-    if (timeoutAC.signal.aborted && !abortSignal?.aborted) {
-      return { success: false, error: `工具 ${toolName} 执行超时 (${timeoutMs / 1000}s)，请尝试拆分任务或优化参数` };
-    }
-    return { success: false, error: (err as Error)?.message || String(err) };
-  } finally {
-    clearTimeout(timer);
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let onExternalAbort: (() => void) | null = null;
+
+  return new Promise<ToolResult>((resolve) => {
+    let settled = false;
+
+    const cleanup = () => {
+      if (timer) { clearTimeout(timer); timer = null; }
+      if (abortSignal && onExternalAbort) {
+        abortSignal.removeEventListener('abort', onExternalAbort);
+      }
+    };
+
+    const settle = (result: ToolResult) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(result);
+    };
+
+    // 超时
+    timer = setTimeout(() => {
+      settle({ success: false, error: `工具 ${toolName} 执行超时 (${timeoutMs / 1000}s)，请尝试拆分任务或优化参数` });
+    }, timeoutMs);
+
+    // 外部中止
     if (abortSignal) {
-      abortSignal.removeEventListener('abort', onExternalAbort);
+      if (abortSignal.aborted) {
+        settle({ success: false, error: '用户中止' });
+        return;
+      }
+      onExternalAbort = () => settle({ success: false, error: '用户中止' });
+      abortSignal.addEventListener('abort', onExternalAbort, { once: true });
     }
-  }
+
+    // 工具执行
+    executeTool(toolName, args)
+      .then(result => settle(result))
+      .catch(err => settle({ success: false, error: (err as Error)?.message || String(err) }));
+  });
 }
 
 /** P0-2: 检测工具调用之间是否存在路径依赖（写入 → 读取/写入同一路径）
@@ -1167,6 +1195,8 @@ function transition(ctx: LoopContext, newState: LoopState): void {
 
 /** 持久化 LoopContext 到 state（用于暂停/恢复） */
 function persistLoopContext(ctx: LoopContext): void {
+  // P1 #4 修复：中止时持久化 TERMINATED 状态，避免恢复时状态不一致
+  const persistedState = isAborted() ? 'TERMINATED' : ctx.state;
   state.set('_loopContext', {
     sessionId: ctx.sessionId,
     loopCount: ctx.loopCount,
@@ -1175,6 +1205,7 @@ function persistLoopContext(ctx: LoopContext): void {
     totalPromptEvalCount: ctx.totalPromptEvalCount,
     allToolRecords: ctx.allToolRecords,
     startTime: ctx.startTime,
+    state: persistedState,
   });
 }
 
@@ -1483,11 +1514,12 @@ async function verifyToolResult(
   toolName: string,
   args: Record<string, unknown>,
   result: Record<string, unknown>,
-): Promise<void> {
-  if (!TOOLS_NEED_VERIFY.has(toolName) || !result.success) return;
+): Promise<string | null> {
+  // P3 #13 修复：返回警告字符串供 Completion Gate 使用
+  if (!TOOLS_NEED_VERIFY.has(toolName) || !result.success) return null;
 
   const bridge = window.metonaDesktop;
-  if (!bridge?.isDesktop) return;
+  if (!bridge?.isDesktop) return null;
 
   try {
     switch (toolName) {
@@ -1499,8 +1531,10 @@ async function verifyToolResult(
           const actual = String(read.content || '');
           if (actual.length === 0) {
             logWarn(`核验 write_file: ${path} 内容为空`);
+            return `write_file 核验: ${path} 写入后内容为空`;
           } else if (Math.abs(actual.length - expected.length) > expected.length * 0.5) {
             logWarn(`核验 write_file: ${path} 期望 ${expected.length}B 实际 ${actual.length}B`);
+            return `write_file 核验: ${path} 写入内容大小不符 (期望 ${expected.length}B, 实际 ${actual.length}B)`;
           } else {
             logInfo(`核验 write_file ✅: ${path} (${actual.length}B)`);
           }
@@ -1515,6 +1549,7 @@ async function verifyToolResult(
           const actual = String(read.content || '');
           if (!actual.includes(newText)) {
             logWarn(`核验 edit_file: ${path} 不包含期望的新内容`);
+            return `edit_file 核验: ${path} 编辑后文件不包含期望的新内容`;
           } else {
             logInfo(`核验 edit_file ✅: ${path}`);
           }
@@ -1532,6 +1567,7 @@ async function verifyToolResult(
           const info = await bridge.tool.execute('get_file_info', { path: p });
           if (info.success) {
             logWarn(`核验 delete_file: ${p} 仍然存在，删除未生效`);
+            return `delete_file 核验: ${p} 删除后仍然存在`;
           } else {
             logInfo(`核验 delete_file ✅: ${p} 已不存在`);
           }
@@ -1545,6 +1581,7 @@ async function verifyToolResult(
           logInfo(`核验 create_directory ✅: ${path}`);
         } else {
           logWarn(`核验 create_directory: ${path} 未成功创建`);
+          return `create_directory 核验: ${path} 目录未成功创建`;
         }
         break;
       }
@@ -1557,10 +1594,12 @@ async function verifyToolResult(
         ]);
         if (srcInfo.success) {
           logWarn(`核验 move_file: 源文件 ${src} 仍然存在`);
+          return `move_file 核验: 源文件 ${src} 移动后仍然存在`;
         } else if (destInfo.success) {
           logInfo(`核验 move_file ✅: ${src} → ${dest}`);
         } else {
           logWarn(`核验 move_file: ${src}→${dest} 源和目标均不存在`);
+          return `move_file 核验: ${src}→${dest} 移动后源和目标均不存在`;
         }
         break;
       }
@@ -1571,6 +1610,7 @@ async function verifyToolResult(
           logInfo(`核验 copy_file ✅: ${dest} (${(destInfo as any).size}B)`);
         } else {
           logWarn(`核验 copy_file: 目标 ${dest} 不存在`);
+          return `copy_file 核验: 目标 ${dest} 复制后不存在`;
         }
         break;
       }
@@ -1581,11 +1621,13 @@ async function verifyToolResult(
           logInfo(`核验 download_file ✅: ${dest} (${(info as any).size}B)`);
         } else {
           logWarn(`核验 download_file: ${dest} 不存在或为空`);
+          return `download_file 核验: ${dest} 下载后不存在或为空`;
         }
         break;
       }
     }
   } catch { /* 核验失败不阻塞主流程 */ }
+  return null;
 }
 
 /**
@@ -1599,6 +1641,9 @@ async function handleThinking(
 ): Promise<void> {
   ctx.loopCount++;
   logAgentLoop(ctx.loopCount, ctx.maxLoops);
+
+  // P2 #7: 每轮重置压缩标志，允许新一轮的压缩触发
+  ctx.compressedThisCycle = false;
 
   ctx.content = '';
   ctx.thinking = '';
@@ -1821,10 +1866,13 @@ async function handleThinking(
       apiLastErr = err as Error;
 
       // R8: 检测 Ollama 上下文溢出错误 — 自动压缩并重试
+      // P1 #2 修复：限制紧急压缩最多 2 次，防止溢出→压缩→重试无限循环
+      const MAX_EMERGENCY_COMPRESS = 2;
       const errMsg = apiLastErr.message || '';
       const isContextOverflow = /context.*length|prompt.*too.*long|context.*window|maximum.*context|num_ctx|上下文.*超/i.test(errMsg);
-      if (isContextOverflow && ctx.messages.length > 10) {
-        logWarn(`R8: 检测到上下文溢出错误，触发紧急压缩`, errMsg.slice(0, 100));
+      if (isContextOverflow && ctx.messages.length > 10 && ctx.emergencyCompressCount < MAX_EMERGENCY_COMPRESS) {
+        ctx.emergencyCompressCount++;
+        logWarn(`R8: 检测到上下文溢出错误，触发紧急压缩 (${ctx.emergencyCompressCount}/${MAX_EMERGENCY_COMPRESS})`, errMsg.slice(0, 100));
         try {
           const compressAC = new AbortController();
           const compressed = await compressWithLLM(ctx.messages, api as any, model, { abortController: compressAC });
@@ -1839,6 +1887,8 @@ async function handleThinking(
         } catch (compressErr) {
           logWarn('R8: 紧急压缩失败', (compressErr as Error).message);
         }
+      } else if (isContextOverflow && ctx.emergencyCompressCount >= MAX_EMERGENCY_COMPRESS) {
+        logWarn(`R8: 紧急压缩已达上限 (${MAX_EMERGENCY_COMPRESS})，不再重试`);
       }
 
       if (apiAttempt < API_MAX_RETRIES) {
@@ -1959,10 +2009,9 @@ async function handleExecuting(
   for (const call of ctx.toolCalls) {
     if (currentBatch.length === 0) {
       currentBatch.push(call);
-    } else if (ALWAYS_PARALLEL.has(call.function.name)) {
-      currentBatch.push(call);
     } else if (hasPathDependency(call, currentBatch)) {
-      // 存在路径依赖 → 新开批次（串行化）
+      // P2 #8 修复：路径依赖检查优先于 ALWAYS_PARALLEL，
+      // 防止 read_file 在 write_file 同路径时被错误并行
       batches.push(currentBatch);
       currentBatch = [call];
     } else {
@@ -2186,25 +2235,24 @@ async function handleExecuting(
           }, null];
         }
         
-        if (retry < MAX_RETRIES) {
+        if (retry < (classifiedError.maxRetries || MAX_RETRIES)) {
           // R78: 使用 calculateBackoff 计算指数退避延迟
           const delay = calculateBackoff(retry, classifiedError.backoffMs);
           logWarn(`R78: 工具重试 ${retry + 1}/${classifiedError.maxRetries}: ${call.function.name}（${classifiedError.class}错误，${delay}ms 后）`, lastError);
           await new Promise(r => setTimeout(r, delay));
           continue;
         }
-                logError(`工具执行失败（已达最大重试）: ${call.function.name}`, lastError);
-        // R97: 记录错误模式
-        recordErrorPattern(call.function.name, lastError);
+        // P2 #6 修复：此处不可达（路径A已拦截），但作为安全兆底
         return [{
           name: call.function.name, arguments: call.function.arguments,
-          result: { success: false, error: lastError }, status: 'error' as const, timestamp: Date.now()
+          result: { success: false, error: classifiedError.userMessage }, status: 'error' as const, timestamp: Date.now()
         }, null];
       }
     }
+    // P2 #6 修复：循环结束兆底返回
     return [{
       name: call.function.name, arguments: call.function.arguments,
-      result: { success: false, error: lastError }, status: 'error' as const, timestamp: Date.now()
+      result: { success: false, error: lastError || '工具执行失败' }, status: 'error' as const, timestamp: Date.now()
     }, null];
   };
 
@@ -2252,8 +2300,13 @@ async function handleExecuting(
       // 记录度量
       recordToolCall(record.name, record.status, Date.now() - record.timestamp);
       // ── 通用工具结果核验 — 所有写类工具执行后验证 ──
+      // P3 #13 修复：收集核验警告到 ctx.verifyWarnings，供 Completion Gate 使用
       if (record.status === 'success') {
-        verifyToolResult(record.name, record.arguments, record.result!);
+        const warning = await verifyToolResult(record.name, record.arguments, record.result!);
+        if (warning) {
+          ctx.verifyWarnings.push(warning);
+          logWarn(warning);
+        }
       }
       // ── post_tool Hook ──
       executeHooks('post_tool', ctx, { toolName: record.name, toolArgs: record.arguments, toolResult: record.result! }).catch(err => logWarn('post_tool hook 异常', String(err)));
@@ -2282,7 +2335,8 @@ async function handleObserving(
   ctx: LoopContext,
   currentSession: ChatSession | null,
 ): Promise<void> {
-  // 中止检查
+  // 中止检查 — P1 #4 修复：不在此处 transition，让主循环的 isAborted() 检查
+  // 抛出 AbortError 触发 catch 块中的 onDone。持久化状态一致性由 persistLoopContext 处理。
   if (isAborted()) return;
   // R91: 上下文压力分级评估 — 根据压力等级选择压缩策略
   const numCtx = getEffectiveNumCtx();
@@ -2472,7 +2526,8 @@ async function handleReflecting(
   callbacks: AgentCallbacks,
   currentSession: ChatSession | null,
 ): Promise<void> {
-  // 中止检查
+  // 中止检查 — P1 #4 修复：不在此处 transition，让主循环的 isAborted() 检查
+  // 抛出 AbortError 触发 catch 块中的 onDone。持久化状态一致性由 persistLoopContext 处理。
   if (isAborted()) return;
 
   // ── Plan Mode: 第一轮回复 → 检测是否为计划 → 等待用户确认 ──
@@ -2602,7 +2657,23 @@ async function handleReflecting(
     const gateResult = await runCompletionGate(ctx);
     if (!gateResult.passed) {
       recordCompletionGate(false);
-      logWarn(`Completion Gate: ${gateResult.reason}（仅记录，不阻断）`);
+      logWarn(`Completion Gate: ${gateResult.reason}`);
+
+      // P1 #5 修复：Gate 失败时注入纠正提示并重试（最多 1 次），而非仅记录日志
+      const MAX_GATE_RETRIES = 1;
+      if (ctx.completionGateFailCount < MAX_GATE_RETRIES && ctx.loopCount < ctx.maxLoops) {
+        ctx.completionGateFailCount++;
+        logInfo(`Completion Gate: 注入纠正提示，重试 (${ctx.completionGateFailCount}/${MAX_GATE_RETRIES})`);
+        ctx.messages.push({
+          role: 'user',
+          content: `[系统提示] ${gateResult.reason}\n请基于已有信息补充完整你的回答，不要重复之前的工具调用。`,
+          ephemeral: true,
+        });
+        transition(ctx, S.THINKING);
+        return;
+      } else {
+        logWarn(`Completion Gate: 已达重试上限或循环上限，接受当前结果`);
+      }
     } else {
       recordCompletionGate(true);
     }
@@ -2623,8 +2694,9 @@ async function handleReflecting(
   }
 
   // ── 自动记忆提取（异步，不阻塞用户看到回复）──
-  const abortController = state.get<AbortController | null>(KEYS.ABORT_CONTROLLER);
-  if (!abortController?.signal.aborted) {
+  // P3 #12 修复：在 cleanupAbortController 之前捕获 signal 引用，避免竞态
+  const memorySignal = state.get<AbortController | null>(KEYS.ABORT_CONTROLLER)?.signal;
+  if (!memorySignal?.aborted) {
     const _api = state.get<OllamaAPI>(KEYS.API);
     const _model = state.get<string>('_defaultModel', '');
     // A1: 使用完整会话消息而非压缩后的 ctx.messages
@@ -2635,7 +2707,7 @@ async function handleReflecting(
     // 使用 setTimeout 延迟执行，确保 onDone 先触发，用户先看到回复
     setTimeout(() => {
       import('./memory-service.js').then(({ extractAndSaveMemories }) => {
-        extractAndSaveMemories(msgsForMemory, _api, _model, abortController?.signal).catch(() => {});
+        extractAndSaveMemories(msgsForMemory, _api, _model, memorySignal).catch(() => {});
       }).catch(() => {});
     }, 500);
   }
@@ -2686,12 +2758,14 @@ async function handleCompressing(
 
 function makeStats(ctx: LoopContext) {
   // P0 修复：返回本轮独立值而非累计值，避免与中间消息重复计算
-  // ctx_tokens 优先使用 Ollama 返回的实际 prompt_eval_count，回退到增强估算
+  // P3 #11 修复：ctx_tokens 统一语义——总是表示“当前上下文窗口 token 估算”
+  // 优先使用 Ollama 返回的 prompt_eval_count（本轮输入 token），这是最准确的
   let ctxTokens: number;
   if (ctx.loopPromptEvalCount > 0) {
-    ctxTokens = ctx.loopPromptEvalCount + (ctx.loopEvalCount || 0);
+    // 使用本轮实际 prompt_eval_count 作为上下文 token 的近似值
+    ctxTokens = ctx.loopPromptEvalCount;
   } else {
-    // 增强估算：消息内容 + tool_calls/images 开销
+    // 回退到增强估算：消息内容 + tool_calls/images 开销
     ctxTokens = ctx.messages.reduce((sum, m) => {
       let t = estimateTokens(m.content || '');
       if (m.tool_calls?.length) t += m.tool_calls.length * 50;
@@ -2747,6 +2821,10 @@ export async function runAgentLoop(
     planRetries: 0,
     startTime: Date.now(),
     lastLoopStats: undefined,
+    emergencyCompressCount: 0,
+    completionGateFailCount: 0,
+    verifyWarnings: [],
+    compressedThisCycle: false,
   };
 
   state.set('_loopState', S.INIT);
@@ -2794,8 +2872,10 @@ export async function runAgentLoop(
       const usageRatio = numCtx > 0 ? estimateTokens(ctx.messages.map(m => m.content || '').join('')) / numCtx : 0;
 
       // 上下文使用率过高时触发紧急压缩（不限制轮次，而是回收上下文空间）
-      if (usageRatio > 0.8 && ctx.state === S.THINKING) {
+      // P2 #7 修复：提高阈值到 0.85 + 添加 compressedThisCycle 防同一轮重复压缩
+      if (usageRatio > 0.85 && ctx.state === S.THINKING && !ctx.compressedThisCycle) {
         logWarn(`上下文使用率 ${(usageRatio * 100).toFixed(0)}%, 触发紧急压缩`);
+        ctx.compressedThisCycle = true;
         transition(ctx, S.COMPRESSING); // transition 内部会同步 state 和 _loopState
       }
 

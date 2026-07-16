@@ -217,16 +217,20 @@ export function getTokenCalibration(): { ratio: number; samples: number } {
   return { ratio: _tokenCalibrationRatio, samples: _calibrationSamples };
 }
 
-/** 自动压缩阈值：当消息 token 占 context window 比例超过此值时触发自动压缩 */
-export const AUTO_COMPRESS_THRESHOLD = 0.3;
+/** 自动压缩阈值：当消息 token 占 context window 比例超过此值时触发自动压缩
+ * P2 #7 修复：从 0.3 提高到 0.5，避免过于频繁的压缩导致信息丢失
+ */
+export const AUTO_COMPRESS_THRESHOLD = 0.5;
 
-/** R14: 自适应压缩阈值 — 根据模型上下文长度动态调整 */
+/** R14: 自适应压缩阈值 — 根据模型上下文长度动态调整
+ * P2 #7 修复：提高各档位阈值，减少不必要的压缩
+ */
 export function getAdaptiveCompressThreshold(numCtx: number): number {
-  // 小上下文模型（<8K）：更早触发压缩（40%），留更多余量
-  // 中等上下文（8K-32K）：标准阈值（30%）
-  // 大上下文（>32K）：稍晚触发（25%），避免过于频繁压缩
-  if (numCtx < 8192) return 0.4;
-  if (numCtx > 32768) return 0.25;
+  // 小上下文模型（<8K）：更早触发压缩（55%），留余量
+  // 中等上下文（8K-32K）：标准阈值（50%）
+  // 大上下文（>32K）：稍晚触发（45%），避免过于频繁压缩
+  if (numCtx < 8192) return 0.55;
+  if (numCtx > 32768) return 0.45;
   return AUTO_COMPRESS_THRESHOLD;
 }
 

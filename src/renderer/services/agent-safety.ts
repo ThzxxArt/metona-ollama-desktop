@@ -552,7 +552,7 @@ export function addResultMetadata(formattedResult: string): string {
 // R97: 错误模式学习 — 从重复错误中学习并生成改进建议
 // ═══════════════════════════════════════════════════════════════
 
-interface ErrorPatternEntry {
+export interface ErrorPatternEntry {
   toolName: string;
   errorSignature: string;
   count: number;
@@ -624,7 +624,7 @@ export function recordErrorPattern(toolName: string, errorMsg: string): string |
 // R104: 工具结果去重 — 相似结果检测，减少上下文中的冗余
 // ═══════════════════════════════════════════════════════════════
 
-interface ToolResultFingerprint {
+export interface ToolResultFingerprint {
   toolName: string;
   contentHash: string;
   timestamp: number;
@@ -669,43 +669,6 @@ export function isDuplicateToolResult(toolName: string, resultContent: string): 
   }
 
   return { duplicate: false };
-}
-
-// ═══════════════════════════════════════════════════════════════
-// R105: 上下文年龄追踪 — 跟踪消息年龄以优化压缩决策
-// ═══════════════════════════════════════════════════════════════
-
-const _messageTimestamps = new Map<number, number>(); // message index → creation timestamp
-
-/** R105: 记录消息创建时间 */
-export function recordMessageAge(msgIndex: number): void {
-  _messageTimestamps.set(msgIndex, Date.now());
-}
-
-/** R105: 获取消息年龄（毫秒），-1 表示未记录 */
-export function getMessageAge(msgIndex: number): number {
-  const ts = _messageTimestamps.get(msgIndex);
-  if (!ts) return -1;
-  return Date.now() - ts;
-}
-
-/** R105: 获取年龄超过阈值的消息索引列表 */
-export function getAgedMessageIndices(thresholdMs: number): number[] {
-  const now = Date.now();
-  const result: number[] = [];
-  for (const [idx, ts] of _messageTimestamps) {
-    if (now - ts > thresholdMs) result.push(idx);
-  }
-  return result.sort((a, b) => a - b);
-}
-
-/** R105: 清理已删除消息的时间戳记录 */
-export function cleanupMessageTimestamps(validIndices: Set<number>): void {
-  for (const key of _messageTimestamps.keys()) {
-    if (!validIndices.has(key)) {
-      _messageTimestamps.delete(key);
-    }
-  }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1052,11 +1015,61 @@ export function resetAllSafetyState(): void {
   _errorPatterns.clear();
   // R104: 清理结果指纹
   _resultFingerprints.length = 0;
-  // R105: 清理消息时间戳
-  _messageTimestamps.clear();
   // R118: 清理性能分析数据
   _loopTimings.length = 0;
   logInfo('Agent Safety: 所有安全状态已重置');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// P1 #3: 安全状态快照/恢复 — 供 Sub-Agent 隔离使用
+// ═══════════════════════════════════════════════════════════════
+
+export interface SafetyStateSnapshot {
+  toolResultStore: Map<string, { toolName: string; fullContent: string; timestamp: number }>;
+  toolCallHistory: string[];
+  userGoal: string;
+  toolCallTimestamps: Map<string, number[]>;
+  toolFailureCount: Map<string, number>;
+  circuitBreakerTripped: Map<string, number>;
+  errorPatterns: Map<string, ErrorPatternEntry>;
+  resultFingerprints: ToolResultFingerprint[];
+  loopTimings: LoopTiming[];
+}
+
+/** P1 #3: 快照当前安全状态（供 Sub-Agent 在隔离环境中使用） */
+export function snapshotSafetyState(): SafetyStateSnapshot {
+  return {
+    toolResultStore: new Map(_toolResultStore),
+    toolCallHistory: [..._toolCallHistory],
+    userGoal: _userGoal,
+    toolCallTimestamps: new Map(_toolCallTimestamps),
+    toolFailureCount: new Map(_toolFailureCount),
+    circuitBreakerTripped: new Map(_circuitBreakerTripped),
+    errorPatterns: new Map(_errorPatterns),
+    resultFingerprints: [..._resultFingerprints],
+    loopTimings: [..._loopTimings],
+  };
+}
+
+/** P1 #3: 从快照恢复安全状态（Sub-Agent 执行完毕后恢复主 Agent 状态） */
+export function restoreSafetyState(snapshot: SafetyStateSnapshot): void {
+  _toolResultStore.clear();
+  snapshot.toolResultStore.forEach((v, k) => _toolResultStore.set(k, v));
+  _toolCallHistory.length = 0;
+  _toolCallHistory.push(...snapshot.toolCallHistory);
+  _userGoal = snapshot.userGoal;
+  _toolCallTimestamps.clear();
+  snapshot.toolCallTimestamps.forEach((v, k) => _toolCallTimestamps.set(k, [...v]));
+  _toolFailureCount.clear();
+  snapshot.toolFailureCount.forEach((v, k) => _toolFailureCount.set(k, v));
+  _circuitBreakerTripped.clear();
+  snapshot.circuitBreakerTripped.forEach((v, k) => _circuitBreakerTripped.set(k, v));
+  _errorPatterns.clear();
+  snapshot.errorPatterns.forEach((v, k) => _errorPatterns.set(k, v));
+  _resultFingerprints.length = 0;
+  _resultFingerprints.push(...snapshot.resultFingerprints);
+  _loopTimings.length = 0;
+  _loopTimings.push(...snapshot.loopTimings);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1195,7 +1208,7 @@ export function formatErrorRecovery(suggestion: ErrorRecoverySuggestion): string
 // R118: Agent 循环性能分析 — 识别 Agent Loop 瓶颈
 // ═══════════════════════════════════════════════════════════════
 
-interface LoopTiming {
+export interface LoopTiming {
   loop: number;
   phase: string;
   durationMs: number;
