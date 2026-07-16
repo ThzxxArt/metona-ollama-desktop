@@ -10,7 +10,7 @@ Metona Ollama Desktop 是基于 TypeScript + Electron 的 Windows 本地 AI 桌�
 
 核心架构：
 - **ReAct Agent Loop** — 8 状态机驱动的智能体循环（INIT→THINKING→PARSING→EXECUTING→OBSERVING→REFLECTING→COMPRESSING→TERMINATED），最大 85 轮（可配置）
-- **40 个内置工具** — 文件系统（16）、命令执行（1）、联网搜索（2）、浏览器控制（9）、Git（1）、记忆（1）、会话/子代理（3）、系统（6）、Plan Mode（1）
+- **32 个内置工具** — 文件系统（13）、命令执行（1）、联网搜索（2）、浏览器控制（9）、Git（1）、记忆（1）、会话/子代理（3）、系统（1）、Plan Mode（1）
 - **Harness Engineering** — 5 层抗幻觉体系 + 4 阶段 Hook 系统 + Completion Gate（5 项检查）+ Agent Metrics + 渐进式披露
 - **MCP 协议扩展** — JSON-RPC 2.0 over stdio，动态工具发现
 - **Plan Mode** — 开关切换，先规划后执行，步骤级进度追踪
@@ -47,7 +47,7 @@ src/
 │   ├── mcp-manager.ts                 # MCP JSON-RPC 2.0 协议管理
 │   ├── tool-security.ts               # 路径/命令安全检查（黑名单 + 豁免机制）
 │   ├── tool-handlers.ts               # 工具处理器 re-export 聚合
-│   ├── tool-handlers-fs.ts            # 16 个文件系统工具实现
+│   ├── tool-handlers-fs.ts            # 13 个文件系统工具实现
 │   ├── tool-handlers-system.ts        # 系统/网络工具 + 联网搜索（双模式）+ 自动抓取
 │   ├── tool-handlers-git.ts           # Git 全操作
 │   ├── tool-handlers-shared.ts        # 共享类型和辅助函数
@@ -78,11 +78,11 @@ src/
 │   │   ├── toast.ts                  # Toast 通知
 │   │   ├── token-dashboard.ts        # Token 消耗仪表盘（全局 + 会话统计）
 │   │   ├── tool-confirm-modal.ts     # 工具执行确认对话框
-│   │   ├── tools-modal.ts            # 工具列表面板（40 个工具卡片）
+│   │   ├── tools-modal.ts            # 工具列表面板（32 个工具卡片）
 │   │   └── workspace-panel.ts        # 工作空间面板（终端 + 工具卡片 + 文件浏览）
 │   ├── services/                      # 14 个服务模块
 │   │   ├── agent-engine.ts           # ★ ReAct Agent Loop 核心引擎（8 状态机）
-│   │   ├── tool-registry.ts          # 工具注册与调度中心（40 内置 + MCP 动态 + Plan Mode）
+│   │   ├── tool-registry.ts          # 工具注册与调度中心（32 内置 + MCP 动态 + Plan Mode）
 │   │   ├── memory-service.ts         # 记忆管理（MEMORY.md 读写 + 格式校验 + 自动提取）
 │   │   ├── context-manager.ts        # 上下文窗口管理（滑动窗口 + Token 校准 + LLM 压缩）
 │   │   ├── sub-agent.ts              # 子代理委派（独立上下文 + 超时保护）
@@ -178,7 +178,7 @@ logDebug('调试信息', '可选详情');
 ### 5.1 五大子系统
 
 ```
-① Agent 系统    → agent-engine.ts + tool-registry.ts（40 内置工具 + MCP 动态）
+① Agent 系统    → agent-engine.ts + tool-registry.ts（32 内置工具 + MCP 动态）
 ② 记忆系统      → memory-service.ts（MEMORY.md 文件存储 + 格式校验 + 自动提取）
 ③ 上下文系统    → context-manager.ts + context-indexer.ts（渐进式披露）
 ④ 工作空间      → workspace.ts (主进程) + workspace-panel.ts (渲染进程)
