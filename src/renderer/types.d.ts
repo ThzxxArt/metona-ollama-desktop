@@ -288,8 +288,6 @@ export type StateKey =
   | 'loopWatchdogMs'
   | '_planTracker'
   | '_planResumeData'
-  | '_lastPlanStatus'
-  | '_planLastInjectedDone'
   | 'globalToolMode'
   | 'planAutoConfirm';
 

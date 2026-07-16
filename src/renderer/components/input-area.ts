@@ -669,8 +669,6 @@ async function handleRetry(): Promise<void> {
           // renderMessages 统一渲染 session 数据，先清掉流式 placeholder 避免 DOM 重复
           clearMessagesDOM();
           renderMessages();
-          // ── 消费 _lastPlanStatus（不再保存为 session 消息，避免 system 消息渲染到聊天界面）──
-          state.set('_lastPlanStatus', '');
         await saveCurrentSession();
       }
     });
@@ -1372,9 +1370,6 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
         // 先移除流式 placeholder 再 renderMessages，避免未渲染(纯文本)和已渲染(markdown)两个卡片同时存在
         removeCurrentPlaceholder();
         renderMessages();
-
-        // ── 消费 _lastPlanStatus（不再保存为 session 消息，避免 system 消息渲染到聊天界面）──
-        state.set('_lastPlanStatus', '');
         await saveCurrentSession();
       }
     });

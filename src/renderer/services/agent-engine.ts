@@ -13,7 +13,6 @@ import {
   needsConfirmation,
   initPlanTracker,
   getPlanTracker,
-  formatPlanStatus,
   clearPlanTracker,
 } from './tool-registry.js';
 import {
@@ -1484,20 +1483,8 @@ async function handleThinking(
   ctx.thinking = '';
   ctx.toolCalls.length = 0;
 
-  // ── Plan Mode 执行进度注入 — 仅在进度变化时注入，避免每轮重复 ──
-  if (ctx.mode === 'plan' && ctx.loopCount >= 1) {
-    const tracker = getPlanTracker();
-    if (tracker.active && tracker.steps.length > 0) {
-      const lastDone = state.get<number>('_planLastInjectedDone', -1);
-      if (tracker.done !== lastDone) {
-        const status = formatPlanStatus();
-        if (status) {
-          ctx.messages.push({ role: 'user', content: status, ephemeral: true });
-          state.set('_planLastInjectedDone', tracker.done);
-        }
-      }
-    }
-  }
+  // Plan Mode 进度注入已删除 — AI 调用 plan_track mark_done 后工具返回值已含进度，
+  // AI 应从上下文自行推断或主动调用 plan_track status 查询
 
 	  const abortController = registerAbortController();
 
@@ -2371,7 +2358,7 @@ async function handleReflecting(
       }
       ctx.messages.push({
         role: 'user',
-        content: '计划已批准。现在开始执行——请直接调用工具（web_search、write_file 等）来完成每一步。不要描述计划，直接行动。',
+        content: '计划已批准。现在开始执行——请直接调用工具来完成每一步。不要描述计划，直接行动。',
         ephemeral: true,
       });
       transition(ctx, S.THINKING);
@@ -2440,17 +2427,10 @@ async function handleReflecting(
 
   // Completion Gate 已删除 — 所有检查项（notThinking/toolResultReview/contextEfficiency/planModeCompletion）均已删除
   // AI 应基于工具结果和上下文自行判断是否需要继续或完成
-  // Plan Mode 下 AI 可通过 formatPlanStatus() 看到剩余步骤，应自行决定是否继续
+  // Plan Mode 下 AI 通过 plan_track mark_done/status 的工具返回值获知进度，应自行决定是否继续
 
   logInfo('模型停止工具调用 → ReAct Agent Loop 结束');
-  // ── 保存 Plan Mode 最终进度到状态，供下一轮 Loop 注入历史 ──
   // 注意：不在此处 clearPlanTracker，由 finally 块统一处理（保存 resumeData 后清理）
-  if (ctx.mode === 'plan') {
-    const tracker = getPlanTracker();
-    if (tracker.active && tracker.steps.length > 0) {
-      state.set('_lastPlanStatus', formatPlanStatus());
-    }
-  }
 
   // ── 自动记忆提取（异步，不阻塞用户看到回复）──
   // P3 #12 修复：在 cleanupAbortController 之前捕获 signal 引用，避免竞态
@@ -2730,7 +2710,6 @@ default:
           savedAt: Date.now(),
         };
         state.set('_planResumeData', resumeData);
-        state.set('_lastPlanStatus', formatPlanStatus());
       }
     }
     clearPlanTracker();
