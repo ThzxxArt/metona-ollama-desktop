@@ -319,10 +319,6 @@ export function scoreMessageImportance(msg: OllamaMessage): number {
     if (/read_file|list_directory|tree/.test(msg.tool_name)) {
       score += 1;
     }
-    // 时间/计算类工具结果：低价值（时效性强，很快过期）
-    if (/datetime|random|uuid|hash/.test(msg.tool_name)) {
-      score -= 2;
-    }
   }
 
   // 长度加分：长消息通常包含更多信息

@@ -6,7 +6,7 @@
 
 export { sendLog, resolvePath, type ToolResult } from './tool-handlers-shared.js';
 
-// 文件系统操作（15 个）
+// 文件系统操作（11 个）
 export {
   handleReadFile,
   handleWriteFile,
@@ -17,14 +17,11 @@ export {
   handleMoveFile,
   handleCopyFile,
   handleEditFile,
-  handleGetFileInfo,
   handleTree,
-  handleDiffFiles,
-  handleReplaceInFiles,
   handleReadMultipleFiles,
 } from './tool-handlers-fs.js';
 
-// 系统与网络操作（8 个）
+// 系统与网络操作（7 个）
 export {
   handleRunCommand,
   killToolProcess,
@@ -32,12 +29,7 @@ export {
   handleWebSearch,
   handleDownloadFile,
   handleCompress,
-  handleDateTime,
   handleCalculator,
-  handleRandom,
-  handleUUID,
-  handleJsonFormat,
-  handleHash,
 } from './tool-handlers-system.js';
 
 // Git 操作（1 个）

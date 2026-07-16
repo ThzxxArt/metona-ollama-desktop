@@ -36,20 +36,12 @@ import {
   handleWebFetch,
   handleWebSearch,
   handleEditFile,
-  handleGetFileInfo,
   handleTree,
   handleDownloadFile,
-  handleDiffFiles,
-  handleReplaceInFiles,
   handleReadMultipleFiles,
   handleGit,
   handleCompress,
-  handleDateTime,
-  handleCalculator,
-  handleRandom,
-  handleUUID,
-  handleJsonFormat,
-  handleHash
+  handleCalculator
 } from './tool-handlers.js';
 import { browserOpen, browserScreenshot, browserEvaluate, browserExtract, browserClick, browserType, browserScroll, browserClose, browserWait } from './browser.js';
 import { startServer, stopServer, stopAllServers, callTool, getAllTools, getServerStatuses, refreshTools, setMCPTimeout } from './mcp-manager.js';
@@ -80,20 +72,12 @@ function summarizeResult(toolName: string, result: Record<string, unknown>): str
     case 'web_fetch': return `${result.status} | ${result.length} chars`;
     case 'web_search': return `[${String(result._mode) === 'searxng' ? 'SearXNG' : '内置'}] "${result.query}" → ${result.total} 条结果`;
     case 'edit_file': return `${result.path} (${result.replaceCount} 处替换)`;
-    case 'get_file_info': return `${result.name} (${result.type}, ${result.size}B)`;
     case 'tree': return `${result.path} (${result.fileCount} 文件 / ${result.dirCount} 目录)`;
     case 'download_file': return `${result.url} → ${result.destination} (${result.size}B)`;
-    case 'diff_files': return result.hasChanges ? `${result.file1} ↔ ${result.file2} (有差异)` : '无差异';
-    case 'replace_in_files': return `${result.filesChanged} 文件 / ${result.totalReplacements} 处替换`;
     case 'read_multiple_files': return `${result.total} 个文件`;
     case 'git': return `${result.action} ✓`;
     case 'compress': return `${result.action} → ${result.archive || result.destination}`;
-    case 'datetime': return `${result.date || result.iso}`;
     case 'calculator': return `${result.expression} = ${result.result}`;
-    case 'random': return `${String(result.type) === 'pick' ? '🎲 ' : ''}${result.result}`;
-    case 'uuid': return `${result.result}`;
-    case 'json_format': return `${Number(result.keys) || 0} keys, ${result.formatted_size}B`;
-    case 'hash': return `${result.algorithm}: ${String(result.hash ?? '').slice(0, 16)}...`;
     default: return '完成';
   }
 }
@@ -212,20 +196,12 @@ export async function setupIPC(): Promise<void> {
         case 'web_fetch':          result = await handleWebFetch(args as { url: string; max_chars?: number; extract_mode?: string; mobile_ua?: boolean; retry?: boolean }); break;
         case 'web_search':         result = await handleWebSearch(args as { query: string; max_results?: number; time_range?: string; enhance_snippets?: boolean; fetch_top?: number }); break;
         case 'edit_file':          result = await handleEditFile(args as { path: string; old_text: string; new_text: string; all?: boolean; use_regex?: boolean }); break;
-        case 'get_file_info':      result = await handleGetFileInfo(args as { path: string }); break;
         case 'tree':               result = await handleTree(args as { path: string; max_depth?: number; include_hidden?: boolean }); break;
         case 'download_file':      result = await handleDownloadFile(args as { url: string; destination: string }); break;
-        case 'diff_files':         result = await handleDiffFiles(args as { file1: string; file2: string; context_lines?: number }); break;
-        case 'replace_in_files':   result = await handleReplaceInFiles(args as { path: string; glob: string; old_text: string; new_text: string }); break;
         case 'read_multiple_files':result = await handleReadMultipleFiles(args as { paths: string[]; max_chars_per_file?: number }); break;
         case 'git':                result = await handleGit(args as { action: string; path?: string; files?: string[]; message?: string; branch?: string; tag_name?: string; stash_sub?: string; remote?: string; remote_url?: string; count?: number; all?: boolean; staged?: boolean; new_branch?: boolean; delete_branch?: boolean; force?: boolean; url?: string }); break;
         case 'compress':           result = await handleCompress(args as { action: string; path: string; destination?: string; format?: string }); break;
-    case 'datetime':          result = handleDateTime(args as { format?: string; timezone?: string }); break;
     case 'calculator':        result = handleCalculator(args as { expression: string }); break;
-    case 'random':            result = handleRandom(args as { type?: string; min?: number; max?: number; count?: number; items?: string[]; length?: number }); break;
-    case 'uuid':              result = handleUUID(args as { count?: number }); break;
-    case 'json_format':       result = handleJsonFormat(args as { json: string; indent?: number; sort_keys?: boolean }); break;
-    case 'hash':              result = handleHash(args as { text: string; algorithm?: string }); break;
         // v5.1 Browser 控制（增强版）
         case 'browser_open':       result = await browserOpen(args.url as string, args.wait_selector as string | undefined); break;
         case 'browser_screenshot': result = await browserScreenshot({ full_page: args.full_page as boolean, selector: args.selector as string }); break;

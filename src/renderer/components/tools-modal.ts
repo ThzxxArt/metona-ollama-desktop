@@ -21,7 +21,7 @@ const MODE_NAMES: Record<string, string> = {
 const MANAGED_TOOLS = [
   'run_command',
   'write_file', 'create_directory', 'delete_file',
-  'edit_file', 'replace_in_files', 'move_file', 'copy_file',
+  'edit_file', 'move_file', 'copy_file',
   'download_file', 'compress',
 ];
 

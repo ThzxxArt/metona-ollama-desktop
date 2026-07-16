@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-v0.16.11-E8734A?style=flat-square" alt="version">
+  <img src="https://img.shields.io/badge/version-v0.16.12-E8734A?style=flat-square" alt="version">
   <img src="https://img.shields.io/badge/electron-33+-47848F?style=flat-square&logo=electron" alt="electron">
   <img src="https://img.shields.io/badge/typescript-5.7+-3178C6?style=flat-square&logo=typescript" alt="typescript">
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="license">
@@ -37,7 +37,7 @@
 | 🤖 | **ReAct Agent Loop** | 始终开启的唯一对话模式。8 状态机（INIT→THINKING→PARSING→EXECUTING→OBSERVING→REFLECTING→COMPRESSING→TERMINATED），最大 85 轮（可配置），智能重试（永久错误立即返回、瞬态错误指数退避），工具去重，智能路径依赖串行化，看门狗超时保护 |
 | 🛡️ | **5 层抗幻觉系统** | 提示词加固 → 任务感知 → 中途检测（中英双语规则覆盖全部工具类别）→ 进度锚点 → 完成闸门（6 项检查，幻觉/注入 → 阻断，质量/效率 → 咨询） |
 | 📋 | **Plan Mode** | 开关切换，AI 首先生成执行计划（Markdown 渲染确认弹窗），批准后按步骤追踪执行，plan_track 工具标记完成状态，**支持断点续传**（中止后可恢复未完成计划） |
-| 🔧 | **40 个内置工具** | 文件系统（16个） · 命令执行 · 联网搜索 · 浏览器控制（9个） · Git · 记忆 · 会话 · 子代理 · 系统工具 · Plan Mode 追踪 |
+| 🔧 | **32 个内置工具** | 文件系统（13个） · 命令执行 · 联网搜索 · 浏览器控制（9个） · Git · 记忆 · 会话 · 子代理 · 系统工具 · Plan Mode 追踪 |
 | 🧠 | **智能记忆系统** | 三类记忆（fact / preference / rule），存储于工作空间 MEMORY.md 文件，受路径保护仅 memory 工具可访问，写入前安全扫描，容量 500 条，对话结束自动提取，严格格式校验 |
 | 📋 | **自定义文件** | SOUL.md（人格，不可压缩）+ AGENT.md（行为准则，内置 fallback）+ USER.md（用户画像，仅工作空间读取，不存在则不注入） |
 | 🌐 | **MCP 协议扩展** | JSON-RPC 2.0 over stdio，动态工具发现，Shadowing 防护 |
@@ -59,7 +59,7 @@
 ## 🔧 工具清单
 
 <details>
-<summary><strong>📁 文件系统（16 个）</strong></summary>
+<summary><strong>📁 文件系统（13 个）</strong></summary>
 
 | 工具 | 功能 |
 |------|------|
@@ -72,11 +72,8 @@
 | `move_file` | 移动/重命名文件 |
 | `copy_file` | 复制文件 |
 | `edit_file` | 编辑文件（支持正则替换） |
-| `get_file_info` | 获取文件元信息 |
 | `tree` | 目录树结构（默认5层深度） |
 | `download_file` | 下载文件 |
-| `diff_files` | 文件差异对比 |
-| `replace_in_files` | 批量替换 |
 | `read_multiple_files` | 批量读取（50文件/10KB） |
 | `compress` | 压缩文件/目录 |
 
@@ -150,16 +147,11 @@
 </details>
 
 <details>
-<summary><strong>🕐 系统工具（6 个）</strong></summary>
+<summary><strong>🕐 系统工具（1 个）</strong></summary>
 
 | 工具 | 功能 |
 |------|------|
-| `datetime` | 获取系统精确时间（ISO/Unix/日期/时间/完整） |
 | `calculator` | 安全数学计算（+ - * / ** % ()，递归下降解析器） |
-| `random` | 随机生成（整数/浮点/抽取/随机字符串） |
-| `uuid` | 生成 UUID v4 唯一标识符 |
-| `json_format` | JSON 格式化 + 语法验证 + 键排序 |
-| `hash` | 哈希计算（MD5/SHA1/SHA256/SHA384/SHA512） |
 
 </details>
 
@@ -185,7 +177,7 @@
               ↓
          Ollama API (流式响应，num_ctx 用户可配 128K/256K/512K/1M)
               ↓
-         Tool Registry (40 内置 + MCP 动态 + Plan Mode plan_track)
+         Tool Registry (32 内置 + MCP 动态 + Plan Mode plan_track)
               ↓
          Hook 系统 (pre/post tool/iteration/completion) → 观察结果 → 反思 → 循环 / 最终回答
 ```
@@ -253,7 +245,7 @@ npm start
 ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm run dist
 ```
 
-产出：`release/Metona Ollama Setup v0.16.11.exe`
+产出：`release/Metona Ollama Setup v0.16.12.exe`
 
 ## 🛠️ 常用命令
 
@@ -286,7 +278,7 @@ npm run dist           # 构建 Windows 安装包
 | 🤖 | **ReAct Agent Loop** | Always-on, only chat mode. 8-state machine, up to 85 iterations (configurable), smart retry (permanent errors return immediately, transient errors use exponential backoff), tool dedup, path-aware dependency serialization, watchdog + tiered timeout protection |
 | 🛡️ | **5-Layer Anti-Hallucination** | Prompt hardening → task awareness → mid-task detection (bilingual CN/EN rules covering all tool categories) → progress anchors → completion gate (6 checks: hallucination/injection → block, quality/efficiency → advisory) |
 | 📋 | **Plan Mode** | Toggle switch. AI first generates an execution plan (Markdown-rendered confirmation dialog), then tracks step-by-step execution, **supports resume** (interrupted plans restore on next session) |
-| 🔧 | **40 Built-in Tools** | File system · Command · Web search · Browser · Git · Memory · Sessions · Sub-agent · System · Plan Mode tracking |
+| 🔧 | **32 Built-in Tools** | File system · Command · Web search · Browser · Git · Memory · Sessions · Sub-agent · System · Plan Mode tracking |
 | 🧠 | **Smart Memory System** | Three types (fact / preference / rule), stored in workspace MEMORY.md file, path-protected — only the memory tool can access it, pre-write security scan, 500 capacity, auto-extract on conversation end, strict format validation |
 | 📋 | **Custom Files** | SOUL.md (persona, never compressed) + AGENT.md (behavior rules, built-in fallback) + USER.md (user profile, workspace only, skipped if absent) |
 | 🌐 | **MCP Protocol Extension** | JSON-RPC 2.0 over stdio, dynamic tool discovery, Shadowing protection |
@@ -308,7 +300,7 @@ npm run dist           # 构建 Windows 安装包
 ## 🔧 Tool List
 
 <details>
-<summary><strong>📁 File System (16)</strong></summary>
+<summary><strong>📁 File System (13)</strong></summary>
 
 | Tool | Function |
 |------|------|
@@ -321,11 +313,8 @@ npm run dist           # 构建 Windows 安装包
 | `move_file` | Move/rename file |
 | `copy_file` | Copy file |
 | `edit_file` | Edit file (regex support) |
-| `get_file_info` | Get file metadata |
 | `tree` | Directory tree (default 5 levels) |
 | `download_file` | Download file |
-| `diff_files` | File diff comparison |
-| `replace_in_files` | Batch replace |
 | `read_multiple_files` | Batch read (50 files/10KB) |
 | `compress` | Compress file/directory |
 
@@ -398,16 +387,11 @@ npm run dist           # 构建 Windows 安装包
 </details>
 
 <details>
-<summary><strong>🕐 System Tools (6)</strong></summary>
+<summary><strong>🕐 System Tools (1)</strong></summary>
 
 | Tool | Function |
 |------|------|
-| `datetime` | Get precise system time (ISO/Unix/date/time/full) |
 | `calculator` | Safe math evaluation (+ - * / ** % (), recursive descent parser) |
-| `random` | Random generation (int/float/pick/string) |
-| `uuid` | Generate UUID v4 unique identifier |
-| `json_format` | JSON format + validate + sort keys |
-| `hash` | Cryptographic hash (MD5/SHA1/SHA256/SHA384/SHA512) |
 
 </details>
 
@@ -433,7 +417,7 @@ User message → workspace SOUL.md (never compressed) → AGENT.md → USER.md (
               ↓
          Ollama API (Streaming Response, num_ctx user-configurable 128K/256K/512K/1M)
               ↓
-         Tool Registry (40 Built-in + MCP Dynamic + Plan Mode plan_track)
+         Tool Registry (32 Built-in + MCP Dynamic + Plan Mode plan_track)
               ↓
          Hook System (pre/post tool/iteration/completion) → Observation → Reflection → Loop / Final Answer
 ```
@@ -501,7 +485,7 @@ npm start
 ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm run dist
 ```
 
-Output: `release/Metona Ollama Setup v0.16.11.exe`
+Output: `release/Metona Ollama Setup v0.16.12.exe`
 
 ## 🛠️ Common Commands
 

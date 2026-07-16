@@ -458,7 +458,7 @@ async function init(): Promise<void> {
         // 如果旧 toolModes 中所有被管理工具都是 auto，则迁移为 auto；否则 confirm
         const allAuto = [
           'run_command', 'write_file', 'create_directory', 'delete_file',
-          'edit_file', 'replace_in_files', 'move_file', 'copy_file',
+          'edit_file', 'move_file', 'copy_file',
           'download_file', 'compress',
         ].every(t => savedModes[t] === 'auto');
         globalMode = allAuto ? 'auto' : 'confirm';

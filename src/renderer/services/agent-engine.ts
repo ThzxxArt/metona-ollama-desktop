@@ -159,18 +159,16 @@ function getOSEnvironment() {
 
 /** 始终可并行的只读/独立工具 */
 const ALWAYS_PARALLEL = new Set([
-  'read_file', 'list_directory', 'search_files', 'get_file_info', 'tree',
+  'read_file', 'list_directory', 'search_files', 'tree',
   'web_search', 'browser_screenshot', 'browser_extract',
   'memory', 'session_list', 'session_read',
-  'diff_files',
-  'datetime', 'calculator',
-  'random', 'uuid', 'json_format', 'hash',
+  'calculator',
 ]);
 
 /** D4: 有副作用的工具 — 同轮次去重时不返回缓存，需实际执行 */
 const SIDE_EFFECT_TOOLS = new Set([
   'write_file', 'edit_file', 'create_directory', 'delete_file',
-  'move_file', 'copy_file', 'replace_in_files', 'download_file',
+  'move_file', 'copy_file', 'download_file',
   'run_command', 'git', 'compress',
   'browser_open', 'browser_click', 'browser_type', 'browser_close',
 ]);
@@ -190,17 +188,11 @@ const _pendingMemoryTimers: ReturnType<typeof setTimeout>[] = [];
 /** R3/R108: 工具超时配置（基础超时 + 动态调整） */
 const TOOL_TIMEOUT_MAP: Record<string, { base: number; grade: 'fast' | 'medium' | 'slow' | 'long'; description: string }> = {
   // fast (<5秒)
-  datetime: { base: 1_000, grade: 'fast', description: '时间查询' },
-  random: { base: 1_000, grade: 'fast', description: '随机数' },
-  uuid: { base: 1_000, grade: 'fast', description: 'UUID' },
   calculator: { base: 3_000, grade: 'fast', description: '计算器' },
-  json_format: { base: 3_000, grade: 'fast', description: 'JSON 格式化' },
-  hash: { base: 3_000, grade: 'fast', description: '哈希计算' },
   create_directory: { base: 5_000, grade: 'fast', description: '创建目录' },
-  get_file_info: { base: 5_000, grade: 'fast', description: '获取文件信息' },
   memory: { base: 5_000, grade: 'fast', description: '记忆操作' },
   session_list: { base: 5_000, grade: 'fast', description: '会话列表' },
-  
+
   // medium (5-15秒)
   list_directory: { base: 10_000, grade: 'medium', description: '列目录' },
   delete_file: { base: 10_000, grade: 'medium', description: '删除文件' },
@@ -208,15 +200,13 @@ const TOOL_TIMEOUT_MAP: Record<string, { base: number; grade: 'fast' | 'medium' 
   edit_file: { base: 15_000, grade: 'medium', description: '编辑文件' },
   move_file: { base: 15_000, grade: 'medium', description: '移动文件' },
   tree: { base: 15_000, grade: 'medium', description: '目录树' },
-  diff_files: { base: 15_000, grade: 'medium', description: '文件差异' },
   session_read: { base: 10_000, grade: 'medium', description: '会话读取' },
   web_search: { base: 30_000, grade: 'medium', description: '网页搜索' },
   git: { base: 30_000, grade: 'medium', description: 'Git 操作' },
-  
+
   // slow (15-60秒)
   read_file: { base: 30_000, grade: 'slow', description: '读取文件' },
   copy_file: { base: 30_000, grade: 'slow', description: '复制文件' },
-  replace_in_files: { base: 30_000, grade: 'slow', description: '批量替换' },
   search_files: { base: 60_000, grade: 'slow', description: '搜索文件' },
   read_multiple_files: { base: 60_000, grade: 'slow', description: '批量读取' },
   web_fetch: { base: 60_000, grade: 'slow', description: '网页抓取' },
@@ -375,9 +365,7 @@ function extractReadPath(call: ToolCall): string | null {
     case 'read_file': return String(args.path || '');
     case 'list_directory': return String(args.path || '');
     case 'search_files': return String(args.path || '');
-    case 'get_file_info': return String(args.path || '');
     case 'tree': return String(args.path || '');
-    case 'diff_files': return String(args.file1 || args.file2 || '');
     case 'read_multiple_files': return null; // 多文件，难以精确判断
     default: return null;
   }
@@ -412,10 +400,7 @@ function extractAffectedPath(call: ToolCall): string | null {
     case 'create_directory': return String(args.path || '');
     case 'move_file': return String(args.source || '');
     case 'copy_file': return String(args.source || '');
-    case 'get_file_info': return String(args.path || '');
     case 'tree': return String(args.path || '');
-    case 'diff_files': return String(args.file1 || args.file2 || '');
-    case 'replace_in_files': return String(args.path || '');
     case 'read_multiple_files': return null; // 多文件，难以精确判断
     case 'download_file': return null; // 下载不依赖本地文件
     case 'compress': return String(args.path || '');
@@ -444,7 +429,6 @@ function validateToolArgs(toolName: string, args: Record<string, unknown>): stri
     case 'write_file':
     case 'delete_file':
     case 'create_directory':
-    case 'get_file_info':
     case 'tree':
     case 'compress':
       if (!getString('path')) return `${toolName} 缺少有效的 path 参数`;
@@ -478,10 +462,6 @@ function validateToolArgs(toolName: string, args: Record<string, unknown>): stri
       if (args.new_text === undefined || args.new_text === null)
         return 'edit_file 缺少 new_text 参数';
       break;
-    case 'diff_files':
-      if (!getString('file1')) return 'diff_files 缺少 file1 参数';
-      if (!getString('file2')) return 'diff_files 缺少 file2 参数';
-      break;
   }
   return null;
 }
@@ -490,11 +470,10 @@ function validateToolArgs(toolName: string, args: Record<string, unknown>): stri
 const VALID_TOOL_NAMES = new Set([
   'read_file', 'write_file', 'list_directory', 'search_files', 'create_directory',
   'delete_file', 'run_command', 'move_file', 'copy_file', 'web_fetch', 'web_search',
-  'edit_file', 'get_file_info', 'tree', 'download_file', 'diff_files',
-  'replace_in_files', 'read_multiple_files', 'git', 'compress',
+  'edit_file', 'tree', 'download_file',
+  'read_multiple_files', 'git', 'compress',
   'memory', 'session_list', 'session_read',
-  'datetime', 'calculator',
-  'random', 'uuid', 'json_format', 'hash'
+  'calculator'
 ]);
 
 /**
@@ -684,13 +663,10 @@ const CACHE_TTL_MAP: Record<string, number> = {
   search_files: 2 * 60_000,
   browser_screenshot: 60_000,
   browser_extract: 5 * 60_000,
-  get_file_info: 2 * 60_000,
   tree: 2 * 60_000,
   git: 30_000,             // git status 30s 过期
-  datetime: 5_000,          // 时间 5s 过期
   session_list: 60_000,
   session_read: 60_000,
-  diff_files: 2 * 60_000,
   memory: 10_000,           // M2: 记忆搜索 10s 过期（短TTL，避免 add 后搜索过期）
   default: 60_000,          // 默认 60s，不再永久缓存
 };
@@ -958,18 +934,6 @@ export function formatToolResultForModel(toolName: string, result: ToolResult): 
         originalSize: (result as any).originalSize,
         compressedSize: (result as any).compressedSize,
         filesProcessed: (result as any).filesProcessed,
-      });
-    }
-
-    case 'get_file_info': {
-      return JSON.stringify({
-        success: true,
-        message: `${(result as any).type === 'directory' ? '目录' : '文件'}：${result.path}`,
-        path: result.path,
-        type: (result as any).type,
-        size: (result as any).size,
-        modified: (result as any).modified,
-        created: (result as any).created,
       });
     }
 
@@ -1887,8 +1851,8 @@ async function handleExecuting(
     // R79: 路径沙箱验证 — 确保文件操作不超出工作空间边界
     const FILE_PATH_TOOLS = new Set([
       'read_file', 'write_file', 'edit_file', 'delete_file', 'create_directory',
-      'list_directory', 'search_files', 'get_file_info', 'tree', 'compress',
-      'move_file', 'copy_file', 'replace_in_files', 'download_file',
+      'list_directory', 'search_files', 'tree', 'compress',
+      'move_file', 'copy_file', 'download_file',
     ]);
     if (FILE_PATH_TOOLS.has(call.function.name)) {
       const workspaceDir = getWorkspaceDirPath();

@@ -199,20 +199,6 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     type: 'function',
     function: {
-      name: 'get_file_info',
-      description: 'Get detailed file or directory information: size, dates, permissions, type.',
-      parameters: {
-        type: 'object',
-        required: ['path'],
-        properties: {
-          path: { type: 'string', description: 'File or directory path.' }
-        }
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
       name: 'tree',
       description: 'Display directory structure as a tree. Shows nested files and folders. Default depth: 5 levels.',
       parameters: {
@@ -237,39 +223,6 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         properties: {
           url: { type: 'string', description: 'URL to download (http/https).' },
           destination: { type: 'string', description: 'Local path to save the file.' }
-        }
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'diff_files',
-      description: 'Compare two files and show differences. Returns a unified diff.',
-      parameters: {
-        type: 'object',
-        required: ['file1', 'file2'],
-        properties: {
-          file1: { type: 'string', description: 'First file path.' },
-          file2: { type: 'string', description: 'Second file path.' },
-          context_lines: { type: 'integer', description: 'Context lines around changes. Default: 3.' }
-        }
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'replace_in_files',
-      description: 'Find and replace text across multiple files matching a glob pattern. Requires user confirmation.',
-      parameters: {
-        type: 'object',
-        required: ['path', 'glob', 'old_text', 'new_text'],
-        properties: {
-          path: { type: 'string', description: 'Root directory.' },
-          glob: { type: 'string', description: 'File pattern, e.g. "*.ts", "**/*.js".' },
-          old_text: { type: 'string', description: 'Text to find.' },
-          new_text: { type: 'string', description: 'Replacement text.' }
         }
       }
     }
@@ -590,15 +543,267 @@ TIP: Use remove_batch when deleting multiple entries — it's much more efficien
   {
     type: 'function',
     function: {
-      name: 'datetime',
-      description: 'Get the precise current system time. Returns ISO timestamp, Unix time (seconds and milliseconds), locale-formatted date/time, timezone, and individual components (year/month/day/hour/minute/second/millisecond/day_of_week). Use format parameter to request specific output: "iso" / "unix" / "date" / "time" / "full" (default: full).',
+      name: 'calculator',
+      description: 'Safely evaluate a mathematical expression. Supports + - * / ** % () and floating-point numbers. Uses a pure JS recursive descent parser — no eval(), CSP-safe. Returns the numeric result.',
+      parameters: {
+        type: 'object',
+        required: ['expression'],
+        properties: {
+          expression: { type: 'string', description: 'The mathematical expression to evaluate (e.g., "(3 + 5) * 2 ** 3"). Max 500 characters.' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'web_search',
+      description: 'Search the web with auto-fetch. Always use this when the user asks for information, news, facts, or current data. Never rely on training data or past conversation results — call this tool every time the user asks to search. Set fetch_top to auto-fetch full page content from the top N results.',
+      parameters: {
+        type: 'object',
+        required: ['query', 'fetch_top'],
+        properties: {
+          query: { type: 'string', description: 'The search query. Be specific and concise for best results.' },
+          max_results: { type: 'integer', description: 'Maximum number of results to return. Default: 30, max: 30.' },
+          time_range: { type: 'string', enum: ['day', 'week', 'month', 'year'], description: 'Filter results by time. Supported by Bing and Google. Use for recent news, latest version, etc.' },
+          enhance_snippets: { type: 'boolean', description: 'Auto-fetch detailed snippet for results with too-short descriptions. Default: true.' },
+          fetch_top: { type: 'integer', description: 'Number of top results to auto-fetch full content for. Min: 3. Results shorter than this are useless — snippets lack detail.' }
+        }
+      }
+    }
+  },
+  // ══════════════════════════════════════════════
+  // 记忆工具（统一入口，读写工作空间 MEMORY.md）
+  // ══════════════════════════════════════════════
+  {
+    type: 'function',
+    function: {
+      name: 'memory',
+      description: `Manage agent memories stored in MEMORY.md. Usage by action:
+- search: {"action":"search","query":"keywords","limit":8}
+- add: {"action":"add","type":"fact","content":"the memory content","importance":8,"tags":["tag1","tag2"]}  ← type and content are REQUIRED for add!
+- replace: {"action":"replace","old_text":"unique substring","new_content":"replacement"}
+- remove: {"action":"remove","old_text":"unique substring"}
+- remove_batch: {"action":"remove_batch","old_texts":["substring1","substring2","substring3"]}  ← Batch delete multiple entries in one call
+- read_all: {"action":"read_all"}
+
+CRITICAL: For add action, you MUST include both "type" (fact/preference/rule) and "content" fields. If you omit them, the call will fail.
+TIP: Use remove_batch when deleting multiple entries — it's much more efficient than calling remove repeatedly.`,
+      parameters: {
+        type: 'object',
+        required: ['action'],
+        properties: {
+          action: { type: 'string', enum: ['search', 'add', 'replace', 'remove', 'remove_batch', 'read_all'], description: 'Which operation to perform. Note: "add" requires "type"+"content", "replace" requires "old_text"+"new_content", "remove" requires "old_text", "remove_batch" requires "old_texts" (array), "search" requires "query".' },
+          query: { type: 'string', description: '[search REQUIRED] Keywords to search for.' },
+          limit: { type: 'integer', description: '[search] Max results. Default: 8.' },
+          type: { type: 'string', enum: ['fact', 'preference', 'rule'], description: '[add REQUIRED] Memory type. fact=user info, preference=user preference, rule=behavior rule.' },
+          content: { type: 'string', description: '[add REQUIRED, replace] Memory text. Keep it concise (8-100 chars).' },
+          importance: { type: 'integer', description: '[add] Priority 1-10. Default: 5. Use 8+ for critical info.' },
+          tags: { type: 'array', items: { type: 'string' }, description: '[add] 2-5 keywords for search matching.' },
+          old_text: { type: 'string', description: '[replace, remove REQUIRED] Unique substring to identify the entry. Must be ≥5 chars. Use exact text from read_all for best results.' },
+          old_texts: { type: 'array', items: { type: 'string' }, description: '[remove_batch REQUIRED] Array of substrings to identify multiple entries for batch deletion. Each must be ≥5 chars.' },
+          new_content: { type: 'string', description: '[replace REQUIRED] New text to replace with.' }
+        }
+      }
+    }
+  },
+  // ══════════════════════════════════════════════
+  // 会话管理工具
+  // ══════════════════════════════════════════════
+  {
+    type: 'function',
+    function: {
+      name: 'session_list',
+      description: 'List previous chat sessions with their titles and timestamps. Useful for referencing past conversations.',
       parameters: {
         type: 'object',
         properties: {
-          format: { type: 'string', enum: ['full', 'iso', 'unix', 'date', 'time'], description: 'Output format. Default: full (all fields).' },
-          timezone: { type: 'string', description: 'IANA timezone name (e.g., "Asia/Shanghai", "America/New_York"). Default: system timezone.' }
+          limit: { type: 'integer', description: 'Max sessions to return. Default: 20.' },
+          search: { type: 'string', description: 'Filter sessions by title keyword.' }
         }
       }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'session_read',
+      description: 'Read the messages from a previous chat session. Use when the user references something from a past conversation.',
+      parameters: {
+        type: 'object',
+        required: ['session_id'],
+        properties: {
+          session_id: { type: 'string', description: 'The session ID to read.' },
+          max_messages: { type: 'integer', description: 'Max messages to return. Default: 50.' }
+        }
+      }
+    }
+  },
+  // ══════════════════════════════════════════════
+  // v4.3 新增工具：子代理委派
+  // ══════════════════════════════════════════════
+  {
+    type: 'function',
+    function: {
+      name: 'spawn_task',
+      description: 'Spawn a sub-agent to independently execute a task using read-only tools (file reading, web search, browser viewing, memory/session queries). Use this to parallelize independent research or analysis sub-tasks. The model is configured in Settings and cannot be overridden per call.',
+      parameters: {
+        type: 'object',
+        required: ['task'],
+        properties: {
+          task: { type: 'string', description: 'The task description for the sub-agent to execute.' },
+          context: { type: 'string', description: 'Optional additional context or reference data for the sub-agent.' }
+        }
+      }
+    }
+  },
+  // ══════════════════════════════════════════════
+  // 新增工具：Plan Mode 执行追踪
+  // ══════════════════════════════════════════════
+  {
+    type: 'function',
+    function: {
+      name: 'plan_track',
+      description: 'Manage Plan Mode execution progress. Use this to mark plan steps as completed so you always know what remains. REQUIRED in Plan Mode — call plan_track after completing each step.',
+      parameters: {
+        type: 'object',
+        required: ['action'],
+        properties: {
+          action: { type: 'string', enum: ['status', 'mark_done', 'mark_undone', 'mark_all_done'], description: 'status=查看当前进度, mark_done=标记步骤完成, mark_undone=撤销步骤完成标记, mark_all_done=全部完成' },
+          step_index: { type: 'integer', description: 'Step number (1-indexed) to mark as done. Required for mark_done.' },
+          step_label: { type: 'string', description: 'Optional: description of what was completed, for logging.' }
+        }
+      }
+    }
+  },
+  // ══════════════════════════════════════════════
+  // v5.0 新增工具：浏览器控制
+  // ══════════════════════════════════════════════
+  // v5.1 Browser 控制工具（增强版）
+  // ══════════════════════════════════════════════
+  {
+    type: 'function',
+    function: {
+      name: 'browser_open',
+      description: 'Open a URL in the agent browser. Waits for page load. Use wait_selector to wait for a specific element (useful for SPA pages). Returns page title and URL.',
+      parameters: {
+        type: 'object',
+        required: ['url'],
+        properties: {
+          url: { type: 'string', description: 'The URL to open (http/https).' },
+          wait_selector: { type: 'string', description: 'CSS selector to wait for after page load. Useful for SPA/dynamic pages. Default: none.' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_screenshot',
+      description: 'Take a screenshot of the current page. Supports viewport (default), full_page (entire scrollable page), or selector (specific element only). Returns base64 PNG.',
+      parameters: {
+        type: 'object',
+        properties: {
+          full_page: { type: 'boolean', description: 'Capture the entire scrollable page. Default: false.' },
+          selector: { type: 'string', description: 'CSS selector of element to capture. Overrides full_page.' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_evaluate',
+      description: 'Execute JavaScript in the browser page. Returns the result as JSON string. Use to read DOM, extract data, or interact programmatically.',
+      parameters: {
+        type: 'object',
+        required: ['js'],
+        properties: {
+          js: { type: 'string', description: 'JavaScript code to execute in the page context.' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_extract',
+      description: 'Extract text and links from the current page. Use selector to extract only from a specific element (e.g. "main", "#content", "article"). Without selector, extracts full page. Returns title, text, and up to 50 links.',
+      parameters: {
+        type: 'object',
+        properties: {
+          selector: { type: 'string', description: 'CSS selector to extract from. Default: entire body.' },
+          max_chars: { type: 'integer', description: 'Max characters to return. Default: 15000.' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_click',
+      description: 'Click an element by CSS selector. Use wait=true to wait up to 10s for the element to appear first (useful after page navigation). Scrolls element into view before clicking.',
+      parameters: {
+        type: 'object',
+        required: ['selector'],
+        properties: {
+          selector: { type: 'string', description: 'CSS selector for the element to click.' },
+          wait: { type: 'boolean', description: 'Wait for element to appear before clicking (max 10s). Default: false.' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_type',
+      description: 'Type text into an input field. Use clear=false to append instead of replacing. Use submit=true to press Enter or submit the parent form after typing.',
+      parameters: {
+        type: 'object',
+        required: ['selector', 'text'],
+        properties: {
+          selector: { type: 'string', description: 'CSS selector for the input element.' },
+          text: { type: 'string', description: 'Text to type into the input.' },
+          clear: { type: 'boolean', description: 'Clear existing text first. Default: true.' },
+          submit: { type: 'boolean', description: 'Submit the form or press Enter after typing. Default: false.' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_scroll',
+      description: 'Scroll the page. Use direction for up/down/top/bottom, or selector to scroll a specific element into view.',
+      parameters: {
+        type: 'object',
+        properties: {
+          direction: { type: 'string', enum: ['down', 'up', 'top', 'bottom'], description: 'Scroll direction. Default: down.' },
+          selector: { type: 'string', description: 'CSS selector to scroll into view (overrides direction).' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_wait',
+      description: 'Wait for a condition. Use selector to wait for an element to appear, or time_ms for a fixed delay. Default: 1 second.',
+      parameters: {
+        type: 'object',
+        properties: {
+          selector: { type: 'string', description: 'CSS selector to wait for. Returns found: true/false.' },
+          time_ms: { type: 'integer', description: 'Fixed wait time in milliseconds. Default: 1000.' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_close',
+      description: 'Close the agent browser and free resources.',
+      parameters: { type: 'object', properties: {} }
     }
   },
   {
@@ -614,68 +819,6 @@ TIP: Use remove_batch when deleting multiple entries — it's much more efficien
         }
       }
     }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'random',
-      description: 'Generate random numbers or pick random items. Supports: int (integer range, default 0-100), float (decimal, default 0-1), pick (select from array of items), string (random alphanumeric, default length 8). Use count for multiple values.',
-      parameters: {
-        type: 'object',
-        properties: {
-          type: { type: 'string', enum: ['int', 'float', 'pick', 'string'], description: 'Random type. Default: int.' },
-          min: { type: 'number', description: 'Minimum value (int/float). Default: 0.' },
-          max: { type: 'number', description: 'Maximum value (int/float). Default: 100 (int) or 1 (float).' },
-          count: { type: 'integer', description: 'Number of results. Max 100. Default: 1.' },
-          items: { type: 'array', items: { type: 'string' }, description: 'Item pool for pick type.' },
-          length: { type: 'integer', description: 'String length for string type. Max 256. Default: 8.' }
-        }
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'uuid',
-      description: 'Generate cryptographically random UUID v4 (e.g., "550e8400-e29b-41d4-a716-446655440000"). Uses Node.js crypto.randomUUID(). Supports batch generation up to 20.',
-      parameters: {
-        type: 'object',
-        properties: {
-          count: { type: 'integer', description: 'Number of UUIDs. Max 20. Default: 1.' }
-        }
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'json_format',
-      description: 'Format and validate a JSON string. Returns pretty-printed JSON with configurable indentation. Optionally sort object keys alphabetically. Also works as a JSON syntax validator — returns error details on invalid input.',
-      parameters: {
-        type: 'object',
-        required: ['json'],
-        properties: {
-          json: { type: 'string', description: 'The JSON string to format/validate.' },
-          indent: { type: 'integer', description: 'Indentation spaces. Default: 2.' },
-          sort_keys: { type: 'boolean', description: 'Sort object keys alphabetically. Default: false.' }
-        }
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'hash',
-      description: 'Compute cryptographic hash of text. Supports MD5, SHA-1, SHA-256, SHA-384, SHA-512. Default: SHA-256. Returns hex-encoded digest.',
-      parameters: {
-        type: 'object',
-        required: ['text'],
-        properties: {
-          text: { type: 'string', description: 'The text to hash.' },
-          algorithm: { type: 'string', enum: ['md5', 'sha1', 'sha256', 'sha384', 'sha512'], description: 'Hash algorithm. Default: sha256.' }
-        }
-      }
-    }
   }
 ];
 
@@ -684,7 +827,7 @@ TIP: Use remove_batch when deleting multiple entries — it's much more efficien
 const MODE_TOOLS = [
   'run_command',
   'write_file', 'create_directory', 'delete_file',
-  'edit_file', 'replace_in_files', 'move_file', 'copy_file',
+  'edit_file', 'move_file', 'copy_file',
   'download_file', 'compress',
 ];
 
@@ -730,14 +873,13 @@ let enabledTools: Set<string> = new Set([
   'write_file', 'create_directory', 'delete_file',
   'run_command',
   'move_file', 'copy_file', 'web_fetch', 'web_search', 'edit_file',
-  'get_file_info', 'tree', 'download_file', 'diff_files', 'replace_in_files',
+  'tree', 'download_file',
   'read_multiple_files', 'git', 'compress',
   'memory',
   'session_list', 'session_read', 'spawn_task',
   'browser_open', 'browser_screenshot', 'browser_evaluate', 'browser_extract',
   'browser_click', 'browser_type', 'browser_scroll', 'browser_wait', 'browser_close',
-  'datetime', 'calculator',
-  'random', 'uuid', 'json_format', 'hash'
+  'calculator'
 ]);
 
 export function setToolEnabled(toolName: string, enabled: boolean): void {
@@ -784,11 +926,8 @@ const TOOL_KEYWORDS: Record<string, string[]> = {
   web_fetch: ['fetch', 'url', '网页', '抓取', '获取'],
   web_search: ['search', 'web', '搜索', '联网', '查', 'google', 'bing'],
   edit_file: ['edit', 'replace', '编辑', '替换', '修改'],
-  get_file_info: ['info', 'stat', '信息', '属性', '详情'],
   tree: ['tree', '结构', '树', '目录结构'],
   download_file: ['download', '下载'],
-  diff_files: ['diff', 'compare', '对比', '差异'],
-  replace_in_files: ['replace', 'batch', '批量替换'],
   read_multiple_files: ['read', 'multiple', '批量读取'],
   git: ['git', 'commit', 'push', 'pull', 'branch', '仓库'],
   compress: ['compress', 'zip', 'tar', '压缩', '解压', 'extract'],
@@ -806,12 +945,7 @@ const TOOL_KEYWORDS: Record<string, string[]> = {
   browser_scroll: ['scroll', '滚动'],
   browser_wait: ['wait', '等待'],
   browser_close: ['close', '关闭浏览器'],
-  datetime: ['time', 'date', '时间', '日期'],
   calculator: ['calculate', 'math', '计算', '算'],
-  random: ['random', '随机'],
-  uuid: ['uuid', 'guid', '唯一'],
-  json_format: ['json', 'format', '格式化'],
-  hash: ['hash', 'sha', 'md5', '哈希'],
 };
 
 /** R55: 根据用户查询语义过滤工具定义，减少 token 占用 */
@@ -1611,8 +1745,8 @@ export function getToolIcon(name: string): string {
     read_file: '📄', write_file: '✏️', list_directory: '📁',
     search_files: '🔍', create_directory: '📂', delete_file: '🗑️', run_command: '💻',
     move_file: '📦', copy_file: '📋', web_fetch: '🌐',
-    edit_file: '✂️', get_file_info: 'ℹ️', tree: '🌳', download_file: '⬇️',
-    diff_files: '🔀', replace_in_files: '🔄', read_multiple_files: '📚',
+    edit_file: '✂️', tree: '🌳', download_file: '⬇️',
+    read_multiple_files: '📚',
     git: '🔖', compress: '🗜️', web_search: '🔍',
     memory: '🧠',
     session_list: '📋', session_read: '📖', spawn_task: '🤖',
@@ -1620,7 +1754,7 @@ export function getToolIcon(name: string): string {
     browser_open: '🌐', browser_screenshot: '📸', browser_evaluate: '⚡', browser_extract: '📰',
     browser_click: '👆', browser_type: '⌨️', browser_scroll: '↕️', browser_close: '❌',
     browser_wait: '⏳',
-    datetime: '🕐', calculator: '🔢', random: '🎲', uuid: '🔑', json_format: '📝', hash: '#️⃣'
+    calculator: '🔢'
   };
   return icons[name] || '🔧';
 }
@@ -1691,8 +1825,8 @@ export function formatToolName(name: string): string {
     search_files: '搜索文件', create_directory: '创建目录', delete_file: '删除文件',
     run_command: '执行命令', move_file: '移动文件', copy_file: '复制文件',
     web_fetch: '网页抓取', edit_file: '编辑文件',
-    get_file_info: '文件信息', tree: '目录树', download_file: '下载文件',
-    diff_files: '文件对比', replace_in_files: '批量替换', read_multiple_files: '批量读取',
+    tree: '目录树', download_file: '下载文件',
+    read_multiple_files: '批量读取',
     git: 'Git 操作', compress: '压缩/解压', web_search: '联网搜索',
     memory: '记忆管理',
     session_list: '会话列表', session_read: '读取会话', spawn_task: '子代理委派',
@@ -1700,7 +1834,7 @@ export function formatToolName(name: string): string {
     browser_open: '打开网页', browser_screenshot: '浏览器截图', browser_evaluate: '执行JS', browser_extract: '提取内容',
     browser_click: '点击元素', browser_type: '输入文本', browser_scroll: '滚动页面', browser_close: '关闭浏览器',
     browser_wait: '等待',
-    datetime: '日期时间', calculator: '计算器', random: '随机数', uuid: '生成UUID', json_format: 'JSON格式化', hash: '哈希计算'
+    calculator: '计算器'
   };
   return names[name] || name;
 }
