@@ -115,22 +115,28 @@ export class OllamaAPI {
 
       for (const line of lines) {
         if (!line.trim()) continue;
+        let chunk: OllamaStreamChunk;
         try {
-          const chunk: OllamaStreamChunk = JSON.parse(line);
-          if (onChunk) onChunk(chunk);
-          if (chunk.done) {
-            return;
-          }
+          chunk = JSON.parse(line);
         } catch {
+          continue; // 跳过无法解析的行（可能是不完整的 JSON）
+        }
+        // onChunk 回调错误不再被静默吞掉，而是向上传播给调用方
+        if (onChunk) onChunk(chunk);
+        if (chunk.done) {
+          return;
         }
       }
     }
 
     if (buffer.trim()) {
+      let chunk: OllamaStreamChunk;
       try {
-        const chunk: OllamaStreamChunk = JSON.parse(buffer);
-        if (onChunk) onChunk(chunk);
-      } catch { /* ignore */ }
+        chunk = JSON.parse(buffer);
+      } catch {
+        return; // 末尾 buffer 无法解析，忽略
+      }
+      if (onChunk) onChunk(chunk);
     }
   }
 

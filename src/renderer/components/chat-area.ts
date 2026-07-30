@@ -478,9 +478,11 @@ export function updateLastAssistantMessage(
       addCodeBlockCopyButtons(contentDiv);
     } else {
       // 流式期间：实时 Markdown 渲染 + rAF 节流
+      // R58-fix: 移除对未声明变量 _streamRenderThink/_streamRenderModel 的赋值
+      //   原代码在严格模式下会抛出 ReferenceError，被 chatStream 的空 catch 静默吞掉，
+      //   导致 requestAnimationFrame(_doStreamRender) 永远不会被调用，流式渲染完全失效。
+      //   think 和 model 已在上方（model tag）和下方（think block）直接处理，无需传递给 _doStreamRender。
       _streamRenderContent = safeContent;
-      _streamRenderThink = think;
-      _streamRenderModel = model;
       if (!_streamRenderPending) {
         _streamRenderPending = true;
         requestAnimationFrame(_doStreamRender);
