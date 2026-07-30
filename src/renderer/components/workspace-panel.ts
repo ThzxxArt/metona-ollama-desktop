@@ -1080,7 +1080,7 @@ function renderToolCard(tc: ToolCallRecord): string {
       } else if (tc.name === 'delete_file') {
         if (r.batch) {
           resultHtml = `<div class="tool-result-entry">✅ 批量删除 ${r.successCount}/${r.totalPaths} 个路径</div>`;
-          if (r.results) {
+          if (Array.isArray(r.results)) {
             for (const res of r.results) {
               resultHtml += `<div class="tool-result-entry">${res.success ? '✅' : '❌'} ${escapeHtml(String(res.path || ''))}${res.success ? '' : ' — ' + escapeHtml(String(res.error || ''))}</div>`;
             }

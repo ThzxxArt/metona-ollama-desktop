@@ -4,7 +4,7 @@
  * 支持自动压缩与手动 /compress 触发
  */
 
-import type { OllamaMessage, OllamaStreamChunk } from '../types.js';
+import type { OllamaMessage, OllamaStreamChunk, OllamaChatParams } from '../types.js';
 import { logInfo, logWarn, logSuccess, logError } from './log-service.js';
 
 // ── R12: 压缩去重 — 内容指纹追踪 ──
@@ -586,7 +586,7 @@ export interface StructuredSummary {
  */
 export async function compressWithLLM(
   messages: OllamaMessage[],
-  api: { chatStream: (params: Record<string, unknown>, onChunk: (chunk: OllamaStreamChunk) => void, ac?: AbortController) => Promise<void> },
+  api: { chatStream: (params: OllamaChatParams, onChunk: (chunk: OllamaStreamChunk) => void, abortController?: AbortController) => Promise<void> },
   model: string,
   options: {
     keepHead?: number;

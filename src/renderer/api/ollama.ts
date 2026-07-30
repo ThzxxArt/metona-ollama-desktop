@@ -103,30 +103,36 @@ export class OllamaAPI {
       }, { once: true });
     }
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) {
-        break;
-      }
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-
-      for (const line of lines) {
-        if (!line.trim()) continue;
-        let chunk: OllamaStreamChunk;
-        try {
-          chunk = JSON.parse(line);
-        } catch {
-          continue; // 跳过无法解析的行（可能是不完整的 JSON）
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          break;
         }
-        // onChunk 回调错误不再被静默吞掉，而是向上传播给调用方
-        if (onChunk) onChunk(chunk);
-        if (chunk.done) {
-          return;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          let chunk: OllamaStreamChunk;
+          try {
+            chunk = JSON.parse(line);
+          } catch {
+            continue; // 跳过无法解析的行（可能是不完整的 JSON）
+          }
+          // onChunk 回调错误不再被静默吞掉，而是向上传播给调用方
+          if (onChunk) onChunk(chunk);
+          if (chunk.done) {
+            return;
+          }
         }
       }
+    } catch (err) {
+      // abort 导致 reader.cancel() 会使 reader.read() 抛出异常，属于正常中止流程
+      if (abortController?.signal.aborted) return;
+      throw err;
     }
 
     if (buffer.trim()) {

@@ -1340,7 +1340,7 @@ async function handleInit(
     logInfo(`自动上下文压缩触发: tokens≈${estimateTokens(ctx.messages.map(m => m.content || '').join(''))} > ${Math.floor(effectiveNumCtx * AUTO_COMPRESS_THRESHOLD)} (${Math.round(AUTO_COMPRESS_THRESHOLD * 100)}% of ${effectiveNumCtx})`);
     const compressAC = state.get<AbortController | null>(KEYS.ABORT_CONTROLLER) || new AbortController();
     try {
-      const compressed = await compressWithLLM(ctx.messages, api as any, model, { abortController: compressAC });
+      const compressed = await compressWithLLM(ctx.messages, api, model, { abortController: compressAC });
       // P1-C4 修复：handleInit 中的自动压缩也使用 AND 条件
       const initBeforeTokens = estimateTokens(ctx.messages.map(m => m.content || '').join(''));
       const initAfterTokens = estimateTokens(compressed.map(m => m.content || '').join(''));
@@ -1634,7 +1634,7 @@ async function handleThinking(
         logWarn(`R8: 检测到上下文溢出错误，触发紧急压缩 (${ctx.emergencyCompressCount}/${MAX_EMERGENCY_COMPRESS})`, errMsg.slice(0, 100));
         try {
           const compressAC = new AbortController();
-          const compressed = await compressWithLLM(ctx.messages, api as any, model, { abortController: compressAC });
+          const compressed = await compressWithLLM(ctx.messages, api, model, { abortController: compressAC });
           // P1-C4 修复：R8 紧急压缩也使用 AND 条件，避免接受 token 增加的结果
           const r8BeforeTokens = estimateTokens(ctx.messages.map(m => m.content || '').join(''));
           const r8AfterTokens = estimateTokens(compressed.map(m => m.content || '').join(''));
@@ -2446,7 +2446,7 @@ async function handleCompressing(
     logInfo('COMPRESSING: 上下文压缩触发');
     const compressAC = state.get<AbortController | null>(KEYS.ABORT_CONTROLLER) || new AbortController();
     try {
-      const compressed = await compressWithLLM(ctx.messages, api as any, model, { abortController: compressAC });
+      const compressed = await compressWithLLM(ctx.messages, api, model, { abortController: compressAC });
       // P1-C4 修复：原条件用 OR（消息数减少 OR token 减少），可能接受 token 增加的结果。
       // 改为 AND：只有消息数减少且 token 减少时才接受，确保压缩真正生效
       const beforeTokens = estimateTokens(ctx.messages.map(m => m.content || '').join(''));

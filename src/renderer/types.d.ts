@@ -120,6 +120,7 @@ export interface ChatMessage {
   /** 多视频独立指示牌 */
   _videos?: Array<{ fileName: string; frameCount: number; duration: number }>;
   stopped?: boolean;
+  interrupted?: boolean;
   toolCalls?: ToolCallRecord[];
   /** 标记此消息为 LLM 压缩摘要生成 */
   compressed?: boolean;

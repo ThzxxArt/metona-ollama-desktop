@@ -292,7 +292,7 @@ async function startNewSession(): Promise<void> {
 
 async function init(): Promise<void> {
   let db: ChatDB | undefined;
-  let api: OllamaAPI;
+  let api: OllamaAPI | undefined;
 
   logInit('启动...');
 

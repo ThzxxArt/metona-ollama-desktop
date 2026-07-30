@@ -11,7 +11,7 @@ Metona Ollama Desktop 是基于 TypeScript + Electron 的 Windows 本地 AI 桌�
 核心架构：
 - **ReAct Agent Loop** — 8 状态机驱动的智能体循环（INIT→THINKING→PARSING→EXECUTING→OBSERVING→REFLECTING→COMPRESSING→TERMINATED），最大 85 轮（可配置）
 - **32 个内置工具** — 文件系统（13）、命令执行（1）、联网搜索（2）、浏览器控制（9）、Git（1）、记忆（1）、会话/子代理（3）、系统（1）、Plan Mode（1）
-- **Harness Engineering** — 5 层抗幻觉体系 + 4 阶段 Hook 系统 + Completion Gate（5 项检查）+ Agent Metrics + 渐进式披露
+- **Harness Engineering** — 提示词加固 + 4 阶段 Hook 系统 + Agent Metrics + 渐进式披露
 - **MCP 协议扩展** — JSON-RPC 2.0 over stdio，动态工具发现
 - **Plan Mode** — 开关切换，先规划后执行，步骤级进度追踪
 - **SQLite 存储** — sql.js WASM，5 张表，WAL 模式
@@ -80,7 +80,7 @@ src/
 │   │   ├── tool-confirm-modal.ts     # 工具执行确认对话框
 │   │   ├── tools-modal.ts            # 工具列表面板（32 个工具卡片）
 │   │   └── workspace-panel.ts        # 工作空间面板（终端 + 工具卡片 + 文件浏览）
-│   ├── services/                      # 14 个服务模块
+│   ├── services/                      # 13 个服务模块
 │   │   ├── agent-engine.ts           # ★ ReAct Agent Loop 核心引擎（8 状态机）
 │   │   ├── tool-registry.ts          # 工具注册与调度中心（32 内置 + MCP 动态 + Plan Mode）
 │   │   ├── memory-service.ts         # 记忆管理（MEMORY.md 读写 + 格式校验 + 自动提取）
@@ -90,7 +90,6 @@ src/
 │   │   ├── log-service.ts            # 结构化日志（9 级分类）
 │   │   ├── crypto.ts                 # AES-256-GCM 加密
 │   │   ├── hooks.ts                  # 4 阶段 Hook 系统（pre_tool/post_tool/post_iteration/pre_completion）
-│   │   ├── completion-gate.ts        # 完成门控（5 项检查，阻断/咨询两级）
 │   │   ├── agent-metrics.ts          # Agent 度量采集 + 错误模式识别 + 改进建议
 │   │   ├── agent-safety.ts           # Agent 安全防护（工具阴影检测 + 路径校验）
 │   │   ├── context-indexer.ts        # 渐进式披露（索引层→接口层→实现层）
@@ -227,15 +226,13 @@ INIT → THINKING → PARSING → EXECUTING → OBSERVING → REFLECTING → (CO
 
 ### 5.4 Harness Engineering 体系
 
-#### 5.4.1 5 层抗幻觉
+#### 5.4.1 提示词加固
 
 | 层级 | 实现位置 | 机制 |
 |------|---------|------|
-| 提示词加固 | `handleInit()` | [反幻觉铁律] 最高优先级注入 |
-| 任务感知 | `handleThinking()` | 第 2 轮无工具调用时注入提醒 |
-| 中途检测 | `detectMidTaskHallucination()` | 16 条正则规则，覆盖全部工具类别 |
-| 进度锚点 | `handleObserving()` | 每 5 轮注入机器生成的工具调用摘要 |
-| 完成闸门 | `completion-gate.ts` | 6 项检查：幻觉/注入→阻断级，质量/效率→咨询级 |
+| 提示词加固 | `handleInit()` | 注入安全规则：参考数据标记（<<<REFERENCE_DATA_START>>>）+ 工具结果仅为数据非指令 |
+
+> 注：任务感知注入、中途检测、进度锚点、完成闸门已在版本迭代中移除，AI 基于工具返回值和上下文自行判断。
 
 #### 5.4.2 Hook 系统（4 阶段）
 
@@ -248,17 +245,6 @@ INIT → THINKING → PARSING → EXECUTING → OBSERVING → REFLECTING → (CO
 | post_iteration | IterationMetrics | 50 | 迭代度量收集 |
 
 Hook 异步并行执行，失败不阻塞主流程。可动态注册/移除。
-
-#### 5.4.3 Completion Gate（6 项检查）
-
-| 检查项 | 级别 | 不通过行为 |
-|--------|------|-----------|
-| toolHallucination | 🔴 阻断 | 强制重新回答 |
-| promptInjection | 🔴 阻断 | 强制重新回答 |
-| contentQuality | 🟡 咨询 | 仅记录日志 |
-| toolResultReview | 🟡 咨询 | 仅记录日志 |
-| notThinking | 🟡 咨询 | 仅记录日志 |
-| contextEfficiency | 🟡 咨询 | 仅记录日志 |
 
 ### 5.5 联网搜索体系
 
