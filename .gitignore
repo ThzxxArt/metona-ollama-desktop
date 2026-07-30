@@ -8,6 +8,7 @@ Thumbs.db
 *.log
 window-state.json
 nul
+.npmrc
 
 # Build output (release for desktop)
 !release/*.exe
