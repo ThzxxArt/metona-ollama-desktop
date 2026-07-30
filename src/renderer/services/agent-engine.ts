@@ -51,6 +51,8 @@ import {
   getTrendAwareCompressThreshold,
   // R100: Token 使用统计报告
   generateTokenReport, formatTokenReport,
+  // R111: 自适应压缩策略选择
+  chooseCompressionStrategy,
 } from './context-manager.js';
 import { executeHooks } from './hooks.js';
 import { recordIteration, recordToolCall, startSessionMetrics, endSessionMetrics } from './agent-metrics.js';
@@ -984,36 +986,38 @@ async function flushTraces(): Promise<void> {
     return;
   }
 
-  for (const trace of batch) {
-    const entry = {
-      id: String(trace.id || `trace_${generateId()}`),
-      session_id: trace.sessionId,
-      step_index: trace.stepIndex,
-      thought: trace.thought,
-      action: trace.action,
-      action_input: trace.actionInput,
-      observation: trace.observation,
-      loop_count: trace.loopCount,
-      error_pattern: trace.errorPattern || null,
-      created_at: trace.createdAt
-    };
-    let saved = false;
-    // 重试最多 TRACE_MAX_RETRIES 次
-    for (let attempt = 0; attempt < TRACE_MAX_RETRIES; attempt++) {
-      try {
-        await bridge.db.saveTrace(entry);
+  // 构建所有轨迹条目
+  const entries = batch.map(trace => ({
+    id: String(trace.id || `trace_${generateId()}`),
+    session_id: trace.sessionId,
+    step_index: trace.stepIndex,
+    thought: trace.thought,
+    action: trace.action,
+    action_input: trace.actionInput,
+    observation: trace.observation,
+    loop_count: trace.loopCount,
+    error_pattern: trace.errorPattern || null,
+    created_at: trace.createdAt
+  }));
+
+  // 批量保存：只触发一次 persist，而非逐条写盘
+  let saved = false;
+  for (let attempt = 0; attempt < TRACE_MAX_RETRIES; attempt++) {
+    try {
+      const result = await bridge.db.saveTracesBatch(entries);
+      if (result.success) {
         saved = true;
         break;
-      } catch {
-        if (attempt < TRACE_MAX_RETRIES - 1) {
-          await new Promise(r => setTimeout(r, 200 * (attempt + 1)));
-        }
+      }
+    } catch {
+      if (attempt < TRACE_MAX_RETRIES - 1) {
+        await new Promise(r => setTimeout(r, 200 * (attempt + 1)));
       }
     }
-    // R9: 所有重试都失败时，降级到 localStorage
-    if (!saved) {
-      _fallbackSaveTraces([trace]);
-    }
+  }
+  // R9: 所有重试都失败时，降级到 localStorage
+  if (!saved) {
+    _fallbackSaveTraces(batch);
   }
 }
 
@@ -2443,23 +2447,57 @@ async function handleCompressing(
     return;
   }
   {
-    logInfo('COMPRESSING: 上下文压缩触发');
-    const compressAC = state.get<AbortController | null>(KEYS.ABORT_CONTROLLER) || new AbortController();
-    try {
-      const compressed = await compressWithLLM(ctx.messages, api, model, { abortController: compressAC });
-      // P1-C4 修复：原条件用 OR（消息数减少 OR token 减少），可能接受 token 增加的结果。
-      // 改为 AND：只有消息数减少且 token 减少时才接受，确保压缩真正生效
+    // R111: 自适应压缩策略 — 根据上下文压力和消息特征选择最优压缩路径
+    const pressureInfo = getContextPressureLevel(ctx.messages, numCtx);
+    const decision = chooseCompressionStrategy(ctx.messages, numCtx, pressureInfo.level);
+    logInfo(`COMPRESSING: 上下文压缩触发 — 策略=${decision.strategy}, 原因=${decision.reason}`);
+
+    if (decision.strategy === 'skip') {
+      // 压力很低，跳过压缩
+      logInfo('COMPRESSING: 跳过压缩（上下文压力低）');
+    } else if (decision.strategy === 'fast' || decision.strategy === 'medium') {
+      // 快速/中等压缩：本地操作，无需 LLM 调用
+      const beforeLen = ctx.messages.length;
       const beforeTokens = estimateTokens(ctx.messages.map(m => m.content || '').join(''));
-      const afterTokens = estimateTokens(compressed.map(m => m.content || '').join(''));
-      if (compressed.length < ctx.messages.length && afterTokens < beforeTokens) {
-        ctx.messages.length = 0;
-        ctx.messages.push(...compressed);
-        actuallyCompressed = true;
-        logSuccess('COMPRESSING: 完成');
+
+      // fast 策略：先归档旧工具结果（>1500 字符的工具消息精简为引用）
+      if (decision.strategy === 'fast') {
+        ctx.messages = ctx.messages.map(m => compactOldToolResult(m));
       }
-    } catch (err) {
-      if ((err as Error).name === 'AbortError') throw err;
-      logWarn('COMPRESSING: 失败', (err as Error).message);
+
+      // 通用：合并连续相同角色消息，减少消息条数开销
+      ctx.messages = mergeConsecutiveMessages(ctx.messages);
+
+      const afterLen = ctx.messages.length;
+      const afterTokens = estimateTokens(ctx.messages.map(m => m.content || '').join(''));
+      if (afterLen < beforeLen || afterTokens < beforeTokens) {
+        actuallyCompressed = true;
+        logSuccess(`COMPRESSING: ${decision.strategy}压缩完成 — ${beforeLen}→${afterLen} 条, ${beforeTokens}→${afterTokens} tokens`);
+      } else {
+        logInfo('COMPRESSING: 快速压缩未产生效果，保留原消息');
+      }
+    } else {
+      // llm 策略：LLM 结构化摘要压缩（最重，效果最好）
+      const compressAC = state.get<AbortController | null>(KEYS.ABORT_CONTROLLER) || new AbortController();
+      try {
+        const compressed = await compressWithLLM(ctx.messages, api, model, { abortController: compressAC });
+        // P1-C4 修复：原条件用 OR（消息数减少 OR token 减少），可能接受 token 增加的结果。
+        // 改为 AND：只有消息数减少且 token 减少时才接受，确保压缩真正生效
+        const beforeTokens = estimateTokens(ctx.messages.map(m => m.content || '').join(''));
+        const afterTokens = estimateTokens(compressed.map(m => m.content || '').join(''));
+        if (compressed.length < ctx.messages.length && afterTokens < beforeTokens) {
+          ctx.messages.length = 0;
+          ctx.messages.push(...compressed);
+          actuallyCompressed = true;
+          logSuccess('COMPRESSING: LLM 压缩完成');
+        }
+      } catch (err) {
+        if ((err as Error).name === 'AbortError') throw err;
+        logWarn('COMPRESSING: LLM 压缩失败，回退到快速压缩', (err as Error).message);
+        // 回退：至少做消息合并
+        ctx.messages = mergeConsecutiveMessages(ctx.messages);
+        actuallyCompressed = true;
+      }
     }
   }
   // P1 修复: 如果压缩后内容/工具调用仍为空（说明是从主循环紧急压缩路径进入，

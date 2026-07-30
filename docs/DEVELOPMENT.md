@@ -205,7 +205,7 @@ INIT → THINKING → PARSING → EXECUTING → OBSERVING → REFLECTING → (CO
 - 最大轮次：85（默认，设置面板可调）
 - 自动重试：2 次（MAX_RETRIES）
 - 看门狗超时：30 分钟（默认，可配）
-- 上下文硬上限：500 条消息
+- 上下文硬上限：300 条消息
 - 流式超时：可配（默认 300s，0=禁用）
 - HTTP 超时：可配（默认 30s）
 - MCP 超时：可配（默认 60s）

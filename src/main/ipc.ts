@@ -12,7 +12,7 @@ import {
   initDatabase, saveSession, getSession, getAllSessions, deleteSession, clearAllSessions,
   saveMessage, getMessagesBySession,
   saveSetting, getSetting, saveSettingsBatch,
-  saveTrace, getTracesBySession,
+  saveTrace, saveTracesBatch, getTracesBySession,
   exportAllSessions, importSessions,
   getAllSessionsTokenStats
 } from './db/sqlite.js';
@@ -381,6 +381,10 @@ export async function setupIPC(): Promise<void> {
   // Traces
   ipcMain.handle('db:saveTrace', (_, trace) => {
     try { return { success: true, id: saveTrace(trace) }; }
+    catch (err) { return { success: false, error: (err as Error).message }; }
+  });
+  ipcMain.handle('db:saveTracesBatch', (_, traces) => {
+    try { return { success: true, count: saveTracesBatch(traces) }; }
     catch (err) { return { success: false, error: (err as Error).message }; }
   });
   ipcMain.handle('db:getTraces', (_, sessionId) => {

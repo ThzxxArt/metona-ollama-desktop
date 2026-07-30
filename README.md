@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-v0.16.14-E8734A?style=flat-square" alt="version">
+  <img src="https://img.shields.io/badge/version-v0.16.15-E8734A?style=flat-square" alt="version">
   <img src="https://img.shields.io/badge/electron-33+-47848F?style=flat-square&logo=electron" alt="electron">
   <img src="https://img.shields.io/badge/typescript-5.7+-3178C6?style=flat-square&logo=typescript" alt="typescript">
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="license">
@@ -45,7 +45,7 @@
 | 🌏 | **浏览器控制** | 打开网页 · 截图 · 执行 JS · 提取内容 · 点击 · 输入 · 滚动 · 关闭 |
 | 🖥️ | **工作空间面板** | 终端（增量流式输出）+ 文件浏览器，命令安全检查 |
 | 🔢 | **上下文长度手动控制** | 设置面板下拉选择（128K / 256K / 512K / 1M），默认 128K，模型栏显示当前配置值，下拉框中显示每个模型自身的上下文长度 |
-| 🗜️ | **智能上下文管理** | 滑动窗口 + Token 自动校准 + 消息重要性评分 + LLM 结构化 JSON 压缩，智能触发（120 条增量压缩 + 200 条硬上限） |
+| 🗜️ | **智能上下文管理** | 滑动窗口 + Token 自动校准 + 消息重要性评分 + LLM 结构化 JSON 压缩，智能触发（120 条增量压缩 + 300 条硬上限） |
 | ⏱️ | **智能超时保护** | Agent Loop 看门狗（可配，默认 30min）+ 流式总超时（可配，默认 300s）+ 工具 HTTP/MCP 超时可配 |
 | 🪝 | **Hook 系统** | 4 阶段生命周期钩子（pre_tool / post_tool / post_iteration / pre_completion），内置安全检查、文件去重、自动计划追踪、变更审计、结果校验 |
 | 👥 | **子代理委派** | spawn_task 工具，独立上下文 + 超时保护 |
@@ -245,7 +245,7 @@ npm start
 ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm run dist
 ```
 
-产出：`release/Metona Ollama Setup v0.16.14.exe`
+产出：`release/Metona Ollama Setup v0.16.15.exe`
 
 ## 🛠️ 常用命令
 
@@ -286,7 +286,7 @@ npm run dist           # 构建 Windows 安装包
 | 🌏 | **Browser Control** | Open pages · Screenshot · JS execution · Content extraction · Click · Type · Scroll · Close |
 | 🖥️ | **Workspace Panel** | Terminal (incremental streaming) + file browser, command security checks |
 | 🔢 | **Manual Context Length** | Settings dropdown (128K / 256K / 512K / 1M), default 128K. Model bar shows configured value, dropdown shows per-model context length |
-| 🗜️ | **Smart Context Manager** | Sliding window + Token auto-calibration + message importance scoring + LLM structured JSON compression, smart triggers (120 msg incremental + 200 msg hard limit) |
+| 🗜️ | **Smart Context Manager** | Sliding window + Token auto-calibration + message importance scoring + LLM structured JSON compression, smart triggers (120 msg incremental + 300 msg hard limit) |
 | ⏱️ | **Smart Timeout Protection** | Agent Loop watchdog (configurable, default 30min) + stream total timeout (configurable, default 300s) + configurable HTTP/MCP timeouts |
 | 🪝 | **Hook System** | 4-phase lifecycle hooks (pre_tool / post_tool / post_iteration / pre_completion), built-in security check, file dedup, auto plan tracking, change audit, result validation |
 | 👥 | **Sub-agent Delegation** | spawn_task tool, isolated context + timeout protection |
@@ -485,7 +485,7 @@ npm start
 ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm run dist
 ```
 
-Output: `release/Metona Ollama Setup v0.16.14.exe`
+Output: `release/Metona Ollama Setup v0.16.15.exe`
 
 ## 🛠️ Common Commands
 

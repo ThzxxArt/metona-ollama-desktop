@@ -538,9 +538,8 @@ export interface DBAPI {
   getMessages: (sessionId: string) => Promise<MessageRow[]>;
   saveSetting: (key: string, value: unknown) => Promise<{ success: boolean; error?: string }>;
   getSetting: <T = unknown>(key: string, defaultValue?: T) => Promise<T>;
-  saveToolCall: (tc: unknown) => Promise<{ success: boolean; id?: string; error?: string }>;
-  getToolCalls: (sessionId: string) => Promise<unknown[]>;
   saveTrace: (trace: unknown) => Promise<{ success: boolean; id?: string; error?: string }>;
+  saveTracesBatch: (traces: unknown[]) => Promise<{ success: boolean; count?: number; error?: string }>;
   getTraces: (sessionId: string) => Promise<TraceEntry[]>;
   exportSessions: () => Promise<unknown>;
   importSessions: (data: unknown) => Promise<{ imported: number; skipped: number }>;

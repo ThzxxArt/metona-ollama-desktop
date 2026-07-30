@@ -553,272 +553,6 @@ TIP: Use remove_batch when deleting multiple entries — it's much more efficien
         }
       }
     }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'web_search',
-      description: 'Search the web with auto-fetch. Always use this when the user asks for information, news, facts, or current data. Never rely on training data or past conversation results — call this tool every time the user asks to search. Set fetch_top to auto-fetch full page content from the top N results.',
-      parameters: {
-        type: 'object',
-        required: ['query', 'fetch_top'],
-        properties: {
-          query: { type: 'string', description: 'The search query. Be specific and concise for best results.' },
-          max_results: { type: 'integer', description: 'Maximum number of results to return. Default: 30, max: 30.' },
-          time_range: { type: 'string', enum: ['day', 'week', 'month', 'year'], description: 'Filter results by time. Supported by Bing and Google. Use for recent news, latest version, etc.' },
-          enhance_snippets: { type: 'boolean', description: 'Auto-fetch detailed snippet for results with too-short descriptions. Default: true.' },
-          fetch_top: { type: 'integer', description: 'Number of top results to auto-fetch full content for. Min: 3. Results shorter than this are useless — snippets lack detail.' }
-        }
-      }
-    }
-  },
-  // ══════════════════════════════════════════════
-  // 记忆工具（统一入口，读写工作空间 MEMORY.md）
-  // ══════════════════════════════════════════════
-  {
-    type: 'function',
-    function: {
-      name: 'memory',
-      description: `Manage agent memories stored in MEMORY.md. Usage by action:
-- search: {"action":"search","query":"keywords","limit":8}
-- add: {"action":"add","type":"fact","content":"the memory content","importance":8,"tags":["tag1","tag2"]}  ← type and content are REQUIRED for add!
-- replace: {"action":"replace","old_text":"unique substring","new_content":"replacement"}
-- remove: {"action":"remove","old_text":"unique substring"}
-- remove_batch: {"action":"remove_batch","old_texts":["substring1","substring2","substring3"]}  ← Batch delete multiple entries in one call
-- read_all: {"action":"read_all"}
-
-CRITICAL: For add action, you MUST include both "type" (fact/preference/rule) and "content" fields. If you omit them, the call will fail.
-TIP: Use remove_batch when deleting multiple entries — it's much more efficient than calling remove repeatedly.`,
-      parameters: {
-        type: 'object',
-        required: ['action'],
-        properties: {
-          action: { type: 'string', enum: ['search', 'add', 'replace', 'remove', 'remove_batch', 'read_all'], description: 'Which operation to perform. Note: "add" requires "type"+"content", "replace" requires "old_text"+"new_content", "remove" requires "old_text", "remove_batch" requires "old_texts" (array), "search" requires "query".' },
-          query: { type: 'string', description: '[search REQUIRED] Keywords to search for.' },
-          limit: { type: 'integer', description: '[search] Max results. Default: 8.' },
-          type: { type: 'string', enum: ['fact', 'preference', 'rule'], description: '[add REQUIRED] Memory type. fact=user info, preference=user preference, rule=behavior rule.' },
-          content: { type: 'string', description: '[add REQUIRED, replace] Memory text. Keep it concise (8-100 chars).' },
-          importance: { type: 'integer', description: '[add] Priority 1-10. Default: 5. Use 8+ for critical info.' },
-          tags: { type: 'array', items: { type: 'string' }, description: '[add] 2-5 keywords for search matching.' },
-          old_text: { type: 'string', description: '[replace, remove REQUIRED] Unique substring to identify the entry. Must be ≥5 chars. Use exact text from read_all for best results.' },
-          old_texts: { type: 'array', items: { type: 'string' }, description: '[remove_batch REQUIRED] Array of substrings to identify multiple entries for batch deletion. Each must be ≥5 chars.' },
-          new_content: { type: 'string', description: '[replace REQUIRED] New text to replace with.' }
-        }
-      }
-    }
-  },
-  // ══════════════════════════════════════════════
-  // 会话管理工具
-  // ══════════════════════════════════════════════
-  {
-    type: 'function',
-    function: {
-      name: 'session_list',
-      description: 'List previous chat sessions with their titles and timestamps. Useful for referencing past conversations.',
-      parameters: {
-        type: 'object',
-        properties: {
-          limit: { type: 'integer', description: 'Max sessions to return. Default: 20.' },
-          search: { type: 'string', description: 'Filter sessions by title keyword.' }
-        }
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'session_read',
-      description: 'Read the messages from a previous chat session. Use when the user references something from a past conversation.',
-      parameters: {
-        type: 'object',
-        required: ['session_id'],
-        properties: {
-          session_id: { type: 'string', description: 'The session ID to read.' },
-          max_messages: { type: 'integer', description: 'Max messages to return. Default: 50.' }
-        }
-      }
-    }
-  },
-  // ══════════════════════════════════════════════
-  // v4.3 新增工具：子代理委派
-  // ══════════════════════════════════════════════
-  {
-    type: 'function',
-    function: {
-      name: 'spawn_task',
-      description: 'Spawn a sub-agent to independently execute a task using read-only tools (file reading, web search, browser viewing, memory/session queries). Use this to parallelize independent research or analysis sub-tasks. The model is configured in Settings and cannot be overridden per call.',
-      parameters: {
-        type: 'object',
-        required: ['task'],
-        properties: {
-          task: { type: 'string', description: 'The task description for the sub-agent to execute.' },
-          context: { type: 'string', description: 'Optional additional context or reference data for the sub-agent.' }
-        }
-      }
-    }
-  },
-  // ══════════════════════════════════════════════
-  // 新增工具：Plan Mode 执行追踪
-  // ══════════════════════════════════════════════
-  {
-    type: 'function',
-    function: {
-      name: 'plan_track',
-      description: 'Manage Plan Mode execution progress. Use this to mark plan steps as completed so you always know what remains. REQUIRED in Plan Mode — call plan_track after completing each step.',
-      parameters: {
-        type: 'object',
-        required: ['action'],
-        properties: {
-          action: { type: 'string', enum: ['status', 'mark_done', 'mark_undone', 'mark_all_done'], description: 'status=查看当前进度, mark_done=标记步骤完成, mark_undone=撤销步骤完成标记, mark_all_done=全部完成' },
-          step_index: { type: 'integer', description: 'Step number (1-indexed) to mark as done. Required for mark_done.' },
-          step_label: { type: 'string', description: 'Optional: description of what was completed, for logging.' }
-        }
-      }
-    }
-  },
-  // ══════════════════════════════════════════════
-  // v5.0 新增工具：浏览器控制
-  // ══════════════════════════════════════════════
-  // v5.1 Browser 控制工具（增强版）
-  // ══════════════════════════════════════════════
-  {
-    type: 'function',
-    function: {
-      name: 'browser_open',
-      description: 'Open a URL in the agent browser. Waits for page load. Use wait_selector to wait for a specific element (useful for SPA pages). Returns page title and URL.',
-      parameters: {
-        type: 'object',
-        required: ['url'],
-        properties: {
-          url: { type: 'string', description: 'The URL to open (http/https).' },
-          wait_selector: { type: 'string', description: 'CSS selector to wait for after page load. Useful for SPA/dynamic pages. Default: none.' }
-        }
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'browser_screenshot',
-      description: 'Take a screenshot of the current page. Supports viewport (default), full_page (entire scrollable page), or selector (specific element only). Returns base64 PNG.',
-      parameters: {
-        type: 'object',
-        properties: {
-          full_page: { type: 'boolean', description: 'Capture the entire scrollable page. Default: false.' },
-          selector: { type: 'string', description: 'CSS selector of element to capture. Overrides full_page.' }
-        }
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'browser_evaluate',
-      description: 'Execute JavaScript in the browser page. Returns the result as JSON string. Use to read DOM, extract data, or interact programmatically.',
-      parameters: {
-        type: 'object',
-        required: ['js'],
-        properties: {
-          js: { type: 'string', description: 'JavaScript code to execute in the page context.' }
-        }
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'browser_extract',
-      description: 'Extract text and links from the current page. Use selector to extract only from a specific element (e.g. "main", "#content", "article"). Without selector, extracts full page. Returns title, text, and up to 50 links.',
-      parameters: {
-        type: 'object',
-        properties: {
-          selector: { type: 'string', description: 'CSS selector to extract from. Default: entire body.' },
-          max_chars: { type: 'integer', description: 'Max characters to return. Default: 15000.' }
-        }
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'browser_click',
-      description: 'Click an element by CSS selector. Use wait=true to wait up to 10s for the element to appear first (useful after page navigation). Scrolls element into view before clicking.',
-      parameters: {
-        type: 'object',
-        required: ['selector'],
-        properties: {
-          selector: { type: 'string', description: 'CSS selector for the element to click.' },
-          wait: { type: 'boolean', description: 'Wait for element to appear before clicking (max 10s). Default: false.' }
-        }
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'browser_type',
-      description: 'Type text into an input field. Use clear=false to append instead of replacing. Use submit=true to press Enter or submit the parent form after typing.',
-      parameters: {
-        type: 'object',
-        required: ['selector', 'text'],
-        properties: {
-          selector: { type: 'string', description: 'CSS selector for the input element.' },
-          text: { type: 'string', description: 'Text to type into the input.' },
-          clear: { type: 'boolean', description: 'Clear existing text first. Default: true.' },
-          submit: { type: 'boolean', description: 'Submit the form or press Enter after typing. Default: false.' }
-        }
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'browser_scroll',
-      description: 'Scroll the page. Use direction for up/down/top/bottom, or selector to scroll a specific element into view.',
-      parameters: {
-        type: 'object',
-        properties: {
-          direction: { type: 'string', enum: ['down', 'up', 'top', 'bottom'], description: 'Scroll direction. Default: down.' },
-          selector: { type: 'string', description: 'CSS selector to scroll into view (overrides direction).' }
-        }
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'browser_wait',
-      description: 'Wait for a condition. Use selector to wait for an element to appear, or time_ms for a fixed delay. Default: 1 second.',
-      parameters: {
-        type: 'object',
-        properties: {
-          selector: { type: 'string', description: 'CSS selector to wait for. Returns found: true/false.' },
-          time_ms: { type: 'integer', description: 'Fixed wait time in milliseconds. Default: 1000.' }
-        }
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'browser_close',
-      description: 'Close the agent browser and free resources.',
-      parameters: { type: 'object', properties: {} }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'calculator',
-      description: 'Safely evaluate a mathematical expression. Supports + - * / ** % () and floating-point numbers. Uses a pure JS recursive descent parser — no eval(), CSP-safe. Returns the numeric result.',
-      parameters: {
-        type: 'object',
-        required: ['expression'],
-        properties: {
-          expression: { type: 'string', description: 'The mathematical expression to evaluate (e.g., "(3 + 5) * 2 ** 3"). Max 500 characters.' }
-        }
-      }
-    }
   }
 ];
 
@@ -914,38 +648,38 @@ const CORE_TOOLS = new Set([
 
 /** 工具关键词映射 — 用于语义匹配 */
 const TOOL_KEYWORDS: Record<string, string[]> = {
-  read_file: ['read', 'file', '读取', '文件', '看', '查看', '内容'],
-  write_file: ['write', 'file', '写入', '保存', '创建文件', '输出'],
-  list_directory: ['list', 'directory', '目录', '文件夹', '列'],
-  search_files: ['search', 'find', '搜索', '查找', 'grep', 'find'],
-  create_directory: ['create', 'directory', 'mkdir', '创建目录', '新建'],
-  delete_file: ['delete', 'remove', '删除', 'rm', '移除'],
-  run_command: ['run', 'command', 'shell', '执行', '命令', '终端'],
-  move_file: ['move', 'rename', '移动', '重命名', 'mv'],
-  copy_file: ['copy', '复制', 'cp'],
-  web_fetch: ['fetch', 'url', '网页', '抓取', '获取'],
-  web_search: ['search', 'web', '搜索', '联网', '查', 'google', 'bing'],
-  edit_file: ['edit', 'replace', '编辑', '替换', '修改'],
-  tree: ['tree', '结构', '树', '目录结构'],
-  download_file: ['download', '下载'],
-  read_multiple_files: ['read', 'multiple', '批量读取'],
-  git: ['git', 'commit', 'push', 'pull', 'branch', '仓库'],
-  compress: ['compress', 'zip', 'tar', '压缩', '解压', 'extract'],
-  memory: ['memory', '记忆', 'remember', 'save', 'rule', '规则'],
-  session_list: ['session', 'history', '会话', '历史'],
-  session_read: ['session', 'read', '读取会话'],
-  spawn_task: ['sub', 'agent', 'delegate', '子代理', '委派'],
-  plan_track: ['plan', 'track', '计划', '进度'],
-  browser_open: ['browser', 'open', '浏览器', '打开网页'],
-  browser_screenshot: ['screenshot', '截图', '屏幕'],
-  browser_evaluate: ['evaluate', 'javascript', 'js', '执行JS'],
-  browser_extract: ['extract', '提取', '内容'],
-  browser_click: ['click', '点击'],
-  browser_type: ['type', 'input', '输入'],
-  browser_scroll: ['scroll', '滚动'],
-  browser_wait: ['wait', '等待'],
-  browser_close: ['close', '关闭浏览器'],
-  calculator: ['calculate', 'math', '计算', '算'],
+  read_file: ['read', 'file', '读取', '文件', '看', '查看', '内容', '打开文件', 'cat', 'less', 'head', 'tail'],
+  write_file: ['write', 'file', '写入', '保存', '创建文件', '输出', '写入文件', '写入内容', 'echo'],
+  list_directory: ['list', 'directory', '目录', '文件夹', '列', 'ls', '列出', '查看目录'],
+  search_files: ['search', 'find', '搜索', '查找', 'grep', 'find', '正则', '通配符', 'rg', 'ag'],
+  create_directory: ['create', 'directory', 'mkdir', '创建目录', '新建', '新建文件夹'],
+  delete_file: ['delete', 'remove', '删除', 'rm', '移除', '清空'],
+  run_command: ['run', 'command', 'shell', '执行', '命令', '终端', 'cmd', 'powershell', 'bash', '脚本'],
+  move_file: ['move', 'rename', '移动', '重命名', 'mv', '改名', '移动文件'],
+  copy_file: ['copy', '复制', 'cp', '拷贝'],
+  web_fetch: ['fetch', 'url', '网页', '抓取', '获取', '爬虫', '网页内容', '页面', '网址', '链接', '请求'],
+  web_search: ['search', 'web', '搜索', '联网', '查', 'google', 'bing', '百度', '搜狗', '360', '查询', '在线搜索'],
+  edit_file: ['edit', 'replace', '编辑', '替换', '修改', 'sed', '补丁', 'patch', '修改文件'],
+  tree: ['tree', '结构', '树', '目录结构', '层级', 'find'],
+  download_file: ['download', '下载', '保存到本地', '下载文件'],
+  read_multiple_files: ['read', 'multiple', '批量读取', '多个文件', '并行读取', '批量'],
+  git: ['git', 'commit', 'push', 'pull', 'branch', '仓库', '版本控制', 'checkout', 'merge', 'diff', 'log', 'stash', 'tag'],
+  compress: ['compress', 'zip', 'tar', '压缩', '解压', 'extract', '打包', '归档', '解压缩', 'gzip'],
+  memory: ['memory', '记忆', 'remember', 'save', 'rule', '规则', '记住', '偏好', '事实', '遗忘', '回忆'],
+  session_list: ['session', 'history', '会话', '历史', '历史记录', '会话列表'],
+  session_read: ['session', 'read', '读取会话', '查看会话', '历史会话'],
+  spawn_task: ['sub', 'agent', 'delegate', '子代理', '委派', '并行', '子任务', '委派任务'],
+  plan_track: ['plan', 'track', '计划', '进度', '步骤', '追踪', '计划追踪'],
+  browser_open: ['browser', 'open', '浏览器', '打开网页', '访问', '浏览', '打开网站', '访问网页'],
+  browser_screenshot: ['screenshot', '截图', '屏幕', '截屏', '画面', '截取'],
+  browser_evaluate: ['evaluate', 'javascript', 'js', '执行JS', '运行JS', '脚本执行', 'DOM'],
+  browser_extract: ['extract', '提取', '内容', '读取网页', '获取内容', '网页文本'],
+  browser_click: ['click', '点击', '按钮', '链接', '选择', '按下'],
+  browser_type: ['type', 'input', '输入', '填写', '表单', '输入框'],
+  browser_scroll: ['scroll', '滚动', '翻页', '滑', '向下', '向上'],
+  browser_wait: ['wait', '等待', '加载', '延时', '延迟'],
+  browser_close: ['close', '关闭浏览器', '关闭网页', '退出浏览器'],
+  calculator: ['calculate', 'math', '计算', '算', '算术', '求值', '数学', '表达式'],
 };
 
 /** R55: 根据用户查询语义过滤工具定义，减少 token 占用 */

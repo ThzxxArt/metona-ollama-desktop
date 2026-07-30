@@ -365,6 +365,22 @@ export function saveTrace(trace: TraceRow): string {
   return trace.id;
 }
 
+/** 批量保存轨迹 — 只触发一次 persist，避免逐条写盘 */
+export function saveTracesBatch(traces: TraceRow[]): number {
+  if (!traces.length) return 0;
+  const d = getDb();
+  runTransaction(d, () => {
+    for (const trace of traces) {
+      runExec(d, `INSERT OR REPLACE INTO traces (id, session_id, step_index, thought, action, action_input, observation, loop_count, error_pattern, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [trace.id, trace.session_id, trace.step_index, trace.thought, trace.action, trace.action_input, trace.observation, trace.loop_count, trace.error_pattern, trace.created_at]
+      );
+    }
+  });
+  persist(); // 只写盘一次
+  return traces.length;
+}
+
 export function getTracesBySession(sessionId: string): TraceRow[] {
   return queryAll(getDb(), 'SELECT * FROM traces WHERE session_id = ? ORDER BY step_index ASC', [sessionId]) as unknown as TraceRow[];
 }
