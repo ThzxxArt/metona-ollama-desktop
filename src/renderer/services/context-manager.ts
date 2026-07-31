@@ -999,6 +999,120 @@ export interface ContextPressureInfo {
 }
 
 /**
+ * 统一上下文统计 — 单次遍历消息列表，计算 token 总量、压力等级、压缩决策
+ * 替代 shouldAutoCompress + getContextPressureLevel + getTrendAwareCompressThreshold 的重复计算
+ */
+export interface ContextStats {
+  /** 包含 tool_calls/images 开销的完整 token 估算 */
+  totalTokens: number;
+  /** 仅消息内容的 token 估算（不含 tool_calls/images） */
+  contentTokens: number;
+  /** 上下文使用率 (0-1) */
+  usageRatio: number;
+  /** 消息条数 */
+  messageCount: number;
+  /** 压力等级信息 */
+  pressureInfo: ContextPressureInfo;
+  /** 趋势感知压缩决策 */
+  compressDecision: { shouldCompress: boolean; reason: string; urgency: 'low' | 'medium' | 'high' };
+}
+
+/**
+ * 单次遍历消息列表计算完整 token 数（含 tool_calls 和 images 开销）
+ */
+function calculateTotalTokens(messages: OllamaMessage[]): number {
+  let totalTokens = 0;
+  for (const m of messages) {
+    totalTokens += estimateTokens(m.content || '');
+    if (m.tool_calls?.length) {
+      for (const tc of m.tool_calls) {
+        const argsSize = JSON.stringify(tc.function.arguments || {}).length;
+        totalTokens += estimateTokens(tc.function.name) + Math.ceil(argsSize / 4) + 20;
+      }
+    }
+    if (m.images?.length) totalTokens += m.images.length * 100;
+  }
+  return totalTokens;
+}
+
+/**
+ * 统一上下文统计 — 单次计算替代多次遍历
+ */
+export function calculateContextStats(
+  messages: OllamaMessage[],
+  numCtx: number,
+): ContextStats {
+  // 单次遍历计算完整 token 数
+  const totalTokens = calculateTotalTokens(messages);
+  // 内容 token（不含 tool_calls/images 开销，供 recordTokenUsage 等使用）
+  let contentTokens = 0;
+  for (const m of messages) {
+    contentTokens += estimateTokens(m.content || '');
+  }
+
+  const usageRatio = numCtx > 0 ? totalTokens / numCtx : 0;
+  const msgCount = messages.length;
+
+  // 记录当前迭代的 token 使用量（必须在 predictContextOverflow 之前调用）
+  recordTokenUsage(contentTokens, numCtx);
+
+  // 压力等级计算（内联，避免重复遍历）
+  let level: ContextPressureLevel;
+  const actions: string[] = [];
+  if (usageRatio > 0.7) {
+    level = 'critical';
+    actions.push('llm_compress', 'truncate_results', 'compact_old', 'merge_messages', 'clear_ephemeral');
+  } else if (usageRatio > 0.5) {
+    level = 'high';
+    actions.push('truncate_results', 'compact_old', 'merge_messages');
+  } else if (usageRatio > 0.3) {
+    level = 'medium';
+    actions.push('compact_old', 'clear_ephemeral');
+  } else {
+    level = 'low';
+    if (msgCount > 60) actions.push('compact_old');
+  }
+  const pressureInfo: ContextPressureInfo = { level, tokenUsageRatio: usageRatio, messageCount: msgCount, recommendedActions: actions };
+
+  // 趋势感知压缩决策（复用已计算的 token 数，避免重复遍历）
+  const baseThreshold = getAdaptiveCompressThreshold(numCtx);
+  const prediction = predictContextOverflow(numCtx);
+  let shouldCompress = false;
+  let reason = '';
+  let urgency: 'low' | 'medium' | 'high' = 'low';
+
+  if (prediction.level === 'critical' || (prediction.level === 'warning' && prediction.turnsToOverflow <= 2)) {
+    shouldCompress = true;
+    reason = `趋势预测触发: ${prediction.message}`;
+    urgency = 'high';
+  } else if (prediction.turnsToOverflow > 0 && prediction.turnsToOverflow <= 5 && usageRatio > baseThreshold * 0.8) {
+    shouldCompress = true;
+    reason = `趋势加速: ${prediction.turnsToOverflow} 轮后可能溢出，当前使用率 ${(usageRatio * 100).toFixed(0)}%`;
+    urgency = 'medium';
+  } else if (usageRatio > baseThreshold) {
+    shouldCompress = true;
+    reason = `标准阈值触发: 使用率 ${(usageRatio * 100).toFixed(0)}% > 阈值 ${(baseThreshold * 100).toFixed(0)}%`;
+    urgency = usageRatio > 0.6 ? 'high' : 'medium';
+  } else {
+    const msgThreshold = getIncrementalCompressThresholdMessages(numCtx);
+    if (msgCount >= msgThreshold) {
+      shouldCompress = true;
+      reason = `消息条数触发: ${msgCount} >= ${msgThreshold}`;
+      urgency = 'low';
+    }
+  }
+
+  return {
+    totalTokens,
+    contentTokens,
+    usageRatio,
+    messageCount: msgCount,
+    pressureInfo,
+    compressDecision: { shouldCompress, reason, urgency },
+  };
+}
+
+/**
  * R91: 评估当前上下文压力等级
  * - low (<30%): 无需压缩
  * - medium (30-50%): 轻量压缩（归档旧工具结果、清理 ephemeral）

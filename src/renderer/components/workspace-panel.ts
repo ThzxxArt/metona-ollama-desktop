@@ -5,6 +5,7 @@
 
 import { logInfo, logError, logDebug } from '../services/log-service.js';
 import { escapeHtml, formatSize } from '../utils/utils.js';
+import { addToolResultHighlighting } from './chat-area.js';
 
 // ── 工具卡片类型 ──
 interface ToolCallRecord {
@@ -868,6 +869,7 @@ function appendToolCardDOM(tc: ToolCallRecord): void {
   if (card) {
     card.dataset.toolName = tc.name;
     container.appendChild(card);
+    addToolResultHighlighting(card);
   }
   // 始终滚到底部
   scrollToolsToBottom(container);
@@ -895,6 +897,7 @@ function updateToolCardDOM(tc: ToolCallRecord): void {
     if (newCard) {
       newCard.dataset.toolName = tc.name;
       runningCard.replaceWith(newCard);
+      addToolResultHighlighting(newCard);
       // 卡片内容变化后可能变高（如出现执行结果），跟随滚动
       scrollToolsToBottom(container);
     }

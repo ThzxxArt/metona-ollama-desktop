@@ -662,14 +662,76 @@ export function enableAutoScroll(): void {
   if (scrollBtnEl) scrollBtnEl.style.display = 'none';
 }
 
-// ── R38: 代码块复制按钮 ──
+// ── R38: 代码块复制按钮 + 语法高亮 ──
 
-/** R38: 为代码块添加复制按钮 */
+/** 轻量级 JSON 语法高亮 — 检测 JSON 并高亮关键字、字符串、数字 */
+export function highlightJsonContent(text: string): string {
+  const escaped = escapeHtml(text);
+
+  // 尝试 JSON 解析并格式化
+  try {
+    const parsed = JSON.parse(text);
+    const formatted = JSON.stringify(parsed, null, 2);
+    return formatJsonSyntax(escapeHtml(formatted));
+  } catch {
+    // 非 JSON，返回转义后的原文
+    return escaped;
+  }
+}
+
+/** JSON 语法着色 — key/string/number/boolean/null 分别着色 */
+function formatJsonSyntax(escaped: string): string {
+  // 高亮 JSON key: "key":
+  let result = escaped.replace(
+    /&quot;([^&]*?)&quot;\s*:/g,
+    '<span class="hl-json-key">&quot;$1&quot;</span>:'
+  );
+  // 高亮 string value: : "value" 或 [ "value" 
+  result = result.replace(
+    /:\s*&quot;([^&]*(?:&amp;|&lt;|&gt;)?[^&]*)&quot;/g,
+    ': <span class="hl-json-string">&quot;$1&quot;</span>'
+  );
+  result = result.replace(
+    /\[\s*&quot;([^&]*(?:&amp;|&lt;|&gt;)?[^&]*)&quot;/g,
+    '[ <span class="hl-json-string">&quot;$1&quot;</span>'
+  );
+  // 高亮数字
+  result = result.replace(
+    /:\s*(-?\d+\.?\d*)/g,
+    ': <span class="hl-json-number">$1</span>'
+  );
+  // 高亮 boolean
+  result = result.replace(
+    /:\s*(true|false)/g,
+    ': <span class="hl-json-boolean">$1</span>'
+  );
+  // 高亮 null
+  result = result.replace(
+    /:\s*(null)/g,
+    ': <span class="hl-json-null">$1</span>'
+  );
+  return result;
+}
+
+/** 为代码块添加复制按钮 + 语法高亮 */
 function addCodeBlockCopyButtons(scope?: ParentNode): void {
   const root = scope || messagesContainerEl;
   const codeBlocks = root.querySelectorAll('pre:not([data-copy-added])');
   for (const pre of codeBlocks) {
     pre.setAttribute('data-copy-added', 'true');
+
+    // 语法高亮：检测 JSON 并格式化
+    const codeEl = pre.querySelector('code');
+    const rawText = codeEl ? codeEl.textContent : pre.textContent;
+    if (rawText && rawText.trim().startsWith('{')) {
+      const highlighted = highlightJsonContent(rawText);
+      if (codeEl) {
+        codeEl.innerHTML = highlighted;
+      } else {
+        pre.innerHTML = `<code>${highlighted}</code>`;
+      }
+    }
+
     const btn = document.createElement('button');
     btn.className = 'code-copy-btn';
     btn.textContent = '📋 复制';
@@ -741,6 +803,50 @@ function addMessageActions(): void {
 
 // ── 导出功能 ──
 
+/** 为工作空间面板的工具结果添加语法高亮和复制按钮 */
+export function addToolResultHighlighting(scope: ParentNode): void {
+  const resultBlocks = scope.querySelectorAll('pre.tool-result-content:not([data-highlighted])');
+  for (const pre of resultBlocks as NodeListOf<HTMLPreElement>) {
+    pre.setAttribute('data-highlighted', 'true');
+
+    // 确保 pre 是相对定位
+    if (getComputedStyle(pre).position === 'static') {
+      pre.style.position = 'relative';
+    }
+
+    // 语法高亮：检测 JSON 并格式化
+    const rawText = pre.textContent || '';
+    if (rawText.trim().startsWith('{') || rawText.trim().startsWith('[')) {
+      const highlighted = highlightJsonContent(rawText);
+      if (highlighted !== escapeHtml(rawText)) {
+        pre.innerHTML = highlighted;
+      }
+    }
+
+    // 复制按钮
+    const btn = document.createElement('button');
+    btn.className = 'code-copy-btn';
+    btn.textContent = '📋 复制';
+    btn.style.cssText = 'position:absolute;top:4px;right:4px;padding:2px 8px;font-size:11px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:4px;cursor:pointer;opacity:0;transition:opacity 0.2s;z-index:10;';
+    pre.addEventListener('mouseenter', () => { btn.style.opacity = '1'; });
+    pre.addEventListener('mouseleave', () => { btn.style.opacity = '0'; });
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      const text = pre.textContent || '';
+      if (text) {
+        navigator.clipboard.writeText(text).then(() => {
+          btn.textContent = '✅ 已复制';
+          setTimeout(() => { btn.textContent = '📋 复制'; }, 2000);
+        }).catch(() => {
+          btn.textContent = '❌ 失败';
+          setTimeout(() => { btn.textContent = '📋 复制'; }, 2000);
+        });
+      }
+    });
+    pre.appendChild(btn);
+  }
+}
+
 async function nativeSaveFile(defaultName: string, content: string): Promise<void> {
   const bridge = window.metonaDesktop;
   if (bridge) {
@@ -801,4 +907,176 @@ export async function exportAsTxt(session: ChatSession): Promise<void> {
   });
   await nativeSaveFile(`${session.title}.txt`, txt);
   logSession('导出', `${session.title}.txt`);
+}
+
+// ── 对话内搜索 ──
+
+let searchInputEl: HTMLInputElement;
+let searchBarEl: HTMLElement;
+let searchCountEl: HTMLElement;
+let searchMatches: HTMLElement[] = [];
+let searchCurrentIndex = -1;
+
+/** 初始化对话内搜索功能 */
+export function initSearchBar(): void {
+  searchBarEl = document.querySelector('#searchBar')!;
+  searchInputEl = document.querySelector('#searchInput') as HTMLInputElement;
+  searchCountEl = document.querySelector('#searchCount')!;
+
+  document.querySelector('#btnSearch')?.addEventListener('click', toggleSearchBar);
+
+  document.querySelector('#searchClose')?.addEventListener('click', closeSearchBar);
+  document.querySelector('#searchPrev')?.addEventListener('click', () => navigateMatch(-1));
+  document.querySelector('#searchNext')?.addEventListener('click', () => navigateMatch(1));
+
+  searchInputEl.addEventListener('input', performSearch);
+
+  // Ctrl+F 快捷键
+  document.addEventListener('keydown', (e) => {
+    if (e.ctrlKey && e.key === 'f') {
+      e.preventDefault();
+      toggleSearchBar();
+    }
+    if (e.key === 'Escape' && searchBarEl.style.display !== 'none') {
+      closeSearchBar();
+    }
+    if (searchBarEl.style.display !== 'none') {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        navigateMatch(e.shiftKey ? -1 : 1);
+      }
+    }
+  });
+}
+
+function toggleSearchBar(): void {
+  if (searchBarEl.style.display === 'none') {
+    searchBarEl.style.display = '';
+    searchInputEl.focus();
+    searchInputEl.select();
+  } else {
+    closeSearchBar();
+  }
+}
+
+function closeSearchBar(): void {
+  searchBarEl.style.display = 'none';
+  clearHighlights();
+  searchInputEl.value = '';
+  searchCountEl.textContent = '';
+  searchMatches = [];
+  searchCurrentIndex = -1;
+}
+
+/** 执行搜索 */
+function performSearch(): void {
+  clearHighlights();
+  const query = searchInputEl.value.trim();
+
+  if (!query) {
+    searchCountEl.textContent = '';
+    searchMatches = [];
+    searchCurrentIndex = -1;
+    return;
+  }
+
+  const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const regex = new RegExp(`(${escapedQuery})`, 'gi');
+
+  // 在所有消息内容元素中搜索
+  const contentEls = messagesContainerEl.querySelectorAll('.msg-content, .msg-thinking, .tool-result-content');
+  searchMatches = [];
+
+  contentEls.forEach(el => {
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, {
+      acceptNode: (node) => {
+        // 跳过 script/style 标签内的文本
+        const parent = node.parentElement;
+        if (!parent) return NodeFilter.FILTER_REJECT;
+        if (parent.tagName === 'SCRIPT' || parent.tagName === 'STYLE') return NodeFilter.FILTER_REJECT;
+        return node.textContent && regex.test(node.textContent) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+      }
+    });
+
+    const textNodes: Text[] = [];
+    let node: Node | null;
+    while ((node = walker.nextNode())) {
+      textNodes.push(node as Text);
+    }
+
+    for (const textNode of textNodes) {
+      const text = textNode.textContent || '';
+      regex.lastIndex = 0;
+      const parts: string[] = [];
+      let lastIndex = 0;
+      let match: RegExpExecArray | null;
+
+      while ((match = regex.exec(text)) !== null) {
+        if (match.index > lastIndex) {
+          parts.push(text.slice(lastIndex, match.index));
+        }
+        const highlight = document.createElement('span');
+        highlight.className = 'search-highlight';
+        highlight.textContent = match[0];
+        parts.push(highlight.outerHTML);
+        lastIndex = match.index + match[0].length;
+      }
+
+      if (lastIndex < text.length) {
+        parts.push(text.slice(lastIndex));
+      }
+
+      if (parts.length > 0) {
+        const wrapper = document.createElement('span');
+        wrapper.innerHTML = parts.join('');
+        const highlights = wrapper.querySelectorAll('.search-highlight');
+        textNode.replaceWith(...wrapper.childNodes);
+        highlights.forEach(h => searchMatches.push(h as HTMLElement));
+      }
+    }
+  });
+
+  searchCurrentIndex = searchMatches.length > 0 ? 0 : -1;
+  updateSearchCount();
+
+  if (searchMatches.length > 0) {
+    searchMatches[0].classList.add('search-highlight-current');
+    searchMatches[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+}
+
+/** 清除所有搜索高亮 */
+function clearHighlights(): void {
+  const highlights = messagesContainerEl.querySelectorAll('.search-highlight, .search-highlight-current');
+  highlights.forEach(h => {
+    const parent = h.parentNode;
+    if (parent) {
+      parent.replaceChild(document.createTextNode(h.textContent || ''), h);
+      parent.normalize();
+    }
+  });
+}
+
+/** 导航到上一个/下一个匹配 */
+function navigateMatch(direction: number): void {
+  if (searchMatches.length === 0) return;
+
+  // 移除当前高亮
+  if (searchCurrentIndex >= 0) {
+    searchMatches[searchCurrentIndex].classList.remove('search-highlight-current');
+  }
+
+  searchCurrentIndex = (searchCurrentIndex + direction + searchMatches.length) % searchMatches.length;
+
+  searchMatches[searchCurrentIndex].classList.add('search-highlight-current');
+  searchMatches[searchCurrentIndex].scrollIntoView({ behavior: 'smooth', block: 'center' });
+  updateSearchCount();
+}
+
+function updateSearchCount(): void {
+  if (searchMatches.length === 0) {
+    searchCountEl.textContent = searchInputEl.value.trim() ? '无匹配' : '';
+  } else {
+    searchCountEl.textContent = `${searchCurrentIndex + 1}/${searchMatches.length}`;
+  }
 }

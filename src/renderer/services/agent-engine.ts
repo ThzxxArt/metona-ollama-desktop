@@ -31,6 +31,9 @@ import {
   checkCommandSafety,
   // R95: 按工具类型智能截断
   smartTruncateByToolType,
+  // R116: 错误恢复建议
+  getErrorRecoverySuggestions,
+  formatErrorRecovery,
 } from './agent-safety.js';
 import { search, formatMemoryContext } from './memory-service.js';
 
@@ -43,6 +46,8 @@ import {
   AUTO_COMPRESS_THRESHOLD, recordActualTokens, predictContextOverflow, recordTokenUsage,
   // R91: 上下文压力分级评估
   getContextPressureLevel,
+  // 统一上下文统计（替代多次独立计算）
+  calculateContextStats,
   // R93: Token 预算追踪器
   recordBudgetUsage, setTokenBudgetNumCtx, resetTokenBudget,
   // R96: 消息角色压缩
@@ -53,6 +58,10 @@ import {
   generateTokenReport, formatTokenReport,
   // R111: 自适应压缩策略选择
   chooseCompressionStrategy,
+  // R123: 会话摘要持久化
+  loadSessionSummaries, generateSessionSummary, saveSessionSummary, formatSessionSummariesForContext,
+  // R125: Agent 状态检查点
+  createCheckpoint, clearCheckpoints,
 } from './context-manager.js';
 import { executeHooks } from './hooks.js';
 import { recordIteration, recordToolCall, startSessionMetrics, endSessionMetrics } from './agent-metrics.js';
@@ -1220,6 +1229,7 @@ async function handleInit(
   resetAllSafetyState(); // R51-R56: 重置所有安全状态
   resetTokenBudget(); // R93: 重置 Token 预算追踪
   setTokenBudgetNumCtx(getEffectiveNumCtx()); // R93: 设置当前预算 numCtx
+  clearCheckpoints(); // R125: 清理上一轮会话的检查点
 
   const modelSupportsTools = state.get<boolean>('modelSupportsTools', false);
   // R55: 语义工具检索 — 根据用户查询过滤相关工具，减少 token 占用
@@ -1247,6 +1257,20 @@ async function handleInit(
     // P1-E1 修复：记忆搜索后检查中止
     if (isAborted()) { throw new DOMException('Aborted', 'AbortError'); }
   }
+
+  // R123: 注入历史会话摘要 — 为 AI 提供跨会话的上下文参考
+  try {
+    const historicalSummaries = loadSessionSummaries();
+    if (historicalSummaries.length > 0) {
+      const formatted = formatSessionSummariesForContext(historicalSummaries);
+      if (formatted) {
+        systemPromptParts.push(`<<<REFERENCE_DATA_START>>>
+${formatted}
+<<<REFERENCE_DATA_END>>>`);
+        logInfo(`R123: 注入 ${historicalSummaries.length} 条历史会话摘要`);
+      }
+    }
+  } catch { /* 历史摘要加载失败不影响主流程 */ }
 
   // 注入工作空间上下文
   if (workspaceDir) {
@@ -1924,6 +1948,17 @@ async function handleExecuting(
       }
     }
 
+    // R116: 生成错误恢复建议的辅助函数
+    const buildErrorWithRecovery = (errMsg: string): string => {
+      try {
+        const suggestion = getErrorRecoverySuggestions(call.function.name, errMsg);
+        if (suggestion.suggestions.length > 0) {
+          return formatErrorRecovery(suggestion);
+        }
+      } catch { /* 恢复建议生成失败不影响主流程 */ }
+      return errMsg;
+    };
+
     // ── R78: 增强错误分类重试 — 使用 classifyError 区分瞬态/永久/安全错误 ──
     let lastError = '';
     let classifiedError: import('./agent-safety.js').ClassifiedError | null = null;
@@ -1958,9 +1993,10 @@ async function handleExecuting(
         // 安全错误或永久错误：不重试
         if (!classifiedError.shouldRetry) {
           logWarn(`R78: 工具${classifiedError.class}错误（不重试）: ${call.function.name}`, classifiedError.userMessage);
+          const errWithRecovery = buildErrorWithRecovery(classifiedError.userMessage);
           return [{
             name: call.function.name, arguments: call.function.arguments,
-            result: { success: false, error: classifiedError.userMessage },
+            result: { success: false, error: errWithRecovery },
             status: 'error' as const, timestamp: Date.now()
           }, null];
         }
@@ -1973,9 +2009,10 @@ async function handleExecuting(
           if (errorSuggestion) {
             logWarn(`R97: ${errorSuggestion}`);
           }
+          const errWithRecovery = buildErrorWithRecovery(classifiedError.userMessage);
           return [{
             name: call.function.name, arguments: call.function.arguments,
-            result: { success: false, error: classifiedError.userMessage },
+            result: { success: false, error: errWithRecovery },
             status: 'error' as const, timestamp: Date.now()
           }, null];
         }
@@ -1995,9 +2032,10 @@ async function handleExecuting(
       }
     }
     // P2 #6 修复：循环结束兆底返回
+    const fallbackErr = buildErrorWithRecovery(lastError || '工具执行失败');
     return [{
       name: call.function.name, arguments: call.function.arguments,
-      result: { success: false, error: lastError || '工具执行失败' }, status: 'error' as const, timestamp: Date.now()
+      result: { success: false, error: fallbackErr }, status: 'error' as const, timestamp: Date.now()
     }, null];
   };
 
@@ -2070,9 +2108,10 @@ async function handleObserving(
   // 中止检查 — P1 #4 修复：不在此处 transition，让主循环的 isAborted() 检查
   // 抛出 AbortError 触发 catch 块中的 onDone。持久化状态一致性由 persistLoopContext 处理。
   if (isAborted()) return;
-  // R91: 上下文压力分级评估 — 根据压力等级选择压缩策略
+  // 统一上下文统计（第一次计算，用于工具消息裁剪的压力等级判定）
   const numCtx = getEffectiveNumCtx();
-  const pressureInfo = getContextPressureLevel(ctx.messages, numCtx);
+  let ctxStats = calculateContextStats(ctx.messages, numCtx);
+  const pressureInfo = ctxStats.pressureInfo;
   {
     // R91: 根据压力等级动态调整工具消息保留数量
     // 原子组裁剪：删除 tool 消息时同步处理其对应的 assistant(带 tool_calls)，
@@ -2138,14 +2177,13 @@ async function handleObserving(
   // 保存本轮工具调用
   ctx.prevToolCalls = [...ctx.toolCalls];
 
-  // R53: 主动上下文压缩 — 使用预测系统提前触发压缩
+  // 统一上下文统计（第二次计算，裁剪后重新统计，复用于后续所有判断）
+  ctxStats = calculateContextStats(ctx.messages, numCtx);
+
+  // R53: 主动上下文压缩 — 使用统一计算的趋势预测结果
   {
-    const numCtx = getEffectiveNumCtx();
-    const currentTokens = estimateTokens(ctx.messages.map(m => m.content || '').join(''));
-    recordTokenUsage(currentTokens, numCtx);
-    const prediction = predictContextOverflow(numCtx);
-    if (prediction.level === 'critical' || (prediction.level === 'warning' && prediction.turnsToOverflow <= 2)) {
-      logWarn(`R53: 主动压缩触发 — ${prediction.message}`);
+    if (ctxStats.compressDecision.shouldCompress && ctxStats.compressDecision.urgency === 'high') {
+      logWarn(`R53: 主动压缩触发 — ${ctxStats.compressDecision.reason}`);
       transition(ctx, S.COMPRESSING);
       return;
     }
@@ -2177,6 +2215,14 @@ async function handleObserving(
       const tokenReport = generateTokenReport(getEffectiveNumCtx());
       logInfo('R100: ' + formatTokenReport(tokenReport));
     } catch { /* 诊断失败不影响主流程 */ }
+  }
+
+  // R125: 每 20 轮创建状态检查点 — 保存 Agent 运行状态快照，支持故障恢复
+  if (ctx.loopCount > 0 && ctx.loopCount % 20 === 0) {
+    try {
+      const taskGoal = state.get<string>('_lastUserMessage', '') || ctx.messages.find(m => m.role === 'user')?.content || '';
+      createCheckpoint(ctx.loopCount, ctx.state, ctx.messages, ctx.allToolRecords.length, taskGoal.slice(0, 200));
+    } catch { /* 检查点创建失败不影响主流程 */ }
   }
 
   // 记录本轮迭代度量
@@ -2212,10 +2258,8 @@ async function handleObserving(
   // 但如果上下文使用率已过高（>70%），跳过清理——压缩即将触发，
   // 此时清理会导致压缩 LLM 看不到 Plan Mode 进度等关键状态信息
   if (ctx.loopCount > 1 && ctx.loopCount % 10 === 0) {
-    const numCtx = getEffectiveNumCtx();
-    const usageRatio = numCtx > 0 ? estimateTokens(ctx.messages.map(m => m.content || '').join('')) / numCtx : 0;
-    if (usageRatio > 0.7) {
-      logInfo(`ephemeral 清理跳过: 上下文使用率 ${(usageRatio * 100).toFixed(0)}%, 压缩即将触发`);
+    if (ctxStats.usageRatio > 0.7) {
+      logInfo(`ephemeral 清理跳过: 上下文使用率 ${(ctxStats.usageRatio * 100).toFixed(0)}%, 压缩即将触发`);
     } else {
       // C7: 保留含 Plan Mode 关键信息的 ephemeral 消息
       const PRESERVE_PATTERNS = [
@@ -2244,10 +2288,9 @@ async function handleObserving(
     ctx.messages = mergeConsecutiveMessages(ctx.messages);
   }
 
-  // R98: 趋势感知压缩触发 — 结合趋势预测动态调整压缩阈值
-  const compressDecision = getTrendAwareCompressThreshold(numCtx, ctx.messages);
-  if (compressDecision.shouldCompress) {
-    logWarn(`R98: 压缩触发 (${compressDecision.urgency}) — ${compressDecision.reason}`);
+  // R98: 趋势感知压缩触发 — 复用统一计算的压缩决策
+  if (ctxStats.compressDecision.shouldCompress) {
+    logWarn(`R98: 压缩触发 (${ctxStats.compressDecision.urgency}) — ${ctxStats.compressDecision.reason}`);
     transition(ctx, S.COMPRESSING);
     return;
   }
@@ -2716,6 +2759,15 @@ default:
     }
     clearPlanTracker();
     endSessionMetrics();
+    // R123: 生成并保存会话摘要 — 供下一轮会话的 AI 参考
+    try {
+      if (ctx.loopCount > 0 && ctx.messages.length > 2) {
+        const userMsg = ctx.messages.find(m => m.role === 'user')?.content || '';
+        const totalTokens = ctx.totalEvalCount + ctx.totalPromptEvalCount;
+        const summary = generateSessionSummary(userMsg, ctx.messages, ctx.allToolRecords, totalTokens);
+        saveSessionSummary(summary);
+      }
+    } catch { /* 会话摘要保存失败不影响主流程 */ }
     cleanupAbortController();
     // P1-E6 修复：清理未执行的记忆提取 timer，避免新会话启动时旧提取污染
     while (_pendingMemoryTimers.length > 0) {

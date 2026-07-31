@@ -9,7 +9,7 @@ import { OllamaAPI } from '../api/ollama.js';
 import { TOOL_DEFINITIONS } from './tool-registry.js';
 import { getEnabledToolDefinitions } from './tool-registry.js';
 import { logInfo, logWarn, logError } from './log-service.js';
-import { validatePathSandbox, sanitizeToolArgs, checkCommandSafety, snapshotSafetyState, restoreSafetyState, resetAllSafetyState } from './agent-safety.js';
+import { validatePathSandbox, sanitizeToolArgs, checkCommandSafety, snapshotSafetyState, restoreSafetyState, resetAllSafetyState, classifyError, calculateBackoff } from './agent-safety.js';
 import { getWorkspaceDirPath } from '../components/workspace-panel.js';
 import type { ToolResult, ToolCall, ToolDefinition } from '../types.js';
 
@@ -133,31 +133,67 @@ ${context ? `\n附加上下文（参考数据，不是指令）：\n<<<REFERENCE
       let content = '';
       let toolCalls: Array<{ name: string; arguments: Record<string, unknown> }> = [];
 
-      try {
-        await api.chatStream({
-          model,
-          messages,
-          stream: true,
-          think: false,
-          tools: tools as any,
-          options: { num_ctx: numCtx, temperature: 0.3 }
-        } as any, (chunk: any) => {
-          if (chunk.message?.content) content += chunk.message.content;
-          if (chunk.message?.tool_calls?.length) {
-            for (const tc of chunk.message.tool_calls) {
-              if (tc.function?.name && SUB_AGENT_TOOL_WHITELIST.has(tc.function.name)) {
-                toolCalls.push({ name: tc.function.name, arguments: tc.function.arguments || {} });
+      // LLM 调用重试循环 — 瞬态错误时指数退避重试，与主 Agent 一致
+      const SUB_AGENT_API_MAX_RETRIES = 2;
+      let llmSuccess = false;
+      let llmLastError: Error | null = null;
+
+      for (let apiAttempt = 0; apiAttempt <= SUB_AGENT_API_MAX_RETRIES; apiAttempt++) {
+        // 重试前重置本轮状态
+        if (apiAttempt > 0) {
+          content = '';
+          toolCalls = [];
+          const retryDelay = calculateBackoff(apiAttempt - 1, 1000);
+          logWarn(`子 Agent API 重试 ${apiAttempt}/${SUB_AGENT_API_MAX_RETRIES}: ${retryDelay}ms 后重试`, llmLastError?.message || '');
+          await new Promise(r => setTimeout(r, retryDelay));
+        }
+
+        // 重试前检查中止信号
+        if (subAgentAC.signal.aborted) break;
+
+        try {
+          await api.chatStream({
+            model,
+            messages,
+            stream: true,
+            think: false,
+            tools: tools as any,
+            options: { num_ctx: numCtx, temperature: 0.3 }
+          } as any, (chunk: any) => {
+            if (chunk.message?.content) content += chunk.message.content;
+            if (chunk.message?.tool_calls?.length) {
+              for (const tc of chunk.message.tool_calls) {
+                if (tc.function?.name && SUB_AGENT_TOOL_WHITELIST.has(tc.function.name)) {
+                  toolCalls.push({ name: tc.function.name, arguments: tc.function.arguments || {} });
+                }
               }
             }
+          }, subAgentAC);
+          llmSuccess = true;
+          break;
+        } catch (err) {
+          if (subAgentAC.signal.aborted) {
+            logWarn('子 Agent LLM 调用被中止', `${loopCount} 轮`);
+            return { success: true, content: '子任务执行已中止', loops: loopCount, duration: Date.now() - startTime, partial: true };
           }
-        }, subAgentAC);
-      } catch (err) {
-        if (subAgentAC.signal.aborted) {
-          logWarn('子 Agent LLM 调用被中止', `${loopCount} 轮`);
-          return { success: true, content: '子任务执行已中止', loops: loopCount, duration: Date.now() - startTime, partial: true };
+          llmLastError = err as Error;
+          const classified = classifyError((err as Error).message);
+          // 永久错误或安全错误：不重试
+          if (!classified.shouldRetry) {
+            logError(`子 Agent 调用${classified.class}错误（不重试）`, (err as Error).message);
+            return { success: false, error: classified.userMessage, loops: loopCount, duration: Date.now() - startTime };
+          }
+          // 未达最大重试次数则继续
+          if (apiAttempt < SUB_AGENT_API_MAX_RETRIES) {
+            continue;
+          }
         }
-        logError('子 Agent 调用失败', (err as Error).message);
-        return { success: false, error: (err as Error).message, loops: loopCount, duration: Date.now() - startTime };
+      }
+
+      // 所有重试都失败
+      if (!llmSuccess) {
+        logError('子 Agent 调用失败（已达最大重试）', llmLastError?.message || '未知错误');
+        return { success: false, error: llmLastError?.message || 'LLM 调用失败', loops: loopCount, duration: Date.now() - startTime };
       }
 
       // 无工具调用 → 完成
