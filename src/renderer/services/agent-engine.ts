@@ -173,7 +173,7 @@ const ALWAYS_PARALLEL = new Set([
   'read_file', 'list_directory', 'search_files', 'tree',
   'web_search', 'browser_screenshot', 'browser_extract',
   'memory', 'session_list', 'session_read',
-  'calculator',
+  'calculator', 'diff',
 ]);
 
 /** D4: 有副作用的工具 — 同轮次去重时不返回缓存，需实际执行 */
@@ -711,6 +711,38 @@ function isDuplicateCall(call: ToolCall, allCalls: ToolCall[]): boolean {
   return false;
 }
 
+/** 生成工具审计摘要 — 用于审计日志记录 */
+function summarizeAuditResult(toolName: string, result: ToolResult): string {
+  try {
+    switch (toolName) {
+      case 'write_file':
+        return `写入 ${result.path || ''} (${result.bytesWritten || 0}B${result.created ? ', 新建' : ''})`;
+      case 'edit_file':
+        return `编辑 ${result.path || ''} (${result.replaceCount || 0} 处替换)`;
+      case 'delete_file':
+        return result.batch ? `批量删除 ${result.successCount}/${result.totalPaths}` : `删除 ${result.path || ''}`;
+      case 'create_directory':
+        return `创建目录 ${result.path || ''}`;
+      case 'move_file':
+        return `移动 ${(result as any).source} → ${(result as any).destination}`;
+      case 'copy_file':
+        return `复制 ${(result as any).source} → ${(result as any).destination}`;
+      case 'run_command':
+        return `命令执行 ${result.exitCode === 0 ? '成功' : '失败'} (exit ${result.exitCode})`;
+      case 'git':
+        return `git ${result.action}`;
+      case 'download_file':
+        return `下载 ${(result as any).url} → ${(result as any).destination}`;
+      case 'compress':
+        return `${result.action} → ${(result as any).outputPath || (result as any).destination}`;
+      default:
+        return `${toolName} 完成`;
+    }
+  } catch {
+    return `${toolName} 完成`;
+  }
+}
+
 /** 格式化工具结果的通用默认路径 */
 function formatDefaultToolResult(toolName: string, result: ToolResult): string {
   const clean: Record<string, unknown> = {};
@@ -945,6 +977,23 @@ export function formatToolResultForModel(toolName: string, result: ToolResult): 
         originalSize: (result as any).originalSize,
         compressedSize: (result as any).compressedSize,
         filesProcessed: (result as any).filesProcessed,
+      });
+    }
+
+    case 'diff': {
+      if ((result as any).identical) {
+        return JSON.stringify({ success: true, identical: true, message: '文件内容完全相同，无差异' });
+      }
+      return JSON.stringify({
+        success: true,
+        mode: (result as any).mode,
+        path1: (result as any).path1,
+        path2: (result as any).path2,
+        diff: (result as any).diff,
+        additions: (result as any).additions,
+        deletions: (result as any).deletions,
+        hunk_count: (result as any).hunk_count,
+        identical: false,
       });
     }
 
@@ -2078,6 +2127,25 @@ async function handleExecuting(
       if (cacheKey) setToolCache(cacheKey, { result: record.result!, timestamp: Date.now() });
       // 记录度量
       recordToolCall(record.name, record.status, Date.now() - record.timestamp);
+      // 工具审计日志：写类工具异步写入审计表，不阻塞主流程
+      if (SIDE_EFFECT_TOOLS.has(record.name)) {
+        const _auditDuration = Date.now() - record.timestamp;
+        const _auditSummary = record.result?.success
+          ? summarizeAuditResult(record.name, record.result)
+          : record.result?.error || '执行失败';
+        const _bridge = window.metonaDesktop;
+        if (_bridge?.db) {
+          _bridge.db.saveToolAudit({
+            session_id: ctx.sessionId,
+            tool_name: record.name,
+            args_json: JSON.stringify(record.arguments).slice(0, 5000),
+            result_status: record.status,
+            result_summary: String(_auditSummary).slice(0, 2000),
+            duration_ms: _auditDuration,
+            created_at: Date.now(),
+          }).catch(() => {});
+        }
+      }
       // ── post_tool Hook ──
       executeHooks('post_tool', ctx, { toolName: record.name, toolArgs: record.arguments, toolResult: record.result! }).catch(err => logWarn('post_tool hook 异常', String(err)));
       // P0 修复: 使用参数匹配而非仅工具名匹配，避免同批次同名工具的错误关联

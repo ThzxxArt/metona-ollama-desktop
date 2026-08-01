@@ -712,3 +712,269 @@ export async function handleCopyFile(params: { source: string; destination: stri
     return { success: false, error: (err as Error).message };
   }
 }
+
+/**
+ * diff 工具：比较文件差异，返回 unified diff 格式
+ * 支持三种模式：file_vs_file / file_vs_content / file_vs_git_head
+ */
+export async function handleDiff(params: {
+  mode: 'file_vs_file' | 'file_vs_content' | 'file_vs_git_head';
+  path1?: string;
+  path2?: string;
+  content?: string;
+  context_lines?: number;
+}): Promise<ToolResult> {
+  try {
+    const mode = params.mode || 'file_vs_file';
+    const contextLines = params.context_lines ?? 3;
+    const MAX_LINES = 5000;
+
+    // 获取左侧内容（文件1）
+    let leftLabel: string;
+    let leftContent: string;
+
+    if (mode === 'file_vs_file' || mode === 'file_vs_content' || mode === 'file_vs_git_head') {
+      if (!params.path1) return { success: false, error: 'path1 参数必填' };
+      const filePath1 = resolvePath(params.path1);
+      const check1 = checkPathAllowed(filePath1, 'read');
+      if (!check1.ok) return { success: false, error: check1.reason };
+
+      const stat1 = await fs.stat(filePath1);
+      if (stat1.isDirectory()) return { success: false, error: `${filePath1} 是目录，不是文件` };
+      if (stat1.size > 5 * 1024 * 1024) return { success: false, error: `文件过大 (${(stat1.size / 1024 / 1024).toFixed(1)}MB)，最大支持 5MB` };
+
+      if (mode === 'file_vs_git_head') {
+        // git HEAD 版本
+        leftLabel = `a/${path.basename(filePath1)} (HEAD)`;
+        try {
+          const { execFile } = await import('child_process');
+          const gitResult = await new Promise<string>((resolve, reject) => {
+            execFile('git', ['show', `HEAD:${params.path1}`], {
+              cwd: path.dirname(filePath1),
+              maxBuffer: 5 * 1024 * 1024,
+              encoding: 'utf-8',
+            }, (err, stdout) => {
+              if (err) reject(err);
+              else resolve(stdout);
+            });
+          });
+          leftContent = gitResult;
+        } catch {
+          return { success: false, error: '无法获取 git HEAD 版本（确保文件在 git 仓库中且有提交历史）' };
+        }
+      } else {
+        leftLabel = `a/${path.basename(filePath1)}`;
+        leftContent = await fs.readFile(filePath1, 'utf-8');
+      }
+    } else {
+      return { success: false, error: `不支持的 mode: ${mode}` };
+    }
+
+    // 获取右侧内容
+    let rightLabel: string;
+    let rightContent: string;
+
+    if (mode === 'file_vs_file') {
+      if (!params.path2) return { success: false, error: 'file_vs_file 模式下 path2 参数必填' };
+      const filePath2 = resolvePath(params.path2);
+      const check2 = checkPathAllowed(filePath2, 'read');
+      if (!check2.ok) return { success: false, error: check2.reason };
+
+      const stat2 = await fs.stat(filePath2);
+      if (stat2.isDirectory()) return { success: false, error: `${filePath2} 是目录，不是文件` };
+      if (stat2.size > 5 * 1024 * 1024) return { success: false, error: `文件过大，最大支持 5MB` };
+
+      rightLabel = `b/${path.basename(filePath2)}`;
+      rightContent = await fs.readFile(filePath2, 'utf-8');
+    } else if (mode === 'file_vs_content') {
+      rightLabel = `b/${path.basename(params.path1 || '')} (new)`;
+      rightContent = params.content ?? '';
+    } else {
+      // file_vs_git_head: 右侧是当前工作区文件
+      rightLabel = `b/${path.basename(params.path1 || '')}`;
+      rightContent = await fs.readFile(resolvePath(params.path1!), 'utf-8');
+    }
+
+    // 按行分割
+    const leftLines = leftContent.split('\n');
+    const rightLines = rightContent.split('\n');
+
+    // 限制行数
+    if (leftLines.length > MAX_LINES || rightLines.length > MAX_LINES) {
+      return { success: false, error: `文件行数过多（左侧 ${leftLines.length} / 右侧 ${rightLines.length}），最大支持 ${MAX_LINES} 行` };
+    }
+
+    // ── LCS 差异算法 ──
+    const diff = computeUnifiedDiff(leftLines, rightLines, contextLines);
+
+    const added = diff.additions;
+    const removed = diff.deletions;
+    const unchanged = leftLines.length + rightLines.length - added - removed;
+
+    sendLog('info', `🔍 diff (${mode})`, `${params.path1 || ''} ${mode === 'file_vs_file' ? '↔ ' + (params.path2 || '') : mode === 'file_vs_content' ? '↔ content' : '↔ HEAD'} → +${added} -${removed}`);
+
+    if (diff.hunks.length === 0) {
+      return {
+        success: true,
+        mode,
+        path1: params.path1,
+        path2: params.path2,
+        diff: '',
+        additions: 0,
+        deletions: 0,
+        unchanged,
+        identical: true,
+        message: '文件内容完全相同，无差异',
+      };
+    }
+
+    // 生成 unified diff 头部 + hunks
+    const header = `--- ${leftLabel}\n+++ ${rightLabel}\n`;
+    const diffText = header + diff.hunks.join('\n');
+
+    return {
+      success: true,
+      mode,
+      path1: params.path1,
+      path2: params.path2,
+      diff: diffText,
+      additions: added,
+      deletions: removed,
+      unchanged,
+      identical: false,
+      hunk_count: diff.hunks.length,
+      total_lines: leftLines.length + rightLines.length,
+    };
+  } catch (err) {
+    sendLog('error', `🔍 diff 失败`, (err as Error).message);
+    return { success: false, error: (err as Error).message };
+  }
+}
+
+/**
+ * 计算 unified diff（行级 LCS 算法）
+ */
+interface DiffResult {
+  hunks: string[];
+  additions: number;
+  deletions: number;
+}
+
+function computeUnifiedDiff(oldLines: string[], newLines: string[], contextSize: number): DiffResult {
+  const n = oldLines.length;
+  const m = newLines.length;
+
+  // 构建 LCS 表（使用 Uint32Array 节省内存）
+  // dp[(n+1) * (m+1)]，索引 [i][j] = i * (m+1) + j
+  const dp = new Uint32Array((n + 1) * (m + 1));
+  for (let i = 1; i <= n; i++) {
+    for (let j = 1; j <= m; j++) {
+      if (oldLines[i - 1] === newLines[j - 1]) {
+        dp[i * (m + 1) + j] = dp[(i - 1) * (m + 1) + (j - 1)] + 1;
+      } else {
+        dp[i * (m + 1) + j] = Math.max(
+          dp[(i - 1) * (m + 1) + j],
+          dp[i * (m + 1) + (j - 1)]
+        );
+      }
+    }
+  }
+
+  // 回溯生成操作序列
+  type Op = 'equal' | 'delete' | 'insert';
+  const ops: Array<{ op: Op; line: string; oldIdx?: number; newIdx?: number }> = [];
+  let i = n, j = m;
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && oldLines[i - 1] === newLines[j - 1]) {
+      ops.push({ op: 'equal', line: oldLines[i - 1], oldIdx: i - 1, newIdx: j - 1 });
+      i--; j--;
+    } else if (j > 0 && (i === 0 || dp[i * (m + 1) + (j - 1)] >= dp[(i - 1) * (m + 1) + j])) {
+      ops.push({ op: 'insert', line: newLines[j - 1], newIdx: j - 1 });
+      j--;
+    } else {
+      ops.push({ op: 'delete', line: oldLines[i - 1], oldIdx: i - 1 });
+      i--;
+    }
+  }
+  ops.reverse();
+
+  // 分组为 hunks（带上下文行）
+  const hunks: string[] = [];
+  let additions = 0;
+  let deletions = 0;
+
+  // 找到所有变更点
+  const changeIndices: number[] = [];
+  for (let k = 0; k < ops.length; k++) {
+    if (ops[k].op !== 'equal') changeIndices.push(k);
+  }
+
+  if (changeIndices.length === 0) {
+    return { hunks, additions: 0, deletions: 0 };
+  }
+
+  // 按上下文分组合并为 hunks
+  let hunkStart = Math.max(0, changeIndices[0] - contextSize);
+  let hunkEnd = Math.min(ops.length - 1, changeIndices[0] + contextSize);
+  let oldStart = ops[hunkStart].oldIdx ?? 0;
+  let newStart = ops[hunkStart].newIdx ?? 0;
+  let hunkLines: string[] = [];
+
+  for (let k = hunkStart; k <= hunkEnd && k < ops.length; k++) {
+    const op = ops[k];
+    if (op.op === 'equal') hunkLines.push(' ' + op.line);
+    else if (op.op === 'delete') { hunkLines.push('-' + op.line); deletions++; }
+    else { hunkLines.push('+' + op.line); additions++; }
+  }
+
+  // 扩展 hunk：如果下一个变更点在当前 hunk 的上下文范围内
+  for (let idx = 1; idx < changeIndices.length; idx++) {
+    const nextChange = changeIndices[idx];
+    if (nextChange - hunkEnd <= contextSize * 2) {
+      // 合并到当前 hunk
+      while (hunkEnd < nextChange) {
+        hunkEnd++;
+        if (hunkEnd >= ops.length) break;
+        const op = ops[hunkEnd];
+        if (op.op === 'equal') hunkLines.push(' ' + op.line);
+        else if (op.op === 'delete') { hunkLines.push('-' + op.line); deletions++; }
+        else { hunkLines.push('+' + op.line); additions++; }
+      }
+      // 添加后续上下文
+      for (let c = 1; c <= contextSize && hunkEnd + c < ops.length; c++) {
+        hunkEnd++;
+        const op = ops[hunkEnd];
+        if (op.op === 'equal') hunkLines.push(' ' + op.line);
+        else if (op.op === 'delete') { hunkLines.push('-' + op.line); deletions++; }
+        else { hunkLines.push('+' + op.line); additions++; }
+      }
+    } else {
+      // 完成当前 hunk
+      const oldCount = hunkLines.filter(l => l.startsWith(' ') || l.startsWith('-')).length;
+      const newCount = hunkLines.filter(l => l.startsWith(' ') || l.startsWith('+')).length;
+      hunks.push(`@@ -${oldStart + 1},${oldCount} +${newStart + 1},${newCount} @@\n${hunkLines.join('\n')}`);
+
+      // 开始新 hunk
+      hunkStart = Math.max(0, nextChange - contextSize);
+      hunkEnd = Math.min(ops.length - 1, nextChange + contextSize);
+      oldStart = ops[hunkStart].oldIdx ?? 0;
+      newStart = ops[hunkStart].newIdx ?? 0;
+      hunkLines = [];
+      for (let k = hunkStart; k <= hunkEnd && k < ops.length; k++) {
+        const op = ops[k];
+        if (op.op === 'equal') hunkLines.push(' ' + op.line);
+        else if (op.op === 'delete') { hunkLines.push('-' + op.line); deletions++; }
+        else { hunkLines.push('+' + op.line); additions++; }
+      }
+    }
+  }
+
+  // 最后一个 hunk
+  if (hunkLines.length > 0) {
+    const oldCount = hunkLines.filter(l => l.startsWith(' ') || l.startsWith('-')).length;
+    const newCount = hunkLines.filter(l => l.startsWith(' ') || l.startsWith('+')).length;
+    hunks.push(`@@ -${oldStart + 1},${oldCount} +${newStart + 1},${newCount} @@\n${hunkLines.join('\n')}`);
+  }
+
+  return { hunks, additions, deletions };
+}

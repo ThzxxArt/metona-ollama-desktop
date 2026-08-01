@@ -4,6 +4,7 @@
  */
 
 import './styles/style.css';
+import './styles/dark-theme.css';
 
 import { ChatDB } from './db/chat-db.js';
 import { OllamaAPI } from './api/ollama.js';
@@ -30,6 +31,8 @@ import { initLogPanel, addLog } from './services/log-service.js';
 import { logInfo, logSuccess, logError, logDebug, logInit, logWarn } from './services/log-service.js';
 import { initGlobalErrorHandler, validateConfig } from './services/infra-service.js';
 import { initSearxngModal, closeSearxngModal, loadSearxngConfig } from './components/searxng-modal.js';
+import { initKeybindManager } from './components/keybind-manager.js';
+import { initMetricsDashboard } from './components/metrics-dashboard.js';
 import { initHarnessHooks } from './services/hooks.js';
 import { setAppVersion } from './services/agent-metrics.js';
 import type { ChatSession } from './types.js';
@@ -210,15 +213,50 @@ function setupDesktopIntegration(): void {
     }
   });
 
-  // 桌面端快捷键
-  document.addEventListener('keydown', (e) => {
-    if (e.ctrlKey && e.key === 'n') {
-      e.preventDefault();
-      document.querySelector('#btnNewChat')?.dispatchEvent(new Event('click'));
-    }
-  });
+  // 桌面端快捷键已迁移到 keybind-manager.ts 统一管理
 
   logSuccess('桌面集成完成');
+}
+
+// ─── 主题管理 ───
+
+type ThemeMode = 'light' | 'dark' | 'auto';
+const THEME_STORAGE_KEY = 'metona-theme';
+let _systemThemeMedia: MediaQueryList | null = null;
+
+function applyTheme(mode: ThemeMode): void {
+  let effective: 'light' | 'dark';
+  if (mode === 'auto') {
+    effective = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  } else {
+    effective = mode;
+  }
+  document.documentElement.setAttribute('data-theme', effective);
+  const metaThemeColor = document.querySelector('meta[name="theme-color"]');
+  if (metaThemeColor) {
+    metaThemeColor.setAttribute('content', effective === 'dark' ? '#1A1B26' : '#FAF7F2');
+  }
+}
+
+async function initTheme(): Promise<void> {
+  // 从 localStorage 快速读取（避免闪烁），数据库初始化后会在 loadSettings 中更新
+  const saved = (localStorage.getItem(THEME_STORAGE_KEY) || 'auto') as ThemeMode;
+  applyTheme(saved);
+
+  // 监听系统主题变化（仅 auto 模式下生效）
+  _systemThemeMedia = window.matchMedia('(prefers-color-scheme: dark)');
+  _systemThemeMedia.addEventListener('change', () => {
+    const current = (localStorage.getItem(THEME_STORAGE_KEY) || 'auto') as ThemeMode;
+    if (current === 'auto') applyTheme('auto');
+  });
+}
+
+async function loadThemeFromDB(): Promise<void> {
+  const db = state.get<ChatDB | null>(KEYS.DB);
+  if (!db) return;
+  const saved = await db.getSetting<ThemeMode>('themeMode', 'auto');
+  localStorage.setItem(THEME_STORAGE_KEY, saved || 'auto');
+  applyTheme(saved || 'auto');
 }
 
 function createNewSession(): ChatSession {
@@ -316,6 +354,8 @@ async function init(): Promise<void> {
   initWorkspacePanel();
   setupDesktopIntegration();
   initSearxngModal();
+  initKeybindManager();
+  initMetricsDashboard();
 
   bindGlobalEvents();
 
@@ -323,6 +363,9 @@ async function init(): Promise<void> {
   initHarnessHooks();
   // Agent Metrics 无需显式初始化（按需启动）
   // Context Indexer 在 Agent INIT 状态按需构建
+
+  // ── 主题初始化（不依赖数据库，尽早执行避免闪烁）──
+  await initTheme();
 
   // ── 状态默认值（不依赖数据库）──
   state.set(KEYS.CURRENT_SESSION, createNewSession());
@@ -359,6 +402,9 @@ async function init(): Promise<void> {
     await checkConnection();
     await loadModels();
     await loadSearxngConfig(db);
+
+    // ── 主题：从数据库加载（覆盖 localStorage 的快速值）──
+    await loadThemeFromDB();
 
     // ── MEMORY.md 初始化 ──
     import('./services/memory-service.js').then(({ initMemoryFile }) => {

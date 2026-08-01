@@ -193,6 +193,20 @@ export async function initDatabase(): Promise<SQL.Database> {
     );
     CREATE INDEX IF NOT EXISTS idx_traces_session ON traces(session_id, created_at);
 
+    -- 工具审计日志表（写类工具调用持久化，支持事后审计）
+    CREATE TABLE IF NOT EXISTS tool_audit (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      tool_name TEXT NOT NULL,
+      args_json TEXT,
+      result_status TEXT,
+      result_summary TEXT,
+      duration_ms INTEGER,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_tool_audit_session ON tool_audit(session_id, created_at);
+
   `);
 
   // 兼容迁移：为已有 messages 表补充 attachments 列（文件/视频等附件 JSON）
@@ -490,5 +504,38 @@ export function importSessions(data: ExportData): { imported: number; skipped: n
 
   persist();
   return { imported, skipped };
+}
+
+// ─── 工具审计日志 ───
+
+export interface ToolAuditRow {
+  id: string;
+  session_id: string;
+  tool_name: string;
+  args_json: string | null;
+  result_status: string | null;
+  result_summary: string | null;
+  duration_ms: number | null;
+  created_at: number;
+}
+
+export function saveToolAudit(audit: Omit<ToolAuditRow, 'id'> & { id?: string }): string {
+  const d = getDb();
+  const id = audit.id || `audit_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  runExec(d,
+    `INSERT INTO tool_audit (id, session_id, tool_name, args_json, result_status, result_summary, duration_ms, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [id, audit.session_id, audit.tool_name, audit.args_json, audit.result_status, audit.result_summary, audit.duration_ms, audit.created_at]
+  );
+  persist();
+  return id;
+}
+
+export function getToolAuditsBySession(sessionId: string): ToolAuditRow[] {
+  return queryAll(getDb(), 'SELECT * FROM tool_audit WHERE session_id = ? ORDER BY created_at ASC', [sessionId]) as unknown as ToolAuditRow[];
+}
+
+export function getAllToolAudits(limit: number = 200): ToolAuditRow[] {
+  return queryAll(getDb(), 'SELECT * FROM tool_audit ORDER BY created_at DESC LIMIT ?', [limit]) as unknown as ToolAuditRow[];
 }
 

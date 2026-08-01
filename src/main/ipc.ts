@@ -14,7 +14,8 @@ import {
   saveSetting, getSetting, saveSettingsBatch,
   saveTrace, saveTracesBatch, getTracesBySession,
   exportAllSessions, importSessions,
-  getAllSessionsTokenStats
+  getAllSessionsTokenStats,
+  saveToolAudit, getToolAuditsBySession, getAllToolAudits
 } from './db/sqlite.js';
 import type { ExportData } from './db/sqlite.js';
 
@@ -41,7 +42,8 @@ import {
   handleReadMultipleFiles,
   handleGit,
   handleCompress,
-  handleCalculator
+  handleCalculator,
+  handleDiff
 } from './tool-handlers.js';
 import { browserOpen, browserScreenshot, browserEvaluate, browserExtract, browserClick, browserType, browserScroll, browserClose, browserWait } from './browser.js';
 import { startServer, stopServer, stopAllServers, callTool, getAllTools, getServerStatuses, refreshTools, setMCPTimeout } from './mcp-manager.js';
@@ -77,6 +79,7 @@ function summarizeResult(toolName: string, result: Record<string, unknown>): str
     case 'read_multiple_files': return `${result.total} 个文件`;
     case 'git': return `${result.action} ✓`;
     case 'compress': return `${result.action} → ${result.archive || result.destination}`;
+case 'diff': return result.identical ? '无差异' : `+${result.additions} -${result.deletions} (${result.hunk_count} hunks)`;
     case 'calculator': return `${result.expression} = ${result.result}`;
     default: return '完成';
   }
@@ -201,6 +204,7 @@ export async function setupIPC(): Promise<void> {
         case 'read_multiple_files':result = await handleReadMultipleFiles(args as { paths: string[]; max_chars_per_file?: number }); break;
         case 'git':                result = await handleGit(args as { action: string; path?: string; files?: string[]; message?: string; branch?: string; tag_name?: string; stash_sub?: string; remote?: string; remote_url?: string; count?: number; all?: boolean; staged?: boolean; new_branch?: boolean; delete_branch?: boolean; force?: boolean; url?: string }); break;
         case 'compress':           result = await handleCompress(args as { action: string; path: string; destination?: string; format?: string }); break;
+case 'diff':               result = await handleDiff(args as { mode: 'file_vs_file' | 'file_vs_content' | 'file_vs_git_head'; path1?: string; path2?: string; content?: string; context_lines?: number }); break;
     case 'calculator':        result = handleCalculator(args as { expression: string }); break;
         // v5.1 Browser 控制（增强版）
         case 'browser_open':       result = await browserOpen(args.url as string, args.wait_selector as string | undefined); break;
@@ -406,6 +410,20 @@ export async function setupIPC(): Promise<void> {
   ipcMain.handle('db:getAllTokenStats', () => {
     try { return getAllSessionsTokenStats(); }
     catch (err) { sendLog('error', '获取全局 Token 统计失败', (err as Error).message); return null; }
+  });
+
+  // ── 工具审计日志 ──
+  ipcMain.handle('db:saveToolAudit', (_: unknown, audit: unknown) => {
+    try { return { success: true, id: saveToolAudit(audit as any) }; }
+    catch (err) { return { success: false, error: (err as Error).message }; }
+  });
+  ipcMain.handle('db:getToolAudits', (_: unknown, sessionId: string) => {
+    try { return { success: true, audits: getToolAuditsBySession(sessionId) }; }
+    catch (err) { return { success: false, error: (err as Error).message }; }
+  });
+  ipcMain.handle('db:getAllToolAudits', (_: unknown, limit?: number) => {
+    try { return { success: true, audits: getAllToolAudits(limit || 200) }; }
+    catch (err) { return { success: false, error: (err as Error).message }; }
   });
 
   // ── Memory 文件访问（专用通道，绕过 checkPathAllowed，仅限 MEMORY.md）──

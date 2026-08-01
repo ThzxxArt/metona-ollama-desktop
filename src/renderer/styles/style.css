@@ -41,6 +41,11 @@
     --caution: #D4A03C;
     --caution-bg: rgba(212, 160, 60, 0.08);
 
+    /* hover/overlay 半透明覆盖层（暗色主题覆盖为白色半透明） */
+    --hover-overlay: rgba(0, 0, 0, 0.02);
+    --hover-overlay-strong: rgba(0, 0, 0, 0.04);
+    --border-hairline: rgba(0, 0, 0, 0.02);
+
     /* 圆角 — 温暖圆润 */
     --radius-control: 8px;
     --radius-sm: 10px;
@@ -134,11 +139,11 @@ html, body {
     align-items: baseline;
     padding: 3px 10px;
     gap: 6px;
-    border-bottom: 1px solid rgba(0,0,0,0.02);
+    border-bottom: 1px solid var(--border-hairline);
 }
 
 .log-entry:hover {
-    background: rgba(0,0,0,0.02);
+    background: var(--hover-overlay);
 }
 
 .log-time {
@@ -4333,3 +4338,135 @@ html, body {
     color: #9E9E9E;
     font-style: italic;
 }
+
+/* ═══ Agent Metrics 仪表盘 ═══ */
+.md-overview {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 20px;
+}
+.md-card {
+    flex: 1;
+    background: var(--bg-card);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    padding: 16px;
+    text-align: center;
+}
+.md-card-value {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--accent);
+    line-height: 1.2;
+}
+.md-card-label {
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin-top: 4px;
+}
+.md-section {
+    margin-bottom: 20px;
+}
+.md-section-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 10px;
+}
+.md-tool-heatmap {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.md-bar-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+}
+.md-bar-label {
+    width: 120px;
+    flex-shrink: 0;
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.md-bar {
+    flex: 1;
+    height: 20px;
+    background: var(--bg-layer);
+    border-radius: 4px;
+    display: flex;
+    overflow: hidden;
+}
+.md-bar-success { background: var(--success); }
+.md-bar-error { background: var(--critical); }
+.md-bar-cancelled { background: var(--text-tertiary); }
+.md-bar-count {
+    width: 60px;
+    flex-shrink: 0;
+    text-align: right;
+    color: var(--text-secondary);
+    font-size: 11px;
+}
+.md-token-trend {
+    display: flex;
+    align-items: flex-end;
+    gap: 3px;
+    height: 120px;
+    padding: 8px 0;
+    overflow-x: auto;
+}
+.md-token-bar {
+    flex: 1;
+    min-width: 24px;
+    height: 100%;
+    display: flex;
+    flex-direction: column-reverse;
+    align-items: center;
+    position: relative;
+}
+.md-token-input {
+    width: 60%;
+    background: var(--accent);
+    border-radius: 2px 2px 0 0;
+    min-height: 2px;
+}
+.md-token-output {
+    width: 60%;
+    background: var(--caution);
+    min-height: 2px;
+}
+.md-token-label {
+    font-size: 9px;
+    color: var(--text-tertiary);
+    margin-top: 2px;
+}
+.md-suggestions {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.md-suggestion {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: var(--bg-layer);
+    border-radius: 6px;
+    font-size: 12px;
+}
+.md-suggestion-severity {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 10px;
+    text-transform: uppercase;
+}
+.md-severity-high { background: var(--critical-bg); color: var(--critical); }
+.md-severity-medium { background: var(--caution-bg); color: var(--caution); }
+.md-severity-low { background: var(--success-bg); color: var(--success); }
+.md-suggestion-msg { color: var(--text-secondary); flex: 1; }

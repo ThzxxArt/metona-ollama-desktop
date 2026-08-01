@@ -563,6 +563,10 @@ export interface DBAPI {
       session_count: number;
     };
   } | null>;
+
+  saveToolAudit(audit: unknown): Promise<{ success: boolean; id?: string; error?: string }>;
+  getToolAudits(sessionId: string): Promise<{ success: boolean; audits: unknown[]; error?: string }>;
+  getAllToolAudits(limit?: number): Promise<{ success: boolean; audits: unknown[]; error?: string }>;
 }
 
 // ── Window global 声明 ──

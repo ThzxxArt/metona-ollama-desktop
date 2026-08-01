@@ -28,7 +28,7 @@
         <div class="header-left">
             <img class="logo" src="./assets/icons/llama.png" alt="logo" />
             <span class="app-title">Metona Ollama</span>
-            <span class="app-version">v0.16.16</span>
+            <span class="app-version">v0.16.17</span>
             <button class="icon-btn help-btn" id="btnHelp" title="使用帮助">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
@@ -67,6 +67,11 @@
                     <rect x="3" y="3" width="18" height="18" rx="2"/><line x1="7" y1="13" x2="7" y2="17"/><line x1="11" y1="9" x2="11" y2="17"/><line x1="15" y1="5" x2="15" y2="17"/>
                 </svg>
             </button>
+            <button class="icon-btn" id="btnMetrics" title="Agent Metrics">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-7"/>
+                </svg>
+            </button>
             <button class="icon-btn" id="btnHistory" title="历史记录">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
@@ -80,7 +85,7 @@
             <button class="icon-btn searxng-btn" id="btnSearxng" title="SearXNG 搜索配置">
                 <span class="searxng-icon-dot" id="searxngIconDot"></span>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                    <circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
                 </svg>
             </button>
         </div>
@@ -288,6 +293,17 @@
         </div>
         <div class="modal-body">
             <div class="setting-group">
+                <label class="setting-label">🎨 外观</label>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <select class="setting-input" id="selectTheme" style="margin-bottom:0;flex:1;">
+                        <option value="auto">跟随系统</option>
+                        <option value="light">☀️ 亮色</option>
+                        <option value="dark">🌙 暗色</option>
+                    </select>
+                </div>
+                <p class="text-muted" style="margin-top:4px;font-size:11px;">选择应用界面主题。"跟随系统"会根据操作系统设置自动切换。</p>
+            </div>
+            <div class="setting-group">
                 <label class="setting-label">Ollama 服务地址</label>
                 <input class="setting-input" id="inputServerUrl" type="url" placeholder="http://127.0.0.1:11434">
                 <div class="connection-info" id="connInfo">
@@ -467,7 +483,7 @@
             <div class="help-section"><h4>📊 Token 实时监控</h4><ul><li>点击顶部 📊 按钮打开 Token 监控仪表盘</li><li><strong>全局统计</strong> — 跨会话累计 Token 消耗，柱状图按会话展示趋势</li><li><strong>当前会话</strong> — 实时显示本轮对话的 Token 消耗，按轮次展示明细</li><li>每 2 秒自动刷新数据，支持输入/输出分色显示</li></ul></div>
             <div class="help-section"><h4>🖥️ 布局说明</h4><ul><li><strong>左侧面板</strong> — 执行日志，实时显示应用运行日志（连接、模型加载、工具调用等）</li><li><strong>中间区域</strong> — 聊天消息，顶部 Header + 模型栏，底部输入框</li><li><strong>右侧面板</strong> — 工作空间（常驻显示），包含 3 个页签：<ul><li><strong>💻 命令行 Tab</strong> — 终端界面，实时流式输出，支持长时间运行（无超时），单一终端进程</li><li><strong>🔧 工具 Tab</strong> — 展示本轮对话的工具调用卡片，含状态统计（总数 ✅ 成功 ❌ 失败），AI 执行命令时自动切到此页签</li><li><strong>📁 文件 Tab</strong> — 浏览工作空间目录，点击文件预览内容（带行号），支持上级目录导航</li></ul></li><li>工作空间目录可在设置中修改</li></ul></div>
             <div class="help-section"><h4>🕐 历史记录</h4><ul><li>所有会话自动保存到本地 SQLite</li><li>点击顶部 🕐 按钮查看、搜索、恢复历史会话</li><li>支持导出 JSON / <code>.metona</code> 加密备份</li></ul></div>
-            <div class="help-section"><h4>⚡ 快捷键 & 命令</h4><table class="help-shortcuts"><tr><td><kbd>Enter</kbd></td><td>发送消息</td></tr><tr><td><kbd>Shift + Enter</kbd></td><td>换行</td></tr><tr><td><kbd>Ctrl + N</kbd></td><td>新建会话</td></tr><tr><td><kbd>Ctrl + M</kbd></td><td>记忆管理</td></tr><tr><td><kbd>Esc</kbd></td><td>关闭弹窗</td></tr></table><p style="margin-top:8px;font-size:12px;color:var(--text-secondary);">输入框命令（直接输入后发送）：</p><table class="help-shortcuts"><tr><td><code>/retry</code></td><td>重试上一轮回复</td></tr><tr><td><code>/undo</code></td><td>撤销最后一条用户消息及回复</td></tr><tr><td><code>/compress</code></td><td>用 AI 摘要压缩长对话上下文</td></tr></table></div>
+            <div class="help-section"><h4>⚡ 快捷键 & 命令</h4><table class="help-shortcuts"><tr><td><kbd>Enter</kbd></td><td>发送消息</td></tr><tr><td><kbd>Shift + Enter</kbd></td><td>换行</td></tr><tr><td><kbd>Ctrl + Enter</kbd></td><td>发送消息（任何时候）</td></tr><tr><td><kbd>Ctrl + N</kbd></td><td>新建会话</td></tr><tr><td><kbd>Ctrl + K</kbd></td><td>聚焦输入框</td></tr><tr><td><kbd>Ctrl + F</kbd></td><td>对话内搜索</td></tr><tr><td><kbd>Ctrl + L</kbd></td><td>清空当前对话（需确认）</td></tr><tr><td><kbd>Ctrl + P</kbd></td><td>切换 Plan Mode</td></tr><tr><td><kbd>Ctrl + Shift + Backspace</kbd></td><td>中止 Agent</td></tr><tr><td><kbd>Ctrl + M</kbd></td><td>记忆管理</td></tr><tr><td><kbd>Ctrl + H</kbd></td><td>历史记录</td></tr><tr><td><kbd>Ctrl + ,</kbd></td><td>打开设置</td></tr><tr><td><kbd>Ctrl + Shift + L</kbd></td><td>切换日志面板</td></tr><tr><td><kbd>Esc</kbd></td><td>关闭弹窗</td></tr></table><p style="margin-top:8px;font-size:12px;color:var(--text-secondary);">输入框命令（直接输入后发送）：</p><table class="help-shortcuts"><tr><td><code>/retry</code></td><td>重试上一轮回复</td></tr><tr><td><code>/undo</code></td><td>撤销最后一条用户消息及回复</td></tr><tr><td><code>/compress</code></td><td>用 AI 摘要压缩长对话上下文</td></tr></table></div>
         </div>
     </div>
 </div>
@@ -476,7 +492,7 @@
 <div class="modal-overlay" id="toolsModal" style="display:none;">
     <div class="modal">
         <div class="modal-header">
-            <h3>🔧 工具面板（32 个 + 1 Plan 专属）</h3>
+            <h3>🔧 工具面板（33 个 + 1 Plan 专属）</h3>
             <button class="icon-btn" id="btnCloseTools">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
@@ -561,6 +577,10 @@
                 <div class="tool-card">
                     <div class="tool-card-header"><span class="tool-card-icon">🗜️</span><span class="tool-card-name">compress</span><span class="tool-card-badge confirm">需确认</span></div>
                     <div class="tool-card-desc">创建或解压 zip/tar.gz 归档</div>
+                </div>
+                <div class="tool-card">
+                    <div class="tool-card-header"><span class="tool-card-icon">🔍</span><span class="tool-card-name">diff</span><span class="tool-card-badge auto">自动</span></div>
+                    <div class="tool-card-desc">文件差异比较，unified diff 格式，支持文件vs文件/内容/git HEAD</div>
                 </div>
                 <div class="tool-card">
                     <div class="tool-card-header"><span class="tool-card-icon">🔍</span><span class="tool-card-name">web_search</span><span class="tool-card-badge auto">自动</span></div>
@@ -681,6 +701,35 @@
                         <tbody id="tdTableBody"></tbody>
                     </table>
                 </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════ Agent Metrics 仪表盘 ═══════════════ -->
+<div class="modal-overlay" id="metricsDashboardModal" style="display:none;">
+    <div class="modal" style="max-width:760px;width:760px;">
+        <div class="modal-header">
+            <h3>📊 Agent Metrics 仪表盘</h3>
+            <button class="icon-btn" id="btnCloseMetrics">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+            </button>
+        </div>
+        <div class="modal-body" style="max-height:75vh;overflow-y:auto;">
+            <div class="md-overview" id="mdOverview"></div>
+            <div class="md-section">
+                <div class="md-section-title">🔧 工具调用热力图</div>
+                <div class="md-tool-heatmap" id="mdToolHeatmap"></div>
+            </div>
+            <div class="md-section">
+                <div class="md-section-title">📈 Token 消耗趋势（最近 20 个会话）</div>
+                <div class="md-token-trend" id="mdTokenTrend"></div>
+            </div>
+            <div class="md-section">
+                <div class="md-section-title">💡 自动改进建议</div>
+                <div class="md-suggestions" id="mdSuggestions"></div>
             </div>
         </div>
     </div>

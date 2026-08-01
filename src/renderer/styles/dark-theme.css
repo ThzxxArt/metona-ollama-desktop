@@ -1,0 +1,159 @@
+/* ═══════════════════════════════════════════════════════════════
+   Metona Ollama — Dark Theme
+   深蓝灰底 · 珊瑚橙主色保持不变 · 暖色暗调
+   通过 [data-theme="dark"] 属性覆盖 :root 变量
+   ═══════════════════════════════════════════════════════════════ */
+
+[data-theme="dark"] {
+    /* ── 背景色板 ── */
+    --bg-solid: #1A1B26;
+    --bg-card: #24252E;
+    --bg-card-hover: #2A2B36;
+    --bg-layer: #1F2029;
+    --bg-layer-alt: #262732;
+    --bg-smoke: rgba(0, 0, 0, 0.3);
+    --bg-mica: rgba(26, 27, 38, 0.85);
+    --bg-acrylic: rgba(26, 27, 38, 0.9);
+
+    /* ── 边框 ── */
+    --border-subtle: rgba(255, 255, 255, 0.06);
+    --border-default: rgba(255, 255, 255, 0.1);
+    --border-strong: rgba(255, 255, 255, 0.15);
+    --border-focus: #E8734A;
+
+    /* ── 文字 ── */
+    --text-primary: #E0E0E8;
+    --text-secondary: #8B8B9E;
+    --text-tertiary: #5C5C70;
+    --text-disabled: #3A3A48;
+
+    /* ── 珊瑚橙主色（保持品牌一致性）── */
+    --accent: #E8734A;
+    --accent-hover: #F08A5D;
+    --accent-subtle: rgba(232, 115, 74, 0.12);
+    --accent-subtle-hover: rgba(232, 115, 74, 0.2);
+    --primary: #E8734A;
+    --primary-bg: rgba(232, 115, 74, 0.12);
+    --bg-hover: #2A2B36;
+
+    /* ── 语义色 ── */
+    --critical: #FF6B7A;
+    --critical-bg: rgba(255, 107, 122, 0.12);
+    --success: #5BD676;
+    --success-bg: rgba(91, 214, 118, 0.12);
+    --caution: #E8B84C;
+    --caution-bg: rgba(232, 184, 76, 0.12);
+
+    /* ── hover/overlay 半透明覆盖层 ── */
+    --hover-overlay: rgba(255, 255, 255, 0.04);
+    --hover-overlay-strong: rgba(255, 255, 255, 0.08);
+    --border-hairline: rgba(255, 255, 255, 0.02);
+
+    /* ── 阴影（暗色下更深沉）── */
+    --shadow-flyout: 0 4px 24px rgba(0, 0, 0, 0.3);
+    --shadow-dialog: 0 12px 48px rgba(0, 0, 0, 0.4);
+    --shadow-tooltip: 0 2px 12px rgba(0, 0, 0, 0.3);
+    --shadow-card: 0 1px 4px rgba(0, 0, 0, 0.15), 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+
+/* ── 暗色主题下特殊元素覆盖 ── */
+
+[data-theme="dark"] .log-entry:hover {
+    background: rgba(255, 255, 255, 0.03);
+}
+
+[data-theme="dark"] .log-detail {
+    background: var(--bg-layer);
+}
+
+[data-theme="dark"] .modal-overlay {
+    background: rgba(0, 0, 0, 0.5);
+}
+
+[data-theme="dark"] .scroll-to-bottom {
+    background: var(--bg-card);
+    box-shadow: var(--shadow-card);
+}
+
+/* 代码块暗色适配 */
+[data-theme="dark"] pre {
+    background: #16171F !important;
+    color: #C8C8D8;
+}
+
+[data-theme="dark"] code {
+    background: rgba(255, 255, 255, 0.06);
+    color: #F0A890;
+}
+
+[data-theme="dark"] pre code {
+    background: transparent;
+    color: inherit;
+}
+
+/* Markdown 内联代码 */
+[data-theme="dark"] .message-content code {
+    background: rgba(255, 255, 255, 0.06);
+    color: #F0A890;
+}
+
+/* 引用块 */
+[data-theme="dark"] blockquote {
+    border-left-color: var(--accent);
+    background: rgba(255, 255, 255, 0.02);
+}
+
+/* 表格 */
+[data-theme="dark"] table th {
+    background: var(--bg-layer);
+    border-bottom-color: var(--border-strong);
+}
+
+[data-theme="dark"] table td {
+    border-bottom-color: var(--border-subtle);
+}
+
+/* 滚动条 */
+[data-theme="dark"] ::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+/* 终端暗色适配 */
+[data-theme="dark"] .ws-term-output {
+    background: #131318;
+    color: #C8C8D8;
+}
+
+/* 输入框/选择框 placeholder */
+[data-theme="dark"] input::placeholder,
+[data-theme="dark"] textarea::placeholder {
+    color: var(--text-tertiary);
+}
+
+/* 空状态 */
+[data-theme="dark"] .empty-state h2 {
+    color: var(--text-primary);
+}
+
+[data-theme="dark"] .empty-state p {
+    color: var(--text-secondary);
+}
+
+/* 模型徽章暗色适配 */
+[data-theme="dark"] .model-badge {
+    border-color: var(--border-default);
+}
+
+/* tooltip */
+[data-theme="dark"] [class*="tooltip"] {
+    background: var(--bg-card);
+    color: var(--text-primary);
+}

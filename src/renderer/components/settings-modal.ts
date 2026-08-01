@@ -25,6 +25,27 @@ export function initSettingsModal(): void {
     if (e.target === settingsModalEl) closeSettingsModal();
   });
 
+  // ── 主题选择 ──
+  document.querySelector('#selectTheme')?.addEventListener('change', async () => {
+    const mode = (document.querySelector('#selectTheme') as HTMLSelectElement).value as 'light' | 'dark' | 'auto';
+    // 直接内联实现主题切换，避免动态导入 main.ts（入口模块不可安全导出函数）
+    localStorage.setItem('metona-theme', mode);
+    let effective: 'light' | 'dark';
+    if (mode === 'auto') {
+      effective = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    } else {
+      effective = mode;
+    }
+    document.documentElement.setAttribute('data-theme', effective);
+    const metaThemeColor = document.querySelector('meta[name="theme-color"]');
+    if (metaThemeColor) {
+      metaThemeColor.setAttribute('content', effective === 'dark' ? '#1A1B26' : '#FAF7F2');
+    }
+    const db = state.get<ChatDB | null>(KEYS.DB);
+    if (db) await db.saveSetting('themeMode', mode);
+    logInfo(`主题已切换: ${mode === 'auto' ? '跟随系统' : mode === 'dark' ? '暗色' : '亮色'}`);
+  });
+
   const saveServerUrl = debounce(async () => {
     const url = (document.querySelector('#inputServerUrl') as HTMLInputElement).value.trim();
     if (!url) return;
@@ -339,6 +360,7 @@ export function openSettingsModal(): void {
   updateRunningModels();
   loadTimeoutSettings();
   loadWatchdogSetting();
+  loadThemeSetting();
   // 刷新工作空间目录显示
   const bridge = window.metonaDesktop;
   if (bridge?.isDesktop) {
@@ -365,6 +387,13 @@ async function loadWatchdogSetting(): Promise<void> {
 
 export function closeSettingsModal(): void {
   settingsModalEl.style.display = 'none';
+}
+
+/** 加载主题设置到下拉框 */
+async function loadThemeSetting(): Promise<void> {
+  const saved = (localStorage.getItem('metona-theme') || 'auto') as 'light' | 'dark' | 'auto';
+  const select = document.querySelector('#selectTheme') as HTMLSelectElement | null;
+  if (select) select.value = saved;
 }
 
 /** 加载已保存的超时设置到输入框：-1=默认(显示空), 0=禁用, 正数=自定义 */

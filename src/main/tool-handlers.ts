@@ -6,7 +6,7 @@
 
 export { sendLog, resolvePath, type ToolResult } from './tool-handlers-shared.js';
 
-// 文件系统操作（11 个）
+// 文件系统操作（12 个）
 export {
   handleReadFile,
   handleWriteFile,
@@ -19,6 +19,7 @@ export {
   handleEditFile,
   handleTree,
   handleReadMultipleFiles,
+  handleDiff,
 } from './tool-handlers-fs.js';
 
 // 系统与网络操作（7 个）

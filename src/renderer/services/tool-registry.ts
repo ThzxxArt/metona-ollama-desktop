@@ -291,6 +291,24 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     type: 'function',
     function: {
+      name: 'diff',
+      description: 'Compare file contents and return unified diff format. Supports three modes: file_vs_file (compare two files), file_vs_content (compare a file against provided text), file_vs_git_head (compare working copy against git HEAD). Useful for verifying edits before committing, checking what changed after edit_file, or comparing two versions of a file.',
+      parameters: {
+        type: 'object',
+        required: ['mode'],
+        properties: {
+          mode: { type: 'string', enum: ['file_vs_file', 'file_vs_content', 'file_vs_git_head'], description: 'Comparison mode. file_vs_file: compare path1 vs path2. file_vs_content: compare path1 file vs provided content. file_vs_git_head: compare path1 working copy vs git HEAD version.' },
+          path1: { type: 'string', description: 'Primary file path. Required for all modes. In file_vs_file, this is the "old" file. In file_vs_git_head, this is the working copy.' },
+          path2: { type: 'string', description: 'Second file path (only for file_vs_file mode).' },
+          content: { type: 'string', description: 'Content to compare against (only for file_vs_content mode).' },
+          context_lines: { type: 'integer', description: 'Number of context lines around changes in the diff output. Default: 3.' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'web_search',
       description: 'Search the web with auto-fetch. Always use this when the user asks for information, news, facts, or current data. Never rely on training data or past conversation results — call this tool every time the user asks to search. Set fetch_top to auto-fetch full page content from the top N results.',
       parameters: {
@@ -379,15 +397,16 @@ TIP: Use remove_batch when deleting multiple entries — it's much more efficien
   {
     type: 'function',
     function: {
-      name: 'spawn_task',
-      description: 'Spawn a sub-agent to independently execute a task using read-only tools (file reading, web search, browser viewing, memory/session queries). Use this to parallelize independent research or analysis sub-tasks. The model is configured in Settings and cannot be overridden per call.',
-      parameters: {
-        type: 'object',
-        required: ['task'],
-        properties: {
-          task: { type: 'string', description: 'The task description for the sub-agent to execute.' },
-          context: { type: 'string', description: 'Optional additional context or reference data for the sub-agent.' }
-        }
+name: 'spawn_task',
+description: 'Spawn a sub-agent to independently execute a task. Default permission is "readonly" (file reading, web search, browser viewing, memory/session queries). Set permission to "limited_write" for file editing tasks (write_file, edit_file, create_directory) or "full_write" for full capability (run_command, git, delete_file). Use this to parallelize independent sub-tasks. The model is configured in Settings and cannot be overridden per call.',
+parameters: {
+type: 'object',
+required: ['task'],
+properties: {
+task: { type: 'string', description: 'The task description for the sub-agent to execute.' },
+context: { type: 'string', description: 'Optional additional context or reference data for the sub-agent.' },
+permission: { type: 'string', enum: ['readonly', 'limited_write', 'full_write'], description: 'Permission level for the sub-agent. readonly=file reading/search only, limited_write=can edit files but no shell commands, full_write=full capability including run_command and git. Default: readonly.' }
+}
       }
     }
   },
@@ -1370,9 +1389,10 @@ const results = await search(query, limit);
         // 设置面板存的模型名直接使用（面板加载时已验证过列表）
         model = configuredModel;
       }
-      if (!task) return { success: false, error: '缺少 task 参数' };
-      logInfo(`子代理委派: ${task.slice(0, 80)}${model ? ` (模型: ${model})` : ' (跟随当前模型)'}`);
-      const result = await executeSubAgent(task, context, model ? { model } : {});
+if (!task) return { success: false, error: '缺少 task 参数' };
+const permission = (args.permission as 'readonly' | 'limited_write' | 'full_write' | undefined) ?? 'readonly';
+logInfo(`子代理委派: ${task.slice(0, 80)}${model ? ` (模型: ${model})` : ' (跟随当前模型)'} (权限: ${permission})`);
+const result = await executeSubAgent(task, context, { model, permission });
       logToolResult('spawn_task', result.success, result.success ? `完成, ${(result as any).loops} 轮` : result.error);
       return result;
     }

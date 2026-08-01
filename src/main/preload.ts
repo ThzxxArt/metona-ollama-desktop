@@ -72,6 +72,9 @@ contextBridge.exposeInMainWorld('metonaDesktop', {
     importSessions: (data: unknown) => ipcRenderer.invoke('db:importSessions', data),
 
     getAllTokenStats: () => ipcRenderer.invoke('db:getAllTokenStats'),
+    saveToolAudit: (audit: unknown) => ipcRenderer.invoke('db:saveToolAudit', audit),
+    getToolAudits: (sessionId: string) => ipcRenderer.invoke('db:getToolAudits', sessionId),
+    getAllToolAudits: (limit?: number) => ipcRenderer.invoke('db:getAllToolAudits', limit),
   },
   workspace: {
     getDir: () => ipcRenderer.invoke('workspace:getDir'),
