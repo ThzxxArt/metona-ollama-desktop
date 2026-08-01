@@ -215,7 +215,7 @@ export async function executeSubAgent(
             if (chunk.message?.content) content += chunk.message.content;
             if (chunk.message?.tool_calls?.length) {
               for (const tc of chunk.message.tool_calls) {
-                if (tc.function?.name && SUB_AGENT_TOOL_WHITELIST.has(tc.function.name)) {
+                if (tc.function?.name && toolWhitelist.has(tc.function.name)) {
                   toolCalls.push({ name: tc.function.name, arguments: tc.function.arguments || {} });
                 }
               }

@@ -459,13 +459,13 @@ async function init(): Promise<void> {
     }
 
     // 应用流式超时到 state（agent-engine 读取，0=禁用）
-    state.set('streamTimeout', streamTimeout >= 0 ? streamTimeout * 1000 : 300_000);
+    state.set('streamTimeout', streamTimeout >= 0 ? streamTimeout * 1000 : -1);
 
     // 应用 HTTP 和 MCP 超时到主进程
     const bridge = window.metonaDesktop;
     if (bridge?.tool?.setTimeouts) {
       await bridge.tool.setTimeouts({
-        http: httpTimeout >= 0 ? httpTimeout * 1000 : 30_000,
+        http: httpTimeout >= 0 ? httpTimeout * 1000 : 900_000,
         mcp: mcpTimeout >= 0 ? mcpTimeout * 1000 : 60_000,
       });
     }
@@ -474,7 +474,7 @@ async function init(): Promise<void> {
     (document.querySelector('#inputHttpTimeout') as HTMLInputElement).value = httpTimeout >= 0 ? String(httpTimeout) : '';
     (document.querySelector('#inputStreamTimeout') as HTMLInputElement).value = streamTimeout >= 0 ? String(streamTimeout) : '';
     (document.querySelector('#inputMCPTimeout') as HTMLInputElement).value = mcpTimeout >= 0 ? String(mcpTimeout) : '';
-    logInit(`超时设置: HTTP=${httpTimeout>=0?httpTimeout:30}s 流式=${streamTimeout>=0?streamTimeout:300}s MCP=${mcpTimeout>=0?mcpTimeout:60}s`);
+    logInit(`超时设置: HTTP=${httpTimeout>=0?httpTimeout:900}s 流式=${streamTimeout>=0?streamTimeout:'动态'}s MCP=${mcpTimeout>=0?mcpTimeout:60}s`);
 
     // ── 子代理参数 ──
     let subAgentMaxLoops = await db.getSetting<number>('subAgentMaxLoops', 10);

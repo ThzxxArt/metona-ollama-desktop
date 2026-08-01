@@ -129,7 +129,7 @@ function renderMetricsDashboard(): void {
       suggestionsEl.innerHTML = suggestions.map(s => `
         <div class="md-suggestion">
           <span class="md-suggestion-severity md-severity-${s.severity}">${s.severity}</span>
-          <span class="md-suggestion-msg">${s.message}</span>
+          <span class="md-suggestion-msg">${s.suggestion}</span>
         </div>
       `).join('');
     }

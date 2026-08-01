@@ -124,8 +124,8 @@ export function killToolProcess(): boolean {
 
 
 
-/** HTTP 请求超时（毫秒），默认 30s，可通过 IPC 设置 */
-let HTTP_TIMEOUT = 30_000;
+/** HTTP 请求超时（毫秒），默认 900s，可通过 IPC 设置 */
+let HTTP_TIMEOUT = 900_000;
 
 /** 设置 HTTP 请求超时（毫秒），0=禁用超时 */
 export function setHTTPTimeout(ms: number): void {
@@ -576,7 +576,7 @@ export async function handleWebFetch(params: { url: string; max_chars?: number; 
     } catch (err) {
       const errMsg = (err as Error).message;
       if (errMsg.includes('abort') && attempt < maxAttempts - 1) {
-        lastError = `请求超时 (${HTTP_TIMEOUT > 0 ? HTTP_TIMEOUT / 1000 : '∞'}s)（将重试）`;
+        lastError = `请求超时 (${HTTP_TIMEOUT > 0 ? HTTP_TIMEOUT / 1000 : '∞'}s)（将重试）`; // 900s 默认，大页面/慢服务器需要更长时间
         continue;
       }
       if (errMsg.includes('abort')) {

@@ -106,22 +106,22 @@ export function initSettingsModal(): void {
   const saveHttpTimeout = debounce(async () => {
     const db = state.get<ChatDB | null>(KEYS.DB);
     const sec = parseSec(inputHttpTimeout.value.trim());
-    const ms = sec >= 0 ? sec * 1000 : 30_000;
+    const ms = sec >= 0 ? sec * 1000 : 900_000;
     if (db) await db.saveSetting('httpTimeout', sec);
     const bridge = window.metonaDesktop;
     if (bridge?.tool?.setTimeouts) {
       await bridge.tool.setTimeouts({ http: ms });
     }
-    logSetting('HTTP 超时', sec >= 0 ? (sec === 0 ? '已禁用' : `${sec}s`) : '默认(30s)');
+    logSetting('HTTP 超时', sec >= 0 ? (sec === 0 ? '已禁用' : `${sec}s`) : '默认(900s)');
   }, 500);
 
   const saveStreamTimeout = debounce(async () => {
     const db = state.get<ChatDB | null>(KEYS.DB);
     const sec = parseSec(inputStreamTimeout.value.trim());
-    const ms = sec >= 0 ? sec * 1000 : 300_000;
+    const ms = sec >= 0 ? sec * 1000 : -1;
     state.set('streamTimeout', ms);
     if (db) await db.saveSetting('streamTimeout', sec);
-    logSetting('流式超时', sec >= 0 ? (sec === 0 ? '已禁用' : `${sec}s`) : '默认(300s)');
+    logSetting('流式超时', sec >= 0 ? (sec === 0 ? '已禁用' : `${sec}s`) : '默认(动态)');
   }, 500);
 
   const saveMCPTimeout = debounce(async () => {
