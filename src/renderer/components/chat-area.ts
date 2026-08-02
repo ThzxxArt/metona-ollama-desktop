@@ -583,6 +583,25 @@ export function appendAssistantPlaceholder(): void {
   scrollToBottom();
 }
 
+/**
+ * 确保 loading 占位符存在 — 如果当前没有 loading 占位符，创建一个。
+ * 用于中间轮次 THINKING 开始前，确保用户看到"正在思考..."状态。
+ */
+export function ensureLoadingPlaceholder(): void {
+  if (currentPlaceholder && currentPlaceholder.classList.contains('loading') && currentPlaceholder.isConnected) {
+    return;
+  }
+  // 当前 placeholder 不存在或不是 loading 状态 → 清理旧 placeholder 并创建新的
+  if (currentPlaceholder && !currentPlaceholder.classList.contains('loading') && currentPlaceholder.isConnected) {
+    // 上一轮的 placeholder 已经被 updateLastAssistantMessage 转为正常消息但未通过 renderMessages 固化
+    // 不需要移除，直接追加新的 loading
+  }
+  if (currentPlaceholder && !currentPlaceholder.isConnected) {
+    currentPlaceholder = null;
+  }
+  appendAssistantPlaceholder();
+}
+
 // R34: 加载提示旋转动画
 const LOADING_HINTS = [
   '正在思考...',

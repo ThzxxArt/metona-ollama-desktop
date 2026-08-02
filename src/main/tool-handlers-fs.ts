@@ -6,11 +6,15 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
 import { checkPathAllowed } from './tool-security.js';
-import { sendLog, resolvePath, type ToolResult } from './tool-handlers-shared.js';
+import { sendLog, resolvePath, isUrl, type ToolResult } from './tool-handlers-shared.js';
 import { getWorkspaceDir } from './workspace.js';
 
 export async function handleReadFile(params: { path: string; encoding?: string; start_line?: number; end_line?: number; mode?: string; offset_bytes?: number; limit_bytes?: number }): Promise<ToolResult> {
   try {
+    // URL 检测：read_file 仅支持本地文件，URL 请使用 web_fetch
+    if (isUrl(params.path)) {
+      return { success: false, error: `read_file 仅支持本地文件路径，不支持 URL。请改用 web_fetch 工具读取网页内容。收到的 URL: ${params.path}` };
+    }
     const filePath = resolvePath(params.path);
     const allowed = checkPathAllowed(filePath, 'read');
     if (!allowed.ok) return { success: false, error: allowed.reason };
@@ -637,6 +641,14 @@ export async function handleTree(params: { path: string; max_depth?: number; inc
 
 export async function handleReadMultipleFiles(params: { paths: string[]; max_chars_per_file?: number }): Promise<ToolResult> {
   try {
+    // URL 检测：read_multiple_files 仅支持本地文件，URL 请使用 web_fetch
+    const urlPaths = (params.paths || []).filter(p => isUrl(p));
+    if (urlPaths.length > 0) {
+      return {
+        success: false,
+        error: `read_multiple_files 仅支持本地文件路径，不支持 URL。以下路径是 URL，请改用 web_fetch 工具逐个抓取：\n${urlPaths.join('\n')}`
+      };
+    }
     const maxChars = params.max_chars_per_file || 0; // 0 = 不截断
 
     // 并行读取所有文件（最多50个）

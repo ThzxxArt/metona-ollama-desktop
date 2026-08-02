@@ -9,7 +9,7 @@ import { getSelectedModel, isThinkEnabled, isVisionAvailable, isToolCallingSuppo
 import {
   renderMessages, clearMessagesDOM, appendAssistantPlaceholder, appendSystemMessage,
   updateLastAssistantMessage, clearMessages, safeMarkdown, enableAutoScroll, resetAutoScroll,
-  resetCurrentPlaceholder, removeCurrentPlaceholder
+  resetCurrentPlaceholder, removeCurrentPlaceholder, ensureLoadingPlaceholder
 } from './chat-area.js';
 import { showToast } from './toast.js';
 import { addToolCard, startToolCard, updateToolCard, clearToolCardsExternal, clearTerminalExternal, getWorkspaceDirPath, hasActiveCards, showWorkingHint, clearWorkingHint } from './workspace-panel.js';
@@ -589,6 +589,9 @@ async function handleRetry(): Promise<void> {
           appendAssistantPlaceholder();
           retryContent = '';
           retryIterations++;
+        },
+        onThinkingStart: () => {
+          ensureLoadingPlaceholder();
         },
         onThinking: (thinking) => { retryThinkContent = thinking; updateLastAssistantMessage(retryContent, thinking, null, getSelectedModel()); },
         onContent: (content) => { retryContent = content; updateLastAssistantMessage(content, retryThinkContent || null, null, getSelectedModel()); },
@@ -1288,6 +1291,9 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
         appendAssistantPlaceholder();
         assistantContent = '';
         thinkContent = '';
+      },
+      onThinkingStart: () => {
+        ensureLoadingPlaceholder();
       },
       onThinking: (thinking) => {
         thinkContent = thinking;

@@ -13,12 +13,12 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'read_file',
-      description: 'Read a file from the local filesystem. Supports text mode (utf-8/latin1, line-based pagination) and binary mode (base64, byte-based pagination). Files up to 5MB (text) or 50MB (binary). When truncated, returns remaining_lines/remaining_bytes and a hint to continue reading. Use start_line/end_line for text files, offset_bytes/limit_bytes for binary files or raw byte access.',
+      description: 'Read a LOCAL file from the filesystem. Does NOT support URLs — use web_fetch for web pages. Supports text mode (utf-8/latin1, line-based pagination) and binary mode (base64, byte-based pagination). Files up to 5MB (text) or 50MB (binary). When truncated, returns remaining_lines/remaining_bytes and a hint to continue reading. Use start_line/end_line for text files, offset_bytes/limit_bytes for binary files or raw byte access.',
       parameters: {
         type: 'object',
         required: ['path'],
         properties: {
-          path: { type: 'string', description: 'The file path to read. Absolute or relative to workspace.' },
+          path: { type: 'string', description: 'Local file path only (NOT a URL). Absolute or relative to workspace. For web URLs, use web_fetch instead.' },
           encoding: { type: 'string', enum: ['utf-8', 'latin1', 'base64'], description: 'File encoding. Default: utf-8. Use base64 for binary content.' },
           start_line: { type: 'integer', description: 'Start line (1-indexed) for text files. Use with end_line for pagination.' },
           end_line: { type: 'integer', description: 'End line (inclusive). Default: start_line + 2000.' },
@@ -231,12 +231,12 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'read_multiple_files',
-      description: 'Read up to 50 files at once in parallel. Returns content of all requested files (10KB each by default).',
+      description: 'Read up to 50 LOCAL files at once in parallel. Does NOT support URLs — use web_fetch for web pages. Returns content of all requested files (10KB each by default).',
       parameters: {
         type: 'object',
         required: ['paths'],
         properties: {
-          paths: { type: 'array', items: { type: 'string' }, description: 'Array of file paths to read.' },
+          paths: { type: 'array', items: { type: 'string' }, description: 'Array of LOCAL file paths to read (NOT URLs). For web URLs, use web_fetch instead.' },
           max_chars_per_file: { type: 'integer', description: 'Max chars per file. Default: 10000.' }
         }
       }
@@ -801,6 +801,31 @@ function hasCommandInjection(command: string): boolean {
 
 /** R28: 工具安全验证 — 在执行前检查安全风险 */
 export function validateToolSecurity(toolName: string, args: Record<string, unknown>): string | null {
+  // R28: URL 检测 — 本地文件工具不接受 URL
+  const localFileTools = ['read_file', 'read_multiple_files', 'write_file', 'edit_file', 'list_directory', 'search_files', 'create_directory', 'delete_file', 'move_file', 'copy_file', 'tree'];
+  if (localFileTools.includes(toolName)) {
+    const pathFields = ['path', 'source', 'destination', 'file1', 'file2'];
+    for (const field of pathFields) {
+      if (typeof args[field] === 'string') {
+        const val = (args[field] as string).toLowerCase().trim();
+        if (val.startsWith('http://') || val.startsWith('https://')) {
+          return `参数 "${field}" 是 URL，不是本地路径。请改用 web_fetch 工具读取网页内容: ${args[field]}`;
+        }
+      }
+    }
+    // paths 数组检查（read_multiple_files）
+    if (Array.isArray(args.paths)) {
+      const urls = (args.paths as string[]).filter(p => {
+        if (typeof p !== 'string') return false;
+        const lower = p.toLowerCase().trim();
+        return lower.startsWith('http://') || lower.startsWith('https://');
+      });
+      if (urls.length > 0) {
+        return `paths 数组中包含 ${urls.length} 个 URL，read_multiple_files 仅支持本地文件。请改用 web_fetch 工具逐个抓取以下 URL:\n${urls.join('\n')}`;
+      }
+    }
+  }
+
   // 路径遍历检查
   const pathFields = ['path', 'source', 'destination', 'file1', 'file2', 'cwd'];
   for (const field of pathFields) {
@@ -978,44 +1003,67 @@ export function validateToolArgs(toolName: string, args: Record<string, unknown>
 // ── R22: 工具结果截断 ──
 
 /** R22: 工具结果最大字符数 */
-const MAX_TOOL_RESULT_CHARS = 30000;
+const MAX_TOOL_RESULT_CHARS = 100000;
+
+/** R22: 截断单个大字符串，保留首尾并添加截断标记 */
+function truncateStringField(str: string, headKeep = 8000, tailKeep = 3000): string {
+  if (str.length <= headKeep + tailKeep) return str;
+  const head = str.slice(0, headKeep);
+  const tail = str.slice(-tailKeep);
+  const omitted = str.length - headKeep - tailKeep;
+  return `${head}\n\n... [已截断 ${omitted} 字符，共 ${str.length} 字符] ...\n\n${tail}`;
+}
 
 /** R22: 截断大输出结果，保留首尾并添加截断标记 */
 export function truncateToolResult(result: ToolResult, toolName: string): ToolResult {
   const jsonStr = JSON.stringify(result);
   if (jsonStr.length <= MAX_TOOL_RESULT_CHARS) return result;
 
-  // 不同工具有不同的截断策略
   const truncated = { ...result };
 
-  // 截断 stdout/content 类的大字段
-  const largeFields = ['stdout', 'content', 'text', 'result', 'output', 'data'];
+  // 1. 截断顶层大字符串字段
+  const largeFields = ['stdout', 'content', 'text', 'result', 'output', 'data', 'formatted', 'snippet', 'error', 'stderr'];
   for (const field of largeFields) {
     if (typeof truncated[field] === 'string' && (truncated[field] as string).length > 10000) {
-      const original = truncated[field] as string;
-      const head = original.slice(0, 8000);
-      const tail = original.slice(-3000);
-      const omitted = original.length - 11000;
-      truncated[field] = `${head}\n\n... [已截断 ${omitted} 字符，共 ${original.length} 字符] ...\n\n${tail}`;
+      truncated[field] = truncateStringField(truncated[field] as string);
     }
   }
 
-  // 截断数组类结果
-  if (Array.isArray(truncated.entries) && truncated.entries.length > 100) {
-    const total = truncated.entries.length;
-    truncated.entries = truncated.entries.slice(0, 50);
-    truncated._truncated = true;
-    truncated._totalEntries = total;
-    truncated._truncatedMessage = `结果已截断：显示前 50 条，共 ${total} 条`;
-  }
-  if (Array.isArray(truncated.results) && truncated.results.length > 100) {
-    const total = truncated.results.length;
-    truncated.results = truncated.results.slice(0, 50);
-    truncated._truncated = true;
-    truncated._totalResults = total;
+  // 2. 截断数组内每条记录的大字符串字段（如 _fetched[].content, results[].snippet）
+  const arrayFields = ['results', 'entries', '_fetched', 'structured', 'files', 'matches'];
+  for (const field of arrayFields) {
+    if (Array.isArray(truncated[field])) {
+      const arr = truncated[field] as unknown[];
+      // 数组本身过长时先裁剪条数
+      if (arr.length > 50) {
+        (truncated as any)[`_original_${field}_count`] = arr.length;
+        (truncated as any)[field] = arr.slice(0, 50);
+      }
+      // 逐条截断内部大字段
+      const innerLargeKeys = ['content', 'snippet', 'text', 'stdout', 'output', 'formatted', 'data', 'result', 'stderr'];
+      for (const item of (truncated as any)[field]) {
+        if (item && typeof item === 'object' && !Array.isArray(item)) {
+          for (const key of innerLargeKeys) {
+            if (typeof item[key] === 'string' && item[key].length > 8000) {
+              item[key] = truncateStringField(item[key], 6000, 2000);
+            }
+          }
+        }
+      }
+    }
   }
 
-  logWarn(`R22: 工具 ${toolName} 结果已截断 (${jsonStr.length} → ~${JSON.stringify(truncated).length} 字符)`);
+  // 3. 兜底：如果经过上述截断后仍然超限，对整个 JSON 暴力截断
+  let finalStr = JSON.stringify(truncated);
+  if (finalStr.length > MAX_TOOL_RESULT_CHARS) {
+    const head = finalStr.slice(0, MAX_TOOL_RESULT_CHARS - 500);
+    const tail = finalStr.slice(-300);
+    const omitted = finalStr.length - (MAX_TOOL_RESULT_CHARS - 200);
+    logWarn(`R22: 工具 ${toolName} 结果过大，暴力截断 (${jsonStr.length} → ~${MAX_TOOL_RESULT_CHARS} 字符)`);
+    return JSON.parse(head + `"... [已暴力截断 ${omitted} 字符] ..."}` + tail) as ToolResult;
+  }
+
+  logWarn(`R22: 工具 ${toolName} 结果已截断 (${jsonStr.length} → ~${finalStr.length} 字符)`);
   return truncated;
 }
 

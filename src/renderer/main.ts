@@ -460,6 +460,9 @@ async function init(): Promise<void> {
 
     // 应用流式超时到 state（agent-engine 读取，0=禁用）
     state.set('streamTimeout', streamTimeout >= 0 ? streamTimeout * 1000 : -1);
+    // 存入 state 供 agent-engine 工具级超时读取（网络工具需要跟随用户配置）
+    state.set('httpTimeout', httpTimeout >= 0 ? httpTimeout * 1000 : 900_000);
+    state.set('mcpTimeout', mcpTimeout >= 0 ? mcpTimeout * 1000 : 60_000);
 
     // 应用 HTTP 和 MCP 超时到主进程
     const bridge = window.metonaDesktop;

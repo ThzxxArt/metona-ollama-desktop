@@ -212,19 +212,19 @@ const TOOL_TIMEOUT_MAP: Record<string, { base: number; grade: 'fast' | 'medium' 
   move_file: { base: 15_000, grade: 'medium', description: '移动文件' },
   tree: { base: 15_000, grade: 'medium', description: '目录树' },
   session_read: { base: 10_000, grade: 'medium', description: '会话读取' },
-  web_search: { base: 30_000, grade: 'medium', description: '网页搜索' },
+  web_search: { base: 900_000, grade: 'slow', description: '网页搜索' },
   git: { base: 30_000, grade: 'medium', description: 'Git 操作' },
 
   // slow (15-60秒)
-  read_file: { base: 30_000, grade: 'slow', description: '读取文件' },
-  copy_file: { base: 30_000, grade: 'slow', description: '复制文件' },
+  read_file: { base: 60_000, grade: 'slow', description: '读取文件' },
+  copy_file: { base: 60_000, grade: 'slow', description: '复制文件' },
   search_files: { base: 60_000, grade: 'slow', description: '搜索文件' },
   read_multiple_files: { base: 60_000, grade: 'slow', description: '批量读取' },
-  web_fetch: { base: 60_000, grade: 'slow', description: '网页抓取' },
+  web_fetch: { base: 900_000, grade: 'long', description: '网页抓取' },
   compress: { base: 60_000, grade: 'slow', description: '压缩' },
   
   // long (>60秒)
-  download_file: { base: 120_000, grade: 'long', description: '下载文件' },
+  download_file: { base: 900_000, grade: 'long', description: '下载文件' },
   default: { base: 60_000, grade: 'medium', description: '默认工具' },
 };
 
@@ -232,6 +232,18 @@ const TOOL_TIMEOUT_MAP: Record<string, { base: number; grade: 'fast' | 'medium' 
 function getAdjustedToolTimeout(toolName: string, args: Record<string, unknown>): number {
   const config = TOOL_TIMEOUT_MAP[toolName] ?? TOOL_TIMEOUT_MAP.default;
   let timeout = config.base;
+  
+  // 网络工具超时跟随用户配置的 HTTP 超时（取 base 和用户配置中的较大值）
+  const NETWORK_TOOLS = ['web_search', 'web_fetch', 'download_file'];
+  if (NETWORK_TOOLS.includes(toolName)) {
+    const userHttpTimeout = state.get<number>('httpTimeout', 900_000);
+    // userHttpTimeout=0 表示禁用超时，否则取 max(base, userConfig)
+    if (userHttpTimeout === 0) {
+      timeout = 0; // 不超时
+    } else {
+      timeout = Math.max(timeout, userHttpTimeout);
+    }
+  }
   
   // run_command 特殊处理：根据命令类型调整
   if (toolName === 'run_command' && args.command) {
@@ -251,7 +263,7 @@ function getAdjustedToolTimeout(toolName: string, args: Record<string, unknown>)
   if (toolName === 'web_fetch' && args.url) {
     const url = String(args.url);
     if (url.includes('youtube') || url.includes('video') || url.includes('mp4')) {
-      timeout = 90_000;
+      timeout = Math.max(timeout, 90_000);
     }
   }
   
@@ -1024,6 +1036,8 @@ export interface AgentCallbacks {
   onDone: (finalContent: string, toolRecords?: ToolCallRecord[], stats?: { eval_count?: number; prompt_eval_count?: number; total_duration?: number; ctx_tokens?: number }) => void;
   onConfirmTool: (call: ToolCall) => Promise<boolean>;
   onNewIteration?: (toolCalls?: ToolCall[], stats?: { eval_count?: number; prompt_eval_count?: number; total_duration?: number }) => void;
+  /** 每轮 THINKING 开始前调用，UI 确保 loading 占位符存在 */
+  onThinkingStart?: () => void;
   /** Plan Mode: 计划已生成，等待用户确认 */
   onPlanReady?: (plan: string, steps: string[]) => Promise<boolean>;
 }
@@ -1597,6 +1611,11 @@ async function handleThinking(
       let lastContentTime = streamStartTime;
 
       resetStreamProgress();
+
+      // 确保 loading 占位符存在 — 中间轮次中 onNewIteration 可能因各种原因未能正确创建 loading
+      if (callbacks.onThinkingStart) {
+        callbacks.onThinkingStart();
+      }
 
       if (progressTimer) clearInterval(progressTimer as unknown as number);
       progressTimer = setInterval(() => {

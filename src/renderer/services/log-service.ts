@@ -19,9 +19,7 @@ export interface LogEntry {
 
 let logBodyEl: HTMLElement | null = null;
 let logPanelEl: HTMLElement | null = null;
-const MAX_LOGS = 500;
-// R46: 日志轮转 — 旧日志自动清理
-const LOG_MAX_AGE_MS = 3600000; // 1 小时
+const MAX_LOGS = 2000;
 let logs: LogEntry[] = [];
 let autoScroll = true;
 let idCounter = 0;
@@ -30,26 +28,6 @@ const pendingEntries: LogEntry[] = [];
 let panelInitialized = false;
 /** initLogPanel 前的日志暂存区 */
 const earlyBuffer: LogEntry[] = [];
-
-// R46: 定期清理旧日志
-let _logCleanupTimer: ReturnType<typeof setInterval> | null = null;
-function startLogRotation(): void {
-  if (_logCleanupTimer) clearInterval(_logCleanupTimer);
-  _logCleanupTimer = setInterval(() => {
-    const now = Date.now();
-    const before = logs.length;
-    const oldLogs = logs.filter(l => now - l.time >= LOG_MAX_AGE_MS);
-    logs = logs.filter(l => now - l.time < LOG_MAX_AGE_MS);
-    const removed = before - logs.length;
-    if (removed > 0 && logBodyEl) {
-      // 从 DOM 中移除旧日志条目
-      for (const old of oldLogs) {
-        const el = logBodyEl.querySelector(`#${old.id}`);
-        if (el) el.remove();
-      }
-    }
-  }, 60000); // 每分钟检查一次
-}
 
 const LEVEL_ICONS: Record<LogLevel, string> = {
   info: 'ℹ️',
@@ -78,8 +56,6 @@ export function initLogPanel(): void {
     document.querySelector('#btnExportLog')?.addEventListener('click', exportLog);
 
     panelInitialized = true;
-    // R46: 启动日志轮转
-    startLogRotation();
     if (earlyBuffer.length > 0 && logBodyEl) {
       const frag = document.createDocumentFragment();
       for (const entry of earlyBuffer) {
@@ -200,42 +176,51 @@ export function logThink(thinking: string): void {
 
 export function logStream(msg: string): void { addLog('stream', msg); }
 
-/** 本轮流式开始：同步创建新进度条目到日志底部（不删旧，日志就是完整记录） */
+/** 当前流式进度条目 id（用于原地更新） */
+let _streamProgressId: string | null = null;
+
+/** 本轮流式开始：通过 addLog 创建进度条目（纳入 logs 数组统一管理） */
 export function resetStreamProgress(): void {
-  if (!logBodyEl) return;
-  const entry = document.createElement('div');
-  entry.className = 'log-entry log-stream log-stream-progress';
-  entry.innerHTML = `<span class="log-time">${formatTime(Date.now())}</span><span class="log-icon">📡</span><span class="log-msg">⏳ 等待模型响应… 0s</span>`;
-  logBodyEl.appendChild(entry);
+  _streamProgressId = genId();
+  addLog('stream', '⏳ 等待模型响应… 0s', undefined, '📡', _streamProgressId);
 }
 
-/** 更新**最新**一条流式进度日志（原地更新消息，不改变 DOM 位置和时间戳） */
+/** 更新当前流式进度日志（原地更新 DOM，同步 logs 数组） */
 export function logStreamProgress(msg: string): void {
-  const all = logBodyEl?.querySelectorAll?.('.log-stream-progress');
-  if (all && all.length > 0) {
-    const latest = all[all.length - 1] as HTMLElement;
-    const msgSpan = latest.querySelector('.log-msg');
+  if (!_streamProgressId) return;
+  // 更新 DOM
+  const el = logBodyEl?.querySelector(`#${_streamProgressId}`);
+  if (el) {
+    const msgSpan = el.querySelector('.log-msg');
     if (msgSpan) msgSpan.textContent = msg;
   }
+  // 同步 logs 数组（确保导出时进度也是最新的）
+  const entry = logs.find(l => l.id === _streamProgressId);
+  if (entry) entry.message = msg;
 }
 
-/** 视频提取进度：创建初始条目 */
+/** 当前视频提取进度条目 id */
+let _videoProgressId: string | null = null;
+
+/** 视频提取进度：通过 addLog 创建条目（纳入 logs 数组统一管理） */
 export function resetVideoProgress(fileName: string): void {
-  if (!logBodyEl) return;
-  const entry = document.createElement('div');
-  entry.className = 'log-entry log-info log-video-progress';
-  entry.innerHTML = `<span class="log-time">${formatTime(Date.now())}</span><span class="log-icon">🎬</span><span class="log-msg">开始提取视频帧: ${escapeHtml(fileName)}</span><pre class="log-detail">0 帧</pre>`;
-  logBodyEl.appendChild(entry);
+  _videoProgressId = genId();
+  addLog('info', `开始提取视频帧: ${fileName}`, '0 帧', '🎬', _videoProgressId);
 }
 
-/** 更新视频提取进度（原地更新，不新增条目） */
+/** 更新视频提取进度（原地更新 DOM 和 logs 数组） */
 export function updateVideoProgress(current: number): void {
-  const all = logBodyEl?.querySelectorAll?.('.log-video-progress');
-  if (all && all.length > 0) {
-    const latest = all[all.length - 1] as HTMLElement;
-    const detail = latest.querySelector('.log-detail');
-    if (detail) detail.textContent = `${current} 帧`;
+  if (!_videoProgressId) return;
+  const text = `${current} 帧`;
+  // 更新 DOM
+  const el = logBodyEl?.querySelector(`#${_videoProgressId}`);
+  if (el) {
+    const detail = el.querySelector('.log-detail');
+    if (detail) detail.textContent = text;
   }
+  // 同步 logs 数组
+  const entry = logs.find(l => l.id === _videoProgressId);
+  if (entry) entry.detail = text;
 }
 
 export function logAgentLoop(iteration: number, maxLoops: number): void { addLog('info', `Loop #${iteration}/${maxLoops}`); }
