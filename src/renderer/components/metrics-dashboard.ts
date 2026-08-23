@@ -1,10 +1,11 @@
 /**
  * MetricsDashboard — Agent Metrics 可视化仪表盘
- * 展示效率概览、工具热力图、Token 趋势
+ * 展示效率概览、工具热力图、Token 趋势；支持 JSON / Prometheus 格式导出
  */
 
-import { getMetricsHistory, aggregateMetrics, generateImprovementSuggestions } from '../services/agent-metrics.js';
-import { logInfo } from '../services/log-service.js';
+import { getMetricsHistory, aggregateMetrics, generateImprovementSuggestions, exportMetricsJSON, exportMetricsPrometheus } from '../services/agent-metrics.js';
+import { logInfo, logError, logSuccess } from '../services/log-service.js';
+import { showToast } from './toast.js';
 
 let metricsModalEl: HTMLElement | null = null;
 
@@ -14,10 +15,52 @@ export function initMetricsDashboard(): void {
   document.querySelector('#btnMetrics')?.addEventListener('click', openMetricsDashboard);
   document.querySelector('#btnCloseMetrics')?.addEventListener('click', closeMetricsDashboard);
 
+  // 指标导出（JSON / Prometheus 文本）
+  document.querySelector('#btnExportMetricsJson')?.addEventListener('click', () => exportMetrics('json'));
+  document.querySelector('#btnExportMetricsPrometheus')?.addEventListener('click', () => exportMetrics('prometheus'));
+
   if (metricsModalEl) {
     metricsModalEl.addEventListener('click', (e) => {
       if (e.target === metricsModalEl) closeMetricsDashboard();
     });
+  }
+}
+
+/** 导出指标为 JSON 或 Prometheus 文本格式 */
+async function exportMetrics(format: 'json' | 'prometheus'): Promise<void> {
+  try {
+    const bridge = window.metonaDesktop;
+    const content = format === 'json' ? exportMetricsJSON() : exportMetricsPrometheus();
+    const ext = format === 'json' ? 'json' : 'prom';
+    const ts = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
+    if (bridge) {
+      const filePath = await bridge.dialog.saveFile({
+        defaultPath: `metona-metrics-${ts}.${ext}`,
+        filters: [
+          format === 'json'
+            ? { name: 'JSON', extensions: ['json'] }
+            : { name: 'Prometheus 文本', extensions: ['prom', 'txt'] },
+        ]
+      });
+      if (!filePath) return;
+      const result = await bridge.fs.writeFile(filePath, content, 'utf-8');
+      if (!result.success) {
+        showToast(`导出失败: ${result.error}`, 'error');
+        return;
+      }
+      logSuccess(`指标已导出 (${format})`, filePath);
+      showToast('指标已导出', 'success');
+    } else {
+      // 浏览器回退：直接下载
+      const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `metona-metrics-${ts}.${ext}`;
+      a.click();
+    }
+  } catch (err) {
+    logError('指标导出失败', (err as Error).message);
+    showToast(`导出失败: ${(err as Error).message}`, 'error');
   }
 }
 

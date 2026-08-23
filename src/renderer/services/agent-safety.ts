@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Agent Safety — Agent 安全防护与行为治理模块
  * 
  * 从 agent-engine.ts 提取的 R51-R56 功能：
@@ -13,7 +13,7 @@
  */
 
 import type { OllamaMessage } from '../types.js';
-import { logInfo, logWarn } from './log-service.js';
+import { logInfo } from './log-service.js';
 
 // ═══════════════════════════════════════════════════════════════
 // R51: 工具结果离线存储
@@ -52,48 +52,17 @@ export function compactOldToolResult(msg: OllamaMessage): OllamaMessage {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// R52: 状态震荡检测
+// 状态震荡 / 死循环检测（历史功能，检测逻辑已被移除；保留调用历史
+// 数组以维持快照/恢复 API 的兼容性）
 // ═══════════════════════════════════════════════════════════════
 
 const _toolCallHistory: string[] = [];
-const MAX_HISTORY_LEN = 8;
 
-/** 检测工具调用序列是否存在震荡模式（A→B→A→B） */
-export function detectOscillation(): boolean {
-  if (_toolCallHistory.length < 4) return false;
-  const len = _toolCallHistory.length;
-  const a = _toolCallHistory[len - 4];
-  const b = _toolCallHistory[len - 3];
-  const c = _toolCallHistory[len - 2];
-  const d = _toolCallHistory[len - 1];
-  return a === c && b === d && a !== b;
-}
-
-/** 记录工具调用到历史序列 */
+/** 记录工具调用到历史序列（供快照/恢复） */
 export function recordToolCallHistory(toolName: string, args: Record<string, unknown>): void {
   const key = `${toolName}:${JSON.stringify(args, Object.keys(args).sort()).slice(0, 100)}`;
   _toolCallHistory.push(key);
-  if (_toolCallHistory.length > MAX_HISTORY_LEN) _toolCallHistory.shift();
-}
-
-/** 重置工具调用历史（新一轮对话开始时） */
-export function resetToolCallHistory(): void {
-  _toolCallHistory.length = 0;
-}
-
-// ═══════════════════════════════════════════════════════════════
-// R54: 增强死循环检测
-// ═══════════════════════════════════════════════════════════════
-
-/** 检测连续 N 次完全相同的工具调用 */
-export function detectConsecutiveIdentical(minCount: number): { detected: boolean; toolName: string; count: number } {
-  if (_toolCallHistory.length < minCount) return { detected: false, toolName: '', count: 0 };
-  const recent = _toolCallHistory.slice(-minCount);
-  const allSame = recent.every(k => k === recent[0]);
-  if (allSame) {
-    return { detected: true, toolName: recent[0].split(':')[0], count: minCount };
-  }
-  return { detected: false, toolName: '', count: 0 };
+  if (_toolCallHistory.length > 8) _toolCallHistory.shift();
 }
 
 // R56/R63 已删除：目标对齐验证 + 速率限制
@@ -370,43 +339,12 @@ export function recordErrorPattern(toolName: string, errorMsg: string): string |
 // R104 已删除：工具结果去重
 
 // ═══════════════════════════════════════════════════════════════
-// R109: 工具参数消毒 — 防止通过工具参数注入恶意内容
+// R109 已移除：工具参数消毒（sanitizeToolArgs）
+// 该实现会污染 write_file 的 content 等数据型参数（把合法文本当作注入
+// 模式替换掉），安全收益不抵数据破坏风险；注入防御由以下机制承担：
+// - 主进程 checkPathAllowed / checkCommandAllowed / checkPublicHttpUrl
+// - 系统提示词的数据边界标记（REFERENCE_DATA / TOOL_RESULT 信封）
 // ═══════════════════════════════════════════════════════════════
-
-/** R109: 消毒工具参数中的潜在注入内容 */
-export function sanitizeToolArgs(toolName: string, args: Record<string, unknown>): Record<string, unknown> {
-  const sanitized = { ...args };
-
-  // 对字符串参数进行消毒
-  const stringKeys = ['content', 'command', 'query', 'text', 'old_text', 'new_text', 'message'];
-  for (const key of stringKeys) {
-    if (typeof sanitized[key] === 'string') {
-      sanitized[key] = sanitizeInjectionPatterns(sanitized[key] as string);
-    }
-  }
-
-  // R109: run_command 特殊处理 — 移除命令链中的注入尝试
-  if (toolName === 'run_command' && typeof sanitized.command === 'string') {
-    // 移除命令中的 prompt injection 尝试（如 `# 删除所有文件` 伪装为注释）
-    sanitized.command = (sanitized.command as string)
-      .replace(/#\s*(?:ignore|forget|override|disregard|忽略|忘记|覆盖)\s.*$/gim, '')
-      .replace(/\|\s*(?:sh|bash|zsh|powershell|cmd)\b/gi, '')
-      .trim();
-  }
-
-  return sanitized;
-}
-
-/** R109: 清理潜在的 prompt injection 模式 */
-function sanitizeInjectionPatterns(text: string): string {
-  if (!text || text.length < 20) return text;
-  // 仅清理明显的注入模式，保留正常文本
-  return text
-    .replace(/ignore\s+(all\s+)?previous\s+(instructions?|prompts?)/gi, '[已过滤]')
-    .replace(/forget\s+(all\s+)?(instructions?|prompts?|rules?)/gi, '[已过滤]')
-    .replace(/disregard\s+(all|any|previous)\s+(instructions?|rules?)/gi, '[已过滤]')
-    .replace(/忽略.{0,4}(之前|前面|以上|所有).{0,4}(指令|提示|规则|系统)/g, '[已过滤]');
-}
 
 // ═══════════════════════════════════════════════════════════════
 // R112: 诊断系统 — 收集 Agent 运行状态用于调试和优化
@@ -604,62 +542,8 @@ export function smartTruncateByToolType(
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// R99: 工具结果引用解析 — 从归档存储检索完整工具结果
-// ═══════════════════════════════════════════════════════════════
-
-/**
- * R99: 根据 refId 检索归档的完整工具结果
- * 当模型在上下文中看到 [工具结果已归档 ref=xxx] 标记时，
- * 可以通过此函数获取完整内容
- */
-export function retrieveToolResult(refId: string): { toolName: string; fullContent: string; timestamp: number } | null {
-  const entry = _toolResultStore.get(refId);
-  if (!entry) return null;
-  return { ...entry };
-}
-
-/**
- * R99: 从文本中提取工具结果引用 ID
- * 匹配格式: [工具结果已归档 ref=toolref_xxx_yyy]
- */
-export function extractToolResultRefs(text: string): string[] {
-  const matches = text.match(/\[工具结果已归档\s+ref=(toolref_[\w_]+)\]/g);
-  if (!matches) return [];
-  return matches.map(m => {
-    const idMatch = m.match(/ref=(toolref_[\w_]+)/);
-    return idMatch ? idMatch[1] : '';
-  }).filter(Boolean);
-}
-
-/**
- * R99: 检查消息中是否引用了归档的工具结果，
- * 如果有则返回需要检索的引用信息
- */
-export function checkArchivedReferences(messages: Array<{ content?: string }>): Array<{ refId: string; toolName: string; fullContent: string }> {
-  const results: Array<{ refId: string; toolName: string; fullContent: string }> = [];
-  const seen = new Set<string>();
-
-  for (const msg of messages) {
-    const content = msg.content || '';
-    if (!content.includes('[工具结果已归档')) continue;
-    const refIds = extractToolResultRefs(content);
-    for (const refId of refIds) {
-      if (seen.has(refId)) continue;
-      seen.add(refId);
-      const retrieved = retrieveToolResult(refId);
-      if (retrieved) {
-        results.push({
-          refId,
-          toolName: retrieved.toolName,
-          fullContent: retrieved.fullContent,
-        });
-      }
-    }
-  }
-
-  return results;
-}
+// R99 已移除：工具结果引用解析（retrieveToolResult / checkArchivedReferences）
+// 归档结果暂无工具可取回；如需查看完整结果，模型按归档提示重新调用原工具
 
 // ═══════════════════════════════════════════════════════════════
 // 统一重置（新会话开始时调用）
@@ -841,7 +725,7 @@ export function formatErrorRecovery(suggestion: ErrorRecoverySuggestion): string
 }
 
 // ═══════════════════════════════════════════════════════════════
-// R118: Agent 循环性能分析 — 识别 Agent Loop 瓶颈
+// R118: 循环计时数据（供安全状态快照/恢复使用；报告生成已移除）
 // ═══════════════════════════════════════════════════════════════
 
 export interface LoopTiming {
@@ -852,333 +736,4 @@ export interface LoopTiming {
 }
 
 const _loopTimings: LoopTiming[] = [];
-const MAX_TIMING_ENTRIES = 200;
-
-/** R118: 记录阶段执行时间 */
-export function recordLoopTiming(loop: number, phase: string, durationMs: number): void {
-  _loopTimings.push({ loop, phase, durationMs, timestamp: Date.now() });
-  if (_loopTimings.length > MAX_TIMING_ENTRIES) {
-    _loopTimings.shift();
-  }
-}
-
-/** R118: 生成性能分析报告 */
-export function generatePerformanceReport(): {
-  totalLoops: number;
-  avgLoopTime: number;
-  slowestPhase: string;
-  phaseTimings: Record<string, { avg: number; max: number; count: number }>;
-  bottlenecks: string[];
-} {
-  if (_loopTimings.length === 0) {
-    return {
-      totalLoops: 0,
-      avgLoopTime: 0,
-      slowestPhase: '',
-      phaseTimings: {},
-      bottlenecks: ['无性能数据'],
-    };
-  }
-  
-  // 按阶段汇总
-  const phaseMap: Record<string, { total: number; max: number; count: number }> = {};
-  const loopTotals: Record<number, number> = {};
-  
-  for (const t of _loopTimings) {
-    if (!phaseMap[t.phase]) {
-      phaseMap[t.phase] = { total: 0, max: 0, count: 0 };
-    }
-    phaseMap[t.phase].total += t.durationMs;
-    phaseMap[t.phase].max = Math.max(phaseMap[t.phase].max, t.durationMs);
-    phaseMap[t.phase].count++;
-    
-    loopTotals[t.loop] = (loopTotals[t.loop] || 0) + t.durationMs;
-  }
-  
-  // 计算平均值
-  const phaseTimings: Record<string, { avg: number; max: number; count: number }> = {};
-  for (const [phase, data] of Object.entries(phaseMap)) {
-    phaseTimings[phase] = {
-      avg: Math.round(data.total / data.count),
-      max: data.max,
-      count: data.count,
-    };
-  }
-  
-  // 找到最慢的阶段
-  let slowestPhase = '';
-  let slowestAvg = 0;
-  for (const [phase, data] of Object.entries(phaseTimings)) {
-    if (data.avg > slowestAvg) {
-      slowestAvg = data.avg;
-      slowestPhase = phase;
-    }
-  }
-  
-  // 计算平均每轮时间
-  const loopTimes = Object.values(loopTotals);
-  const avgLoopTime = loopTimes.length > 0
-    ? Math.round(loopTimes.reduce((s, t) => s + t, 0) / loopTimes.length)
-    : 0;
-  
-  // 识别瓶颈
-  const bottlenecks: string[] = [];
-  if (slowestAvg > 5000) {
-    bottlenecks.push(`⚠️ ${slowestPhase} 阶段平均耗时 ${slowestAvg}ms，是主要瓶颈`);
-  }
-  if (avgLoopTime > 30000) {
-    bottlenecks.push(`⚠️ 平均每轮 ${avgLoopTime}ms，整体速度较慢`);
-  }
-  // 检查是否有异常慢的单次执行
-  for (const [phase, data] of Object.entries(phaseTimings)) {
-    if (data.max > data.avg * 3) {
-      bottlenecks.push(`⚠️ ${phase} 阶段最大耗时 ${data.max}ms 远超平均 ${data.avg}ms，可能存在异常`);
-    }
-  }
-  if (bottlenecks.length === 0) {
-    bottlenecks.push('✅ 未检测到明显性能瓶颈');
-  }
-  
-  return {
-    totalLoops: loopTimes.length,
-    avgLoopTime,
-    slowestPhase,
-    phaseTimings,
-    bottlenecks,
-  };
-}
-
-/** R118: 格式化性能报告 */
-export function formatPerformanceReport(): string {
-  const report = generatePerformanceReport();
-  const lines = [
-    `Agent Loop 性能分析 (${report.totalLoops} 轮)`,
-    `${'─'.repeat(40)}`,
-    `平均每轮耗时: ${report.avgLoopTime}ms`,
-    `最慢阶段: ${report.slowestPhase}`,
-    '',
-    '阶段明细:',
-  ];
-  for (const [phase, data] of Object.entries(report.phaseTimings)) {
-    lines.push(`  ${phase}: avg=${data.avg}ms max=${data.max}ms (${data.count}次)`);
-  }
-  lines.push('');
-  lines.push('瓶颈分析:');
-  for (const b of report.bottlenecks) {
-    lines.push(`  ${b}`);
-  }
-  return lines.join('\n');
-}
-
-// ═══════════════════════════════════════════════════════════════
-// R114: 工具调用依赖图 — 分析工具间依赖关系优化并行执行
-// ═══════════════════════════════════════════════════════════════
-
-interface ToolDependency {
-  tool: string;
-  dependsOn: string[]; // 依赖的其他工具（必须先完成）
-  produces: string[];  // 产出（文件路径等）
-  consumes: string[];  // 消费（文件路径等）
-}
-
-/** R114: 从工具调用序列推断依赖关系 */
-export function inferToolDependencies(
-  toolCalls: Array<{ name: string; arguments: Record<string, unknown> }>
-): ToolDependency[] {
-  const dependencies: ToolDependency[] = [];
-  const fileProducers = new Map<string, string>(); // filePath → toolName
-  
-  for (const call of toolCalls) {
-    const dep: ToolDependency = {
-      tool: call.name,
-      dependsOn: [],
-      produces: [],
-      consumes: [],
-    };
-    
-    // write_file/create_directory 产生文件
-    if (call.name === 'write_file' && call.arguments.path) {
-      const path = String(call.arguments.path);
-      dep.produces.push(path);
-      fileProducers.set(path, call.name);
-    }
-    
-    // read_file/edit_file/delete_file 消费文件
-    if (['read_file', 'edit_file', 'delete_file'].includes(call.name)) {
-      // 支持 path 单个路径和 paths 数组
-      const pathsToCheck: string[] = [];
-      if (call.arguments.path) pathsToCheck.push(String(call.arguments.path));
-      if (Array.isArray(call.arguments.paths)) pathsToCheck.push(...(call.arguments.paths as unknown[]).map(p => String(p)));
-      for (const path of pathsToCheck) {
-        dep.consumes.push(path);
-        const producer = fileProducers.get(path);
-        if (producer) {
-          dep.dependsOn.push(producer);
-        }
-      }
-    }
-    
-    // run_command 可能消费前面产生的文件
-    if (call.name === 'run_command' && call.arguments.command) {
-      const cmd = String(call.arguments.command);
-      for (const [filePath, producer] of fileProducers) {
-        if (cmd.includes(filePath)) {
-          dep.consumes.push(filePath);
-          dep.dependsOn.push(producer);
-        }
-      }
-    }
-    
-    dependencies.push(dep);
-  }
-  
-  return dependencies;
-}
-
-/** R114: 基于依赖关系对工具调用分组（可并行执行的分为一组） */
-export function groupToolsByDependency(
-  toolCalls: Array<{ name: string; arguments: Record<string, unknown> }>
-): Array<Array<{ name: string; arguments: Record<string, unknown> }>> {
-  const deps = inferToolDependencies(toolCalls);
-  const groups: Array<Array<{ name: string; arguments: Record<string, unknown> }>> = [];
-  const completed = new Set<string>();
-  
-  let remaining = [...toolCalls.map((tc, i) => ({ ...tc, index: i }))];
-  
-  while (remaining.length > 0) {
-    const currentBatch: Array<{ name: string; arguments: Record<string, unknown> }> = [];
-    const batchIndices = new Set<number>();
-    
-    for (const tc of remaining) {
-      const dep = deps[tc.index];
-      // 检查所有依赖是否已完成
-      const canRun = dep.dependsOn.every(d => completed.has(d));
-      if (canRun) {
-        currentBatch.push({ name: tc.name, arguments: tc.arguments });
-        batchIndices.add(tc.index);
-      }
-    }
-    
-    if (currentBatch.length === 0) {
-      // 没有可执行的（可能有循环依赖），强制执行剩余的
-      groups.push(remaining.map(tc => ({ name: tc.name, arguments: tc.arguments })));
-      break;
-    }
-    
-    groups.push(currentBatch);
-    for (const idx of batchIndices) {
-      completed.add(toolCalls[idx].name);
-    }
-    remaining = remaining.filter(tc => !batchIndices.has(tc.index));
-  }
-  
-  return groups;
-}
-
-// ═══════════════════════════════════════════════════════════════
-// R117: 记忆搜索相关性调优 — 微调记忆搜索评分权重
-// ═══════════════════════════════════════════════════════════════
-
-export interface MemorySearchConfig {
-  idfWeight: number;       // IDF 权重
-  fuzzyWeight: number;     // 模糊匹配权重
-  phraseBonus: number;     // 多词短语奖励
-  recencyBonus: number;    // 时近性奖励
-  frequencyBonus: number;  // 访问频率奖励
-}
-
-const _memorySearchConfig: MemorySearchConfig = {
-  idfWeight: 1.0,
-  fuzzyWeight: 0.5,
-  phraseBonus: 2.0,
-  recencyBonus: 0.3,
-  frequencyBonus: 0.2,
-};
-
-/** R117: 获取当前记忆搜索配置 */
-export function getMemorySearchConfig(): MemorySearchConfig {
-  return { ..._memorySearchConfig };
-}
-
-/** R117: 更新记忆搜索配置 */
-export function updateMemorySearchConfig(updates: Partial<MemorySearchConfig>): void {
-  Object.assign(_memorySearchConfig, updates);
-  logInfo(`R117: 记忆搜索配置已更新`, JSON.stringify(_memorySearchConfig));
-}
-
-/** R117: 根据搜索效果自动调优 */
-export function autoTuneMemorySearch(
-  avgResultCount: number,
-  avgRelevanceScore: number
-): { tuned: boolean; changes: string[] } {
-  const changes: string[] = [];
-  
-  // 如果结果太多但相关性低，增加 IDF 权重
-  if (avgResultCount > 10 && avgRelevanceScore < 0.3) {
-    _memorySearchConfig.idfWeight += 0.2;
-    changes.push(`IDF 权重增加到 ${_memorySearchConfig.idfWeight.toFixed(1)}（提高区分度）`);
-  }
-  
-  // 如果结果太少，降低模糊匹配阈值
-  if (avgResultCount < 2) {
-    _memorySearchConfig.fuzzyWeight += 0.1;
-    changes.push(`模糊匹配权重增加到 ${_memorySearchConfig.fuzzyWeight.toFixed(1)}（放宽匹配）`);
-  }
-  
-  // 如果相关性分数高但结果少，增加频率奖励
-  if (avgRelevanceScore > 0.7 && avgResultCount < 5) {
-    _memorySearchConfig.frequencyBonus += 0.1;
-    changes.push(`频率奖励增加到 ${_memorySearchConfig.frequencyBonus.toFixed(1)}（优先高频条目）`);
-  }
-  
-  return { tuned: changes.length > 0, changes };
-}
-
-// R119 已删除：工具优先级排序
-
-// ═══════════════════════════════════════════════════════════════
-// R124: 压缩上下文中工具引用解析 — 恢复被压缩的工具结果引用
-// ═══════════════════════════════════════════════════════════════
-
-/** R124: 在压缩后的上下文中解析工具引用 */
-export function resolveCompressedReferences(
-  messages: Array<{ role: string; content: string }>
-): { resolved: number; unresolved: string[] } {
-  let resolved = 0;
-  const unresolved: string[] = [];
-  
-  for (const msg of messages) {
-    if (msg.role !== 'tool') continue;
-    const content = msg.content || '';
-    
-    // 查找引用标记
-    const refMatch = content.match(/\[工具结果已归档 ref=(\S+)/);
-    if (refMatch) {
-      const refId = refMatch[1];
-      const stored = _toolResultStore.get(refId);
-      if (stored) {
-        resolved++;
-      } else {
-        unresolved.push(refId);
-      }
-    }
-  }
-  
-  return { resolved, unresolved };
-}
-
-/** R124: 恢复压缩引用为完整内容（仅对指定引用） */
-export function restoreCompressedReference(
-  refId: string,
-  maxLen?: number
-): string | null {
-  const stored = _toolResultStore.get(refId);
-  if (!stored) return null;
-  
-  const content = stored.fullContent;
-  if (maxLen && content.length > maxLen) {
-    return content.slice(0, maxLen) + `\n...(已截断，完整内容 ${content.length} 字符)`;
-  }
-  return content;
-}
 

@@ -5,7 +5,7 @@
  */
 
 import { state, KEYS } from '../state/state.js';
-import { setToolMode, type ToolMode } from '../services/tool-registry.js';
+import { setToolMode, MODE_TOOLS as MANAGED_TOOLS, type ToolMode } from '../services/tool-registry.js';
 import { showToast } from './toast.js';
 import { logInfo } from '../services/log-service.js';
 import type { ChatDB } from '../db/chat-db.js';
@@ -16,14 +16,6 @@ const MODE_NAMES: Record<string, string> = {
   auto: '自动执行',
   confirm: '需确认',
 };
-
-// 需要全局模式管理的工具列表（与 tool-registry.ts MODE_TOOLS 一致）
-const MANAGED_TOOLS = [
-  'run_command',
-  'write_file', 'create_directory', 'delete_file',
-  'edit_file', 'move_file', 'copy_file',
-  'download_file', 'compress',
-];
 
 function updateAllBadges(mode: string): void {
   const badgeText = mode === 'auto' ? '自动' : '需确认';

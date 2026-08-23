@@ -5,6 +5,7 @@
 
 import { BrowserWindow, session } from 'electron';
 import { mainWindow } from './main.js';
+import { checkPublicHttpUrl } from './net-guard.js';
 
 function sendLog(level: 'info' | 'success' | 'warn' | 'error', message: string, detail?: string): void {
   mainWindow?.webContents.send('main:log', { level, message, detail });
@@ -12,8 +13,11 @@ function sendLog(level: 'info' | 'success' | 'warn' | 'error', message: string, 
 
 let agentBrowser: BrowserWindow | null = null;
 
-/** Agent 浏览器使用的独立 session partition（内存隔离，重启清空） */
-const AGENT_PARTITION = 'agent';
+/**
+ * Agent 浏览器使用的独立 session partition。
+ * `memory:` 前缀 = 内存隔离，应用退出后 cookie/storage/缓存全部清空。
+ */
+const AGENT_PARTITION = 'memory:agent';
 
 /** 伪装的 User-Agent — 移除 Electron 字样，使用常见 Chrome UA */
 const AGENT_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
@@ -80,6 +84,17 @@ async function waitForSelector(win: BrowserWindow, selector: string, waitMs = 10
 /** 打开 URL */
 export async function browserOpen(url: string, waitSelector?: string): Promise<{ success: boolean; title?: string; url?: string; waited?: boolean; error?: string }> {
   try {
+    // 协议白名单：仅 http/https（阻止 file:// 读取本地文件绕过路径安全层）
+    if (!/^https?:\/\//i.test(url)) {
+      return { success: false, error: `browser_open 仅支持 http/https 协议，收到: ${url.slice(0, 60)}` };
+    }
+    // SSRF 防护：阻止访问环回/内网地址
+    const netCheck = await checkPublicHttpUrl(url);
+    if (!netCheck.ok) {
+      sendLog('warn', `🌐 browser_open 安全拦截`, netCheck.reason || '');
+      return { success: false, error: `安全拦截: ${netCheck.reason}` };
+    }
+
     // 如果已有 BrowserWindow 且加载了不同 URL，先关闭重建
     if (agentBrowser && !agentBrowser.isDestroyed()) {
       const currentUrl = agentBrowser.webContents.getURL();

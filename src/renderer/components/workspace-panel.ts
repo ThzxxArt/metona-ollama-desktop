@@ -96,9 +96,6 @@ let toolCards: ToolCallRecord[] = [];
 /** 当前正在运行的 AI 命令（用于用户手动终止时通知 AI） */
 let currentAiCommand: string | null = null;
 
-/** 终止通知回调（由外部设置） */
-let onToolTerminated: ((command: string) => void) | null = null;
-
 
 function genId(): string {
   return `ws_${Date.now()}_${++_counter}`;
@@ -435,11 +432,6 @@ function killCurrentProcess(): void {
   renderTerminal();
   updateStopBtnState();
   updateHint();
-
-  // 通知 AI 命令被用户终止
-  if (cmd && onToolTerminated) {
-    onToolTerminated(cmd);
-  }
 }
 
 function clearTerminal(): void {

@@ -6,6 +6,7 @@
 import { spawn, ChildProcess } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
+import { app } from 'electron';
 import { mainWindow } from './main.js';
 
 function sendLog(level: 'info' | 'success' | 'warn' | 'error', message: string, detail?: string): void {
@@ -172,7 +173,7 @@ export async function startServer(config: { name: string; command: string; args:
       const initResult = await sendRequest(server, 'initialize', {
         protocolVersion: '2024-11-05',
         capabilities: { tools: {} },
-        clientInfo: { name: 'Metona Ollama', version: '5.0.0' }
+        clientInfo: { name: 'Metona Ollama', version: app.getVersion() }
       }) as Record<string, unknown>;
 
       server.capabilities = (initResult.capabilities as Record<string, unknown>) || {};
@@ -229,8 +230,22 @@ export async function refreshTools(name: string): Promise<MCPTool[]> {
   if (!server || !server.initialized) return [];
 
   try {
-    const result = await sendRequest(server, 'tools/list') as { tools?: MCPTool[] };
-    server.tools = result.tools || [];
+    // tools/list 分页：遵循 nextCursor（上限 10 页防异常服务器死循环）
+    const MAX_TOOL_PAGES = 10;
+    const collected: MCPTool[] = [];
+    let cursor: string | undefined = undefined;
+    let pages = 0;
+    do {
+      const result = await sendRequest(server, 'tools/list', cursor ? { cursor } : undefined) as {
+        tools?: MCPTool[];
+        nextCursor?: string;
+      };
+      collected.push(...(result.tools || []));
+      cursor = result.nextCursor;
+      pages++;
+    } while (cursor && pages < MAX_TOOL_PAGES);
+
+    server.tools = collected;
     sendLog('success', `🔌 MCP [${name}] ${server.tools.length} 个工具`,
       server.tools.map(t => t.name).join(', '));
     return server.tools;

@@ -288,41 +288,6 @@ export function generateImprovementSuggestions(): ImprovementSuggestion[] {
   return suggestions;
 }
 
-/**
- * 将改进建议格式化为 AGENT.md 补充规则
- */
-export function formatSuggestionsAsRules(suggestions: ImprovementSuggestion[]): string {
-  if (suggestions.length === 0) return '';
-
-  let rules = '\n\n## 自动生成的改进规则\n';
-  rules += '> 以下规则由 Agent Metrics 系统根据历史错误模式自动生成\n\n';
-
-  for (const s of suggestions) {
-    rules += `### ${s.pattern}\n`;
-    rules += `- **严重程度**: ${s.severity}\n`;
-    rules += `- **出现频率**: ${s.frequency} 次\n`;
-    rules += `- **建议**: ${s.suggestion}\n\n`;
-  }
-
-  return rules;
-}
-
-// ═══════════════════════════════════════════════════════════════
-// 格式化输出（供仪表盘使用）
-// ═══════════════════════════════════════════════════════════════
-
-export function formatMetricsReport(metrics: AgentMetrics): string {
-  return [
-    `Agent Metrics 报告 (${new Date(metrics.collectedAt).toLocaleString()})`,
-    `${'─'.repeat(50)}`,
-    `总会话数:         ${metrics.totalSessions}`,
-    `平均迭代/任务:    ${metrics.avgIterationsPerTask}`,
-    `工具成功率:       ${formatPercent(metrics.toolSuccessRate)}`,
-    `Token 效率:       ${formatPercent(metrics.tokenEfficiency)}`,
-    `高频错误:         ${metrics.frequentErrors.length > 0 ? metrics.frequentErrors.map(e => `${e.pattern}(${e.count}次)`).join(', ') : '无'}`,
-  ].join('\n');
-}
-
 /** P3-14: 导出结构化指标（JSON 格式，兼容 Prometheus/OpenTelemetry 采集器） */
 export function exportMetricsJSON(): string {
   const metrics = aggregateMetrics();

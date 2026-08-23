@@ -53,6 +53,11 @@ export function initSettingsModal(): void {
     const api = new OllamaAPI(url);
     state.set(KEYS.API, api);
     if (db) await db.saveSetting('serverUrl', url);
+    // 通知主进程更新 CORS 允许清单（webSecurity 开启后仅放行该地址）
+    const bridge = window.metonaDesktop;
+    if (bridge?.setOllamaOrigin) {
+      try { await bridge.setOllamaOrigin(url); } catch { /* ignore */ }
+    }
     updateConnectionInfo();
     checkConnection();
     loadModels();
@@ -307,6 +312,19 @@ export function initSettingsModal(): void {
     });
   }
 
+  // ── 子代理权限上限（AI 请求的权限只降不升）──
+  const selectSubAgentPermission = document.querySelector('#selectSubAgentPermission') as HTMLSelectElement | null;
+  if (selectSubAgentPermission) {
+    selectSubAgentPermission.addEventListener('change', async () => {
+      const db = state.get<ChatDB | null>(KEYS.DB);
+      const val = selectSubAgentPermission.value as 'readonly' | 'limited_write' | 'full_write';
+      state.set('subAgentMaxPermission', val);
+      if (db) await db.saveSetting('subAgentMaxPermission', val);
+      const permNames: Record<string, string> = { readonly: '只读', limited_write: '有限写入', full_write: '完整写入' };
+      logSetting('子代理权限上限', permNames[val] || val);
+    });
+  }
+
   // ── 子代理相关设置（原顶层事件监听器移入此处，确保 DOM 已就绪）──
   // 子代理模型设置保存
   document.querySelector('#selectSubAgentModel')?.addEventListener('change', async () => {
@@ -361,6 +379,8 @@ export function openSettingsModal(): void {
   loadTimeoutSettings();
   loadWatchdogSetting();
   loadThemeSetting();
+  // 刷新子代理模型下拉列表（此前从未被调用，导致下拉框永远只有默认项）
+  populateSubAgentModels().catch(() => {});
   // 刷新工作空间目录显示
   const bridge = window.metonaDesktop;
   if (bridge?.isDesktop) {
@@ -443,12 +463,13 @@ async function exportAllSessions(): Promise<void> {
         filters: [{ name: 'Metona 备份', extensions: ['metona'] }]
       });
       if (!filePath) return;
-      // blob → ArrayBuffer → base64 字符串，通过 base64 编码写入二进制文件
-      const buffer = await blob.arrayBuffer();
-      const bytes = new Uint8Array(buffer);
-      let binary = '';
-      for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-      const b64 = btoa(binary);
+      // blob → base64：使用 FileReader（取代逐字节字符串拼接的 O(n²) 实现）
+      const b64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result).split(',')[1] || '');
+        reader.onerror = () => reject(new Error('读取备份数据失败'));
+        reader.readAsDataURL(blob);
+      });
       const result = await bridge.fs.writeFile(filePath, b64, 'base64');
       if (!result.success) {
         showToast(`导出失败: ${result.error}`, 'error');

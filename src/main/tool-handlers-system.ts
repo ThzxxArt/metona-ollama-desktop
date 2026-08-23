@@ -11,6 +11,7 @@ import { sendLog, resolvePath, type ToolResult } from './tool-handlers-shared.js
 import { getWorkspaceDir } from './workspace.js';
 import { getSetting } from './db/sqlite.js';
 import { browserOpen, browserExtract, browserClose } from './browser.js';
+import { checkPublicHttpUrl } from './net-guard.js';
 
 /** 当前工具命令进程（用于用户手动终止） */
 let _toolProc: ReturnType<typeof spawn> | null = null;
@@ -426,6 +427,13 @@ export async function handleWebFetch(params: { url: string; max_chars?: number; 
   const url = params.url;
   if (!url.startsWith('http://') && !url.startsWith('https://')) {
     return { success: false, error: '仅支持 http/https 协议' };
+  }
+
+  // SSRF 防护：阻止访问环回/内网/链路本地地址（含域名解析后的真实 IP）
+  const netCheck = await checkPublicHttpUrl(url);
+  if (!netCheck.ok) {
+    sendLog('warn', `🌐 web_fetch 安全拦截`, netCheck.reason || '');
+    return { success: false, error: `安全拦截: ${netCheck.reason}（内网/本机地址访问已被禁用，防止提示注入探测本地服务）` };
   }
 
   const maxChars = params.max_chars || 0; // 0 = 不截断
@@ -957,7 +965,7 @@ export async function handleWebSearch(params: { query: string; max_results?: num
       r.snippet = r.snippet.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
     }
 
-    // ── 4. URL 可达性预检 + 质量评分 ──
+    // ── 4. URL 可达性预检（只取响应头，立即取消 body 下载）+ 质量评分 ──
     const topResults = allResults.slice(0, Math.min(maxResults * 2, allResults.length)); // 多检查一些用于排序
     const CONCURRENCY = 5;
     for (let i = 0; i < topResults.length; i += CONCURRENCY) {
@@ -967,8 +975,13 @@ export async function handleWebSearch(params: { query: string; max_results?: num
           const resp = await fetchWithTimeout(r.url, 3000, {
             'User-Agent': UA_POOL[0],
             'Accept': 'text/html,*/*',
+            'Range': 'bytes=0-0',
           });
           r.reachable = resp?.ok === true;
+          // 立即取消 body 下载，避免为可达性检查传输完整页面
+          if (resp?.body) {
+            try { await resp.body.cancel(); } catch { /* 已完成 */ }
+          }
         } catch {
           r.reachable = false;
         }
@@ -1389,17 +1402,25 @@ export async function handleDownloadFile(params: { url: string; destination: str
       return { success: false, error: '仅支持 http/https 协议' };
     }
 
+    // SSRF 防护
+    const netCheck = await checkPublicHttpUrl(params.url);
+    if (!netCheck.ok) {
+      sendLog('warn', `⬇️ download_file 安全拦截`, netCheck.reason || '');
+      return { success: false, error: `安全拦截: ${netCheck.reason}` };
+    }
+
     sendLog('info', `⬇️ download_file`, `${params.url} → ${destPath}`);
 
-    // 带超时和 UA 的下载，支持重试
+    // 带超时和 UA 的下载，支持重试；超时跟随用户配置的 HTTP 超时
     const MAX_RETRIES = 3;
     const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+    const timeoutMs = HTTP_TIMEOUT > 0 ? HTTP_TIMEOUT : 60_000;
     let resp: Response | null = null;
-    let lastError: string = '';
+    let lastError = '';
 
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 60_000);
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
       try {
         resp = await fetch(params.url, {
           signal: controller.signal,
@@ -1418,7 +1439,7 @@ export async function handleDownloadFile(params: { url: string; destination: str
       } catch (err) {
         clearTimeout(timeoutId);
         lastError = (err as Error).message;
-        if (lastError.includes('abort')) lastError = '下载超时 (60s)';
+        if (lastError.includes('abort')) lastError = `下载超时 (${Math.round(timeoutMs / 1000)}s)`;
       }
       if (attempt < MAX_RETRIES) {
         await new Promise(r => setTimeout(r, 1000 * attempt)); // 指数退避
@@ -1552,81 +1573,4 @@ export async function handleCompress(params: { action: string; path: string; des
   }
 }
 
-// ── calculator: 安全数学计算器（纯 JS 递归下降解析，无 eval） ──
-export function handleCalculator(params: { expression: string }): ToolResult {
-  try {
-    const expr = params.expression;
-    if (!expr || expr.length > 500) {
-      return { success: false, error: '表达式为空或过长（最大500字符）' };
-    }
-    const result = safeCalc(expr);
-    return { success: true, expression: expr, result };
-  } catch (err) {
-    return { success: false, error: (err as Error).message, expression: params.expression };
-  }
-}
-
-function safeCalc(expr: string): number {
-  expr = expr.replace(/\s+/g, '');
-  if (!/^[\d+\-*/().%]+$/.test(expr)) {
-    throw new Error('表达式包含非法字符');
-  }
-  let pos = 0;
-
-  function parseExpression(): number {
-    let left = parseTerm();
-    while (pos < expr.length) {
-      if (expr[pos] === '+') { pos++; left += parseTerm(); }
-      else if (expr[pos] === '-') { pos++; left -= parseTerm(); }
-      else break;
-    }
-    return left;
-  }
-
-  function parseTerm(): number {
-    let left = parsePower();
-    while (pos < expr.length) {
-      if (expr[pos] === '*') { pos++; left *= parsePower(); }
-      else if (expr[pos] === '/') { pos++; const d = parsePower(); if (d === 0) throw new Error('除数不能为零'); left /= d; }
-      else if (expr[pos] === '%') { pos++; left %= parsePower(); }
-      else break;
-    }
-    return left;
-  }
-
-  function parsePower(): number {
-    let left = parseUnary();
-    while (pos < expr.length && expr[pos] === '*' && pos + 1 < expr.length && expr[pos + 1] === '*') {
-      pos += 2;
-      left = Math.pow(left, parseUnary());
-    }
-    return left;
-  }
-
-  function parseUnary(): number {
-    if (expr[pos] === '-') { pos++; return -parseAtom(); }
-    if (expr[pos] === '+') { pos++; return parseAtom(); }
-    return parseAtom();
-  }
-
-  function parseAtom(): number {
-    if (expr[pos] === '(') {
-      pos++;
-      const val = parseExpression();
-      if (pos >= expr.length || expr[pos] !== ')') throw new Error('缺少右括号');
-      pos++;
-      return val;
-    }
-    const start = pos;
-    while (pos < expr.length && /[\d.]/.test(expr[pos])) pos++;
-    if (start === pos) throw new Error(`意外字符: ${expr[pos] || 'EOF'}`);
-    const num = parseFloat(expr.slice(start, pos));
-    if (isNaN(num)) throw new Error(`无效数字: ${expr.slice(start, pos)}`);
-    return num;
-  }
-
-  const result = parseExpression();
-  if (pos < expr.length) throw new Error(`表达式末尾有意外字符: ${expr.slice(pos)}`);
-  if (!isFinite(result)) throw new Error('计算结果为无穷大');
-  return result;
-}
+// calculator 已抽取为独立纯函数模块 calculator.ts（便于单元测试）

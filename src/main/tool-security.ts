@@ -19,8 +19,8 @@ let allowedDirs: string[] = [
   '/tmp',
 ];
 
-/** 永久禁止的目录 */
-const BLOCKED_DIRS: string[] = [
+/** 永久禁止的目录（系统目录 — 工作空间/白名单也不可豁免） */
+const SYSTEM_BLOCKED_DIRS: string[] = [
   // Linux/macOS 系统目录
   '/etc', '/sys', '/proc', '/dev', '/boot', '/root',
   '/bin', '/sbin', '/usr/bin', '/usr/sbin', '/usr/lib',
@@ -30,7 +30,10 @@ const BLOCKED_DIRS: string[] = [
   'C:\\Windows', 'C:\\Windows\\System32', 'C:\\Windows\\SysWOW64',
   'C:\\Windows\\System', 'C:\\Windows\\WinSxS',
   'C:\\Program Files', 'C:\\Program Files (x86)', 'C:\\ProgramData',
-  // 用户敏感目录
+];
+
+/** 用户敏感目录（工具不可访问；但用户可自行选择其子目录作为工作空间） */
+const USER_SENSITIVE_DIRS: string[] = [
   path.join(HOME, '.ssh'),
   path.join(HOME, '.gnupg'),
   path.join(HOME, '.aws'),
@@ -39,6 +42,9 @@ const BLOCKED_DIRS: string[] = [
   path.join(HOME, '.kube'),
   path.join(HOME, 'AppData'),
 ];
+
+/** 完整黑名单 = 系统目录 + 用户敏感目录 */
+const BLOCKED_DIRS: string[] = [...SYSTEM_BLOCKED_DIRS, ...USER_SENSITIVE_DIRS];
 
 /** 命令黑名单 */
 const BLOCKED_COMMANDS: string[] = [
@@ -73,6 +79,13 @@ let blocklistExemptions: string[] = [];
 
 /** 工作空间下受保护的文件名：任何工具都禁止直接读写，只能通过专用通道访问 */
 const BLOCKED_FILES = new Set(['MEMORY.md']);
+
+/**
+ * 工作空间下禁止写入（但允许读取）的文件。
+ * 这些文件定义 AI 的身份与行为；禁止工具写入是为了防止提示注入
+ * 诱导 AI 改写自身人格文件实现持久化劫持，只能由用户手动编辑。
+ */
+const WRITE_PROTECTED_FILES = new Set(['SOUL.md', 'AGENT.md', 'USER.md']);
 
 /** 注册路径为安全豁免（不受 BLOCKED_DIRS 限制）。主要用于注册工作空间目录 */
 export function addBlocklistExemptions(dirs: string[]): void {
@@ -112,6 +125,38 @@ export function isBlockedFile(targetPath: string): boolean {
   }
 }
 
+/** 检查文件是否在工作空间下且属于写保护文件（SOUL/AGENT/USER.md，可读不可写） */
+function isWriteProtectedFile(targetPath: string): boolean {
+  try {
+    const resolved = path.resolve(targetPath);
+    const basename = path.basename(resolved);
+    if (!WRITE_PROTECTED_FILES.has(basename)) return false;
+    for (const exempt of blocklistExemptions) {
+      if (resolved === path.join(exempt, basename) || resolved.startsWith(exempt + path.sep)) {
+        return true;
+      }
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+/** 判断路径是否位于系统目录内（工作空间也不可豁免的硬红线） */
+export function isSystemBlockedPath(targetPath: string): boolean {
+  try {
+    const resolved = path.resolve(targetPath);
+    for (const blocked of SYSTEM_BLOCKED_DIRS) {
+      if (resolved === blocked || resolved.startsWith(blocked + path.sep)) {
+        return true;
+      }
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 export function checkPathAllowed(targetPath: string, operation: 'read' | 'write'): CheckResult {
   const resolved = path.resolve(targetPath);
 
@@ -123,6 +168,17 @@ export function checkPathAllowed(targetPath: string, operation: 'read' | 'write'
   if (isBlockedFile(resolved)) {
     const basename = path.basename(resolved);
     return { ok: false, reason: `禁止直接访问 ${basename}。此文件只能通过 memory 工具操作，其他任何工具都无权读写。` };
+  }
+
+  // ── 写保护：SOUL/AGENT/USER.md 可读不可写（防提示注入持久化劫持） ──
+  if (operation === 'write' && isWriteProtectedFile(resolved)) {
+    const basename = path.basename(resolved);
+    return { ok: false, reason: `禁止写入 ${basename}。此文件定义 AI 的身份与行为，为防止提示注入劫持，只能由用户手动编辑。` };
+  }
+
+  // ── 系统目录硬红线（工作空间豁免也不放行） ──
+  if (isSystemBlockedPath(resolved)) {
+    return { ok: false, reason: `禁止访问系统目录: ${resolved}` };
   }
 
   for (const blocked of BLOCKED_DIRS) {
@@ -168,7 +224,17 @@ export function checkCommandAllowed(command: string): CheckResult {
 }
 
 export function setAllowedDirs(dirs: string[]): void {
-  allowedDirs = dirs.map(d => path.resolve(d));
+  // 黑名单目录不可通过白名单放行（静默过滤，防止安全边界被配置穿透）
+  allowedDirs = dirs
+    .map(d => path.resolve(d))
+    .filter(dir => {
+      for (const blocked of BLOCKED_DIRS) {
+        if (dir === blocked || dir.startsWith(blocked + path.sep)) {
+          return false;
+        }
+      }
+      return true;
+    });
 }
 
 export function getAllowedDirs(): string[] {

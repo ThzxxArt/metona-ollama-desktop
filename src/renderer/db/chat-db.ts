@@ -85,13 +85,14 @@ export class ChatDB {
         updated_at: session.updatedAt
       };
       await dbBridge().saveSession(row);
-      // P1-P1 修复：只保存新增消息（不在 _savedMsgIds 中的），避免全量重写
+      // 只保存新增消息（不在 _savedMsgIds 中的），并合并为一次批量 IPC + 单事务
+      const newMsgs: Array<Record<string, unknown>> = [];
       for (let mi = 0; mi < session.messages.length; mi++) {
         const msg = session.messages[mi];
         const msgId = `${session.id}_${msg.timestamp}_${msg.role}_${mi}`;
         if (this._savedMsgIds.has(msgId)) continue; // 已保存，跳过
         this._savedMsgIds.add(msgId);
-        const msgRow = {
+        newMsgs.push({
           id: msgId,
           session_id: session.id,
           role: msg.role,
@@ -105,8 +106,10 @@ export class ChatDB {
           prompt_eval_count: msg.prompt_eval_count || null,
           total_duration: msg.total_duration || null,
           created_at: msg.timestamp
-        };
-        await dbBridge().saveMessage(msgRow);
+        });
+      }
+      if (newMsgs.length > 0) {
+        await dbBridge().saveMessagesBatch(newMsgs as never[]);
       }
       return session.id;
     }
@@ -154,15 +157,74 @@ export class ChatDB {
 
   async getAllSessions(): Promise<ChatSession[]> {
     if (isDesktop()) {
-      const rows = await dbBridge().getAllSessions();
-      const sessions: ChatSession[] = [];
-      for (const row of rows) {
-        const session = await this.getSession(row.id);
-        if (session) sessions.push(session);
+      // 一次 IPC 取回全部会话+消息行，本地组装（取代 N+1 逐会话往返）
+      const data = await dbBridge().getAllSessionsData();
+      const bySession = new Map<string, any[]>();
+      for (const r of data.messages) {
+        if (!bySession.has(r.session_id)) bySession.set(r.session_id, []);
+        bySession.get(r.session_id)!.push(r);
       }
+      const sessions: ChatSession[] = [];
+      for (const row of data.sessions) {
+        const msgRows = bySession.get(row.id) || [];
+        const messages = msgRows.map((r: any) => {
+          let files, videos;
+          try { const a = JSON.parse(r.attachments || '{}'); files = a.files; videos = a.videos; } catch { /* ignore */ }
+          return {
+            role: r.role,
+            content: r.content || '',
+            timestamp: r.created_at,
+            think: r.thinking || undefined,
+            images: r.images ? JSON.parse(r.images) : undefined,
+            eval_count: r.eval_count || undefined,
+            prompt_eval_count: r.prompt_eval_count || undefined,
+            total_duration: r.total_duration || undefined,
+            toolCalls: r.tool_calls ? JSON.parse(r.tool_calls) : undefined,
+            ...(files?.length && { files }),
+            ...(videos?.length && { _videos: videos })
+          };
+        });
+        sessions.push({
+          id: row.id,
+          title: row.title,
+          model: row.model,
+          messages,
+          createdAt: row.created_at,
+          updatedAt: row.updated_at
+        });
+      }
+      // 与旧版行为一致：按更新时间倒序
+      sessions.sort((a, b) => b.updatedAt - a.updatedAt);
       return sessions;
     }
     return this._idbGetAllSessions();
+  }
+
+  /** 会话摘要列表（历史列表/搜索用，不再全量加载消息） */
+  async listSessionSummaries(): Promise<Array<{ id: string; title: string; model: string; created_at: number; updated_at: number; message_count: number }>> {
+    if (isDesktop()) {
+      return dbBridge().getSessionSummaries();
+    }
+    // Web 端回退：从全量会话派生摘要
+    const all = await this.getAllSessions();
+    return all.map(s => ({
+      id: s.id,
+      title: s.title,
+      model: s.model,
+      created_at: s.createdAt,
+      updated_at: s.updatedAt,
+      message_count: s.messages.length,
+    }));
+  }
+
+  /** 按标题或消息内容搜索会话（桌面端 SQL LIKE，Web 端本地过滤） */
+  async searchSessions(query: string): Promise<Array<{ id: string; title: string; model: string; created_at: number; updated_at: number; message_count: number }>> {
+    if (isDesktop()) {
+      return dbBridge().searchSessions(query);
+    }
+    const all = await this.listSessionSummaries();
+    const q = query.toLowerCase();
+    return all.filter(s => s.title.toLowerCase().includes(q));
   }
 
   async deleteSession(id: string): Promise<void> {
@@ -207,11 +269,6 @@ export class ChatDB {
     return this._idbImportSessions(sessions);
   }
 
-  async getSessionsByTimeRange(startTime: number, endTime: number): Promise<ChatSession[]> {
-    const all = await this.getAllSessions();
-    return all.filter(s => s.updatedAt >= startTime && s.updatedAt <= endTime);
-  }
-
   // ── Settings ──
 
   async saveSetting(key: string, value: unknown): Promise<void> {
@@ -220,6 +277,17 @@ export class ChatDB {
       return;
     }
     return this._idbSaveSetting(key, value);
+  }
+
+  /** 批量保存设置（单事务 + 单次刷盘；Web 端逐条写入） */
+  async saveSettingsBatch(entries: Array<{ key: string; value: unknown }>): Promise<void> {
+    if (isDesktop()) {
+      await dbBridge().saveSettingsBatch(entries);
+      return;
+    }
+    for (const { key, value } of entries) {
+      await this._idbSaveSetting(key, value);
+    }
   }
 
   async getSetting<T = unknown>(key: string, defaultValue: T | null = null): Promise<T> {

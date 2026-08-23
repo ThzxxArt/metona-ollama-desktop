@@ -8,6 +8,18 @@ import { checkPathAllowed } from './tool-security.js';
 import { sendLog, resolvePath, type ToolResult } from './tool-handlers-shared.js';
 import { getWorkspaceDir } from './workspace.js';
 
+/**
+ * 校验 git 用户可控参数不可为选项形式（防 "git clone --upload-pack=恶意命令" 类参数注入）。
+ * spawn 使用参数数组无 shell 注入风险，但以 "-" 开头的值会被 git 解析为选项。
+ */
+function guardGitArg(value: string | undefined, name: string): string | null {
+  if (value === undefined || value === null || value === '') return null;
+  if (String(value).startsWith('-')) {
+    return `参数 ${name} 不能以 "-" 开头（防 git 选项注入）: ${String(value).slice(0, 80)}`;
+  }
+  return null;
+}
+
 export async function handleGit(params: { action: string; path?: string; files?: string[]; message?: string; branch?: string; remote?: string; remote_url?: string; count?: number; all?: boolean; staged?: boolean; new_branch?: boolean; delete_branch?: boolean; force?: boolean; url?: string }): Promise<ToolResult> {
   try {
     const cwd = params.path ? path.resolve(params.path) : getWorkspaceDir();
@@ -15,6 +27,20 @@ export async function handleGit(params: { action: string; path?: string; files?:
     // 安全检查：验证工作目录路径
     const dirCheck = checkPathAllowed(cwd, 'read');
     if (!dirCheck.ok) return { success: false, error: dirCheck.reason };
+
+    // 安全检查：用户可控参数不可为选项（防 git 参数注入）
+    const argsToGuard: Array<[string, string | undefined]> = [
+      ['branch', params.branch],
+      ['remote', params.remote],
+      ['url', params.url],
+      ['remote_url', params.remote_url],
+      ['tag_name', (params as { tag_name?: string }).tag_name],
+      ['stash_sub', (params as { stash_sub?: string }).stash_sub],
+    ];
+    for (const [name, value] of argsToGuard) {
+      const guardError = guardGitArg(value, name);
+      if (guardError) return { success: false, error: guardError };
+    }
 
     async function runGit(args: string[], timeoutMs = 0): Promise<{ stdout: string; stderr: string; code: number }> {
       return new Promise((resolve) => {
@@ -103,7 +129,8 @@ export async function handleGit(params: { action: string; path?: string; files?:
 
       case 'add': {
         if (!params.files?.length) return { success: false, error: '请指定要暂存的文件' };
-        const r = await runGit(['add', ...params.files]);
+        // "--" 分隔符：文件名以 "-" 开头时不被 git 解析为选项
+        const r = await runGit(['add', '--', ...params.files]);
         if (r.code !== 0) return { success: false, error: r.stderr };
         return { success: true, action: 'add', files: params.files };
       }

@@ -22,7 +22,7 @@ export {
   handleDiff,
 } from './tool-handlers-fs.js';
 
-// 系统与网络操作（7 个）
+// 系统与网络操作（6 个）
 export {
   handleRunCommand,
   killToolProcess,
@@ -30,8 +30,10 @@ export {
   handleWebSearch,
   handleDownloadFile,
   handleCompress,
-  handleCalculator,
 } from './tool-handlers-system.js';
+
+// 计算器（独立纯函数模块）
+export { handleCalculator } from './calculator.js';
 
 // Git 操作（1 个）
 export { handleGit } from './tool-handlers-git.js';

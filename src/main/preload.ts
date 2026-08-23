@@ -8,6 +8,10 @@ import * as os from 'os';
 contextBridge.exposeInMainWorld('metonaDesktop', {
   isDesktop: true,
   info: () => ipcRenderer.invoke('app:info'),
+  /** 读取应用内置资源（SOUL.md / AGENT.md），basename 防路径穿越 */
+  readAppResource: (name: string) => ipcRenderer.invoke('app:readResource', name),
+  /** 更新 Ollama 服务地址的 CORS 允许清单（设置面板保存地址后调用） */
+  setOllamaOrigin: (url: string) => ipcRenderer.invoke('app:setOllamaOrigin', url),
   sys: {
     homeDir: os.homedir(),
     tmpDir: os.tmpdir(),
@@ -59,11 +63,20 @@ contextBridge.exposeInMainWorld('metonaDesktop', {
     saveSession: (session: unknown) => ipcRenderer.invoke('db:saveSession', session),
     getSession: (id: string) => ipcRenderer.invoke('db:getSession', id),
     getAllSessions: () => ipcRenderer.invoke('db:getAllSessions'),
+    /** 会话摘要列表（单条 SQL，历史列表/搜索不再全量加载消息） */
+    getSessionSummaries: () => ipcRenderer.invoke('db:getSessionSummaries'),
+    /** 按标题或消息内容搜索会话 */
+    searchSessions: (query: string) => ipcRenderer.invoke('db:searchSessions', query),
+    /** 全量会话+消息行（导出用，一次 IPC 取代 N+1 往返） */
+    getAllSessionsData: () => ipcRenderer.invoke('db:getAllSessionsData'),
     deleteSession: (id: string) => ipcRenderer.invoke('db:deleteSession', id),
     clearAllSessions: () => ipcRenderer.invoke('db:clearAllSessions'),
     saveMessage: (msg: unknown) => ipcRenderer.invoke('db:saveMessage', msg),
+    saveMessagesBatch: (msgs: unknown[]) => ipcRenderer.invoke('db:saveMessagesBatch', msgs),
     getMessages: (sessionId: string) => ipcRenderer.invoke('db:getMessages', sessionId),
     saveSetting: (key: string, value: unknown) => ipcRenderer.invoke('db:saveSetting', key, value),
+    /** 批量保存设置（单事务 + 单次刷盘） */
+    saveSettingsBatch: (entries: Array<{ key: string; value: unknown }>) => ipcRenderer.invoke('db:saveSettingsBatch', entries),
     getSetting: (key: string, defaultValue?: unknown) => ipcRenderer.invoke('db:getSetting', key, defaultValue),
     saveTrace: (trace: unknown) => ipcRenderer.invoke('db:saveTrace', trace),
     saveTracesBatch: (traces: unknown[]) => ipcRenderer.invoke('db:saveTracesBatch', traces),

@@ -15,10 +15,10 @@ import { showToast } from './toast.js';
 import { addToolCard, startToolCard, updateToolCard, clearToolCardsExternal, clearTerminalExternal, getWorkspaceDirPath, hasActiveCards, showWorkingHint, clearWorkingHint } from './workspace-panel.js';
 import { ChatDB } from '../db/chat-db.js';
 import { OllamaAPI } from '../api/ollama.js';
-import { runAgentLoop, formatToolResultForModel } from '../services/agent-engine.js';
+import { runAgentLoop } from '../services/agent-engine.js';
+import { formatToolResultForModel } from '../services/result-formatter.js';
 import { estimateTokens } from '../services/context-manager.js';
 import { showToolConfirm } from './tool-confirm-modal.js';
-import { showConfirm } from './prompt-modal.js';
 import { logInfo, logStream, logError, logSuccess, logWarn, resetVideoProgress, updateVideoProgress } from '../services/log-service.js';
 import type { ChatSession, ChatMessage, OllamaStreamChunk, OllamaMessage, FileContent, ChatFile, ToolCallRecord, AgentMode } from '../types.js';
 
@@ -91,24 +91,12 @@ export function initInputArea(): void {
     }
   });
 
-  // R39: 全局键盘快捷键
+  // R39: 全局键盘快捷键（Ctrl+K 聚焦输入框由 keybind-manager.ts 统一管理，此处不再重复注册）
   document.addEventListener('keydown', (e) => {
-    // Ctrl+K: 清空聊天（需要确认）
-    if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
-      e.preventDefault();
-      showConfirm('确定要清空当前对话吗？', '清空对话').then(ok => {
-        if (ok) clearMessages();
-      });
-    }
     // Escape: 停止生成（当正在流式输出时）
     if (e.key === 'Escape' && state.get<boolean>(KEYS.IS_STREAMING)) {
       e.preventDefault();
       stopGeneration();
-    }
-    // Ctrl+/: 聚焦输入框
-    if ((e.ctrlKey || e.metaKey) && e.key === '/') {
-      e.preventDefault();
-      chatInputEl.focus();
     }
     // Ctrl+Shift+C: 复制最后一条 AI 消息
     if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'C') {
@@ -961,26 +949,6 @@ function buildFileContentParts(fileContents: Array<{ name: string; language: str
       context: text,
     });
   }).filter(Boolean);
-}
-
-function buildApiMessages(messages: ChatMessage[]): Array<{ role: string; content: string; images?: string[] }> {
-  return messages.map(m => {
-    let content = m.content || '';
-    if (m._fileContents && m._fileContents.length > 0) {
-      const fileParts = buildFileContentParts(m._fileContents);
-      if (content) {
-        content += '\n\n---\n' + fileParts.join('\n\n---\n');
-      } else {
-        const count = m._fileContents.length;
-        content = `请分析以下 ${count > 1 ? count + ' 个' : ''}文件：\n\n${fileParts.join('\n\n---\n')}`;
-      }
-    }
-    return {
-      role: m.role,
-      content,
-      ...(m.images && { images: m.images })
-    };
-  });
 }
 
 /**

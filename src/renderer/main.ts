@@ -29,12 +29,12 @@ import { initToolConfirmModal } from './components/tool-confirm-modal.js';
 import { initWorkspacePanel, clearToolCardsExternal, clearTerminalExternal, switchToTab } from './components/workspace-panel.js';
 import { initLogPanel, addLog } from './services/log-service.js';
 import { logInfo, logSuccess, logError, logDebug, logInit, logWarn } from './services/log-service.js';
-import { initGlobalErrorHandler, validateConfig } from './services/infra-service.js';
+import { initGlobalErrorHandler } from './services/infra-service.js';
 import { initSearxngModal, closeSearxngModal, loadSearxngConfig } from './components/searxng-modal.js';
 import { initKeybindManager } from './components/keybind-manager.js';
 import { initMetricsDashboard } from './components/metrics-dashboard.js';
 import { initHarnessHooks } from './services/hooks.js';
-import { setAppVersion } from './services/agent-metrics.js';
+import { setAppVersion, loadMetricsHistory } from './services/agent-metrics.js';
 import type { ChatSession } from './types.js';
 
 // ─── v4.0 数据迁移：IndexedDB → SQLite ───
@@ -391,6 +391,9 @@ async function init(): Promise<void> {
     await db.init();
     state.set(KEYS.DB, db);
 
+    // 恢复历史度量数据（localStorage 持久化的 R84 度量历史）
+    loadMetricsHistory();
+
     // v4.0 数据迁移：检测 IndexedDB 是否有旧数据需要迁移到 SQLite
     await migrateIndexedDBToSQLite(db);
 
@@ -487,6 +490,14 @@ async function init(): Promise<void> {
     (document.querySelector('#inputSubAgentMaxLoops') as HTMLInputElement).value = String(subAgentMaxLoops);
     (document.querySelector('#inputSubAgentTimeout') as HTMLInputElement).value = subAgentTimeout >= 0 ? String(subAgentTimeout) : '';
 
+    // ── 子代理权限上限（AI 请求的权限只降不升）──
+    {
+      const subAgentMaxPermission = await db.getSetting<'readonly' | 'limited_write' | 'full_write'>('subAgentMaxPermission', 'readonly');
+      state.set('subAgentMaxPermission', subAgentMaxPermission);
+      const permSelect = document.querySelector('#selectSubAgentPermission') as HTMLSelectElement | null;
+      if (permSelect) permSelect.value = subAgentMaxPermission;
+    }
+
     // ── 看门狗超时 ──
     let loopWatchdogMs = await db.getSetting<number>('loopWatchdogMs', 1_800_000);
     state.set('loopWatchdogMs', loopWatchdogMs);
@@ -578,16 +589,7 @@ function bindGlobalEvents(): void {
     }
   });
 
-  window.addEventListener('error', (e) => {
-    logError('未捕获错误', (e.error as Error)?.message || e.message);
-    showToast(`发生错误: ${e.message}`, 'error', 5000);
-  });
-
-  window.addEventListener('unhandledrejection', (e) => {
-    logError('未处理 Promise 拒绝', (e.reason as Error)?.message || String(e.reason));
-    const msg = e.reason?.message || String(e.reason);
-    showToast(`操作失败: ${msg}`, 'error', 5000);
-  });
+  // ── 全局错误处理已由 infra-service.ts 的 initGlobalErrorHandler 统一注册 ──
 
 }
 

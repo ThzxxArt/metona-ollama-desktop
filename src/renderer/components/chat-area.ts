@@ -910,9 +910,11 @@ export async function exportAsHtml(session: ChatSession): Promise<void> {
 .assistant{background:#fff;padding:12px;border-radius:12px;margin:8px 0;border:1px solid rgba(0,0,0,0.06);box-shadow:0 1px 4px rgba(45,32,22,0.04);}
 pre{background:#2D2016;color:#F5F0E8;padding:14px;border-radius:12px;overflow-x:auto;}
 code{background:#F5F0E8;color:#E8734A;padding:2px 6px;border-radius:4px;}</style></head><body>
-<h1>${escapeHtml(session.title)}</h1><p>${formatTime(session.createdAt)} · ${session.model}</p><hr>`;
+<h1>${escapeHtml(session.title)}</h1><p>${formatTime(session.createdAt)} · ${escapeHtml(session.model)}</p><hr>`;
   session.messages.forEach(m => {
-    html += `<div class="${m.role}"><strong>${m.role === 'user' ? '👤 用户' : '🤖 AI'}</strong><br>${(m.content || '').replace(/\n/g, '<br>')}</div>`;
+    // escapeHtml 防止 AI 回复中的 HTML/脚本在导出文件中被执行
+    const safeContent = escapeHtml(m.content || '').replace(/\n/g, '<br>');
+    html += `<div class="${m.role}"><strong>${m.role === 'user' ? '👤 用户' : '🤖 AI'}</strong><br>${safeContent}</div>`;
   });
   html += '</body></html>';
   await nativeSaveFile(`${session.title}.html`, html);

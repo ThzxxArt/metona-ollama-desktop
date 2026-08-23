@@ -110,13 +110,7 @@ function contentFingerprint(content: string): string {
   return hash.toString(16);
 }
 
-/** 暴露写入记录供 agent-engine 清理 */
-export function clearWrittenFiles(): void {
-  _writtenFileFingerprints.clear();
-}
-export function hasWrittenFile(path: string): boolean {
-  return _writtenFileFingerprints.has(path);
-}
+/** 暴露写入记录供 agent-engine 记录成功路径 */
 export function addWrittenFile(path: string, content?: string): void {
   _writtenFileFingerprints.set(path, content ? contentFingerprint(content) : '');
 }

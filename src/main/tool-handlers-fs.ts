@@ -8,6 +8,7 @@ import * as os from 'os';
 import { checkPathAllowed } from './tool-security.js';
 import { sendLog, resolvePath, isUrl, type ToolResult } from './tool-handlers-shared.js';
 import { getWorkspaceDir } from './workspace.js';
+import { diffLines, buildUnifiedHunks } from './myers-diff.js';
 
 export async function handleReadFile(params: { path: string; encoding?: string; start_line?: number; end_line?: number; mode?: string; offset_bytes?: number; limit_bytes?: number }): Promise<ToolResult> {
   try {
@@ -555,7 +556,8 @@ export async function handleEditFile(params: { path: string; old_text: string; n
         const matches = content.match(re);
         replaceCount = matches ? matches.length : 1;
         const finalRe = new RegExp(params.old_text, params.all ? 'g' : '');
-        newContent = content.replace(finalRe, params.new_text);
+        // 使用替换函数：new_text 中的 $& / $1 等特殊序列按字面量处理，防止用户内容被意外解释
+        newContent = content.replace(finalRe, () => params.new_text);
       } catch (regexErr) {
         return { success: false, error: `无效的正则表达式: ${(regexErr as Error).message}` };
       }
@@ -569,7 +571,8 @@ export async function handleEditFile(params: { path: string; old_text: string; n
         newContent = parts.join(params.new_text);
       } else {
         replaceCount = 1;
-        newContent = content.replace(params.old_text, params.new_text);
+        // 替换函数防止 new_text 中的 $ 序列被 String.replace 特殊解释
+        newContent = content.replace(params.old_text, () => params.new_text);
       }
     }
 
@@ -690,7 +693,27 @@ export async function handleMoveFile(params: { source: string; destination: stri
     if (!destCheck.ok) return { success: false, error: destCheck.reason };
 
     sendLog('info', `📦 move_file`, `${src} → ${dest}`);
-    await fs.rename(src, dest);
+    try {
+      await fs.rename(src, dest);
+    } catch (renameErr) {
+      const code = (renameErr as NodeJS.ErrnoException).code;
+      // 跨盘/跨文件系统 rename 会失败（EXDEV/EPERM），回退为 copy + delete
+      if (code === 'EXDEV' || code === 'EPERM') {
+        const stat = await fs.stat(src);
+        if (stat.isDirectory()) {
+          await fs.cp(src, dest, { recursive: true });
+          await fs.rm(src, { recursive: true, force: true });
+        } else {
+          const destDir = path.dirname(dest);
+          await fs.mkdir(destDir, { recursive: true });
+          await fs.copyFile(src, dest);
+          await fs.unlink(src);
+        }
+        sendLog('info', `📦 move_file 跨盘回退`, `rename 失败(${code})，已改用 copy+delete`);
+      } else {
+        throw renameErr;
+      }
+    }
     sendLog('success', `📦 move_file 完成`, dest);
     return { success: true, source: src, destination: dest };
   } catch (err) {
@@ -816,16 +839,17 @@ export async function handleDiff(params: {
       return { success: false, error: `文件行数过多（左侧 ${leftLines.length} / 右侧 ${rightLines.length}），最大支持 ${MAX_LINES} 行` };
     }
 
-    // ── LCS 差异算法 ──
-    const diff = computeUnifiedDiff(leftLines, rightLines, contextLines);
+    // ── 行级差异（前缀/后缀裁剪 + LCS 限额 + 超限回退，内存受控）──
+    const ops = diffLines(leftLines, rightLines);
+    const { hunks, additions, deletions } = buildUnifiedHunks(ops, leftLines, rightLines, contextLines);
 
-    const added = diff.additions;
-    const removed = diff.deletions;
+    const added = additions;
+    const removed = deletions;
     const unchanged = leftLines.length + rightLines.length - added - removed;
 
     sendLog('info', `🔍 diff (${mode})`, `${params.path1 || ''} ${mode === 'file_vs_file' ? '↔ ' + (params.path2 || '') : mode === 'file_vs_content' ? '↔ content' : '↔ HEAD'} → +${added} -${removed}`);
 
-    if (diff.hunks.length === 0) {
+    if (hunks.length === 0) {
       return {
         success: true,
         mode,
@@ -842,7 +866,7 @@ export async function handleDiff(params: {
 
     // 生成 unified diff 头部 + hunks
     const header = `--- ${leftLabel}\n+++ ${rightLabel}\n`;
-    const diffText = header + diff.hunks.join('\n');
+    const diffText = header + hunks.join('\n');
 
     return {
       success: true,
@@ -854,7 +878,7 @@ export async function handleDiff(params: {
       deletions: removed,
       unchanged,
       identical: false,
-      hunk_count: diff.hunks.length,
+      hunk_count: hunks.length,
       total_lines: leftLines.length + rightLines.length,
     };
   } catch (err) {
@@ -863,130 +887,4 @@ export async function handleDiff(params: {
   }
 }
 
-/**
- * 计算 unified diff（行级 LCS 算法）
- */
-interface DiffResult {
-  hunks: string[];
-  additions: number;
-  deletions: number;
-}
-
-function computeUnifiedDiff(oldLines: string[], newLines: string[], contextSize: number): DiffResult {
-  const n = oldLines.length;
-  const m = newLines.length;
-
-  // 构建 LCS 表（使用 Uint32Array 节省内存）
-  // dp[(n+1) * (m+1)]，索引 [i][j] = i * (m+1) + j
-  const dp = new Uint32Array((n + 1) * (m + 1));
-  for (let i = 1; i <= n; i++) {
-    for (let j = 1; j <= m; j++) {
-      if (oldLines[i - 1] === newLines[j - 1]) {
-        dp[i * (m + 1) + j] = dp[(i - 1) * (m + 1) + (j - 1)] + 1;
-      } else {
-        dp[i * (m + 1) + j] = Math.max(
-          dp[(i - 1) * (m + 1) + j],
-          dp[i * (m + 1) + (j - 1)]
-        );
-      }
-    }
-  }
-
-  // 回溯生成操作序列
-  type Op = 'equal' | 'delete' | 'insert';
-  const ops: Array<{ op: Op; line: string; oldIdx?: number; newIdx?: number }> = [];
-  let i = n, j = m;
-  while (i > 0 || j > 0) {
-    if (i > 0 && j > 0 && oldLines[i - 1] === newLines[j - 1]) {
-      ops.push({ op: 'equal', line: oldLines[i - 1], oldIdx: i - 1, newIdx: j - 1 });
-      i--; j--;
-    } else if (j > 0 && (i === 0 || dp[i * (m + 1) + (j - 1)] >= dp[(i - 1) * (m + 1) + j])) {
-      ops.push({ op: 'insert', line: newLines[j - 1], newIdx: j - 1 });
-      j--;
-    } else {
-      ops.push({ op: 'delete', line: oldLines[i - 1], oldIdx: i - 1 });
-      i--;
-    }
-  }
-  ops.reverse();
-
-  // 分组为 hunks（带上下文行）
-  const hunks: string[] = [];
-  let additions = 0;
-  let deletions = 0;
-
-  // 找到所有变更点
-  const changeIndices: number[] = [];
-  for (let k = 0; k < ops.length; k++) {
-    if (ops[k].op !== 'equal') changeIndices.push(k);
-  }
-
-  if (changeIndices.length === 0) {
-    return { hunks, additions: 0, deletions: 0 };
-  }
-
-  // 按上下文分组合并为 hunks
-  let hunkStart = Math.max(0, changeIndices[0] - contextSize);
-  let hunkEnd = Math.min(ops.length - 1, changeIndices[0] + contextSize);
-  let oldStart = ops[hunkStart].oldIdx ?? 0;
-  let newStart = ops[hunkStart].newIdx ?? 0;
-  let hunkLines: string[] = [];
-
-  for (let k = hunkStart; k <= hunkEnd && k < ops.length; k++) {
-    const op = ops[k];
-    if (op.op === 'equal') hunkLines.push(' ' + op.line);
-    else if (op.op === 'delete') { hunkLines.push('-' + op.line); deletions++; }
-    else { hunkLines.push('+' + op.line); additions++; }
-  }
-
-  // 扩展 hunk：如果下一个变更点在当前 hunk 的上下文范围内
-  for (let idx = 1; idx < changeIndices.length; idx++) {
-    const nextChange = changeIndices[idx];
-    if (nextChange - hunkEnd <= contextSize * 2) {
-      // 合并到当前 hunk
-      while (hunkEnd < nextChange) {
-        hunkEnd++;
-        if (hunkEnd >= ops.length) break;
-        const op = ops[hunkEnd];
-        if (op.op === 'equal') hunkLines.push(' ' + op.line);
-        else if (op.op === 'delete') { hunkLines.push('-' + op.line); deletions++; }
-        else { hunkLines.push('+' + op.line); additions++; }
-      }
-      // 添加后续上下文
-      for (let c = 1; c <= contextSize && hunkEnd + c < ops.length; c++) {
-        hunkEnd++;
-        const op = ops[hunkEnd];
-        if (op.op === 'equal') hunkLines.push(' ' + op.line);
-        else if (op.op === 'delete') { hunkLines.push('-' + op.line); deletions++; }
-        else { hunkLines.push('+' + op.line); additions++; }
-      }
-    } else {
-      // 完成当前 hunk
-      const oldCount = hunkLines.filter(l => l.startsWith(' ') || l.startsWith('-')).length;
-      const newCount = hunkLines.filter(l => l.startsWith(' ') || l.startsWith('+')).length;
-      hunks.push(`@@ -${oldStart + 1},${oldCount} +${newStart + 1},${newCount} @@\n${hunkLines.join('\n')}`);
-
-      // 开始新 hunk
-      hunkStart = Math.max(0, nextChange - contextSize);
-      hunkEnd = Math.min(ops.length - 1, nextChange + contextSize);
-      oldStart = ops[hunkStart].oldIdx ?? 0;
-      newStart = ops[hunkStart].newIdx ?? 0;
-      hunkLines = [];
-      for (let k = hunkStart; k <= hunkEnd && k < ops.length; k++) {
-        const op = ops[k];
-        if (op.op === 'equal') hunkLines.push(' ' + op.line);
-        else if (op.op === 'delete') { hunkLines.push('-' + op.line); deletions++; }
-        else { hunkLines.push('+' + op.line); additions++; }
-      }
-    }
-  }
-
-  // 最后一个 hunk
-  if (hunkLines.length > 0) {
-    const oldCount = hunkLines.filter(l => l.startsWith(' ') || l.startsWith('-')).length;
-    const newCount = hunkLines.filter(l => l.startsWith(' ') || l.startsWith('+')).length;
-    hunks.push(`@@ -${oldStart + 1},${oldCount} +${newStart + 1},${newCount} @@\n${hunkLines.join('\n')}`);
-  }
-
-  return { hunks, additions, deletions };
-}
+// unified diff 计算已抽取为独立纯函数模块 myers-diff.ts（内存受控，便于单元测试）

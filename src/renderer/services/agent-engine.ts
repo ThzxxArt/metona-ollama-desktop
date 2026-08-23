@@ -14,6 +14,7 @@ import {
   initPlanTracker,
   getPlanTracker,
   clearPlanTracker,
+  setSubAgentConfirmHandler,
 } from './tool-registry.js';
 import {
   compactOldToolResult,
@@ -21,21 +22,21 @@ import {
   classifyError,
   calculateBackoff,
   validatePathSandbox,
-  // R88: 工具结果元数据
+  // 工具结果元数据
   addResultMetadata,
-  // R97: 错误模式学习
+  // 错误模式学习
   recordErrorPattern,
-  // R109: 工具参数消毒
-  sanitizeToolArgs,
-  // R113: 命令安全检查
+  // 命令安全检查
   checkCommandSafety,
-  // R95: 按工具类型智能截断
+  // 按工具类型智能截断
   smartTruncateByToolType,
-  // R116: 错误恢复建议
+  // 错误恢复建议
   getErrorRecoverySuggestions,
   formatErrorRecovery,
 } from './agent-safety.js';
 import { search, formatMemoryContext } from './memory-service.js';
+import { formatToolResultForModel, summarizeAuditResult } from './result-formatter.js';
+import { parseToolCallsFromText } from './tool-parsing.js';
 
 import { showToast } from '../components/toast.js';
 import { logInfo, logWarn, logSuccess, logError, logToolStart, logToolResult, logAgentLoop, logModelResponse, logStreamProgress, resetStreamProgress } from './log-service.js';
@@ -168,15 +169,7 @@ function getOSEnvironment() {
   };
 }
 
-/** 始终可并行的只读/独立工具 */
-const ALWAYS_PARALLEL = new Set([
-  'read_file', 'list_directory', 'search_files', 'tree',
-  'web_search', 'browser_screenshot', 'browser_extract',
-  'memory', 'session_list', 'session_read',
-  'calculator', 'diff',
-]);
-
-/** D4: 有副作用的工具 — 同轮次去重时不返回缓存，需实际执行 */
+/** 有副作用的工具 — 同轮次去重时不返回缓存，需实际执行 */
 const SIDE_EFFECT_TOOLS = new Set([
   'write_file', 'edit_file', 'create_directory', 'delete_file',
   'move_file', 'copy_file', 'download_file',
@@ -489,158 +482,6 @@ function validateToolArgs(toolName: string, args: Record<string, unknown>): stri
   return null;
 }
 
-/** 工具名白名单：用于文本解析兜底时过滤非法工具名 */
-const VALID_TOOL_NAMES = new Set([
-  'read_file', 'write_file', 'list_directory', 'search_files', 'create_directory',
-  'delete_file', 'run_command', 'move_file', 'copy_file', 'web_fetch', 'web_search',
-  'edit_file', 'tree', 'download_file',
-  'read_multiple_files', 'git', 'compress',
-  'memory', 'session_list', 'session_read',
-  'calculator'
-]);
-
-/**
- * 文本解析兜底：当模型没有通过 tool_calls 字段返回工具调用，
- * 而是在文本中写了工具调用时，从文本中提取。
- *
- * P2-3 增强：支持4种格式
- * 1. Action/Action Input 格式（原有）
- * 2. <tool_call> XML 标签格式
- * 3. ```json 代码块中含 "name" 字段
- * 4. 函数调用语法 func_name({...})
- */
-function parseToolCallsFromText(content: string): ToolCall[] {
-  const calls: ToolCall[] = [];
-
-  // 辅助函数：尝试解析 JSON 参数字符串，容错处理
-  const tryParseArgs = (argsStr: string): Record<string, unknown> | null => {
-    const TICK = String.fromCharCode(96);
-    const tickJson = TICK + TICK + TICK + 'json';
-    const tick3 = TICK + TICK + TICK;
-    try {
-      let cleaned = argsStr.split(tickJson).join('').split(tick3).join('').trim();
-      return JSON.parse(cleaned);
-    } catch {
-      try {
-        let fixed = argsStr
-          .replace(/'/g, '"')
-          .replace(/,\s*}/g, '}')
-          .replace(/,\s*]/g, ']')
-          .split(tickJson).join('')
-          .split(tick3).join('')
-          .trim();
-        return JSON.parse(fixed);
-      } catch {
-        return null;
-      }
-    }
-  };
-
-  // 辅助函数：验证工具名并添加到结果
-  const tryAddCall = (toolName: string, argsStr: string): boolean => {
-    toolName = toolName.trim();
-    if (!VALID_TOOL_NAMES.has(toolName)) return false;
-    const args = tryParseArgs(argsStr);
-    if (!args) {
-      logWarn("文本解析兜底: 工具 " + toolName + " 的参数 JSON 解析失败", argsStr.slice(0, 100));
-      return false;
-    }
-    calls.push({ type: 'function', function: { name: toolName, arguments: args } });
-    return true;
-  };
-
-  // ── 格式1: Action/Action Input（原有格式）──
-  const actionRegex = /\*{0,2}Action:?\*{0,2}\s*(\w+)\s+[\r\n\s]*\*{0,2}Action\s*Input:?\*{0,2}\s*(\{[\s\S]*?\})/gi;
-  let match;
-  while ((match = actionRegex.exec(content)) !== null) {
-    tryAddCall(match[1], match[2]);
-  }
-
-  // ── 格式2: <tool_call> XML 标签 ──
-  // 匹配 <tool_call>{"name": "xxx", "arguments": {...}}</tool_call>
-  const xmlRegex = /<tool_call>\s*([\s\S]*?)<\/tool_call>/gi;
-  while ((match = xmlRegex.exec(content)) !== null) {
-    const inner = match[1].trim().replace(/```json\s*/g, '').replace(/```/g, '').trim();
-    try {
-      const parsed = JSON.parse(inner);
-      const toolName = parsed.name || parsed.function?.name || '';
-      const toolArgs = parsed.arguments || parsed.function?.arguments || parsed.parameters || {};
-      if (toolName && VALID_TOOL_NAMES.has(toolName)) {
-        calls.push({ type: 'function', function: { name: toolName, arguments: toolArgs } });
-      }
-    } catch {
-      // JSON 解析失败，尝试分别提取 name 和 arguments
-      const nameMatch = inner.match(/"name"\s*:\s*"(\w+)"/i);
-      if (nameMatch) {
-        const argsMatch = inner.match(/"arguments"\s*:\s*(\{[\s\S]*\})/i);
-        if (argsMatch) tryAddCall(nameMatch[1], argsMatch[1]);
-      }
-    }
-  }
-
-  // ── 格式3: ```json 代码块中含 "name" 字段 ──
-  // 匹配 ```json\n{"name": "xxx", "arguments": {...}}\n```
-  const codeBlockRegex = /```(?:json)?\s*(\{[\s\S]*?"name"\s*:\s*"\w+"[\s\S]*?\})\s*```/gi;
-  while ((match = codeBlockRegex.exec(content)) !== null) {
-    const jsonStr = match[1].trim();
-    try {
-      const parsed = JSON.parse(jsonStr);
-      const toolName = parsed.name || '';
-      const toolArgs = parsed.arguments || parsed.parameters || {};
-      if (toolName && VALID_TOOL_NAMES.has(toolName)) {
-        calls.push({ type: 'function', function: { name: toolName, arguments: toolArgs } });
-      }
-    } catch {
-      // 解析失败忽略，其他格式可能匹配
-    }
-  }
-
-  // ── 格式4: 函数调用语法 func_name({"key": "value"}) ──
-  // R5: 修复嵌套大括号问题 — 使用平衡括号匹配替代 [^}]*
-  // 旧正则 /\b(\w+)\s*\(\s*(\{[^}]*\})\s*\)/g 无法匹配嵌套 JSON 如 {"a": {"b": 1}}
-  {
-    const funcCallStart = /\b(\w+)\s*\(\s*\{/g;
-    let fcMatch;
-    while ((fcMatch = funcCallStart.exec(content)) !== null) {
-      const toolName = fcMatch[1];
-      const braceStart = fcMatch.index + fcMatch[0].length - 1; // 指向 '{'
-      // 手动平衡匹配大括号
-      let depth = 0;
-      let endIdx = -1;
-      let inString = false;
-      let escapeNext = false;
-      for (let i = braceStart; i < content.length; i++) {
-        const ch = content[i];
-        if (escapeNext) { escapeNext = false; continue; }
-        if (ch === '\\') { escapeNext = true; continue; }
-        if (ch === '"') { inString = !inString; continue; }
-        if (inString) continue;
-        if (ch === '{') depth++;
-        else if (ch === '}') {
-          depth--;
-          if (depth === 0) { endIdx = i; break; }
-        }
-      }
-      if (endIdx > 0) {
-        const jsonStr = content.slice(braceStart, endIdx + 1);
-        // 检查后面是否有闭合括号
-        const afterClose = content.slice(endIdx + 1).match(/^\s*\)/);
-        if (afterClose) {
-          tryAddCall(toolName, jsonStr);
-          // 移动 regex 位置到匹配结束后
-          funcCallStart.lastIndex = endIdx + 1;
-        }
-      }
-    }
-  }
-
-  if (calls.length > 0) {
-    logInfo("文本解析兜底: 从回复中提取到 " + calls.length + " 个工具调用", calls.map(c => c.function.name).join(', '));
-  }
-
-  return calls;
-}
-
 /** R1: 工具缓存最大条目数，超出时按 LRU 策略淘汰最旧条目 */
 const MAX_TOOL_CACHE_SIZE = 100;
 const toolResultCache = new Map<string, { result: ToolResult; timestamp: number }>();
@@ -721,309 +562,6 @@ function isDuplicateCall(call: ToolCall, allCalls: ToolCall[]): boolean {
     }
   }
   return false;
-}
-
-/** 生成工具审计摘要 — 用于审计日志记录 */
-function summarizeAuditResult(toolName: string, result: ToolResult): string {
-  try {
-    switch (toolName) {
-      case 'write_file':
-        return `写入 ${result.path || ''} (${result.bytesWritten || 0}B${result.created ? ', 新建' : ''})`;
-      case 'edit_file':
-        return `编辑 ${result.path || ''} (${result.replaceCount || 0} 处替换)`;
-      case 'delete_file':
-        return result.batch ? `批量删除 ${result.successCount}/${result.totalPaths}` : `删除 ${result.path || ''}`;
-      case 'create_directory':
-        return `创建目录 ${result.path || ''}`;
-      case 'move_file':
-        return `移动 ${(result as any).source} → ${(result as any).destination}`;
-      case 'copy_file':
-        return `复制 ${(result as any).source} → ${(result as any).destination}`;
-      case 'run_command':
-        return `命令执行 ${result.exitCode === 0 ? '成功' : '失败'} (exit ${result.exitCode})`;
-      case 'git':
-        return `git ${result.action}`;
-      case 'download_file':
-        return `下载 ${(result as any).url} → ${(result as any).destination}`;
-      case 'compress':
-        return `${result.action} → ${(result as any).outputPath || (result as any).destination}`;
-      default:
-        return `${toolName} 完成`;
-    }
-  } catch {
-    return `${toolName} 完成`;
-  }
-}
-
-/** 格式化工具结果的通用默认路径 */
-function formatDefaultToolResult(toolName: string, result: ToolResult): string {
-  const clean: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(result)) {
-    if (k === 'success' || k === 'formatted' || k === 'content_type' ||
-        k === 'status' || k === 'length' || k === 'isDirectory') continue;
-    clean[k] = v;
-  }
-  return JSON.stringify(clean);
-}
-
-/**
- * 格式化工具结果，生成模型友好的简洁表示
- */
-export function formatToolResultForModel(toolName: string, result: ToolResult): string {
-  if (!result.success) {
-    return JSON.stringify({ success: false, error: result.error || '工具执行失败' });
-  }
-
-  switch (toolName) {
-    case 'web_search': {
-      const raw = result.results as Array<{ title: string; url: string; snippet: string }> | undefined;
-      if (!raw?.length) return JSON.stringify({ success: true, message: '未找到结果' });
-      const top = raw.map((r, i) =>
-        `[${i + 1}] ${r.title}\n    URL: ${r.url}\n    ${r.snippet}`
-      ).join('\n\n');
-      const fetched = (result as any)._fetched as Array<{ url: string; title: string; content: string }> | undefined;
-      const body = JSON.stringify({
-        success: true, query: result.query, total: result.total, shown: raw.length, results: top,
-      });
-      if (fetched && fetched.length > 0) {
-        return body + '\n\n' + fetched.map((f, i) =>
-          `\n=== 📄 已抓取 ${i + 1}/${fetched.length}: ${f.title} ===\n${f.content}\n`
-        ).join('\n---\n');
-      }
-      return body;
-    }
-
-    case 'web_fetch': {
-      let content = (result.content as string) || '';
-      return JSON.stringify({ success: true, url: result.url, content });
-    }
-
-    case 'read_file': {
-      return JSON.stringify({
-        success: true,
-        path: result.path,
-        content: result.content,
-        lines: result.lines,
-        truncated: result.truncated,
-        line_range: result.line_range
-      });
-    }
-
-    case 'read_multiple_files': {
-      return JSON.stringify({
-        success: true,
-        files: result.files,
-        total: result.total
-      });
-    }
-
-    case 'list_directory': {
-      return JSON.stringify({
-        success: true,
-        path: result.path,
-        entries: result.entries,
-        total: result.total,
-        truncated: result.truncated
-      });
-    }
-
-    case 'write_file': {
-      return JSON.stringify({
-        success: true,
-        path: result.path,
-        bytesWritten: result.bytesWritten,
-        created: result.created
-      });
-    }
-
-    case 'run_command': {
-      return JSON.stringify({
-        success: true,
-        stdout: result.stdout,
-        stderr: result.stderr,
-        exitCode: result.exitCode,
-        duration: result.duration
-      });
-    }
-
-    case 'git': {
-      return JSON.stringify({
-        success: true,
-        action: result.action,
-        output: result.output,
-        branch: result.branch,
-        files: result.files,
-        commits: result.commits
-      });
-    }
-
-    case 'search_files': {
-      return JSON.stringify({
-        success: true,
-        query: result.query,
-        total_matches: result.total_matches,
-        total_files: result.total_files,
-        results: result.results
-      });
-    }
-
-    case 'memory': {
-      // D1: 去重信号改为软提醒，不触发⛔强制终止
-      if ((result as any).duplicate) {
-        return JSON.stringify({ success: true, action: 'add', duplicate: true, message: `${(result as any).message || '相同内容已存在'}` });
-      }
-      // read_all / search 结果：包裹在 JSON 中以保持与其他工具一致的格式
-      if ((result as any).action === 'read_all') {
-        const entries = ((result as any).entries || []) as Array<{ id: string; type: string; content: string; importance: number; tags: string[] }>;
-        if (entries.length === 0) return JSON.stringify({ success: true, action: 'read_all', message: '记忆为空，没有任何已保存的记忆条目。', total: 0 });
-        const grouped: Record<string, typeof entries> = {};
-        for (const e of entries) {
-          const t = e.type || 'fact';
-          (grouped[t] ||= []).push(e);
-        }
-        const lines: string[] = [`[记忆读取结果] 共 ${entries.length} 条记忆，按类型分组：`];
-        const typeLabels: Record<string, string> = { rule: '规则（必须遵守）', preference: '偏好', fact: '事实' };
-        for (const [t, items] of Object.entries(grouped)) {
-          lines.push(`\n--- ${typeLabels[t] || t} ---`);
-          for (const e of items) {
-            lines.push(`  • [${e.type}] ${e.content}（重要性:${e.importance}, 标签: ${(e.tags || []).join(', ') || '无'}）`);
-          }
-        }
-        return JSON.stringify({ success: true, action: 'read_all', formatted: lines.join('\n'), total: entries.length });
-      }
-      if ((result as any).action === 'search') {
-        const results = ((result as any).results || []) as Array<{ id: string; type: string; content: string; importance: number; score: number }>;
-        if (results.length === 0) return JSON.stringify({ success: true, action: 'search', message: '未找到匹配的记忆。', total: 0 });
-        const lines = [`[记忆搜索结果] 共 ${results.length} 条：`];
-        for (const r of results) {
-          lines.push(`  • [${r.type || 'fact'}] ${r.content}（重要性:${r.importance}, 匹配度:${(r.score || 0).toFixed(0)}）`);
-        }
-        return JSON.stringify({ success: true, action: 'search', formatted: lines.join('\n'), total: results.length });
-      }
-      // remove_batch 结果：格式化每条匹配情况
-      if ((result as any).action === 'remove_batch') {
-        const items = ((result as any).results || []) as Array<{ old_text: string; matched: boolean; entry_id?: string; error?: string }>;
-        const deleted = (result as any).deleted || 0;
-        const failed = (result as any).failed || 0;
-        const lines = [`[批量删除结果] 成功 ${deleted} 条${failed > 0 ? `, 失败 ${failed} 条` : ''}:`];
-        for (const item of items) {
-          if (item.matched) {
-            lines.push(`  ✅ "${item.old_text}" → 已删除 (${item.entry_id})`);
-          } else {
-            lines.push(`  ❌ "${item.old_text}" → ${item.error || '失败'}`);
-          }
-        }
-        return JSON.stringify({ success: (result as any).success, action: 'remove_batch', formatted: lines.join('\n'), deleted, failed });
-      }
-      // 其他 action（add/replace/remove）→ 保留完整 JSON，走 default 逻辑
-      return formatDefaultToolResult(toolName, result);
-    }
-
-    case 'delete_file': {
-      // 批量删除
-      if ((result as any).batch) {
-        return JSON.stringify({
-          success: true,
-          message: `批量删除完成：成功 ${result.successCount}/${result.totalPaths} 个路径`,
-          batch: true,
-          totalPaths: result.totalPaths,
-          successCount: result.successCount,
-          failCount: result.failCount,
-          results: result.results,
-        });
-      }
-      return JSON.stringify({
-        success: true,
-        message: `已删除${(result as any).type === 'directory' ? '目录' : '文件'}：${result.path}`,
-        path: result.path,
-        deleted: true,
-        type: (result as any).type,
-        deletedSize: result.deletedSize,
-        ...((result as any).filesDeleted !== undefined && { filesDeleted: (result as any).filesDeleted }),
-      });
-    }
-
-    case 'create_directory': {
-      return JSON.stringify({
-        success: true,
-        message: `目录已创建：${result.path}`,
-        path: result.path,
-        created: (result as any).created,
-      });
-    }
-
-    case 'move_file': {
-      return JSON.stringify({
-        success: true,
-        message: `已移动：${(result as any).source} → ${(result as any).destination}`,
-        source: (result as any).source,
-        destination: (result as any).destination,
-      });
-    }
-
-    case 'copy_file': {
-      return JSON.stringify({
-        success: true,
-        message: `已复制：${(result as any).source} → ${(result as any).destination}`,
-        source: (result as any).source,
-        destination: (result as any).destination,
-        bytesCopied: (result as any).bytesCopied,
-      });
-    }
-
-    case 'download_file': {
-      return JSON.stringify({
-        success: true,
-        message: `已下载：${(result as any).url} → ${(result as any).destination}`,
-        url: (result as any).url,
-        destination: (result as any).destination,
-        bytesDownloaded: (result as any).bytesDownloaded,
-      });
-    }
-
-    case 'compress': {
-      return JSON.stringify({
-        success: true,
-        message: `已压缩：${(result as any).outputPath}`,
-        outputPath: (result as any).outputPath,
-        originalSize: (result as any).originalSize,
-        compressedSize: (result as any).compressedSize,
-        filesProcessed: (result as any).filesProcessed,
-      });
-    }
-
-    case 'diff': {
-      if ((result as any).identical) {
-        return JSON.stringify({ success: true, identical: true, message: '文件内容完全相同，无差异' });
-      }
-      return JSON.stringify({
-        success: true,
-        mode: (result as any).mode,
-        path1: (result as any).path1,
-        path2: (result as any).path2,
-        diff: (result as any).diff,
-        additions: (result as any).additions,
-        deletions: (result as any).deletions,
-        hunk_count: (result as any).hunk_count,
-        identical: false,
-      });
-    }
-
-    case 'tree': {
-      return JSON.stringify({
-        success: true,
-        message: `目录树：${result.path}（${(result as any).totalEntries} 项）`,
-        path: result.path,
-        entries: result.entries,
-        totalEntries: (result as any).totalEntries,
-        truncated: result.truncated,
-      });
-    }
-
-    default: {
-      return formatDefaultToolResult(toolName, result);
-    }
-  }
 }
 
 export interface AgentCallbacks {
@@ -1209,6 +747,24 @@ function snapshotLoopContext(ctx: LoopContext): void {
 // Harness: 状态处理器
 // ═══════════════════════════════════════════════════════════════
 
+/** 读取应用内置资源（webSecurity 开启后 file:// 页面无法 fetch 相对路径，改走 IPC） */
+async function readBuiltinResource(name: string): Promise<string> {
+  const bridge = window.metonaDesktop;
+  if (bridge?.readAppResource) {
+    try {
+      const r = await bridge.readAppResource(name);
+      if (r?.success && r.content) return r.content;
+    } catch { /* ignore */ }
+    return '';
+  }
+  // 非桌面（浏览器）模式回退相对路径 fetch
+  try {
+    const resp = await fetch('./' + name);
+    if (resp.ok) return await resp.text();
+  } catch { /* ignore */ }
+  return '';
+}
+
 /** P2-11: 加载自定义文件（SOUL.md / AGENT.md / USER.md），返回 system prompt 片段
  * S6: 所有外部文件内容包裹在数据边界标记中，防止间接提示词注入 */
 async function loadCustomFiles(workspaceDir: string, systemPromptParts: string[]): Promise<void> {
@@ -1221,21 +777,22 @@ async function loadCustomFiles(workspaceDir: string, systemPromptParts: string[]
     } catch { /* ignore */ }
   }
   if (!soulMdContent) {
-    try {
-      const resp = await fetch('./SOUL.md');
-      if (resp.ok) { soulMdContent = await resp.text(); logInfo('SOUL.md 已从内置加载', `${soulMdContent.length} 字符`); }
-    } catch { /* ignore */ }
+    soulMdContent = await readBuiltinResource('SOUL.md');
+    if (soulMdContent) logInfo('SOUL.md 已从内置加载', `${soulMdContent.length} 字符`);
   }
   if (soulMdContent) systemPromptParts.unshift(`[SOUL.md]\n<<<REFERENCE_DATA_START>>>\n${sanitizeUntrustedInput(soulMdContent)}\n<<<REFERENCE_DATA_END>>>`);
 
-  // AGENT.md — 仅从工作空间加载，无内置 fallback，Token 预算截断
-  // 有则注入，无则跳过（不注入任何 AGENT.md 内容）
+  // AGENT.md — 工作空间优先，内置 fallback，Token 预算截断
   let agentMdContent = '';
   if (workspaceDir) {
     try {
       const r = await window.metonaDesktop?.workspace.readFile(workspaceDir.replace(/[\\/]+$/, '') + '/AGENT.md');
       if (r?.success && r.content) { agentMdContent = r.content; logInfo('AGENT.md 已从工作空间加载', `${r.lines || 0} 行`); }
     } catch { /* ignore */ }
+  }
+  if (!agentMdContent) {
+    agentMdContent = await readBuiltinResource('AGENT.md');
+    if (agentMdContent) logInfo('AGENT.md 已从内置加载', `${agentMdContent.length} 字符`);
   }
   if (agentMdContent) systemPromptParts.push(`[AGENT.md]\n<<<REFERENCE_DATA_START>>>\n${sanitizeUntrustedInput(truncateByTokenBudget(agentMdContent, 2000))}\n<<<REFERENCE_DATA_END>>>`);
 
@@ -1911,10 +1468,7 @@ async function handleExecuting(
       toolResultCache.delete(cacheKey);
     }
 
-    // R109: 工具参数消毒 — 防止通过工具参数注入恶意内容
-    call.function.arguments = sanitizeToolArgs(call.function.name, call.function.arguments);
-
-    // R113: 命令安全检查 — 对 run_command 进行风险评估
+    // 命令安全检查 — 对 run_command 进行风险评估
     if (call.function.name === 'run_command') {
       const cmdStr = String(call.function.arguments?.command || '');
       if (cmdStr) {
@@ -2719,6 +2273,8 @@ export async function runAgentLoop(
   // Plan Mode 激活时注册 plan_track 工具
   const { setPlanModeActive } = await import('./tool-registry.js');
   setPlanModeActive(mode === 'plan');
+  // 子代理确认管线：与主 Agent 共用同一确认回调（finally 中清理）
+  setSubAgentConfirmHandler(callbacks.onConfirmTool ?? null);
 
   // ── 状态机主循环 ──
   try {
@@ -2729,8 +2285,8 @@ export async function runAgentLoop(
     // Phase 2-7: THINKING → PARSING → EXECUTING → OBSERVING → REFLECTING → (COMPRESSING) → loop
     while (ctx.state !== S.TERMINATED) {
       // ── 看门狗 — 全局超时熔断（可通过设置 loopWatchdogMs 配置，0=禁用）──
-      // 默认 30 分钟，用户强调不要随意加超时限制
-      const WATCHDOG_MS = state.get<number>('loopWatchdogMs', 3_600_000);
+      // 默认 30 分钟（与设置面板默认值一致）
+      const WATCHDOG_MS = state.get<number>('loopWatchdogMs', 1_800_000);
       if (WATCHDOG_MS > 0 && Date.now() - ctx.startTime > WATCHDOG_MS) {
         logWarn(`看门狗触发: Agent Loop 运行超过 ${WATCHDOG_MS / 60000} 分钟，强制终止`);
         callbacks.onDone(ctx.content || '（看门狗超时终止）', ctx.allToolRecords.length > 0 ? ctx.allToolRecords : undefined, makeStats(ctx));
@@ -2829,7 +2385,9 @@ default:
     // P1-E2 修复：catch 块也需快照，确保终止状态写入 state._loopContext
     snapshotLoopContext(ctx);
   } finally {
-    // ── P1-8: Plan Mode 断点续传 — 保存完整追踪器到 session，支持跨轮次恢复 ──
+    // 清理子代理确认回调（防止泄漏到下一次循环外）
+    setSubAgentConfirmHandler(null);
+    // ── Plan Mode 断点续传 — 保存完整追踪器到 session，支持跨轮次恢复 ──
     if (ctx.mode === 'plan') {
       const tracker = getPlanTracker();
       if (tracker.active && tracker.steps.length > 0) {

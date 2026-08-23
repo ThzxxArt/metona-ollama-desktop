@@ -8,7 +8,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { app } from 'electron';
 import { mainWindow } from './main.js';
-import { checkPathAllowed, checkCommandAllowed, addBlocklistExemptions } from './tool-security.js';
+import { checkPathAllowed, checkCommandAllowed, addBlocklistExemptions, isSystemBlockedPath } from './tool-security.js';
 
 /** 发送日志到渲染进程日志面板 */
 function sendLog(level: 'info' | 'success' | 'warn' | 'error' | 'debug', message: string, detail?: string): void {
@@ -39,6 +39,10 @@ export function getWorkspaceDir(): string {
 
 export function setWorkspaceDir(dir: string): void {
   const resolved = path.resolve(dir);
+  // 系统目录硬红线：防止"把 C:\Windows\x 设为工作空间"导致黑名单被豁免穿透
+  if (isSystemBlockedPath(resolved)) {
+    throw new Error(`不能将系统目录设为工作空间: ${resolved}`);
+  }
   if (!fs.existsSync(resolved)) {
     fs.mkdirSync(resolved, { recursive: true });
   }

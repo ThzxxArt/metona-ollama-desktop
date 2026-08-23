@@ -3,7 +3,7 @@
  * 基于工作空间 MEMORY.md 文件
  */
 
-import { loadAllEntries, addEntry, removeEntry, DuplicateEntryError, type MemoryEntry, type MemoryType } from '../services/memory-service.js';
+import { loadAllEntries, addEntry, removeEntryById, DuplicateEntryError, type MemoryEntry, type MemoryType } from '../services/memory-service.js';
 import { showToast } from './toast.js';
 import { showPrompt, showConfirm } from './prompt-modal.js';
 import { escapeHtml, formatTime } from '../utils/utils.js';
@@ -54,7 +54,8 @@ export function initMemoryModal(): void {
       const entries = await loadAllEntries();
       const entry = entries.find(e => e.id === id);
       if (entry && await showConfirm(`确定删除这条记忆？\n\n${entry.content.slice(0, 100)}`, '删除记忆')) {
-        await removeEntry(entry.content.slice(0, 50));
+        // 按 ID 精确删除（取代旧的子串匹配删除，避免误删）
+        await removeEntryById(id);
         renderList();
         showToast('记忆已删除', 'info', 1500);
       }

@@ -20,8 +20,10 @@ export const KEYBINDS: Keybind[] = [
   { keys: 'Ctrl+N', description: '新建会话', category: 'chat' },
   { keys: 'Ctrl+Enter', description: '发送消息', category: 'chat' },
   { keys: 'Ctrl+K', description: '聚焦输入框', category: 'chat' },
+  { keys: 'Ctrl+/', description: '聚焦输入框（备用）', category: 'chat' },
   { keys: 'Ctrl+L', description: '清空当前对话', category: 'chat' },
   { keys: 'Ctrl+F', description: '对话内搜索', category: 'chat' },
+  { keys: 'Ctrl+Shift+C', description: '复制最后一条 AI 回复', category: 'chat' },
   { keys: 'Ctrl+P', description: '切换 Plan Mode', category: 'agent' },
   { keys: 'Ctrl+Shift+Backspace', description: '中止 Agent', category: 'agent' },
   { keys: 'Ctrl+M', description: '打开记忆面板', category: 'navigation' },
@@ -183,6 +185,11 @@ export function initKeybindManager(): void {
       }
 
       case 'k':
+        e.preventDefault();
+        document.getElementById('chatInput')?.focus();
+        break;
+
+      case '/':
         e.preventDefault();
         document.getElementById('chatInput')?.focus();
         break;

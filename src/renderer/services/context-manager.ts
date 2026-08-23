@@ -155,27 +155,17 @@ export function predictContextOverflow(numCtx: number): ContextPrediction {
   return { level, currentUsage, predictedUsage, turnsToOverflow, message };
 }
 
-/** R18: 获取 token 使用趋势数据（供调试用） */
-export function getTokenUsageTrend(): TokenUsagePoint[] {
-  return [..._tokenUsageTrend];
-}
-
-// ── Token 校准系统 ──
-
-/** 校准比例：actualTokens / estimatedTokens，基于 Ollama 返回的实际计数动态修正 */
+// ── Token 估算校准状态 ──
+let _calibrationModel = '';
 let _tokenCalibrationRatio = 1.0;
 let _calibrationSamples = 0;
-let _calibrationModel = '';  // C8: 记录校准时的模型名
-const MIN_CALIBRATION_SAMPLES = 3;
+const MIN_CALIBRATION_SAMPLES = 5;
+
+/** 自动压缩触发阈值（占上下文窗口比例） */
+export const AUTO_COMPRESS_THRESHOLD = 0.5;
 
 /**
  * 记录 Ollama 返回的实际 token 计数，用于校准估算器。
- * 在 agent-engine.ts 每轮流式完成后调用。
- * C8: 模型切换时自动重置校准比例，避免不同 tokenizer 导致估算失真
- * @param actualInputTokens Ollama 返回的 prompt_eval_count
- * @param actualOutputTokens Ollama 返回的 eval_count
- * @param estimatedTokens 本轮消息调用 estimateTokens 的合计值
- * @param modelName 当前使用的模型名
  */
 export function recordActualTokens(actualInputTokens: number, actualOutputTokens: number, estimatedCount: number, modelName?: string): void {
   // C8: 模型切换时重置校准
@@ -212,19 +202,7 @@ export function estimateTokens(text: string): number {
   return raw;
 }
 
-/** 获取当前校准比例（供调试用） */
-export function getTokenCalibration(): { ratio: number; samples: number } {
-  return { ratio: _tokenCalibrationRatio, samples: _calibrationSamples };
-}
-
-/** 自动压缩阈值：当消息 token 占 context window 比例超过此值时触发自动压缩
- * P2 #7 修复：从 0.3 提高到 0.5，避免过于频繁的压缩导致信息丢失
- */
-export const AUTO_COMPRESS_THRESHOLD = 0.5;
-
-/** R14: 自适应压缩阈值 — 根据模型上下文长度动态调整
- * P2 #7 修复：提高各档位阈值，减少不必要的压缩
- */
+/** 自适应压缩阈值 — 根据模型上下文长度动态调整 */
 export function getAdaptiveCompressThreshold(numCtx: number): number {
   // 小上下文模型（<8K）：更早触发压缩（55%），留余量
   // 中等上下文（8K-32K）：标准阈值（50%）
@@ -1581,235 +1559,6 @@ export function chooseCompressionStrategy(
 }
 
 // ═══════════════════════════════════════════════════════════════
-// R115: 上下文水印 — 标记不可压缩的关键信息
-// ═══════════════════════════════════════════════════════════════
-
-/** 水印标记：带有此标记的消息在压缩时会被保留 */
-const WATERMARK_PREFIX = '[PRESERVE]';
-const _watermarkedIndices = new Set<number>();
-
-/** R115: 标记消息为不可压缩 */
-export function watermarkMessage(index: number): void {
-  _watermarkedIndices.add(index);
-}
-
-/** R115: 检查消息是否被水印保护 */
-export function isWatermarked(index: number): boolean {
-  return _watermarkedIndices.has(index);
-}
-
-/** R115: 自动为关键消息添加水印 */
-export function autoWatermarkCritical(messages: OllamaMessage[]): number[] {
-  const protectedIndices: number[] = [];
-  
-  for (let i = 0; i < messages.length; i++) {
-    const msg = messages[i];
-    const content = msg.content || '';
-    
-    // 系统消息始终保护
-    if (msg.role === 'system') {
-      watermarkMessage(i);
-      protectedIndices.push(i);
-      continue;
-    }
-    
-    // 包含错误信息的用户消息保护
-    if (msg.role === 'user' && (content.includes('错误') || content.includes('error') || content.includes('失败'))) {
-      watermarkMessage(i);
-      protectedIndices.push(i);
-      continue;
-    }
-    
-    // 最近 5 条消息保护
-    if (i >= messages.length - 5) {
-      watermarkMessage(i);
-      protectedIndices.push(i);
-    }
-  }
-  
-  return protectedIndices;
-}
-
-/** R115: 清除水印 */
-export function clearWatermarks(): void {
-  _watermarkedIndices.clear();
-}
-
-/** R115: 获取受保护的消息索引列表 */
-export function getWatermarkedIndices(): number[] {
-  return Array.from(_watermarkedIndices).sort((a, b) => a - b);
-}
-
-// ═══════════════════════════════════════════════════════════════
-// R120: 上下文压缩跳过逻辑 — 不值得压缩时跳过
-// ═══════════════════════════════════════════════════════════════
-
-/** R120: 判断是否应该跳过压缩 */
-export function shouldSkipCompression(
-  messages: OllamaMessage[],
-  numCtx: number,
-  recentCompressionRatio: number
-): { skip: boolean; reason: string } {
-  const totalTokens = estimateTokens(messages.map(m => m.content || '').join(''));
-  const usageRatio = numCtx > 0 ? totalTokens / numCtx : 0;
-  
-  // 如果使用率很低，跳过
-  if (usageRatio < 0.2) {
-    return { skip: true, reason: `上下文使用率极低 (${(usageRatio * 100).toFixed(0)}%)，无需压缩` };
-  }
-  
-  // 如果消息数太少，跳过
-  if (messages.length < 10) {
-    return { skip: true, reason: `消息数过少 (${messages.length} 条)，无需压缩` };
-  }
-  
-  // 如果最近压缩收益很低（压缩比 < 10%），跳过
-  if (recentCompressionRatio > 0.9) {
-    return { skip: true, reason: `最近压缩收益低 (压缩比 ${(recentCompressionRatio * 100).toFixed(0)}%)，跳过` };
-  }
-  
-  // 如果大部分消息已经被归档/压缩过，跳过
-  const archivedCount = messages.filter(m => 
-    m.content?.includes('[工具结果已归档]') || m.content?.includes('[PRESERVE]')
-  ).length;
-  if (archivedCount / messages.length > 0.6) {
-    return { skip: true, reason: `大部分消息已归档 (${(archivedCount / messages.length * 100).toFixed(0)}%)，跳过` };
-  }
-  
-  return { skip: false, reason: '' };
-}
-
-// ═══════════════════════════════════════════════════════════════
-// R121: 滑动窗口自适应大小 — 根据上下文压力动态调整窗口大小
-// ═══════════════════════════════════════════════════════════════
-
-/** R121: 根据上下文压力获取自适应滑动窗口大小 */
-export function getAdaptiveWindowSize(
-  totalMessages: number,
-  pressureLevel: string,
-  numCtx: number
-): { keepRecent: number; keepSystem: number; reason: string } {
-  const baseWindow = Math.min(totalMessages, 40);
-  
-  switch (pressureLevel) {
-    case 'critical':
-      return {
-        keepRecent: Math.min(baseWindow, 15),
-        keepSystem: 2,
-        reason: '关键压力：保留最近 15 条 + 系统 2 条',
-      };
-    case 'high':
-      return {
-        keepRecent: Math.min(baseWindow, 25),
-        keepSystem: 3,
-        reason: '高压力：保留最近 25 条 + 系统 3 条',
-      };
-    case 'medium':
-      return {
-        keepRecent: Math.min(baseWindow, 35),
-        keepSystem: 5,
-        reason: '中等压力：保留最近 35 条 + 系统 5 条',
-      };
-    case 'low':
-    default:
-      return {
-        keepRecent: Math.min(baseWindow, 50),
-        keepSystem: 5,
-        reason: '低压力：保留最近 50 条 + 系统 5 条',
-      };
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════
-// R122: Token 趋势分析 — 深度分析 token 使用趋势用于预测性压缩
-// ═══════════════════════════════════════════════════════════════
-
-export interface TrendAnalysis {
-  trend: 'increasing' | 'decreasing' | 'stable';
-  avgGrowthRate: number; // 每轮平均 token 增长量
-  projectedOverflow: number; // 预计几轮后溢出（-1=不会）
-  recommendedAction: string;
-  confidence: number; // 0-1
-}
-
-/** R122: 分析 token 使用趋势 */
-export function analyzeTokenTrend(numCtx: number): TrendAnalysis {
-  if (_tokenUsageTrend.length < 3) {
-    return {
-      trend: 'stable',
-      avgGrowthRate: 0,
-      projectedOverflow: -1,
-      recommendedAction: '数据不足，暂不推荐操作',
-      confidence: 0,
-    };
-  }
-  
-  const points = _tokenUsageTrend;
-  const n = points.length;
-  
-  // 计算平均增长率
-  let totalGrowth = 0;
-  let growthCount = 0;
-  for (let i = 1; i < n; i++) {
-    const growth = points[i].tokens - points[i - 1].tokens;
-    totalGrowth += growth;
-    growthCount++;
-  }
-  const avgGrowthRate = growthCount > 0 ? totalGrowth / growthCount : 0;
-  
-  // 线性回归确定趋势
-  const xs = points.map(p => p.turn);
-  const ys = points.map(p => p.tokens);
-  const xMean = xs.reduce((s, x) => s + x, 0) / n;
-  const yMean = ys.reduce((s, y) => s + y, 0) / n;
-  let num = 0, den = 0;
-  for (let i = 0; i < n; i++) {
-    num += (xs[i] - xMean) * (ys[i] - yMean);
-    den += (xs[i] - xMean) ** 2;
-  }
-  const slope = den !== 0 ? num / den : 0;
-  
-  // 判断趋势
-  let trend: TrendAnalysis['trend'];
-  if (slope > 100) trend = 'increasing';
-  else if (slope < -50) trend = 'decreasing';
-  else trend = 'stable';
-  
-  // 预测溢出
-  let projectedOverflow = -1;
-  if (slope > 0) {
-    const currentTokens = points[n - 1].tokens;
-    const remaining = numCtx - currentTokens;
-    projectedOverflow = Math.ceil(remaining / slope);
-    if (projectedOverflow < 0) projectedOverflow = 0;
-  }
-  
-  // 推荐操作
-  let recommendedAction = '';
-  if (trend === 'increasing' && projectedOverflow >= 0 && projectedOverflow <= 5) {
-    recommendedAction = `⚠️ 预计 ${projectedOverflow} 轮后上下文溢出，建议立即压缩`;
-  } else if (trend === 'increasing' && projectedOverflow > 5 && projectedOverflow <= 10) {
-    recommendedAction = `建议在接下来 2-3 轮内进行压缩（${projectedOverflow} 轮后溢出）`;
-  } else if (trend === 'stable') {
-    recommendedAction = 'Token 使用趋势稳定，无需额外操作';
-  } else if (trend === 'decreasing') {
-    recommendedAction = 'Token 使用量在下降，压缩策略生效';
-  }
-  
-  // 置信度：基于数据点数量和趋势一致性
-  let confidence = Math.min(1, n / 10);
-  if (trend === 'stable') confidence *= 0.7;
-  
-  return {
-    trend,
-    avgGrowthRate: Math.round(avgGrowthRate),
-    projectedOverflow,
-    recommendedAction,
-    confidence,
-  };
-}
-
-// ═══════════════════════════════════════════════════════════════
 // R123: 会话摘要持久化 — 跨会话引用
 // ═══════════════════════════════════════════════════════════════
 
@@ -1862,7 +1611,7 @@ export function generateSessionSummary(
   const toolsUsed = [...new Set(toolRecords.map(t => t.name))];
   const assistantMessages = messages.filter(m => m.role === 'assistant');
   const lastAssistant = assistantMessages[assistantMessages.length - 1];
-  
+
   return {
     id: `session_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     createdAt: Date.now(),
@@ -1886,7 +1635,7 @@ export function formatSessionSummariesForContext(summaries: SessionSummary[]): s
 }
 
 // ═══════════════════════════════════════════════════════════════
-// R125: Agent 状态检查点 — 保存和恢复 Agent 状态
+// R125: Agent 状态检查点 — 保存 Agent 运行状态（恢复 API 见后续迭代）
 // ═══════════════════════════════════════════════════════════════
 
 export interface AgentCheckpoint {
@@ -1919,35 +1668,14 @@ export function createCheckpoint(
     toolRecordsCount,
     goal,
   };
-  
+
   _checkpoints.push(checkpoint);
   if (_checkpoints.length > MAX_CHECKPOINTS) {
     _checkpoints.shift();
   }
-  
+
   logInfo(`R125: 检查点已创建 (loop=${loopCount}, state=${agentState})`);
   return checkpoint;
-}
-
-/** R125: 获取最近的检查点 */
-export function getLatestCheckpoint(): AgentCheckpoint | null {
-  return _checkpoints.length > 0 ? _checkpoints[_checkpoints.length - 1] : null;
-}
-
-/** R125: 恢复到指定检查点 */
-export function restoreCheckpoint(id: string): AgentCheckpoint | null {
-  const cp = _checkpoints.find(c => c.id === id);
-  if (!cp) {
-    logWarn(`R125: 检查点 ${id} 不存在`);
-    return null;
-  }
-  logInfo(`R125: 恢复到检查点 ${id} (loop=${cp.loopCount})`);
-  return cp;
-}
-
-/** R125: 获取所有检查点 */
-export function getAllCheckpoints(): AgentCheckpoint[] {
-  return [..._checkpoints];
 }
 
 /** R125: 清除所有检查点 */
@@ -1955,102 +1683,3 @@ export function clearCheckpoints(): void {
   _checkpoints.length = 0;
 }
 
-// ═══════════════════════════════════════════════════════════════
-// R126: 上下文预算分配 — 按消息类型分配上下文 token 预算
-// ═══════════════════════════════════════════════════════════════
-
-export interface ContextBudgetAllocation {
-  system: number;    // 系统消息预算
-  user: number;      // 用户消息预算
-  assistant: number; // 助手消息预算
-  tool: number;      // 工具结果预算
-  memory: number;    // 记忆注入预算
-  total: number;     // 总预算
-}
-
-/** R126: 默认预算分配比例 */
-const DEFAULT_BUDGET_RATIOS = {
-  system: 0.05,    // 5%
-  user: 0.15,      // 15%
-  assistant: 0.25, // 25%
-  tool: 0.45,      // 45%
-  memory: 0.10,    // 10%
-};
-
-/** R126: 根据消息分布动态调整预算分配 */
-export function allocateContextBudget(
-  messages: OllamaMessage[],
-  numCtx: number
-): ContextBudgetAllocation {
-  const total = numCtx;
-  
-  // 统计各类型消息当前占比
-  const counts = { system: 0, user: 0, assistant: 0, tool: 0 };
-  let memorySize = 0;
-  
-  for (const msg of messages) {
-    if (msg.role in counts) {
-      counts[msg.role as keyof typeof counts]++;
-    }
-    if (msg.content?.includes('[记忆注入]')) {
-      memorySize += estimateTokens(msg.content);
-    }
-  }
-  
-  const totalMsgs = messages.length || 1;
-  
-  // 动态调整：如果工具结果占比过高，增加工具预算
-  const toolRatio = counts.tool / totalMsgs;
-  const ratios = { ...DEFAULT_BUDGET_RATIOS };
-  
-  if (toolRatio > 0.5) {
-    // 工具结果过多，从助手预算中转移一部分给工具
-    const shift = Math.min(0.1, (toolRatio - 0.5) * 0.3);
-    ratios.assistant -= shift;
-    ratios.tool += shift;
-  }
-  
-  // 如果记忆注入很大，增加记忆预算
-  if (memorySize > numCtx * 0.1) {
-    const shift = Math.min(0.05, (memorySize / numCtx - 0.1) * 0.2);
-    ratios.tool -= shift;
-    ratios.memory += shift;
-  }
-  
-  return {
-    system: Math.floor(total * ratios.system),
-    user: Math.floor(total * ratios.user),
-    assistant: Math.floor(total * ratios.assistant),
-    tool: Math.floor(total * ratios.tool),
-    memory: Math.floor(total * ratios.memory),
-    total,
-  };
-}
-
-/** R126: 检查消息是否超出预算 */
-export function checkBudgetOverflow(
-  messages: OllamaMessage[],
-  budget: ContextBudgetAllocation
-): { role: string; current: number; budget: number; overflow: number }[] {
-  const tokensByRole: Record<string, number> = {};
-  for (const msg of messages) {
-    tokensByRole[msg.role] = (tokensByRole[msg.role] || 0) + estimateTokens(msg.content || '');
-  }
-  
-  const overflows: { role: string; current: number; budget: number; overflow: number }[] = [];
-  const budgetMap: Record<string, number> = {
-    system: budget.system,
-    user: budget.user,
-    assistant: budget.assistant,
-    tool: budget.tool,
-  };
-  
-  for (const [role, current] of Object.entries(tokensByRole)) {
-    const bud = budgetMap[role] || Infinity;
-    if (current > bud) {
-      overflows.push({ role, current, budget: bud, overflow: current - bud });
-    }
-  }
-  
-  return overflows;
-}

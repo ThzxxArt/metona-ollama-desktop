@@ -94,42 +94,47 @@ export function initHistoryModal(): void {
   });
 }
 
+/** 历史列表条目（摘要形态，不加载消息正文） */
+interface HistorySummary {
+  id: string;
+  title: string;
+  model: string;
+  created_at: number;
+  updated_at: number;
+  message_count: number;
+}
+
 async function loadHistory(): Promise<void> {
   const db = state.get<ChatDB>(KEYS.DB);
   if (!db) return;
 
-  let allSessions = await db.getAllSessions();
+  // 摘要查询：搜索走 SQL LIKE（标题+消息内容），否则单条聚合 SQL。
+  // 不再把所有会话的全部消息拉进渲染进程。
+  let summaries: HistorySummary[] = historySearchQuery
+    ? await db.searchSessions(historySearchQuery)
+    : await db.listSessionSummaries();
 
-  if (historySearchQuery) {
-    const q = historySearchQuery.toLowerCase();
-    allSessions = allSessions.filter(s => {
-      if (s.title?.toLowerCase().includes(q)) return true;
-      if (s.model?.toLowerCase().includes(q)) return true;
-      return s.messages.some(m => m.content?.toLowerCase().includes(q));
-    });
-  }
+  summaries = [...summaries].sort((a, b) => b.updated_at - a.updated_at);
 
-  allSessions.sort((a, b) => b.updatedAt - a.updatedAt);
-
-  if (allSessions.length === 0) {
-    historyListEl.innerHTML = `<div class="empty-history"><p class="text-muted">暂无历史记录</p></div>`;
+  if (summaries.length === 0) {
+    historyListEl.innerHTML = `<div class="empty-history"><p class="text-muted">${historySearchQuery ? '未找到匹配的会话' : '暂无历史记录'}</p></div>`;
     historyPaginationEl.innerHTML = '';
     return;
   }
 
-  const totalPages = Math.ceil(allSessions.length / HISTORY_PAGE_SIZE);
+  const totalPages = Math.ceil(summaries.length / HISTORY_PAGE_SIZE);
   if (historyPage > totalPages) historyPage = totalPages;
 
   const start = (historyPage - 1) * HISTORY_PAGE_SIZE;
-  const pageSessions = allSessions.slice(start, start + HISTORY_PAGE_SIZE);
+  const pageSessions = summaries.slice(start, start + HISTORY_PAGE_SIZE);
 
   historyListEl.innerHTML = pageSessions.map(s => `
     <div class="history-item" data-id="${s.id}">
       <div class="history-info" data-id="${s.id}">
         <div class="history-title">${escapeHtml(s.title)}</div>
         <div class="history-meta">
-          <span>${formatTime(s.updatedAt)}</span>
-          <span>${s.messages.length} 条消息</span>
+          <span>${formatTime(s.updated_at)}</span>
+          <span>${s.message_count} 条消息</span>
           <span>${s.model || '无模型'}</span>
         </div>
       </div>
@@ -143,11 +148,11 @@ async function loadHistory(): Promise<void> {
   `).join('');
 
   if (totalPages <= 1) {
-    historyPaginationEl.innerHTML = `<span class="page-info">共 ${allSessions.length} 条</span>`;
+    historyPaginationEl.innerHTML = `<span class="page-info">共 ${summaries.length} 条</span>`;
     return;
   }
 
-  let html = `<span class="page-info">共 ${allSessions.length} 条</span><div class="page-buttons">`;
+  let html = `<span class="page-info">共 ${summaries.length} 条</span><div class="page-buttons">`;
   html += `<button class="page-btn${historyPage <= 1 ? ' disabled' : ''}" data-page="${historyPage - 1}">‹</button>`;
   const range = 2;
   const pages: number[] = [];

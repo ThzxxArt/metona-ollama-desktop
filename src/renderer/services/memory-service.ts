@@ -65,8 +65,11 @@ const FILE_HEADER = `# METONA MEMORY
 
 `;
 
-/** 条目元数据正则: ## [类型] | id: [ID] | importance: [1-10] | tags: [tag1, tag2] */
-const ENTRY_HEADER_RE = /^##\s+(fact|preference|rule)\s*\|\s*id:\s*(mem_\d{8}_\d{3})\s*\|\s*importance:\s*(\d{1,2})\s*\|\s*tags:\s*(.+)$/i;
+/**
+ * 条目元数据正则: ## [类型] | id: [ID] | importance: [1-10] | tags: [tag1, tag2] [| hits: N | last: TS]
+ * hits/last 为可选的访问统计后缀（R106），旧格式无此后缀也可解析。
+ */
+const ENTRY_HEADER_RE = /^##\s+(fact|preference|rule)\s*\|\s*id:\s*(mem_\d{8}_\d{3})\s*\|\s*importance:\s*(\d{1,2})\s*\|\s*tags:\s+(.+?)(?:\s*\|\s*hits:\s*(\d+)\s*\|\s*last:\s*(\d+))?\s*$/i;
 
 const VALID_TYPES: MemoryType[] = ['fact', 'preference', 'rule'];
 
@@ -181,8 +184,13 @@ export function parseMemoryMd(content: string): MemoryEntry[] {
       const importance = parseInt(headerMatch[3], 10);
       const tagsStr = headerMatch[4];
       const tags = tagsStr.split(',').map(t => t.trim()).filter(t => t.length > 0);
+      const hits = headerMatch[5] ? parseInt(headerMatch[5], 10) : 0;
+      const last = headerMatch[6] ? parseInt(headerMatch[6], 10) : undefined;
 
-      currentEntry = { id, type, content: '', importance: Math.min(10, Math.max(1, importance)), tags };
+      currentEntry = {
+        id, type, content: '', importance: Math.min(10, Math.max(1, importance)), tags,
+        accessCount: hits, lastAccessed: last,
+      };
       contentLines = [];
     } else if (currentEntry) {
       contentLines.push(line);
@@ -260,7 +268,8 @@ export function validateMemoryMd(content: string): { valid: boolean; error?: str
 }
 
 /**
- * 将条目数组序列化为 MEMORY.md 内容
+ * 将条目数组序列化为 MEMORY.md 内容。
+ * 访问统计（hits/last）随条目一并持久化，使 R106 的 TTL 访问保护真正生效。
  */
 export function serializeMemoryMd(entries: MemoryEntry[]): string {
   let content = FILE_HEADER;
@@ -268,7 +277,10 @@ export function serializeMemoryMd(entries: MemoryEntry[]): string {
   for (const entry of entries) {
     if (!entry.content.trim()) continue;
     const tagsStr = entry.tags.join(', ');
-    content += `## ${entry.type} | id: ${entry.id} | importance: ${entry.importance} | tags: ${tagsStr}\n`;
+    const statsSuffix = (entry.accessCount && entry.accessCount > 0)
+      ? ` | hits: ${entry.accessCount}${entry.lastAccessed ? ` | last: ${entry.lastAccessed}` : ''}`
+      : '';
+    content += `## ${entry.type} | id: ${entry.id} | importance: ${entry.importance} | tags: ${tagsStr}${statsSuffix}\n`;
     content += entry.content.trim() + '\n\n';
   }
 
@@ -501,6 +513,43 @@ function withWriteLock<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// 条目缓存（模块级单例）
+// 1. 避免每次搜索/CRUD 都重新读文件并解析
+// 2. 支持访问统计（hits/last）的延迟持久化（60s 防抖写回）
+// ═══════════════════════════════════════════════════════════════
+
+let _entriesCache: MemoryEntry[] | null = null;
+let _hitsFlushTimer: ReturnType<typeof setTimeout> | null = null;
+const HITS_FLUSH_INTERVAL = 60_000;
+
+/** 使条目缓存失效（memory:init 重建文件 / 工作空间切换后调用） */
+export function invalidateMemoryCache(): void {
+  _entriesCache = null;
+}
+
+/** 访问统计防抖写回：searchMemory 更新内存计数后，延迟 60s 持久化 */
+function scheduleHitsFlush(): void {
+  if (_hitsFlushTimer) return;
+  _hitsFlushTimer = setTimeout(async () => {
+    _hitsFlushTimer = null;
+    try {
+      if (_entriesCache && _entriesCache.length > 0) {
+        await writeMemoryFile(serializeMemoryMd(_entriesCache));
+      }
+    } catch {
+      // 写回失败不影响主流程，下次访问会再次调度
+    }
+  }, HITS_FLUSH_INTERVAL);
+}
+
+/** 写入条目（同步更新缓存） */
+async function persistEntries(entries: MemoryEntry[]): Promise<void> {
+  _entriesCache = entries;
+  const fileContent = entries.length > 0 ? serializeMemoryMd(entries) : '';
+  await writeMemoryFile(fileContent);
+}
+
+// ═══════════════════════════════════════════════════════════════
 // CRUD 操作（全部通过专用 IPC 通道读写 MEMORY.md）
 // ═══════════════════════════════════════════════════════════════
 
@@ -520,20 +569,26 @@ function generateMemoryId(existingIds?: Set<string>): string {
   return `mem_${dateStr}_${String(now.getTime() % 1000).padStart(3, '0')}`;
 }
 
-/** 加载全部条目 */
+/** 加载全部条目（带缓存：读文件+解析一次，后续访问走内存） */
 export async function loadAllEntries(): Promise<MemoryEntry[]> {
+  if (_entriesCache) return _entriesCache;
   const content = await readMemoryFile();
-  if (!content.trim()) return [];
-  return parseMemoryMd(content);
+  _entriesCache = content.trim() ? parseMemoryMd(content) : [];
+  return _entriesCache;
 }
 
-/** 搜索记忆（读取 MEMORY.md → 解析 → 搜索） */
+/** 搜索记忆（读取缓存 → 搜索 → 更新访问计数并调度延迟写回） */
 export async function search(query: string, limit = 0): Promise<MemorySearchResult[]> {
   try {
-    // R57: 触发 TTL 衰减检查（带节流，不会每次搜索都执行）
+    // 触发 TTL 衰减检查（带节流，不会每次搜索都执行）
     maybeRunTTLDecay().catch(() => {}); // 非阻塞，失败不影响搜索
     const entries = await loadAllEntries();
-    return searchMemory(entries, query, limit);
+    const results = searchMemory(entries, query, limit);
+    if (results.length > 0) {
+      // 访问计数已在缓存条目上更新，延迟持久化
+      scheduleHitsFlush();
+    }
+    return results;
   } catch (err) {
     logWarn('记忆搜索失败', (err as Error).message);
     return [];
@@ -611,7 +666,7 @@ export async function addEntry(
       throw new Error(`序列化后校验失败: ${validation.error}`);
     }
 
-    await writeMemoryFile(fileContent);
+    await persistEntries(entries);
     logMemory(`新增: ${type}`, content.slice(0, 60));
     return entry;
   });
@@ -659,7 +714,7 @@ export async function replaceEntry(oldText: string, newContent: string): Promise
       return { success: false, message: `序列化后校验失败: ${validation.error}` };
     }
 
-    await writeMemoryFile(fileContent);
+    await persistEntries(entries);
     logMemory('替换记忆', `${target.id}: ${oldText.slice(0, 30)} → ${newContent.slice(0, 30)}`);
     return { success: true, message: `已替换记忆: ${target.id}` };
   });
@@ -687,14 +742,7 @@ export async function removeEntry(oldText: string): Promise<{ success: boolean; 
     }
 
     const newEntries = entries.filter(e => e.id !== matches[0].id);
-    const fileContent = newEntries.length > 0 ? serializeMemoryMd(newEntries) : '';
-
-    if (fileContent) {
-      await writeMemoryFile(fileContent);
-    } else {
-      // 清空文件（写入空内容让主进程删除或留空）
-      await writeMemoryFile('');
-    }
+    await persistEntries(newEntries);
 
     logMemory('删除记忆', `${matches[0].id}: ${oldText.slice(0, 50)}`);
     return { success: true, message: `已删除记忆: ${matches[0].id}` };
@@ -756,8 +804,8 @@ export async function removeEntries(oldTexts: string[]): Promise<{
     }
 
     const newEntries = entries.filter(e => !idsToDelete.has(e.id));
-    const fileContent = newEntries.length > 0 ? serializeMemoryMd(newEntries) : '';
-    await writeMemoryFile(fileContent);
+
+    await persistEntries(newEntries);
 
     logMemory('批量删除', `删除 ${deleted} 条, 失败 ${failed} 条`);
     return {
@@ -770,10 +818,26 @@ export async function removeEntries(oldTexts: string[]): Promise<{
   });
 }
 
+/** 按 ID 精确删除记忆（UI 面板使用，避免子串误匹配） */
+export async function removeEntryById(id: string): Promise<{ success: boolean; message: string }> {
+  return withWriteLock(async () => {
+    const entries = await loadAllEntries();
+    const target = entries.find(e => e.id === id);
+    if (!target) {
+      return { success: false, message: `记忆 ${id} 不存在` };
+    }
+    const newEntries = entries.filter(e => e.id !== id);
+    await persistEntries(newEntries);
+    logMemory('删除记忆', `${id}: ${target.content.slice(0, 50)}`);
+    return { success: true, message: `已删除记忆: ${id}` };
+  });
+}
+
 /** 清空所有记忆
  * M8: 使用写入锁串行化 */
 export async function clearAll(): Promise<void> {
   return withWriteLock(async () => {
+    _entriesCache = [];
     await writeMemoryFile('');
     logMemory('清空', '所有记忆已删除');
   });
@@ -1023,8 +1087,7 @@ async function maybeRunTTLDecay(): Promise<void> {
 
     const { decayed, removed, changed } = applyTTLDecay(entries);
     if (changed && removed > 0) {
-      const fileContent = decayed.length > 0 ? serializeMemoryMd(decayed) : '';
-      await writeMemoryFile(fileContent);
+      await persistEntries(decayed);
       logMemory('TTL 衰减', `已持久化: 移除 ${removed} 条，剩余 ${decayed.length} 条`);
     }
   } catch (err) {
@@ -1249,6 +1312,8 @@ export async function initMemoryFile(): Promise<{ action: string; existed: boole
       return { action: 'failed', existed: false, valid: false };
     }
 
+    // 主进程可能重建了文件（格式错误时备份+重建），使条目缓存失效
+    invalidateMemoryCache();
     // 日志已由主进程打印，渲染进程补充简要汇总
     switch (result.action) {
       case 'created':

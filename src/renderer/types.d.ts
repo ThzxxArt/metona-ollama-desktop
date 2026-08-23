@@ -157,6 +157,10 @@ export interface WorkspaceDirResult {
 export interface MetonaDesktopAPI {
   isDesktop: boolean;
   info: () => Promise<AppInfo>;
+  /** 读取应用内置资源（SOUL.md / AGENT.md），basename 防路径穿越 */
+  readAppResource: (name: string) => Promise<{ success: boolean; content?: string; error?: string }>;
+  /** 更新 Ollama 服务地址的 CORS 允许清单 */
+  setOllamaOrigin: (url: string) => Promise<{ success: boolean }>;
   sys: {
     homeDir: string;
     tmpDir: string;
@@ -468,18 +472,6 @@ export interface AgentMetrics {
   collectedAt: number;
 }
 
-/** 渐进式披露：上下文层级 */
-export type ContextTier = 'index' | 'interface' | 'implementation';
-
-/** 项目索引摘要 */
-export interface ProjectIndex {
-  structure: string;
-  entryFiles: string[];
-  techStack: string[];
-  tokenCount: number;
-  generatedAt: number;
-}
-
 // ═══════════════════════════════════════════════════════════
 // ReAct Trace 类型 (v4.0)
 // ═══════════════════════════════════════════════════════════
@@ -528,16 +520,34 @@ export interface MessageRow {
   created_at: number;
 }
 
+/** 会话摘要行（单条 SQL 聚合，列表/搜索不再全量加载消息） */
+export interface SessionSummary {
+  id: string;
+  title: string;
+  model: string;
+  created_at: number;
+  updated_at: number;
+  message_count: number;
+}
+
 export interface DBAPI {
   saveSession: (session: SessionRow) => Promise<{ success: boolean; id?: string; error?: string }>;
   getSession: (id: string) => Promise<SessionRow | null>;
   getAllSessions: () => Promise<SessionRow[]>;
+  /** 会话摘要列表（单条 SQL，历史列表/搜索不再全量加载消息） */
+  getSessionSummaries: () => Promise<SessionSummary[]>;
+  /** 按标题或消息内容搜索会话 */
+  searchSessions: (query: string) => Promise<SessionSummary[]>;
+  /** 全量会话+消息行（导出用，一次 IPC 取代 N+1 往返） */
+  getAllSessionsData: () => Promise<{ sessions: SessionRow[]; messages: MessageRow[] }>;
   deleteSession: (id: string) => Promise<{ success: boolean; error?: string }>;
   clearAllSessions: () => Promise<{ success: boolean; error?: string }>;
   saveMessage: (msg: MessageRow) => Promise<{ success: boolean; id?: string; error?: string }>;
+  saveMessagesBatch: (msgs: MessageRow[]) => Promise<{ success: boolean; count?: number; error?: string }>;
   getMessages: (sessionId: string) => Promise<MessageRow[]>;
   saveSetting: (key: string, value: unknown) => Promise<{ success: boolean; error?: string }>;
   getSetting: <T = unknown>(key: string, defaultValue?: T) => Promise<T>;
+  saveSettingsBatch: (entries: Array<{ key: string; value: unknown }>) => Promise<{ success: boolean; error?: string }>;
   saveTrace: (trace: unknown) => Promise<{ success: boolean; id?: string; error?: string }>;
   saveTracesBatch: (traces: unknown[]) => Promise<{ success: boolean; count?: number; error?: string }>;
   getTraces: (sessionId: string) => Promise<TraceEntry[]>;

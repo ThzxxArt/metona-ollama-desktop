@@ -3,7 +3,8 @@
  * 管理所有可用工具的定义，负责执行调度
  */
 
-import type { ToolDefinition, ToolResult } from '../types.js';
+import type { ToolDefinition, ToolResult, ToolCall } from '../types.js';
+import type { SubAgentPermission } from './sub-agent.js';
 import { state, KEYS } from '../state/state.js';
 import { logToolStart, logToolResult, logError, logInfo, logWarn } from './log-service.js';
 import { getMCPToolDefinitions } from './mcp-client.js';
@@ -577,7 +578,8 @@ permission: { type: 'string', enum: ['readonly', 'limited_write', 'full_write'],
 
 // 支持三档开关的工具列表（auto/confirm/disabled）
 // 浏览器工具不需要确认，永远自动执行
-const MODE_TOOLS = [
+// 导出供 tools-modal.ts 等 UI 复用，保持单一事实来源
+export const MODE_TOOLS = [
   'run_command',
   'write_file', 'create_directory', 'delete_file',
   'edit_file', 'move_file', 'copy_file',
@@ -585,6 +587,17 @@ const MODE_TOOLS = [
 ];
 
 export type ToolMode = 'auto' | 'confirm' | 'disabled';
+
+/**
+ * 子代理工具确认回调（由 agent-engine 在主循环生命周期内设置）。
+ * 子代理与主 Agent 共用同一确认管线：全局模式为 confirm 时，
+ * 子代理的写类工具同样需要用户确认，防止借道子代理绕过确认机制。
+ */
+let _subAgentConfirmHandler: ((call: ToolCall) => Promise<boolean>) | null = null;
+
+export function setSubAgentConfirmHandler(handler: ((call: ToolCall) => Promise<boolean>) | null): void {
+  _subAgentConfirmHandler = handler;
+}
 
 // 工具模式缓存：key=工具名, value=模式
 const _toolModes = new Map<string, ToolMode>();
@@ -627,7 +640,7 @@ let enabledTools: Set<string> = new Set([
   'run_command',
   'move_file', 'copy_file', 'web_fetch', 'web_search', 'edit_file',
   'tree', 'download_file',
-  'read_multiple_files', 'git', 'compress',
+  'read_multiple_files', 'git', 'compress', 'diff',
   'memory',
   'session_list', 'session_read', 'spawn_task',
   'browser_open', 'browser_screenshot', 'browser_evaluate', 'browser_extract',
@@ -1053,14 +1066,18 @@ export function truncateToolResult(result: ToolResult, toolName: string): ToolRe
     }
   }
 
-  // 3. 兜底：如果经过上述截断后仍然超限，对整个 JSON 暴力截断
+  // 3. 兜底：如果经过上述截断后仍然超限，直接返回结构化预览对象。
+  // （旧实现拼接非法 JSON 后 JSON.parse 必然抛出异常）
   let finalStr = JSON.stringify(truncated);
   if (finalStr.length > MAX_TOOL_RESULT_CHARS) {
-    const head = finalStr.slice(0, MAX_TOOL_RESULT_CHARS - 500);
-    const tail = finalStr.slice(-300);
-    const omitted = finalStr.length - (MAX_TOOL_RESULT_CHARS - 200);
-    logWarn(`R22: 工具 ${toolName} 结果过大，暴力截断 (${jsonStr.length} → ~${MAX_TOOL_RESULT_CHARS} 字符)`);
-    return JSON.parse(head + `"... [已暴力截断 ${omitted} 字符] ..."}` + tail) as ToolResult;
+    const omitted = finalStr.length - MAX_TOOL_RESULT_CHARS;
+    logWarn(`R22: 工具 ${toolName} 结果过大，暴力截断 (${finalStr.length} → ${MAX_TOOL_RESULT_CHARS} 字符)`);
+    return {
+      success: truncated.success,
+      _truncated: true,
+      preview: finalStr.slice(0, MAX_TOOL_RESULT_CHARS),
+      _omitted_chars: omitted,
+    } as ToolResult;
   }
 
   logWarn(`R22: 工具 ${toolName} 结果已截断 (${jsonStr.length} → ~${finalStr.length} 字符)`);
@@ -1388,21 +1405,22 @@ const results = await search(query, limit);
     if (toolName === 'session_list') {
       const bridge = window.metonaDesktop;
       if (!bridge?.db) return { success: false, error: '桌面 API 不可用' };
-      const limit = (args.limit as number) || 0; // 0 = 不限制
+      const limit = (args.limit as number) || 0;
       const search = (args.search as string) || '';
-      const sessions = await bridge.db.getAllSessions();
-      let filtered = sessions.map((s: any) => ({
+      // 使用会话摘要（单条 SQL），避免为列表工具全量加载所有消息
+      const summaries = await bridge.db.getSessionSummaries();
+      let filtered = summaries.map((s: { id: string; title: string; model: string; message_count: number; created_at: number; updated_at: number }) => ({
         id: s.id,
         title: s.title,
         model: s.model,
-        messageCount: 0, // 从 SQLite 获取的原始行不含 messages
+        messageCount: s.message_count,
         createdAt: s.created_at,
         updatedAt: s.updated_at
       }));
       if (search) {
-        filtered = filtered.filter((s: any) => s.title.toLowerCase().includes(search.toLowerCase()));
+        filtered = filtered.filter(s => s.title.toLowerCase().includes(search.toLowerCase()));
       }
-      filtered.sort((a: any, b: any) => b.updatedAt - a.updatedAt);
+      filtered.sort((a: { updatedAt: number }, b: { updatedAt: number }) => b.updatedAt - a.updatedAt);
       if (limit > 0) filtered = filtered.slice(0, limit);
       logToolResult('session_list', true, `${filtered.length} 个会话`);
       return { success: true, sessions: filtered, total: filtered.length };
@@ -1437,10 +1455,17 @@ const results = await search(query, limit);
         // 设置面板存的模型名直接使用（面板加载时已验证过列表）
         model = configuredModel;
       }
-if (!task) return { success: false, error: '缺少 task 参数' };
-const permission = (args.permission as 'readonly' | 'limited_write' | 'full_write' | undefined) ?? 'readonly';
-logInfo(`子代理委派: ${task.slice(0, 80)}${model ? ` (模型: ${model})` : ' (跟随当前模型)'} (权限: ${permission})`);
-const result = await executeSubAgent(task, context, { model, permission });
+      if (!task) return { success: false, error: '缺少 task 参数' };
+      // 权限上限：AI 请求的权限只降不升，封顶于用户设置的 subAgentMaxPermission。
+      // 防止提示注入让 AI 自授 full_write 绕过权限分级。
+      const PERMISSION_RANK: Record<SubAgentPermission, number> = { readonly: 0, limited_write: 1, full_write: 2 };
+      const requested = (args.permission as SubAgentPermission | undefined) ?? 'readonly';
+      const maxAllowed = state.get<SubAgentPermission>('subAgentMaxPermission', 'readonly');
+      const permission: SubAgentPermission = (PERMISSION_RANK[requested] ?? 0) <= (PERMISSION_RANK[maxAllowed] ?? 0)
+        ? requested
+        : maxAllowed;
+      logInfo(`子代理委派: ${task.slice(0, 80)}${model ? ` (模型: ${model})` : ' (跟随当前模型)'} (权限: ${permission}, 上限: ${maxAllowed})`);
+      const result = await executeSubAgent(task, context, { model, permission, confirmHandler: _subAgentConfirmHandler ?? undefined });
       logToolResult('spawn_task', result.success, result.success ? `完成, ${(result as any).loops} 轮` : result.error);
       return result;
     }

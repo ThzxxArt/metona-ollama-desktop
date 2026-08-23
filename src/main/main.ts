@@ -2,7 +2,7 @@
  * Metona Ollama Desktop - 主进程入口
  */
 
-import { app, BrowserWindow, dialog } from 'electron';
+import { app, BrowserWindow, dialog, session } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import { setupIPC } from './ipc.js';
@@ -12,6 +12,7 @@ import { showNotification } from './utils.js';
 import { ensureWorkspaceDir, killAllProcesses } from './workspace.js';
 import { browserClose } from './browser.js';
 import { stopAllServers } from './mcp-manager.js';
+import { getSetting, flushDatabase } from './db/sqlite.js';
 
 // ── 全局错误处理：写入文件 + 弹窗提示 ──
 const ERROR_LOG = path.join(app.getPath('userData'), 'startup-error.log');
@@ -46,6 +47,35 @@ export function getIconPath(): string {
   return process.platform === 'win32' ? ICO_PATH : ICON_PATH;
 }
 
+// ═══════════════════════════════════════════════════════════════
+// CORS 允许清单：为主窗口（file:// 源）访问 Ollama HTTP API 注入
+// Access-Control-Allow-Origin 响应头。这是开启 webSecurity 前提下
+// 本地 API 可达的正确做法，取代此前全局禁用同源策略的方式。
+// ═══════════════════════════════════════════════════════════════
+
+const corsListener = (
+  details: { responseHeaders?: Record<string, string[]> },
+  callback: (response: { responseHeaders?: Record<string, string[]> }) => void,
+): void => {
+  const headers = details.responseHeaders ?? {};
+  headers['Access-Control-Allow-Origin'] = ['*'];
+  callback({ responseHeaders: headers });
+};
+
+/** 更新 CORS 允许清单（仅放行 Ollama 服务地址） */
+export function updateCorsAllowlist(rawUrl: string): void {
+  try {
+    const u = new URL(rawUrl);
+    const pattern = [`${u.protocol}//${u.host}/*`];
+    const sess = session.defaultSession;
+    // Electron webRequest API：传 null 清除既有监听后重新注册
+    sess.webRequest.onHeadersReceived(null);
+    sess.webRequest.onHeadersReceived({ urls: pattern }, corsListener);
+  } catch {
+    // 无效 URL 时忽略
+  }
+}
+
 function createMainWindow(): BrowserWindow {
   const userDataPath = app.getPath('userData');
   const configPath = path.join(userDataPath, 'window-state.json');
@@ -73,8 +103,12 @@ function createMainWindow(): BrowserWindow {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      // sandbox 保持关闭：preload 需要读取 os 信息（homeDir/username 等）。
+      // 开启 sandbox 需将 sys 信息改为 IPC 异步获取，列入后续迭代。
       sandbox: false,
-      webSecurity: false,
+      // webSecurity 必须开启（同源策略）。file:// 页面访问 Ollama HTTP API
+      // 的 CORS 问题通过上方 webRequest 允许清单精确放行，而非全局禁用安全策略。
+      webSecurity: true,
       allowRunningInsecureContent: false
     }
   });
@@ -165,6 +199,11 @@ if (!gotTheLock) {
 app.whenReady().then(async () => {
   ensureWorkspaceDir();
   await setupIPC();
+  // 恢复 Ollama 服务地址的 CORS 允许清单（设置面板保存地址时会动态更新）
+  try {
+    const serverUrl = getSetting<string>('serverUrl', 'http://127.0.0.1:11434');
+    updateCorsAllowlist(serverUrl || 'http://127.0.0.1:11434');
+  } catch { /* 数据库未就绪时使用默认地址 */ }
   createMainWindow();
   createTray();
   createMenu();
@@ -196,6 +235,8 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', async () => {
   isQuitting = true;
+  // 强制刷盘：防抖持久化模式下确保最近 300ms 内的写入不丢失
+  try { flushDatabase(); } catch { /* 刷盘失败不阻塞退出 */ }
   // 清理浏览器
   browserClose().catch(() => {});
   // 清理 MCP 服务器

@@ -29,21 +29,23 @@ let initialized = false;
 /** SearXNG 运行时配置缓存（主进程搜索时通过 IPC 读取，渲染进程通过此变量快速访问） */
 export let searxngConfig = { ...DEFAULTS };
 
-/** 写入配置到 SQLite + 更新运行时缓存 */
+/** 写入配置到 SQLite + 更新运行时缓存（单事务批量写，避免 13 次全库写盘） */
 async function saveConfig(db: ChatDB): Promise<void> {
-  await db.saveSetting('searxng_enabled', searxngConfig.enabled);
-  await db.saveSetting('searxng_url', searxngConfig.url);
-  await db.saveSetting('searxng_engines', searxngConfig.engines);
-  await db.saveSetting('searxng_language', searxngConfig.language);
-  await db.saveSetting('searxng_safesearch', searxngConfig.safesearch);
-  await db.saveSetting('searxng_time_range', searxngConfig.time_range);
-  await db.saveSetting('searxng_max_results', searxngConfig.max_results);
-  await db.saveSetting('searxng_auth_key', searxngConfig.auth_key);
-  await db.saveSetting('searxng_auth_type', searxngConfig.auth_type);
-  await db.saveSetting('searxng_format', searxngConfig.format);
-  // 通用搜索设置（非 SearXNG 专属，主进程搜索时读取）
-  await db.saveSetting('fetch_count', searxngConfig.fetch_count);
-  await db.saveSetting('fetch_mode', searxngConfig.fetch_mode);
+  await db.saveSettingsBatch([
+    { key: 'searxng_enabled', value: searxngConfig.enabled },
+    { key: 'searxng_url', value: searxngConfig.url },
+    { key: 'searxng_engines', value: searxngConfig.engines },
+    { key: 'searxng_language', value: searxngConfig.language },
+    { key: 'searxng_safesearch', value: searxngConfig.safesearch },
+    { key: 'searxng_time_range', value: searxngConfig.time_range },
+    { key: 'searxng_max_results', value: searxngConfig.max_results },
+    { key: 'searxng_auth_key', value: searxngConfig.auth_key },
+    { key: 'searxng_auth_type', value: searxngConfig.auth_type },
+    { key: 'searxng_format', value: searxngConfig.format },
+    // 通用搜索设置（非 SearXNG 专属，主进程搜索时读取）
+    { key: 'fetch_count', value: searxngConfig.fetch_count },
+    { key: 'fetch_mode', value: searxngConfig.fetch_mode },
+  ]);
   logSuccess('SearXNG 配置已保存');
 }
 

@@ -1,6 +1,14 @@
 /**
  * Metona Ollama Desktop - SQLite 数据库层
- * v4.1: 替代 better-sqlite3，使用 sql.js (WASM) 无需原生编译
+ * 基于 sql.js (WASM 内存库)。
+ *
+ * 持久化策略：sql.js 是纯内存数据库，db.export() 为全库序列化。
+ * 为避免"每次写入都全库写盘"的性能退化，采用防抖落盘：
+ * - 写操作只标记脏数据并调度 300ms 防抖刷盘
+ * - 应用退出（before-quit）强制刷盘
+ * - 崩溃时最多丢失最近 300ms 的写入
+ *
+ * Schema 版本管理：PRAGMA user_version + 顺序迁移数组。
  */
 
 import * as SQL from 'sql.js';
@@ -9,7 +17,6 @@ import * as path from 'path';
 import { app } from 'electron';
 
 // ─── sql.js 兼容层 ───
-// 封装 sql.js 的 API，提供与 better-sqlite3 相近的接口
 
 interface Row { [key: string]: unknown }
 
@@ -54,10 +61,6 @@ function queryAll(db: SQL.Database, sql: string, params?: unknown[]): Row[] {
   return rows;
 }
 
-function runPragma(db: SQL.Database, expr: string): void {
-  db.run(`PRAGMA ${expr}`);
-}
-
 function runTransaction(db: SQL.Database, fn: () => void): void {
   db.run('BEGIN TRANSACTION');
   try {
@@ -80,21 +83,150 @@ export function getDb(): SQL.Database {
   return db;
 }
 
-/** 持久化数据库到磁盘 */
+// ─── 防抖持久化 ───
+
+const PERSIST_DEBOUNCE_MS = 300;
+let _persistTimer: ReturnType<typeof setTimeout> | null = null;
+let _dirty = false;
+
+/** 立即持久化数据库到磁盘（temp 文件 + rename 防崩溃损坏） */
 function persist(): void {
   if (!db || !dbPath) return;
+  _dirty = false;
   try {
     const data = db.export();
     const buf = Buffer.from(data);
-    // 先写临时文件再 rename，避免写一半崩溃导致数据库损坏
     const tmpPath = dbPath + '.tmp';
     fs.writeFileSync(tmpPath, buf);
     fs.renameSync(tmpPath, dbPath);
   } catch (err) {
-    // 主进程无 log-service，使用 console.error 输出到 stderr（会被 Electron 日志捕获）
+    _dirty = true;
     console.error(`[SQLite persist] 写入失败: ${(err as Error).message}`);
   }
 }
+
+/** 调度防抖刷盘：多次写操作合并为一次全库写盘 */
+function schedulePersist(): void {
+  _dirty = true;
+  if (_persistTimer) return;
+  _persistTimer = setTimeout(() => {
+    _persistTimer = null;
+    if (_dirty) persist();
+  }, PERSIST_DEBOUNCE_MS);
+}
+
+/** 强制立即刷盘（应用退出 / 导出前调用） */
+export function flushDatabase(): void {
+  if (_persistTimer) {
+    clearTimeout(_persistTimer);
+    _persistTimer = null;
+  }
+  if (db) persist();
+}
+
+// ─── Schema 迁移 ───
+
+/**
+ * 顺序迁移数组：MIGRATIONS[v] 将数据库从 user_version=v 升级到 v+1。
+ * 新增列/表时只追加迁移项，禁止修改历史迁移。
+ */
+const MIGRATIONS: Array<(database: SQL.Database) => void> = [
+  // v0 → v1：初始表结构
+  (database) => {
+    database.run(`
+      CREATE TABLE IF NOT EXISTS sessions (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        model TEXT NOT NULL,
+        system_prompt TEXT,
+        parent_id TEXT,
+        status TEXT DEFAULT 'active',
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        FOREIGN KEY (parent_id) REFERENCES sessions(id)
+      );
+      CREATE TABLE IF NOT EXISTS messages (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        role TEXT NOT NULL,
+        content TEXT,
+        thinking TEXT,
+        images TEXT,
+        tool_calls TEXT,
+        tool_name TEXT,
+        eval_count INTEGER,
+        prompt_eval_count INTEGER,
+        total_duration INTEGER,
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, created_at);
+      CREATE TABLE IF NOT EXISTS tool_calls (
+        id TEXT PRIMARY KEY,
+        message_id TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        tool_name TEXT NOT NULL,
+        arguments TEXT,
+        result TEXT,
+        status TEXT DEFAULT 'pending',
+        duration_ms INTEGER,
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_tool_calls_session ON tool_calls(session_id, tool_name);
+      CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS traces (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        step_index INTEGER,
+        thought TEXT,
+        action TEXT,
+        action_input TEXT,
+        observation TEXT,
+        loop_count INTEGER,
+        error_pattern TEXT,
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_traces_session ON traces(session_id, created_at);
+      CREATE TABLE IF NOT EXISTS tool_audit (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        tool_name TEXT NOT NULL,
+        args_json TEXT,
+        result_status TEXT,
+        result_summary TEXT,
+        duration_ms INTEGER,
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_tool_audit_session ON tool_audit(session_id, created_at);
+    `);
+  },
+  // v1 → v2：消息附件列（历史库通过 ALTER 补列，新库已在 v1 内建）
+  (database) => {
+    try { database.run('ALTER TABLE messages ADD COLUMN attachments TEXT'); } catch { /* 列已存在 */ }
+    try { database.run('ALTER TABLE traces ADD COLUMN error_pattern TEXT'); } catch { /* 列已存在 */ }
+  },
+];
+
+function applyMigrations(database: SQL.Database): void {
+  const row = queryOne(database, 'PRAGMA user_version');
+  let current = Number(row?.user_version ?? 0);
+  if (Number.isNaN(current)) current = 0;
+  for (let v = current; v < MIGRATIONS.length; v++) {
+    MIGRATIONS[v](database);
+  }
+  if (current < MIGRATIONS.length || current === 0) {
+    database.run(`PRAGMA user_version = ${MIGRATIONS.length}`);
+  }
+}
+
+// ─── 初始化 ───
 
 /** 初始化数据库（异步，需加载 WASM） */
 export async function initDatabase(): Promise<SQL.Database> {
@@ -117,104 +249,11 @@ export async function initDatabase(): Promise<SQL.Database> {
   }
   db = new SQLJS.Database(data);
 
-  // 性能优化
-  runPragma(db, 'journal_mode = WAL');
-  runPragma(db, 'synchronous = NORMAL');
-  runPragma(db, 'foreign_keys = ON');
+  // 外键约束（sql.js 内存库不支持 WAL，journal_mode 设置无实际意义故省略）
+  db.run('PRAGMA foreign_keys = ON');
 
-  // 创建表
-  db.run(`
-    -- 会话表
-    CREATE TABLE IF NOT EXISTS sessions (
-      id TEXT PRIMARY KEY,
-      title TEXT NOT NULL,
-      model TEXT NOT NULL,
-      system_prompt TEXT,
-      parent_id TEXT,
-      status TEXT DEFAULT 'active',
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL,
-      FOREIGN KEY (parent_id) REFERENCES sessions(id)
-    );
-
-    -- 消息表
-    CREATE TABLE IF NOT EXISTS messages (
-      id TEXT PRIMARY KEY,
-      session_id TEXT NOT NULL,
-      role TEXT NOT NULL,
-      content TEXT,
-      thinking TEXT,
-      images TEXT,
-      tool_calls TEXT,
-      tool_name TEXT,
-      eval_count INTEGER,
-      prompt_eval_count INTEGER,
-      total_duration INTEGER,
-      created_at INTEGER NOT NULL,
-      FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
-    );
-    CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, created_at);
-
-    -- 工具调用记录表
-    CREATE TABLE IF NOT EXISTS tool_calls (
-      id TEXT PRIMARY KEY,
-      message_id TEXT NOT NULL,
-      session_id TEXT NOT NULL,
-      tool_name TEXT NOT NULL,
-      arguments TEXT,
-      result TEXT,
-      status TEXT DEFAULT 'pending',
-      duration_ms INTEGER,
-      created_at INTEGER NOT NULL,
-      FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
-    );
-    CREATE INDEX IF NOT EXISTS idx_tool_calls_session ON tool_calls(session_id, tool_name);
-
-    -- 设置表
-    CREATE TABLE IF NOT EXISTS settings (
-      key TEXT PRIMARY KEY,
-      value TEXT NOT NULL,
-      updated_at INTEGER NOT NULL
-    );
-
-    -- 执行轨迹表（Agent 可观测性）
-    CREATE TABLE IF NOT EXISTS traces (
-      id TEXT PRIMARY KEY,
-      session_id TEXT NOT NULL,
-      step_index INTEGER,
-      thought TEXT,
-      action TEXT,
-      action_input TEXT,
-      observation TEXT,
-      loop_count INTEGER,
-      error_pattern TEXT,
-      created_at INTEGER NOT NULL,
-      FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
-    );
-    CREATE INDEX IF NOT EXISTS idx_traces_session ON traces(session_id, created_at);
-
-    -- 工具审计日志表（写类工具调用持久化，支持事后审计）
-    CREATE TABLE IF NOT EXISTS tool_audit (
-      id TEXT PRIMARY KEY,
-      session_id TEXT NOT NULL,
-      tool_name TEXT NOT NULL,
-      args_json TEXT,
-      result_status TEXT,
-      result_summary TEXT,
-      duration_ms INTEGER,
-      created_at INTEGER NOT NULL,
-      FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
-    );
-    CREATE INDEX IF NOT EXISTS idx_tool_audit_session ON tool_audit(session_id, created_at);
-
-  `);
-
-  // 兼容迁移：为已有 messages 表补充 attachments 列（文件/视频等附件 JSON）
-  try { db.run('ALTER TABLE messages ADD COLUMN attachments TEXT'); } catch { /* 列已存在，忽略 */ }
-
-  // 兼容迁移：为已有 traces 表补充 error_pattern 列
-  try { db.run('ALTER TABLE traces ADD COLUMN error_pattern TEXT'); } catch { /* 列已存在，忽略 */ }
-
+  // Schema 迁移
+  applyMigrations(db);
 
   // 写入一次确保文件存在
   persist();
@@ -235,6 +274,15 @@ export interface SessionRow {
   updated_at: number;
 }
 
+export interface SessionSummaryRow {
+  id: string;
+  title: string;
+  model: string;
+  created_at: number;
+  updated_at: number;
+  message_count: number;
+}
+
 export interface MessageRow {
   id: string;
   session_id: string;
@@ -250,7 +298,6 @@ export interface MessageRow {
   total_duration: number | null;
   created_at: number;
 }
-
 
 export interface SettingRow {
   key: string;
@@ -292,7 +339,7 @@ export function saveSession(session: SessionRow): string {
     [session.id, session.title, session.model, session.system_prompt, session.parent_id,
      session.status || 'active', session.created_at, session.updated_at]
   );
-  persist();
+  schedulePersist();
   return session.id;
 }
 
@@ -304,33 +351,77 @@ export function getAllSessions(): SessionRow[] {
   return queryAll(getDb(), 'SELECT * FROM sessions ORDER BY updated_at DESC') as unknown as SessionRow[];
 }
 
+/** 会话摘要列表（单条 SQL，避免 N+1 全量加载消息） */
+export function getSessionSummaries(): SessionSummaryRow[] {
+  return queryAll(getDb(), `
+    SELECT s.id, s.title, s.model, s.created_at, s.updated_at,
+      (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id) AS message_count
+    FROM sessions s
+    ORDER BY s.updated_at DESC
+  `) as unknown as SessionSummaryRow[];
+}
+
+/** 按标题或消息内容搜索会话（LIKE 转义，返回摘要） */
+export function searchSessions(query: string, limit = 200): SessionSummaryRow[] {
+  const esc = (s: string): string => s.replace(/[\\%_]/g, m => '\\' + m);
+  const pattern = `%${esc(query)}%`;
+  return queryAll(getDb(), `
+    SELECT s.id, s.title, s.model, s.created_at, s.updated_at,
+      (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id) AS message_count
+    FROM sessions s
+    WHERE s.title LIKE ? ESCAPE '\\'
+       OR EXISTS (SELECT 1 FROM messages m WHERE m.session_id = s.id AND m.content LIKE ? ESCAPE '\\')
+    ORDER BY s.updated_at DESC
+    LIMIT ?
+  `, [pattern, pattern, limit]) as unknown as SessionSummaryRow[];
+}
+
+/** 一次性取出全部会话与消息行（导出用，替代渲染端 N+1 IPC 往返） */
+export function getAllSessionsData(): { sessions: SessionRow[]; messages: MessageRow[] } {
+  const d = getDb();
+  return {
+    sessions: queryAll(d, 'SELECT * FROM sessions ORDER BY updated_at ASC') as unknown as SessionRow[],
+    messages: queryAll(d, 'SELECT * FROM messages ORDER BY created_at ASC') as unknown as MessageRow[],
+  };
+}
+
 export function deleteSession(id: string): void {
   runExec(getDb(), 'DELETE FROM sessions WHERE id = ?', [id]);
-  persist();
+  schedulePersist();
 }
 
 export function clearAllSessions(): void {
   getDb().run('DELETE FROM sessions');
-  persist();
+  schedulePersist();
 }
 
 // ─── Messages CRUD ───
 
 export function saveMessage(msg: MessageRow): string {
-  const d = getDb();
-  runExec(d, `INSERT OR REPLACE INTO messages (id, session_id, role, content, thinking, images, tool_calls, tool_name, attachments, eval_count, prompt_eval_count, total_duration, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [msg.id, msg.session_id, msg.role, msg.content, msg.thinking, msg.images,
-     msg.tool_calls, msg.tool_name, msg.attachments, msg.eval_count, msg.prompt_eval_count, msg.total_duration, msg.created_at]
-  );
-  persist();
+  saveMessagesBatch([msg]);
   return msg.id;
+}
+
+/** 批量保存消息（单事务 + 单次调度刷盘） */
+export function saveMessagesBatch(msgs: MessageRow[]): number {
+  if (!msgs.length) return 0;
+  const d = getDb();
+  runTransaction(d, () => {
+    for (const msg of msgs) {
+      runExec(d, `INSERT OR REPLACE INTO messages (id, session_id, role, content, thinking, images, tool_calls, tool_name, attachments, eval_count, prompt_eval_count, total_duration, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [msg.id, msg.session_id, msg.role, msg.content, msg.thinking, msg.images,
+         msg.tool_calls, msg.tool_name, msg.attachments, msg.eval_count, msg.prompt_eval_count, msg.total_duration, msg.created_at]
+      );
+    }
+  });
+  schedulePersist();
+  return msgs.length;
 }
 
 export function getMessagesBySession(sessionId: string): MessageRow[] {
   return queryAll(getDb(), 'SELECT * FROM messages WHERE session_id = ? ORDER BY created_at ASC', [sessionId]) as unknown as MessageRow[];
 }
-
 
 // ─── Settings CRUD ───
 
@@ -338,18 +429,21 @@ export function saveSetting(key: string, value: unknown): void {
   runExec(getDb(), 'INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)',
     [key, JSON.stringify(value), Date.now()]
   );
-  persist();
+  schedulePersist();
 }
 
-/** P1-P2 修复：批量保存设置，只触发一次 persist，避免每个 setting 都全库写盘 */
+/** 批量保存设置（单事务 + 单次调度刷盘） */
 export function saveSettingsBatch(entries: Array<{ key: string; value: unknown }>): void {
+  if (!entries.length) return;
   const d = getDb();
-  for (const { key, value } of entries) {
-    runExec(d, 'INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)',
-      [key, JSON.stringify(value), Date.now()]
-    );
-  }
-  persist(); // 只写盘一次
+  runTransaction(d, () => {
+    for (const { key, value } of entries) {
+      runExec(d, 'INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)',
+        [key, JSON.stringify(value), Date.now()]
+      );
+    }
+  });
+  schedulePersist();
 }
 
 export function getSetting<T = unknown>(key: string, defaultValue: T | null = null): T {
@@ -362,12 +456,6 @@ export function getSetting<T = unknown>(key: string, defaultValue: T | null = nu
   }
 }
 
-// ─── Tool Calls CRUD ───
-// P1-P3 修复：saveToolCall 和 getToolCallsBySession 是死代码（渲染进程从未调用）。
-// tool_calls 表保留（已有数据库可能包含此表，删除表定义会导致升级时报错），
-// 但删除未使用的函数和 IPC handler。
-// 工具调用记录实际通过 messages.tool_calls JSON 列存储。
-
 // ─── Traces CRUD ───
 
 export function saveTrace(trace: TraceRow): string {
@@ -375,11 +463,11 @@ export function saveTrace(trace: TraceRow): string {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [trace.id, trace.session_id, trace.step_index, trace.thought, trace.action, trace.action_input, trace.observation, trace.loop_count, trace.error_pattern, trace.created_at]
   );
-  persist();
+  schedulePersist();
   return trace.id;
 }
 
-/** 批量保存轨迹 — 只触发一次 persist，避免逐条写盘 */
+/** 批量保存轨迹（单事务 + 单次调度刷盘） */
 export function saveTracesBatch(traces: TraceRow[]): number {
   if (!traces.length) return 0;
   const d = getDb();
@@ -391,7 +479,7 @@ export function saveTracesBatch(traces: TraceRow[]): number {
       );
     }
   });
-  persist(); // 只写盘一次
+  schedulePersist();
   return traces.length;
 }
 
@@ -502,7 +590,7 @@ export function importSessions(data: ExportData): { imported: number; skipped: n
     }
   });
 
-  persist();
+  schedulePersist();
   return { imported, skipped };
 }
 
@@ -527,7 +615,7 @@ export function saveToolAudit(audit: Omit<ToolAuditRow, 'id'> & { id?: string })
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     [id, audit.session_id, audit.tool_name, audit.args_json, audit.result_status, audit.result_summary, audit.duration_ms, audit.created_at]
   );
-  persist();
+  schedulePersist();
   return id;
 }
 
@@ -538,4 +626,3 @@ export function getToolAuditsBySession(sessionId: string): ToolAuditRow[] {
 export function getAllToolAudits(limit: number = 200): ToolAuditRow[] {
   return queryAll(getDb(), 'SELECT * FROM tool_audit ORDER BY created_at DESC LIMIT ?', [limit]) as unknown as ToolAuditRow[];
 }
-

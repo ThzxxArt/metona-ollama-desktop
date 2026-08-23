@@ -10,46 +10,30 @@ import { mainWindow } from './main.js';
 import { showNotification } from './utils.js';
 import {
   initDatabase, saveSession, getSession, getAllSessions, deleteSession, clearAllSessions,
-  saveMessage, getMessagesBySession,
+  saveMessage, saveMessagesBatch, getMessagesBySession,
   saveSetting, getSetting, saveSettingsBatch,
   saveTrace, saveTracesBatch, getTracesBySession,
   exportAllSessions, importSessions,
+  getSessionSummaries, searchSessions, getAllSessionsData,
   getAllSessionsTokenStats,
   saveToolAudit, getToolAuditsBySession, getAllToolAudits
 } from './db/sqlite.js';
-import type { ExportData } from './db/sqlite.js';
+import type { ExportData, MessageRow, SessionSummaryRow } from './db/sqlite.js';
 
 /** 发送日志到渲染进程日志面板 */
 function sendLog(level: 'info' | 'success' | 'warn' | 'error' | 'debug', message: string, detail?: string): void {
   mainWindow?.webContents.send('main:log', { level, message, detail });
 }
 import {
-  handleReadFile,
-  handleWriteFile,
-  handleListDir,
-  handleSearchFiles,
-  handleCreateDir,
-  handleDeleteFile,
   handleRunCommand,
   killToolProcess,
-  handleMoveFile,
-  handleCopyFile,
-  handleWebFetch,
-  handleWebSearch,
-  handleEditFile,
-  handleTree,
-  handleDownloadFile,
-  handleReadMultipleFiles,
-  handleGit,
-  handleCompress,
-  handleCalculator,
-  handleDiff
 } from './tool-handlers.js';
-import { browserOpen, browserScreenshot, browserEvaluate, browserExtract, browserClick, browserType, browserScroll, browserClose, browserWait } from './browser.js';
+import { getToolHandler } from './tool-dispatch.js';
 import { startServer, stopServer, stopAllServers, callTool, getAllTools, getServerStatuses, refreshTools, setMCPTimeout } from './mcp-manager.js';
 import { getAllowedDirs, getBlockedDirs, setAllowedDirs, checkPathAllowed } from './tool-security.js';
 import { startProcess, killProcess, getWorkspaceDir, setWorkspaceDir, listWorkspaceDir } from './workspace.js';
 import { setHTTPTimeout } from './tool-handlers-system.js';
+import { updateCorsAllowlist } from './main.js';
 import { execFile } from 'child_process';
 import * as crypto from 'crypto';
 import ffmpegStatic from 'ffmpeg-static';
@@ -79,7 +63,7 @@ function summarizeResult(toolName: string, result: Record<string, unknown>): str
     case 'read_multiple_files': return `${result.total} 个文件`;
     case 'git': return `${result.action} ✓`;
     case 'compress': return `${result.action} → ${result.archive || result.destination}`;
-case 'diff': return result.identical ? '无差异' : `+${result.additions} -${result.deletions} (${result.hunk_count} hunks)`;
+    case 'diff': return result.identical ? '无差异' : `+${result.additions} -${result.deletions} (${result.hunk_count} hunks)`;
     case 'calculator': return `${result.expression} = ${result.result}`;
     default: return '完成';
   }
@@ -168,6 +152,33 @@ export async function setupIPC(): Promise<void> {
     userDataPath: require('electron').app.getPath('userData')
   }));
 
+  // ── 内置资源读取（SOUL.md / AGENT.md 等；basename 防路径穿越）──
+  // 取代渲染进程在 file:// 页面上直接 fetch 相对路径（webSecurity 开启后不可用）
+  ipcMain.handle('app:readResource', (_, name: string) => {
+    const safe = path.basename(String(name || ''));
+    if (!safe || safe.startsWith('.')) {
+      return { success: false, error: `非法资源名: ${name}` };
+    }
+    const app = require('electron').app;
+    // 开发模式资源在 src/renderer/public/；生产模式在 dist/renderer/
+    const base = app.isPackaged
+      ? path.join(__dirname, '..', 'renderer')
+      : path.join(__dirname, '..', '..', 'src', 'renderer', 'public');
+    const filePath = path.join(base, safe);
+    try {
+      const content = fs.readFileSync(filePath, 'utf-8');
+      return { success: true, content };
+    } catch {
+      return { success: false, error: `资源不存在: ${safe}` };
+    }
+  });
+
+  // ── 更新 Ollama 地址的 CORS 允许清单（设置面板保存地址后调用）──
+  ipcMain.handle('app:setOllamaOrigin', (_, url: string) => {
+    updateCorsAllowlist(url);
+    return { success: true };
+  });
+
   ipcMain.handle('window:minimize', () => mainWindow?.minimize());
   ipcMain.handle('window:maximize', () => {
     if (mainWindow?.isMaximized()) mainWindow.unmaximize();
@@ -186,38 +197,15 @@ export async function setupIPC(): Promise<void> {
     try {
       sendLog('debug', `🔧 tool:execute ${toolName}`, JSON.stringify(args || {}).slice(0, 200));
       let result;
-      switch (toolName) {
-        case 'read_file':          result = await handleReadFile(args as { path: string; encoding?: string; start_line?: number; end_line?: number }); break;
-        case 'write_file':         result = await handleWriteFile(args as { path: string; content: string; encoding?: string }); break;
-        case 'list_directory':     result = await handleListDir(args as { path: string; recursive?: boolean; max_depth?: number; include_hidden?: boolean; filter_extension?: string; limit?: number; offset?: number }); break;
-        case 'search_files':       result = await handleSearchFiles(args as { path: string; query: string; search_type?: string; case_sensitive?: boolean; use_regex?: boolean; max_results?: number; file_extensions?: string[] }); break;
-        case 'create_directory':   result = await handleCreateDir(args as { path: string }); break;
-        case 'delete_file':        result = await handleDeleteFile(args as { path?: string; paths?: string[]; recursive?: boolean }); break;
-        case 'run_command':        return await handleRunCommand(args as { command: string; cwd?: string }); // run_command 自身管理日志
-        case 'move_file':          result = await handleMoveFile(args as { source: string; destination: string }); break;
-        case 'copy_file':          result = await handleCopyFile(args as { source: string; destination: string; recursive?: boolean }); break;
-        case 'web_fetch':          result = await handleWebFetch(args as { url: string; max_chars?: number; extract_mode?: string; mobile_ua?: boolean; retry?: boolean }); break;
-        case 'web_search':         result = await handleWebSearch(args as { query: string; max_results?: number; time_range?: string; enhance_snippets?: boolean; fetch_top?: number }); break;
-        case 'edit_file':          result = await handleEditFile(args as { path: string; old_text: string; new_text: string; all?: boolean; use_regex?: boolean }); break;
-        case 'tree':               result = await handleTree(args as { path: string; max_depth?: number; include_hidden?: boolean }); break;
-        case 'download_file':      result = await handleDownloadFile(args as { url: string; destination: string }); break;
-        case 'read_multiple_files':result = await handleReadMultipleFiles(args as { paths: string[]; max_chars_per_file?: number }); break;
-        case 'git':                result = await handleGit(args as { action: string; path?: string; files?: string[]; message?: string; branch?: string; tag_name?: string; stash_sub?: string; remote?: string; remote_url?: string; count?: number; all?: boolean; staged?: boolean; new_branch?: boolean; delete_branch?: boolean; force?: boolean; url?: string }); break;
-        case 'compress':           result = await handleCompress(args as { action: string; path: string; destination?: string; format?: string }); break;
-case 'diff':               result = await handleDiff(args as { mode: 'file_vs_file' | 'file_vs_content' | 'file_vs_git_head'; path1?: string; path2?: string; content?: string; context_lines?: number }); break;
-    case 'calculator':        result = handleCalculator(args as { expression: string }); break;
-        // v5.1 Browser 控制（增强版）
-        case 'browser_open':       result = await browserOpen(args.url as string, args.wait_selector as string | undefined); break;
-        case 'browser_screenshot': result = await browserScreenshot({ full_page: args.full_page as boolean, selector: args.selector as string }); break;
-        case 'browser_evaluate':   result = await browserEvaluate(args.js as string); break;
-        case 'browser_extract':    result = await browserExtract({ selector: args.selector as string, max_chars: args.max_chars as number }); break;
-        case 'browser_click':      result = await browserClick(args.selector as string, (args.wait as boolean) || false); break;
-        case 'browser_type':       result = await browserType(args.selector as string, args.text as string, args.clear !== false, args.submit as boolean || false); break;
-        case 'browser_scroll':     result = await browserScroll({ direction: args.direction as string, selector: args.selector as string }); break;
-        case 'browser_wait':       result = await browserWait({ selector: args.selector as string, time_ms: args.time_ms as number }); break;
-        case 'browser_close':      await browserClose(); result = { success: true }; break;
-        default:                   return { success: false, error: `未知工具: ${toolName}` };
+      if (toolName === 'run_command') {
+        // run_command 自身管理日志与实时输出流，提前返回
+        return await handleRunCommand(args as { command: string; cwd?: string });
       }
+      const handler = getToolHandler(toolName);
+      if (!handler) {
+        return { success: false, error: `未知工具: ${toolName}` };
+      }
+      result = await handler(args);
       // 结果日志
       if (result.success) {
         sendLog('success', `🔧 ${toolName} ✓`, summarizeResult(toolName, result));
@@ -274,9 +262,11 @@ case 'diff':               result = await handleDiff(args as { mode: 'file_vs_fi
     return listWorkspaceDir(dirPath);
   });
 
-  // 读取工作空间文件（复用 tool-handlers）
+  // 读取工作空间文件（复用 tool-handlers 注册表）
   ipcMain.handle('workspace:readFile', async (_, filePath: string) => {
-    return handleReadFile({ path: filePath });
+    const handler = getToolHandler('read_file');
+    if (!handler) return { success: false, error: 'read_file 处理器不可用' };
+    return handler({ path: filePath });
   });
 
   // 启动命令（流式输出，通过 workspace:output 事件推送）
@@ -360,9 +350,28 @@ case 'diff':               result = await handleDiff(args as { mode: 'file_vs_fi
     try { return { success: true, id: saveMessage(msg) }; }
     catch (err) { return { success: false, error: (err as Error).message }; }
   });
+  ipcMain.handle('db:saveMessagesBatch', (_, msgs: MessageRow[]) => {
+    try { return { success: true, count: saveMessagesBatch(msgs) }; }
+    catch (err) { return { success: false, error: (err as Error).message }; }
+  });
   ipcMain.handle('db:getMessages', (_, sessionId) => {
     try { return getMessagesBySession(sessionId); }
     catch { return []; }
+  });
+
+  // ── 会话摘要（单条 SQL，历史列表/搜索不再全量加载消息）──
+  ipcMain.handle('db:getSessionSummaries', () => {
+    try { return getSessionSummaries(); }
+    catch (err) { sendLog('error', '获取会话摘要失败', (err as Error).message); return []; }
+  });
+  ipcMain.handle('db:searchSessions', (_, query: string) => {
+    try { return searchSessions(String(query || '')); }
+    catch (err) { sendLog('error', '搜索会话失败', (err as Error).message); return []; }
+  });
+  // 全量会话+消息（导出用，一次 IPC 取代渲染端 N+1 往返）
+  ipcMain.handle('db:getAllSessionsData', () => {
+    try { return getAllSessionsData(); }
+    catch (err) { sendLog('error', '获取全量会话数据失败', (err as Error).message); return { sessions: [], messages: [] }; }
   });
 
   // Settings
@@ -575,7 +584,7 @@ case 'diff':               result = await handleDiff(args as { mode: 'file_vs_fi
   });
 }
 
-/** 校验 MEMORY.md 内容格式 */
+/** 校验 MEMORY.md 内容格式（兼容可选的访问统计后缀 `| hits: N | last: TS`） */
 function validateMemoryContent(content: string): boolean {
   if (!content || !content.trim()) return false;
   const lines = content.split('\n');
@@ -586,7 +595,7 @@ function validateMemoryContent(content: string): boolean {
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('>')) continue;
-    const match = trimmed.match(/^##\s+(fact|preference|rule)\s*\|\s*id:\s*(mem_\d{8}_\d{3})\s*\|\s*importance:\s*(\d{1,2})\s*\|\s*tags:\s*(.+)$/i);
+    const match = trimmed.match(/^##\s+(fact|preference|rule)\s*\|\s*id:\s*(mem_\d{8}_\d{3})\s*\|\s*importance:\s*(\d{1,2})\s*\|\s*tags:\s+(.+?)(?:\s*\|\s*hits:\s*(\d+)\s*\|\s*last:\s*(\d+))?\s*$/i);
     if (match) {
       const importance = parseInt(match[3], 10);
       if (importance < 1 || importance > 10) return false;
@@ -653,12 +662,13 @@ async function extractVideoFrames(filePath: string, maxFrames: number, maxWidth:
         ffResolve();
       });
       child.stderr?.on('data', (data: Buffer) => {
-        ffmpegStderr += data.toString();
-        // 实时推送进度到渲染进程（每秒一次，覆盖更新）
-        const match = ffmpegStderr.match(/frame=\s*(\d+)/g);
-        if (match) {
-          const last = match[match.length - 1];
-          const currentFrame = parseInt(last.replace(/\D/g, ''));
+        const chunk = data.toString();
+        // 只保留最近 32KB stderr（解析视频信息用），避免长视频提取时无限累积
+        ffmpegStderr = (ffmpegStderr + chunk).slice(-32768);
+        // 帧进度：只解析当前 chunk，避免对全量字符串反复正则（O(n²) 退化）
+        const frameMatch = chunk.match(/frame=\s*(\d+)/g);
+        if (frameMatch) {
+          const currentFrame = parseInt(frameMatch[frameMatch.length - 1].replace(/\D/g, ''));
           if (currentFrame > lastProgressFrame && Date.now() - lastProgressTime > 1000) {
             lastProgressFrame = currentFrame;
             lastProgressTime = Date.now();

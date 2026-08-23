@@ -1,6 +1,6 @@
 # Metona Ollama Desktop — 开发规范
 
-> 更新: 2026-06-23 | 维护: 项目团队
+> 更新: 2026-08-23 | 维护: 项目团队
 
 ---
 
@@ -10,11 +10,11 @@ Metona Ollama Desktop 是基于 TypeScript + Electron 的 Windows 本地 AI 桌�
 
 核心架构：
 - **ReAct Agent Loop** — 8 状态机驱动的智能体循环（INIT→THINKING→PARSING→EXECUTING→OBSERVING→REFLECTING→COMPRESSING→TERMINATED），最大 85 轮（可配置）
-- **32 个内置工具** — 文件系统（13）、命令执行（1）、联网搜索（2）、浏览器控制（9）、Git（1）、记忆（1）、会话/子代理（3）、系统（1）、Plan Mode（1）
-- **Harness Engineering** — 提示词加固 + 4 阶段 Hook 系统 + Agent Metrics + 渐进式披露
-- **MCP 协议扩展** — JSON-RPC 2.0 over stdio，动态工具发现
+- **33 个内置工具** — 文件系统（14，含 diff）、命令执行（1）、联网搜索（2）、浏览器控制（9）、Git（1）、记忆（1）、会话/子代理（3）、系统（1）、Plan Mode（1）
+- **Harness Engineering** — 提示词加固 + 4 阶段 Hook 系统 + Agent Metrics
+- **MCP 协议扩展** — JSON-RPC 2.0 over stdio，动态工具发现（tools/list 分页）
 - **Plan Mode** — 开关切换，先规划后执行，步骤级进度追踪
-- **SQLite 存储** — sql.js WASM，5 张表，WAL 模式
+- **SQLite 存储** — sql.js WASM 内存库，6 张表，防抖批量落盘 + `PRAGMA user_version` 迁移
 
 ---
 
@@ -36,23 +36,27 @@ Metona Ollama Desktop 是基于 TypeScript + Electron 的 Windows 本地 AI 桌�
 ```
 src/
 ├── main/                              # Electron 主进程
-│   ├── main.ts                        # 入口、窗口管理、托盘、生命周期
+│   ├── main.ts                        # 入口、窗口管理、CORS 允许清单、托盘、生命周期
 │   ├── preload.ts                     # contextBridge API 暴露（白名单）
 │   ├── ipc.ts                         # IPC 总线（工具调用、数据库、MCP、视频帧）
 │   ├── workspace.ts                   # 终端子进程管理、流式输出
-│   ├── browser.ts                     # 隐藏 BrowserWindow 实现浏览器控制
+│   ├── browser.ts                     # 隐藏 BrowserWindow 实现浏览器控制（memory: 分区）
+│   ├── net-guard.ts                   # SSRF 防护（环回/内网/链路本地地址拦截）
+│   ├── calculator.ts                  # calculator 工具纯函数实现（递归下降解析）
+│   ├── myers-diff.ts                  # 行级 diff 纯函数（前缀/后缀裁剪 + LCS 限额 + 回退）
+│   ├── tool-dispatch.ts               # 主进程工具执行器注册表（消除 switch 硬编码）
 │   ├── menu.ts                        # 原生菜单
 │   ├── tray.ts                        # 系统托盘
 │   ├── utils.ts                       # 通用工具函数（日志、通知）
-│   ├── mcp-manager.ts                 # MCP JSON-RPC 2.0 协议管理
-│   ├── tool-security.ts               # 路径/命令安全检查（黑名单 + 豁免机制）
+│   ├── mcp-manager.ts                 # MCP JSON-RPC 2.0 协议管理（tools/list 分页）
+│   ├── tool-security.ts               # 路径/命令安全检查（黑名单 + 系统目录硬红线 + 身份文件保护）
 │   ├── tool-handlers.ts               # 工具处理器 re-export 聚合
-│   ├── tool-handlers-fs.ts            # 13 个文件系统工具实现
+│   ├── tool-handlers-fs.ts            # 14 个文件系统工具实现
 │   ├── tool-handlers-system.ts        # 系统/网络工具 + 联网搜索（双模式）+ 自动抓取
-│   ├── tool-handlers-git.ts           # Git 全操作
+│   ├── tool-handlers-git.ts           # Git 全操作（参数注入防护）
 │   ├── tool-handlers-shared.ts        # 共享类型和辅助函数
 │   └── db/
-│       ├── sqlite.ts                  # SQLite 数据库层（5 张表）
+│       ├── sqlite.ts                  # SQLite 数据库层（6 张表，防抖落盘 + user_version 迁移）
 │       └── sql.js.d.ts                # sql.js 类型声明
 │
 ├── renderer/                          # 渲染进程
@@ -60,42 +64,45 @@ src/
 │   ├── types.d.ts                     # 完整类型定义（消息、会话、Agent 状态机等）
 │   ├── index.html                     # 入口 HTML（三栏布局 + 全部模态框）
 │   ├── public/
-│   │   ├── AGENT.md                   # 内置 Agent 行为准则文档
-│   │   ├── SOUL.md                    # AI 人格定义（内置 fallback）
+│   │   ├── AGENT.md                   # 内置 Agent 行为准则（工作空间同名文件可覆盖）
+│   │   └── SOUL.md                    # AI 人格定义（内置 fallback）
 │   ├── api/
 │   │   └── ollama.ts                  # Ollama REST API 客户端（流式 + 模型管理）
-│   ├── components/                    # 15 个 UI 组件（原生 DOM）
+│   ├── components/                    # 18 个 UI 组件（原生 DOM）
 │   │   ├── chat-area.ts              # 聊天消息区域（渲染、自动滚动）
 │   │   ├── header.ts                 # 顶部导航栏 + 连接状态
-│   │   ├── history-modal.ts          # 会话历史（搜索、分页、恢复）
+│   │   ├── history-modal.ts          # 会话历史（摘要查询、SQL 搜索、分页、恢复）
 │   │   ├── input-area.ts             # 输入框 + 图片/视频/文件上传 + Plan Mode 开关
+│   │   ├── keybind-manager.ts        # 全局快捷键唯一注册点
 │   │   ├── lightbox.ts               # 图片灯箱
-│   │   ├── memory-modal.ts           # Agent 记忆管理面板
+│   │   ├── memory-modal.ts           # Agent 记忆管理面板（按 ID 删除）
+│   │   ├── metrics-dashboard.ts      # Agent Metrics 仪表盘（JSON/Prometheus 导出）
 │   │   ├── model-bar.ts              # 模型选择栏 + 能力徽章
 │   │   ├── prompt-modal.ts           # 系统提示词查看 + Plan 确认弹窗
-│   │   ├── searxng-modal.ts          # SearXNG 搜索引擎配置面板
-│   │   ├── settings-modal.ts         # 设置面板（全部配置项）
-│   │   ├── toast.ts                  # Toast 通知
+│   │   ├── searxng-modal.ts          # SearXNG 搜索引擎配置面板（批量保存）
+│   │   ├── settings-modal.ts         # 设置面板（全部配置项 + 子代理权限上限）
+│   │   ├── toast.ts                  # Toast 通知（textContent 渲染防 XSS）
 │   │   ├── token-dashboard.ts        # Token 消耗仪表盘（全局 + 会话统计）
-│   │   ├── tool-confirm-modal.ts     # 工具执行确认对话框
-│   │   ├── tools-modal.ts            # 工具列表面板（32 个工具卡片）
+│   │   ├── tool-confirm-modal.ts     # 工具执行确认对话框（主/子代理共用）
+│   │   ├── tools-modal.ts            # 工具列表面板（33 个工具卡片）
 │   │   └── workspace-panel.ts        # 工作空间面板（终端 + 工具卡片 + 文件浏览）
-│   ├── services/                      # 13 个服务模块
+│   ├── services/                      # 12 个服务模块
 │   │   ├── agent-engine.ts           # ★ ReAct Agent Loop 核心引擎（8 状态机）
-│   │   ├── tool-registry.ts          # 工具注册与调度中心（32 内置 + MCP 动态 + Plan Mode）
-│   │   ├── memory-service.ts         # 记忆管理（MEMORY.md 读写 + 格式校验 + 自动提取）
+│   │   ├── tool-registry.ts          # 工具注册与调度中心（33 内置 + MCP 动态 + Plan Mode）
+│   │   ├── result-formatter.ts       # 工具结果 → 模型友好格式（纯函数，自 agent-engine 拆分）
+│   │   ├── tool-parsing.ts           # 文本工具调用兜底解析（纯函数，自 agent-engine 拆分）
+│   │   ├── memory-service.ts         # 记忆管理（条目缓存 + 访问统计持久化 + TTL 衰减）
 │   │   ├── context-manager.ts        # 上下文窗口管理（滑动窗口 + Token 校准 + LLM 压缩）
-│   │   ├── sub-agent.ts              # 子代理委派（独立上下文 + 超时保护）
+│   │   ├── sub-agent.ts              # 子代理委派（权限只降不升 + 确认管线 + 完整路径沙箱）
 │   │   ├── mcp-client.ts             # MCP 渲染端客户端
 │   │   ├── log-service.ts            # 结构化日志（9 级分类）
-│   │   ├── crypto.ts                 # AES-256-GCM 加密
-│   │   ├── hooks.ts                  # 4 阶段 Hook 系统（pre_tool/post_tool/post_iteration/pre_completion）
-│   │   ├── agent-metrics.ts          # Agent 度量采集 + 错误模式识别 + 改进建议
-│   │   ├── agent-safety.ts           # Agent 安全防护（工具阴影检测 + 路径校验）
-│   │   ├── context-indexer.ts        # 渐进式披露（索引层→接口层→实现层）
-│   │   └── infra-service.ts          # 基础设施（全局错误处理 + 配置校验）
+│   │   ├── crypto.ts                 # AES-256-GCM 备份编码
+│   │   ├── hooks.ts                  # 4 阶段 Hook 系统（SecurityCheck + FileWriteDedup）
+│   │   ├── agent-metrics.ts          # Agent 度量采集 + 错误模式识别 + JSON/Prometheus 导出
+│   │   ├── agent-safety.ts           # Agent 安全防护（错误分类 + 路径沙箱 + 恢复建议）
+│   │   └── infra-service.ts          # 基础设施（全局错误处理，唯一定义）
 │   ├── db/
-│   │   └── chat-db.ts                # 渲染端数据库接口 + IndexedDB→SQLite 迁移
+│   │   └── chat-db.ts                # 渲染端数据库接口（摘要/搜索/批量写）+ IndexedDB→SQLite 迁移
 │   ├── state/
 │   │   └── state.ts                  # 响应式状态管理（单例模式）
 │   ├── utils/
@@ -103,7 +110,8 @@ src/
 │   │   ├── sanitizer.ts              # HTML 净化器（白名单 + URI 协议检查）
 │   │   └── marked-config.ts          # Markdown 渲染配置
 │   └── styles/
-│       └── style.css                 # 暖色调亮色主题（完整样式表）
+│       ├── style.css                 # 暖色调亮色主题（完整样式表）
+│       └── dark-theme.css            # 暗色主题
 │
 ├── vendor/                            # 第三方库本地化（ESM + 类型声明）
 │   ├── marked.d.ts                   # Markdown 解析库类型
@@ -177,11 +185,11 @@ logDebug('调试信息', '可选详情');
 ### 5.1 五大子系统
 
 ```
-① Agent 系统    → agent-engine.ts + tool-registry.ts（32 内置工具 + MCP 动态）
-② 记忆系统      → memory-service.ts（MEMORY.md 文件存储 + 格式校验 + 自动提取）
-③ 上下文系统    → context-manager.ts + context-indexer.ts（渐进式披露）
+① Agent 系统    → agent-engine.ts + tool-registry.ts（33 内置工具 + MCP 动态）+ result-formatter/tool-parsing
+② 记忆系统      → memory-service.ts（MEMORY.md 文件存储 + 条目缓存 + 访问统计持久化 + 自动提取）
+③ 上下文系统    → context-manager.ts（滑动窗口 + Token 校准 + LLM 压缩）
 ④ 工作空间      → workspace.ts (主进程) + workspace-panel.ts (渲染进程)
-⑤ 数据层       → db/sqlite.ts（SQLite, 5 张表）+ chat-db.ts（渲染端接口）
+⑤ 数据层       → db/sqlite.ts（SQLite, 6 张表）+ chat-db.ts（渲染端接口）
 ```
 
 ### 5.2 ReAct Agent Loop（8 状态机）
@@ -204,25 +212,31 @@ INIT → THINKING → PARSING → EXECUTING → OBSERVING → REFLECTING → (CO
 关键参数：
 - 最大轮次：85（默认，设置面板可调）
 - 自动重试：2 次（MAX_RETRIES）
-- 看门狗超时：30 分钟（默认，可配）
+- 看门狗超时：30 分钟（默认，可配；引擎与设置面板默认值一致）
 - 上下文硬上限：300 条消息
 - 流式超时：可配（默认 300s，0=禁用）
-- HTTP 超时：可配（默认 30s）
+- HTTP 超时：可配（默认 900s）
 - MCP 超时：可配（默认 60s）
 
 ### 5.3 SQLite 数据库
 
-5 张表，WAL 模式 + NORMAL 同步：
+6 张表，sql.js WASM 内存库 + **防抖批量落盘**：
 
 | 表 | 用途 | 关键特性 |
 |---|---|---|
 | `sessions` | 会话 | parent_id 父子关系 |
 | `messages` | 消息 | 外键级联删除，thinking/tool_calls/attachments/eval_count |
 | `tool_calls` | 工具调用记录 | 按会话+工具名索引 |
-| `settings` | 设置 | JSON 序列化 |
-| `traces` | ReAct 执行轨迹 | Agent 可观测性 |
+| `settings` | 设置 | JSON 序列化，支持批量写（单事务） |
+| `traces` | ReAct 执行轨迹 | Agent 可观测性，支持批量写 |
+| `tool_audit` | 工具执行审计日志 | 按会话+时间索引 |
 
-数据库键路径位于 Electron `userData` 目录（`metona.db`）。写操作采用 temp 文件 + rename 策略防止崩溃损坏。
+持久化策略（sql.js 为纯内存库，`db.export()` 是全库序列化）：
+- 写操作只标记脏数据并调度 **300ms 防抖刷盘**（多次写合并为一次全库快照）
+- 刷盘采用 temp 文件 + rename 原子替换，防止崩溃损坏
+- 应用退出（before-quit）强制刷盘，崩溃时最多丢失最近 300ms 写入
+- Schema 使用 `PRAGMA user_version` + 顺序迁移数组管理（新增列/表只追加迁移项）
+- 会话列表/搜索使用摘要查询（`getSessionSummaries` / `searchSessions` 单条 SQL，含消息计数），不加载消息正文；导出走 `getAllSessionsData` 一次 IPC 取回全部行（渲染端不再 N+1 往返）
 
 ### 5.4 Harness Engineering 体系
 
@@ -239,12 +253,11 @@ INIT → THINKING → PARSING → EXECUTING → OBSERVING → REFLECTING → (CO
 | 阶段 | Hook | 优先级 | 行为 |
 |------|------|--------|------|
 | pre_tool | SecurityCheck | 100 | 命令/路径黑名单拦截 |
-| post_tool | DiffAnalyzer | 75 | 文件变更差异分析 |
-| post_tool | FileChangeAudit | 30 | 文件变更审计跟踪 |
-| post_tool | ResultValidation | 90 | 结果大小告警 |
-| post_iteration | IterationMetrics | 50 | 迭代度量收集 |
+| post_tool | FileWriteDedup | 30 | 文件写入去重（内容指纹） |
 
-Hook 异步并行执行，失败不阻塞主流程。可动态注册/移除。
+Hook 异步并行执行，失败不阻塞主流程。可动态注册/移除（`registerHook` / `unregisterHook`）。
+
+> 注：历史版本中的 DiffAnalyzer / FileChangeAudit / ResultValidation / IterationMetrics 已移除。
 
 ### 5.5 联网搜索体系
 
@@ -301,12 +314,39 @@ Hook 异步并行执行，失败不阻塞主流程。可动态注册/移除。
 - 反爬 UA 轮换（5 个）+ 指数退避
 - 拦截页检测（Cloudflare / 403 / 验证码）
 - 无 content-length 时防 OOM 保护
-- 内部 URL（localhost/127.0.0.1/0.0.0.0）拦截
+- **SSRF 防护（net-guard.ts）**：`web_fetch` / `download_file` / `browser_open` 拦截环回/内网/链路本地地址（localhost、127.0.0.1、0.0.0.0、10.x、172.16-31.x、192.168.x、169.254.x、IPv6 ULA/fe80；域名经 DNS 解析后校验真实 IP）
+- `browser_open` 协议白名单：仅 http/https（阻止 `file://` 读取本地文件绕过路径安全层）
+- 搜索可达性预检只取响应头（`Range: bytes=0-0` + 立即取消 body）
 
 ### 6.5 MCP 安全
 
 - Shadowing 防护：MCP 工具不可覆盖内置工具
 - 双下划线分隔符防歧义：`mcp_{server}__{tool}`
+- tools/list 分页遵循 nextCursor（上限 10 页防异常服务器死循环）
+
+### 6.6 Electron 安全
+
+- `webSecurity: true`（同源策略开启；Ollama API 通过 `webRequest.onHeadersReceived` CORS 允许清单精确放行，设置面板保存地址时动态更新）
+- `contextIsolation: true` + `nodeIntegration: false`
+- Agent 浏览器使用 `memory:agent` 内存分区（应用退出后 cookie/storage/缓存全部清空）
+- 内置资源（SOUL.md / AGENT.md）通过 IPC `app:readResource` 读取（basename 防路径穿越），不做 file:// 直接 fetch
+
+### 6.7 身份文件保护
+
+- `MEMORY.md`：所有工具禁读禁写，仅 memory 专用 IPC 通道访问
+- `SOUL.md` / `AGENT.md` / `USER.md`：工具**可读不可写**（防止提示注入诱导 AI 改写自身人格文件实现持久化劫持，只能由用户手动编辑）
+
+### 6.8 子代理安全
+
+- 权限分级（readonly / limited_write / full_write）**只降不升**：AI 通过 spawn_task 请求的权限封顶于用户设置 `subAgentMaxPermission`
+- 写类工具与主 Agent 共用确认管线（`confirmHandler` 继承，无确认回调时默认拒绝）
+- 路径沙箱覆盖全部文件类工具（read/write/edit/delete/create/list/search/tree/compress/move/copy/download/read_multiple）
+- 子代理模型只能由设置面板配置，AI 传入的 model 参数被忽略
+
+### 6.9 参数注入防护
+
+- git 工具：branch / remote / url / remote_url / tag_name / stash_sub 等用户可控参数禁止以 `-` 开头（防 `git clone --upload-pack=恶意命令` 类选项注入）；`git add` 强制 `--` 分隔符
+- `edit_file` 替换使用替换函数（`() => new_text`），防止 new_text 中的 `$&` / `$1` 被特殊解释污染文件内容
 
 ---
 
