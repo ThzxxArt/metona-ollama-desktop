@@ -20,6 +20,7 @@ const ERROR_LOG = path.join(app.getPath('userData'), 'startup-error.log');
 function logStartupError(phase: string, err: unknown): void {
   const msg = `[${new Date().toISOString()}] ${phase}: ${err instanceof Error ? err.stack || err.message : String(err)}\n`;
   try { fs.appendFileSync(ERROR_LOG, msg); } catch { /* ignore */ }
+  // 豁免：进程启动阶段的未捕获错误发生在渲染进程与日志面板就绪之前，只能落到 stderr
   console.error(msg);
 }
 
@@ -246,15 +247,17 @@ app.on('before-quit', async () => {
   // 通知渲染进程释放显存
   mainWindow?.webContents.send('app-quit');
   // 主进程直接调用 Ollama API 释放显存（更可靠，不依赖渲染进程）
+  // 地址从设置读取（与启动时 CORS 清单逻辑保持一致），避免使用非默认地址时释放请求打到错误端口
   try {
-    const OLlama_URL = 'http://127.0.0.1:11434';
-    const psResp = await fetch(`${OLlama_URL}/api/ps`);
+    const serverUrl = getSetting<string>('serverUrl', 'http://127.0.0.1:11434');
+    const ollamaUrl = (serverUrl || 'http://127.0.0.1:11434').replace(/\/+$/, '');
+    const psResp = await fetch(`${ollamaUrl}/api/ps`);
     if (psResp.ok) {
       const psData = await psResp.json() as { models?: Array<{ name: string }> };
       const models = psData.models || [];
       for (const m of models) {
         try {
-          await fetch(`${OLlama_URL}/api/generate`, {
+          await fetch(`${ollamaUrl}/api/generate`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ model: m.name, keep_alive: 0 }),
@@ -262,6 +265,7 @@ app.on('before-quit', async () => {
         } catch { /* 忽略单个模型释放失败 */ }
       }
       if (models.length > 0) {
+        // 豁免：before-quit 阶段渲染进程已进入关闭流程，释放显存结果仅记录到主进程 stderr
         console.log(`[before-quit] 已释放 ${models.length} 个模型显存`);
       }
     }

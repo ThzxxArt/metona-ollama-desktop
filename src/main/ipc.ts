@@ -450,9 +450,11 @@ export async function setupIPC(): Promise<void> {
     }
   });
 
-  ipcMain.handle('memory:write', async (_, content: string) => {
+  ipcMain.handle('memory:write', async (_, content: string, reason?: string) => {
     const wsDir = getWorkspaceDir();
     const memoryPath = path.join(wsDir, 'MEMORY.md');
+    // 日志附带操作来源（新增/替换/删除/清空/访问统计写回），避免"写了但看不到新记忆"的困惑
+    const reasonTag = reason ? `（${reason}）` : '';
     try {
       // 确保工作空间目录存在
       if (!fs.existsSync(wsDir)) {
@@ -463,11 +465,11 @@ export async function setupIPC(): Promise<void> {
         if (fs.existsSync(memoryPath)) {
           await fs.promises.unlink(memoryPath);
         }
-        sendLog('info', '🧠 memory:write', 'MEMORY.md 已清空');
+        sendLog('info', '🧠 memory:write', `MEMORY.md 已清空${reasonTag}`);
         return { success: true };
       }
       await fs.promises.writeFile(memoryPath, content, 'utf-8');
-      sendLog('success', '🧠 memory:write', `MEMORY.md 已写入 (${content.length} 字符)`);
+      sendLog('success', '🧠 memory:write', `MEMORY.md 已写入 (${content.length} 字符)${reasonTag}`);
       return { success: true };
     } catch (err) {
       sendLog('error', '🧠 memory:write 失败', (err as Error).message);

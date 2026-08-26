@@ -101,6 +101,7 @@ function persist(): void {
     fs.renameSync(tmpPath, dbPath);
   } catch (err) {
     _dirty = true;
+    // 豁免：SQLite 刷盘在应用退出/崩溃时可能无渲染进程可推送日志，落盘错误必须保留到 stderr
     console.error(`[SQLite persist] 写入失败: ${(err as Error).message}`);
   }
 }

@@ -140,7 +140,7 @@ contextBridge.exposeInMainWorld('metonaDesktop', {
   },
   memoryAccess: {
     read: () => ipcRenderer.invoke('memory:read'),
-    write: (content: string) => ipcRenderer.invoke('memory:write', content),
+    write: (content: string, reason?: string) => ipcRenderer.invoke('memory:write', content, reason),
     init: () => ipcRenderer.invoke('memory:init'),
   }
 });

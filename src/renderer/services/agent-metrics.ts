@@ -9,7 +9,7 @@
  * - 度量仪表盘数据源
  */
 
-import { logInfo, logDebug } from './log-service.js';
+import { logInfo, logDebug, logWarn } from './log-service.js';
 import type { AgentMetrics, LoopContext } from '../types.js';
 
 // ═══════════════════════════════════════════════════════════════
@@ -155,6 +155,43 @@ export function loadMetricsHistory(): void {
 /** R84: 获取度量历史（供 UI 仪表盘使用） */
 export function getMetricsHistory(): SessionMetrics[] {
   return [...sessionMetricsHistory];
+}
+
+/** A2: 备份导出 — 读取度量历史持久化数据（供 .metona 备份携带） */
+export function getMetricsBackup(): Array<Record<string, unknown>> {
+  try {
+    const raw = localStorage.getItem(METRICS_STORAGE_KEY);
+    if (!raw) return [];
+    return JSON.parse(raw) as Array<Record<string, unknown>>;
+  } catch {
+    return [];
+  }
+}
+
+/** A2: 备份导入 — 恢复度量历史持久化数据（同时写入存储并重建内存历史） */
+export function restoreMetricsBackup(data: Array<Record<string, unknown>>): void {
+  if (!Array.isArray(data)) return;
+  try {
+    localStorage.setItem(METRICS_STORAGE_KEY, JSON.stringify(data.slice(-METRICS_HISTORY_MAX)));
+    // 重建内存历史（供当前会话仪表盘立即生效）
+    sessionMetricsHistory.length = 0;
+    for (const item of data) {
+      sessionMetricsHistory.push({
+        sessionId: String(item.sessionId || 'unknown'),
+        model: String(item.model || 'unknown'),
+        startTime: item.timestamp ? Number(item.timestamp) - Number(item.duration || 0) : 0,
+        endTime: Number(item.timestamp || 0),
+        totalIterations: Number(item.iterations || 0),
+        toolCalls: [],
+        totalInputTokens: Number(item.inputTokens || 0),
+        totalOutputTokens: Number(item.outputTokens || 0),
+        errorPatterns: Array.isArray(item.errorPatterns) ? (item.errorPatterns as string[]) : [],
+      });
+    }
+    logInfo(`R84: 从备份恢复 ${sessionMetricsHistory.length} 条历史度量`);
+  } catch (err) {
+    logWarn(`R84: 恢复度量历史失败: ${(err as Error).message}`);
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════

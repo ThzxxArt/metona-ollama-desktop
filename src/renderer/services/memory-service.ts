@@ -143,10 +143,12 @@ async function readMemoryFile(): Promise<string> {
   return result.content || '';
 }
 
-/** 写入 MEMORY.md（通过专用 IPC 通道） */
-async function writeMemoryFile(content: string): Promise<void> {
+/** 写入 MEMORY.md（通过专用 IPC 通道）
+ *  reason: 日志标注的操作来源，用于区分"新增记忆/替换/删除/清空/访问统计写回"，
+ *  避免出现"文件已写入但看不到新记忆"的困惑 */
+async function writeMemoryFile(content: string, reason?: string): Promise<void> {
   const bridge = getBridge();
-  const result = await bridge.memoryAccess!.write(content);
+  const result = await bridge.memoryAccess!.write(content, reason);
   if (!result.success) {
     throw new Error(`写入 MEMORY.md 失败: ${result.error}`);
   }
@@ -534,7 +536,8 @@ function scheduleHitsFlush(): void {
     _hitsFlushTimer = null;
     try {
       if (_entriesCache && _entriesCache.length > 0) {
-        await writeMemoryFile(serializeMemoryMd(_entriesCache));
+        // 仅为访问统计（hits/last）写回，不新增/改动记忆条目
+        await writeMemoryFile(serializeMemoryMd(_entriesCache), '访问统计写回，无新条目');
       }
     } catch {
       // 写回失败不影响主流程，下次访问会再次调度
@@ -542,11 +545,12 @@ function scheduleHitsFlush(): void {
   }, HITS_FLUSH_INTERVAL);
 }
 
-/** 写入条目（同步更新缓存） */
-async function persistEntries(entries: MemoryEntry[]): Promise<void> {
+/** 写入条目（同步更新缓存）
+ *  reason: 操作来源（新增/替换/删除/衰减清理等），透传给主进程日志 */
+async function persistEntries(entries: MemoryEntry[], reason?: string): Promise<void> {
   _entriesCache = entries;
   const fileContent = entries.length > 0 ? serializeMemoryMd(entries) : '';
-  await writeMemoryFile(fileContent);
+  await writeMemoryFile(fileContent, reason);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -666,7 +670,7 @@ export async function addEntry(
       throw new Error(`序列化后校验失败: ${validation.error}`);
     }
 
-    await persistEntries(entries);
+    await persistEntries(entries, '新增记忆');
     logMemory(`新增: ${type}`, content.slice(0, 60));
     return entry;
   });
@@ -714,7 +718,7 @@ export async function replaceEntry(oldText: string, newContent: string): Promise
       return { success: false, message: `序列化后校验失败: ${validation.error}` };
     }
 
-    await persistEntries(entries);
+    await persistEntries(entries, '替换记忆');
     logMemory('替换记忆', `${target.id}: ${oldText.slice(0, 30)} → ${newContent.slice(0, 30)}`);
     return { success: true, message: `已替换记忆: ${target.id}` };
   });
@@ -742,7 +746,7 @@ export async function removeEntry(oldText: string): Promise<{ success: boolean; 
     }
 
     const newEntries = entries.filter(e => e.id !== matches[0].id);
-    await persistEntries(newEntries);
+    await persistEntries(newEntries, '删除记忆');
 
     logMemory('删除记忆', `${matches[0].id}: ${oldText.slice(0, 50)}`);
     return { success: true, message: `已删除记忆: ${matches[0].id}` };
@@ -805,7 +809,7 @@ export async function removeEntries(oldTexts: string[]): Promise<{
 
     const newEntries = entries.filter(e => !idsToDelete.has(e.id));
 
-    await persistEntries(newEntries);
+    await persistEntries(newEntries, '批量删除记忆');
 
     logMemory('批量删除', `删除 ${deleted} 条, 失败 ${failed} 条`);
     return {
@@ -827,7 +831,7 @@ export async function removeEntryById(id: string): Promise<{ success: boolean; m
       return { success: false, message: `记忆 ${id} 不存在` };
     }
     const newEntries = entries.filter(e => e.id !== id);
-    await persistEntries(newEntries);
+    await persistEntries(newEntries, '删除记忆');
     logMemory('删除记忆', `${id}: ${target.content.slice(0, 50)}`);
     return { success: true, message: `已删除记忆: ${id}` };
   });
@@ -838,7 +842,7 @@ export async function removeEntryById(id: string): Promise<{ success: boolean; m
 export async function clearAll(): Promise<void> {
   return withWriteLock(async () => {
     _entriesCache = [];
-    await writeMemoryFile('');
+    await writeMemoryFile('', '清空全部记忆');
     logMemory('清空', '所有记忆已删除');
   });
 }
@@ -859,7 +863,7 @@ function extractTags(text: string): string[] {
  * 词级 Jaccard 相似度
  * M5: 中文文本无法用空格分词，使用字符级 bigram 相似度
  */
-function simpleSimilarity(a: string, b: string): number {
+export function simpleSimilarity(a: string, b: string): number {
   // 判断是否包含中文
   const hasChinese = /[一-鿿]/.test(a) || /[一-鿿]/.test(b);
   
@@ -897,7 +901,7 @@ function simpleSimilarity(a: string, b: string): number {
  * 规范化文本用于去重比较：全角→半角标点、统一空白
  * 消除 AI 输出中常见的全角逗号/冒号/括号等差异
  */
-function normalizeForDedup(text: string): string {
+export function normalizeForDedup(text: string): string {
   const FULLWIDTH_MAP: Record<string, string> = {
     '\uff0c': ',',   // ，
     '\uff1a': ':',   // ：
@@ -1087,7 +1091,7 @@ async function maybeRunTTLDecay(): Promise<void> {
 
     const { decayed, removed, changed } = applyTTLDecay(entries);
     if (changed && removed > 0) {
-      await persistEntries(decayed);
+      await persistEntries(decayed, 'TTL 衰减清理');
       logMemory('TTL 衰减', `已持久化: 移除 ${removed} 条，剩余 ${decayed.length} 条`);
     }
   } catch (err) {

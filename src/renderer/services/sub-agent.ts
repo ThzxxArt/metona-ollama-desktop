@@ -6,7 +6,6 @@
 
 import { state, KEYS } from '../state/state.js';
 import { OllamaAPI } from '../api/ollama.js';
-import { TOOL_DEFINITIONS } from './tool-registry.js';
 import { getEnabledToolDefinitions, needsConfirmation } from './tool-registry.js';
 import { logInfo, logWarn, logError } from './log-service.js';
 import { validatePathSandbox, checkCommandSafety, snapshotSafetyState, restoreSafetyState, resetAllSafetyState, classifyError, calculateBackoff } from './agent-safety.js';
@@ -57,10 +56,12 @@ function getToolsForPermission(permission: SubAgentPermission): Set<string> {
   }
 }
 
-/** 根据权限级别获取可用工具定义 */
+/** 根据权限级别获取可用工具定义
+ * C3: 以全局已启用工具为基线（含 MCP 动态工具 + plan_track 注册状态），
+ * 再叠加权限白名单，确保被用户禁用的工具不会喂给子代理 LLM。 */
 function getSubAgentTools(permission: SubAgentPermission = 'readonly'): ToolDefinition[] {
   const allowed = getToolsForPermission(permission);
-  return TOOL_DEFINITIONS.filter(d => allowed.has(d.function.name));
+  return getEnabledToolDefinitions().filter(d => allowed.has(d.function.name));
 }
 
 export interface SubAgentOptions {

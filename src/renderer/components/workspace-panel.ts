@@ -6,6 +6,7 @@
 import { logInfo, logError, logDebug } from '../services/log-service.js';
 import { escapeHtml, formatSize } from '../utils/utils.js';
 import { addToolResultHighlighting } from './chat-area.js';
+import { getEnabledToolDefinitions } from '../services/tool-registry.js';
 
 // ── 工具卡片类型 ──
 interface ToolCallRecord {
@@ -972,7 +973,7 @@ function renderToolCalls(): void {
         </div>
         <div class="ws-idle-divider"></div>
         <div class="ws-idle-desc">AI 对话中自动调用工具，结果在此展示</div>
-        <div class="ws-idle-hint">共 32 个内置工具 · MCP 动态扩展</div>
+        <div class="ws-idle-hint">共 ${getEnabledToolDefinitions().length} 个内置工具 · MCP 动态扩展</div>
       </div>
     `;
     return;

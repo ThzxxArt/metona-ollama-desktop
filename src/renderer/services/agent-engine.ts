@@ -14,6 +14,8 @@ import {
   initPlanTracker,
   getPlanTracker,
   clearPlanTracker,
+  savePlanTracker,
+  setPlanModeActive,
   setSubAgentConfirmHandler,
 } from './tool-registry.js';
 import {
@@ -33,6 +35,9 @@ import {
   // 错误恢复建议
   getErrorRecoverySuggestions,
   formatErrorRecovery,
+  // 诊断报告
+  collectDiagnostics,
+  formatDiagnosticsReport,
 } from './agent-safety.js';
 import { search, formatMemoryContext } from './memory-service.js';
 import { formatToolResultForModel, summarizeAuditResult } from './result-formatter.js';
@@ -64,7 +69,7 @@ import {
   // R125: Agent 状态检查点
   createCheckpoint, clearCheckpoints,
 } from './context-manager.js';
-import { executeHooks } from './hooks.js';
+import { executeHooks, addWrittenFile } from './hooks.js';
 import { recordIteration, recordToolCall, startSessionMetrics, endSessionMetrics } from './agent-metrics.js';
 import { getEffectiveNumCtx } from '../components/model-bar.js';
 import type {
@@ -93,7 +98,7 @@ let _filteredTools: import('../types.js').ToolDefinition[] = [];
 /** S1/S6: 清洗不可信文本，移除提示词注入模式
  * P3 #10 增强：先标准化 Unicode/零宽字符，再匹配更多变体
  */
-function sanitizeUntrustedInput(text: string): string {
+export function sanitizeUntrustedInput(text: string): string {
   if (!text) return '';
   // 先标准化：移除零宽字符、全角→半角，避免同形字符绕过
   let normalized = text
@@ -425,7 +430,7 @@ function extractAffectedPath(call: ToolCall): string | null {
 }
 
 /** 两个路径是否冲突（相同、父子、重叠） */
-function pathsConflict(a: string, b: string): boolean {
+export function pathsConflict(a: string, b: string): boolean {
   if (!a || !b) return false;
   const na = a.replace(/\\/g, '/').replace(/\/+$/, '');
   const nb = b.replace(/\\/g, '/').replace(/\/+$/, '');
@@ -433,8 +438,9 @@ function pathsConflict(a: string, b: string): boolean {
   return na === nb || na.startsWith(nb + '/') || nb.startsWith(na + '/');
 }
 
-/** P2-4: 工具参数前置校验 — 轻量级参数检查，避免无效参数浪费一轮迭代 */
-function validateToolArgs(toolName: string, args: Record<string, unknown>): string | null {
+/** P2-4: 工具参数前置校验 — 轻量级参数检查，避免无效参数浪费一轮迭代
+ * 注：与 tool-registry 的 schema 校验 validateToolArgs 同名不同返回类型，此处重命名避免混淆 */
+export function validateToolArgsQuick(toolName: string, args: Record<string, unknown>): string | null {
   const getString = (key: string): string | null => {
     const v = args[key];
     if (typeof v === 'string' && v.trim().length > 0) return v;
@@ -646,6 +652,29 @@ function _fallbackSaveTraces(traces: Array<Record<string, any>>): void {
   } catch {
     // localStorage 也失败时，仅记录日志
     logWarn(`R9: 轨迹降级存储也失败，${traces.length} 条轨迹丢失`);
+  }
+}
+
+/** A2: 备份导出 — 读取轨迹降级缓存（供 .metona 备份携带） */
+export function getTraceFallbackBackup(): Array<Record<string, any>> {
+  try {
+    const raw = localStorage.getItem(TRACE_FALLBACK_KEY);
+    if (!raw) return [];
+    return JSON.parse(raw) as Array<Record<string, any>>;
+  } catch {
+    return [];
+  }
+}
+
+/** A2: 备份导入 — 恢复轨迹降级缓存 */
+export function restoreTraceFallbackBackup(traces: Array<Record<string, any>>): void {
+  if (!Array.isArray(traces)) return;
+  try {
+    const sliced = traces.slice(-TRACE_FALLBACK_MAX);
+    localStorage.setItem(TRACE_FALLBACK_KEY, JSON.stringify(sliced));
+    logInfo(`R9: 从备份恢复 ${sliced.length} 条轨迹降级缓存`);
+  } catch (err) {
+    logWarn(`R9: 恢复轨迹降级缓存失败: ${(err as Error).message}`);
   }
 }
 
@@ -905,7 +934,6 @@ ${formatted}
     const resumeData = state.get<{ steps: Array<{index:number;label:string;done:boolean}>; total: number; done: number; loopCount: number } | null>('_planResumeData', null);
     if (resumeData && resumeData.steps.length > 0 && resumeData.done < resumeData.total) {
       // 直接从恢复数据构建追踪器，一次保存（避免 initPlanTracker 的冗余中间保存）
-      const { savePlanTracker } = await import('./tool-registry.js');
       const tracker = {
         steps: resumeData.steps.map(s => ({ index: s.index, label: s.label, done: s.done })),
         total: resumeData.total,
@@ -1019,7 +1047,7 @@ ${formatted}
 }
 
 /** 按 token 预算截断文本（约 1.5 中文字/token, 4 英文字符/token） */
-function truncateByTokenBudget(text: string, maxTokens: number): string {
+export function truncateByTokenBudget(text: string, maxTokens: number): string {
   const estimated = estimateTokens(text);
   if (estimated <= maxTokens) return text;
   // 按比例截取
@@ -1029,7 +1057,7 @@ function truncateByTokenBudget(text: string, maxTokens: number): string {
 }
 
 /** 从 Plan Mode 输出中提取步骤列表（兼容多种模型格式） */
-function extractPlanSteps(content: string): string[] {
+export function extractPlanSteps(content: string): string[] {
   const steps: string[] = [];
 
   // 策略1: 精确匹配 "## 执行计划" 区块中的编号行
@@ -1485,7 +1513,7 @@ async function handleExecuting(
     }
 
     // P2-4: 工具参数前置校验 — 参数无效直接返回错误，不执行实际工具，节省一轮迭代
-    const paramError = validateToolArgs(call.function.name, call.function.arguments);
+    const paramError = validateToolArgsQuick(call.function.name, call.function.arguments);
     if (paramError) {
       logWarn(`参数校验失败: ${call.function.name}`, paramError);
       return [{
@@ -1600,7 +1628,6 @@ async function handleExecuting(
         logToolResult(call.function.name, result.success, result.success ? undefined : result.error);
         // 记录 write_file 成功路径及内容指纹，供 FileWriteDedup Hook 做内容级去重
         if (call.function.name === 'write_file' && result.success && call.function.arguments?.path) {
-          const { addWrittenFile } = await import('./hooks.js');
           addWrittenFile(String(call.function.arguments.path), String(call.function.arguments.content || ''));
         }
         return [{
@@ -1849,7 +1876,6 @@ async function handleObserving(
   // R112: 每 15 轮输出诊断报告 + R100: Token 使用统计报告
   if (ctx.loopCount > 0 && ctx.loopCount % 15 === 0) {
     try {
-      const { collectDiagnostics, formatDiagnosticsReport } = await import('./agent-safety.js');
       const diag = collectDiagnostics();
       logInfo('R112: 诊断报告\n' + formatDiagnosticsReport(diag));
       // R100: Token 使用统计报告
@@ -2271,7 +2297,6 @@ export async function runAgentLoop(
   snapshotLoopContext(ctx);
   startSessionMetrics(sessionId, model);
   // Plan Mode 激活时注册 plan_track 工具
-  const { setPlanModeActive } = await import('./tool-registry.js');
   setPlanModeActive(mode === 'plan');
   // 子代理确认管线：与主 Agent 共用同一确认回调（finally 中清理）
   setSubAgentConfirmHandler(callbacks.onConfirmTool ?? null);

@@ -1096,43 +1096,14 @@ export function calculateContextStats(
  * - medium (30-50%): 轻量压缩（归档旧工具结果、清理 ephemeral）
  * - high (50-70%): 中等压缩（截断工具结果、合并消息）
  * - critical (>70%): LLM 压缩
+ *
+ * C1: 委托 unified calculateContextStats，避免与压缩决策重复计算。
  */
 export function getContextPressureLevel(
   messages: OllamaMessage[],
   numCtx: number,
 ): ContextPressureInfo {
-  const totalTokens = messages.reduce((sum, m) => {
-    let t = estimateTokens(m.content || '');
-    if (m.tool_calls?.length) {
-      for (const tc of m.tool_calls) {
-        const argsSize = JSON.stringify(tc.function.arguments || {}).length;
-        t += estimateTokens(tc.function.name) + Math.ceil(argsSize / 4) + 20;
-      }
-    }
-    if (m.images?.length) t += m.images.length * 100;
-    return sum + t;
-  }, 0);
-
-  const ratio = numCtx > 0 ? totalTokens / numCtx : 0;
-  const msgCount = messages.length;
-  const actions: string[] = [];
-
-  let level: ContextPressureLevel;
-  if (ratio > 0.7) {
-    level = 'critical';
-    actions.push('llm_compress', 'truncate_results', 'compact_old', 'merge_messages', 'clear_ephemeral');
-  } else if (ratio > 0.5) {
-    level = 'high';
-    actions.push('truncate_results', 'compact_old', 'merge_messages');
-  } else if (ratio > 0.3) {
-    level = 'medium';
-    actions.push('compact_old', 'clear_ephemeral');
-  } else {
-    level = 'low';
-    if (msgCount > 60) actions.push('compact_old');
-  }
-
-  return { level, tokenUsageRatio: ratio, messageCount: msgCount, recommendedActions: actions };
+  return calculateContextStats(messages, numCtx).pressureInfo;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1305,65 +1276,14 @@ export function mergeConsecutiveMessages(messages: OllamaMessage[]): OllamaMessa
  * R98: 获取结合趋势的压缩触发阈值
  * 如果 token 使用趋势在快速增长，提前触发压缩
  * 如果趋势稳定或下降，延后压缩
+ *
+ * C1: 委托 unified calculateContextStats 的 compressDecision，避免重复计算。
  */
 export function getTrendAwareCompressThreshold(
   numCtx: number,
   messages: OllamaMessage[],
 ): { shouldCompress: boolean; reason: string; urgency: 'low' | 'medium' | 'high' } {
-  const baseThreshold = getAdaptiveCompressThreshold(numCtx);
-  const currentTokens = messages.reduce((sum, m) => {
-    let t = estimateTokens(m.content || '');
-    if (m.tool_calls?.length) {
-      for (const tc of m.tool_calls) {
-        const argsSize = JSON.stringify(tc.function.arguments || {}).length;
-        t += estimateTokens(tc.function.name) + Math.ceil(argsSize / 4) + 20;
-      }
-    }
-    if (m.images?.length) t += m.images.length * 100;
-    return sum + t;
-  }, 0);
-
-  const usageRatio = numCtx > 0 ? currentTokens / numCtx : 0;
-  const prediction = predictContextOverflow(numCtx);
-
-  // 紧急情况：预测即将溢出
-  if (prediction.level === 'critical' || (prediction.level === 'warning' && prediction.turnsToOverflow <= 2)) {
-    return {
-      shouldCompress: true,
-      reason: `趋势预测触发: ${prediction.message}`,
-      urgency: 'high',
-    };
-  }
-
-  // 趋势加速增长 + 使用率超过基础阈值
-  if (prediction.turnsToOverflow > 0 && prediction.turnsToOverflow <= 5 && usageRatio > baseThreshold * 0.8) {
-    return {
-      shouldCompress: true,
-      reason: `趋势加速: ${prediction.turnsToOverflow} 轮后可能溢出，当前使用率 ${(usageRatio * 100).toFixed(0)}%`,
-      urgency: 'medium',
-    };
-  }
-
-  // 标准阈值触发
-  if (usageRatio > baseThreshold) {
-    return {
-      shouldCompress: true,
-      reason: `标准阈值触发: 使用率 ${(usageRatio * 100).toFixed(0)}% > 阈值 ${(baseThreshold * 100).toFixed(0)}%`,
-      urgency: usageRatio > 0.6 ? 'high' : 'medium',
-    };
-  }
-
-  // 消息条数硬阈值
-  const msgThreshold = getIncrementalCompressThresholdMessages(numCtx);
-  if (messages.length >= msgThreshold) {
-    return {
-      shouldCompress: true,
-      reason: `消息条数触发: ${messages.length} >= ${msgThreshold}`,
-      urgency: 'low',
-    };
-  }
-
-  return { shouldCompress: false, reason: '', urgency: 'low' };
+  return calculateContextStats(messages, numCtx).compressDecision;
 }
 
 /** R98: 消息条数阈值（独立函数，供 engine 复用） */
@@ -1598,6 +1518,22 @@ export function loadSessionSummaries(): SessionSummary[] {
     return JSON.parse(raw) as SessionSummary[];
   } catch {
     return [];
+  }
+}
+
+/** A2: 备份导出 — 读取会话摘要持久化数据（供 .metona 备份携带） */
+export function getSessionSummariesBackup(): SessionSummary[] {
+  return loadSessionSummaries();
+}
+
+/** A2: 备份导入 — 恢复会话摘要持久化数据 */
+export function restoreSessionSummariesBackup(summaries: SessionSummary[]): void {
+  if (!Array.isArray(summaries)) return;
+  try {
+    localStorage.setItem(SESSION_SUMMARY_KEY, JSON.stringify(summaries.slice(0, MAX_SESSION_SUMMARIES)));
+    logInfo(`R123: 从备份恢复 ${summaries.length} 条会话摘要`);
+  } catch (err) {
+    logWarn(`R123: 恢复会话摘要失败: ${(err as Error).message}`);
   }
 }
 

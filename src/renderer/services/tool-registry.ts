@@ -119,7 +119,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'run_command',
-      description: 'Execute a shell command via workspace. Timeout configurable (default 300s for general, 600s for long-running). cwd defaults to workspace directory. Requires user confirmation. Output is streamed in real-time through the workspace process.',
+      description: 'Execute a shell command via workspace. cwd defaults to workspace directory. Output is streamed in real-time through the workspace process. Execution mode is configurable (auto / confirm / disabled) — set in the Tools panel; in confirm mode the user must approve each command before it runs.',
       parameters: {
         type: 'object',
         required: ['command'],

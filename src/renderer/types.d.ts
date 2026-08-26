@@ -238,7 +238,7 @@ export interface MetonaDesktopAPI {
   };
   memoryAccess?: {
     read: () => Promise<{ success: boolean; content?: string; error?: string }>;
-    write: (content: string) => Promise<{ success: boolean; error?: string }>;
+    write: (content: string, reason?: string) => Promise<{ success: boolean; error?: string }>;
     init: () => Promise<{ success: boolean; action: string; existed: boolean; valid: boolean; backedUp?: string; error?: string }>;
   };
 }

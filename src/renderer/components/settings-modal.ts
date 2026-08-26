@@ -13,6 +13,10 @@ import { showConfirm } from './prompt-modal.js';
 import { OllamaAPI } from '../api/ollama.js';
 import { ChatDB } from '../db/chat-db.js';
 import type { ChatSession } from '../types.js';
+// A2: 备份携带 localStorage 持久化状态（会话摘要/度量历史/轨迹降级缓存）
+import { getSessionSummariesBackup, restoreSessionSummariesBackup } from '../services/context-manager.js';
+import { getMetricsBackup, restoreMetricsBackup } from '../services/agent-metrics.js';
+import { getTraceFallbackBackup, restoreTraceFallbackBackup } from '../services/agent-engine.js';
 
 let settingsModalEl: HTMLElement;
 
@@ -443,12 +447,18 @@ async function exportAllSessions(): Promise<void> {
     return;
   }
 
+  // A2: 携带 localStorage 持久化状态与主题，实现完整备份
   const backup = {
     app: 'Metona Ollama Client',
-    version: 1,
+    version: 2,
     exportedAt: new Date().toISOString(),
     count: sessions.length,
-    sessions
+    sessions,
+    // ── localStorage 持久化状态（不随 SQLite 迁移）──
+    sessionSummaries: getSessionSummariesBackup(),
+    metricsHistory: getMetricsBackup(),
+    traceFallback: getTraceFallbackBackup(),
+    theme: localStorage.getItem('metona-theme') || 'auto',
   };
 
   try {
@@ -560,6 +570,17 @@ async function importSessions(filePath: string): Promise<void> {
     }
 
     const importResult = await db.importSessions(sessions);
+
+    // A2: 恢复 localStorage 持久化状态与主题（兼容 v1 旧备份，缺失时静默跳过）
+    const dataObj = (data as Record<string, unknown>) || {};
+    if (Array.isArray(dataObj.sessionSummaries)) restoreSessionSummariesBackup(dataObj.sessionSummaries as Parameters<typeof restoreSessionSummariesBackup>[0]);
+    if (Array.isArray(dataObj.metricsHistory)) restoreMetricsBackup(dataObj.metricsHistory as Parameters<typeof restoreMetricsBackup>[0]);
+    if (Array.isArray(dataObj.traceFallback)) restoreTraceFallbackBackup(dataObj.traceFallback as Parameters<typeof restoreTraceFallbackBackup>[0]);
+    if (typeof dataObj.theme === 'string' && dataObj.theme) {
+      localStorage.setItem('metona-theme', dataObj.theme);
+      document.documentElement.setAttribute('data-theme', dataObj.theme === 'dark' ? 'dark' : 'light');
+    }
+
     showToast(`导入完成：${importResult.imported} 个会话${importResult.skipped > 0 ? `，跳过 ${importResult.skipped} 个` : ''}`, 'success', 4000);
     logSuccess(`导入完成: ${importResult.imported} 个, 跳过 ${importResult.skipped} 个`);
   } catch (err) {
