@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-v0.17.1-E8734A?style=flat-square" alt="version">
+  <img src="https://img.shields.io/badge/version-v0.17.2-E8734A?style=flat-square" alt="version">
   <img src="https://img.shields.io/badge/electron-33+-47848F?style=flat-square&logo=electron" alt="electron">
   <img src="https://img.shields.io/badge/typescript-5.7+-3178C6?style=flat-square&logo=typescript" alt="typescript">
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="license">
@@ -44,7 +44,7 @@
 | 🔍 | **联网搜索（双模式）** | SearXNG 元搜索引擎 JSON API（70+引擎聚合）/ 四引擎 HTML 解析（Bing+百度+搜狗+360），双模式可切换；web_fetch 支持反爬+UA切换+浏览器回退 |
 | 🌏 | **浏览器控制** | 打开网页 · 截图 · 执行 JS · 提取内容 · 点击 · 输入 · 滚动 · 关闭 |
 | 🖥️ | **工作空间面板** | 终端（增量流式输出）+ 文件浏览器，命令安全检查 |
-| 🔢 | **上下文长度手动控制** | 设置面板下拉选择（128K / 256K / 512K / 1M），默认 128K，模型栏显示当前配置值，下拉框中显示每个模型自身的上下文长度 |
+| 🔢 | **上下文长度手动控制** | 设置面板下拉选择（8K–1M 共 8 档），默认 128K，模型栏显示当前配置值，下拉框中显示每个模型自身的上下文长度 |
 | 🗜️ | **智能上下文管理** | 滑动窗口 + Token 自动校准 + 消息重要性评分 + LLM 结构化 JSON 压缩，智能触发（120 条增量压缩 + 300 条硬上限） |
 | ⏱️ | **智能超时保护** | Agent Loop 看门狗（可配，默认 30min）+ 流式总超时（可配，默认 300s）+ 工具 HTTP/MCP 超时可配 |
 | 🪝 | **Hook 系统** | 4 阶段生命周期钩子（pre_tool / post_tool / post_iteration / pre_completion），内置安全检查（SecurityCheck）与文件写入去重（FileWriteDedup） |
@@ -132,7 +132,7 @@
 
 | 工具 | 功能 |
 |------|------|
-| `memory` | 统一记忆管理（5 个 action：search 搜索 / add 添加 / replace 替换 / remove 删除 / read_all 读取全部）。工作空间 MEMORY.md 受路径保护，仅此工具可访问 |
+| `memory` | 统一记忆管理（6 个 action：search 搜索 / add 添加 / replace 替换 / remove 删除 / remove_batch 批量删除 / read_all 读取全部）。工作空间 MEMORY.md 受路径保护，仅此工具可访问 |
 
 </details>
 
@@ -176,7 +176,7 @@
               ↓
          提示词加固（参考数据标记 + 工具结果安全规则）
               ↓
-         Ollama API (流式响应，num_ctx 用户可配 128K/256K/512K/1M)
+         Ollama API (流式响应，num_ctx 用户可配 8K–1M 共 8 档)
               ↓
          Tool Registry (33 内置 + MCP 动态 + Plan Mode plan_track)
               ↓
@@ -251,7 +251,7 @@ npm start
 ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm run dist
 ```
 
-产出：`release/Metona Ollama Setup v0.17.1.exe`
+产出：`release/Metona Ollama Setup v0.17.2.exe`
 
 ## 🛠️ 常用命令
 
@@ -293,7 +293,7 @@ npm run dist           # 构建 Windows 安装包
 | 🔍 | **Web Search (dual-mode)** | SearXNG meta-search JSON API (70+ engines) / quad-engine HTML parsing (Bing+Baidu+Sogou+360), switchable; web_fetch with auto-retry+mobile UA+SPA browser fallback |
 | 🌏 | **Browser Control** | Open pages · Screenshot · JS execution · Content extraction · Click · Type · Scroll · Close |
 | 🖥️ | **Workspace Panel** | Terminal (incremental streaming) + file browser, command security checks |
-| 🔢 | **Manual Context Length** | Settings dropdown (128K / 256K / 512K / 1M), default 128K. Model bar shows configured value, dropdown shows per-model context length |
+| 🔢 | **Manual Context Length** | Settings dropdown (8 tiers, 8K–1M), default 128K. Model bar shows configured value, dropdown shows per-model context length |
 | 🗜️ | **Smart Context Manager** | Sliding window + Token auto-calibration + message importance scoring + LLM structured JSON compression, smart triggers (120 msg incremental + 300 msg hard limit) |
 | ⏱️ | **Smart Timeout Protection** | Agent Loop watchdog (configurable, default 30min) + stream total timeout (configurable, default 300s) + configurable HTTP/MCP timeouts |
 | 🪝 | **Hook System** | 4-phase lifecycle hooks (pre_tool / post_tool / post_iteration / pre_completion), built-in SecurityCheck + FileWriteDedup |
@@ -380,7 +380,7 @@ npm run dist           # 构建 Windows 安装包
 
 | Tool | Function |
 |------|------|
-| `memory` | Unified memory management (5 actions: search / add / replace / remove / read_all). Workspace MEMORY.md is path-protected, only this tool can access it |
+| `memory` | Unified memory management (6 actions: search / add / replace / remove / remove_batch / read_all). Workspace MEMORY.md is path-protected, only this tool can access it |
 
 </details>
 
@@ -424,7 +424,7 @@ User message → workspace SOUL.md (never compressed) → AGENT.md → USER.md (
               ↓
          Prompt Hardening (reference data markers + tool result safety rules)
               ↓
-         Ollama API (Streaming Response, num_ctx user-configurable 128K/256K/512K/1M)
+         Ollama API (Streaming Response, num_ctx user-configurable 8 tiers, 8K–1M)
               ↓
          Tool Registry (33 Built-in + MCP Dynamic + Plan Mode plan_track)
               ↓
@@ -499,7 +499,7 @@ npm start
 ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm run dist
 ```
 
-Output: `release/Metona Ollama Setup v0.17.1.exe`
+Output: `release/Metona Ollama Setup v0.17.2.exe`
 
 ## 🛠️ Common Commands
 

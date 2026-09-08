@@ -49,6 +49,22 @@ export function escapeHtml(str: unknown): string {
 }
 const ESCAPE_MAP: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 
+/**
+ * 稳定序列化：对象键按字典序递归排列后输出 JSON。
+ * JSON.stringify 的 replacer 数组只过滤键、不改变输出顺序，
+ * 相同参数不同键序会得到不同字符串——用于缓存键/去重时必须先排序。
+ */
+export function stableStringify(value: unknown): string {
+  if (value === undefined) return 'undefined';
+  if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? String(value);
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
+  const keys = Object.keys(value as Record<string, unknown>).sort();
+  const body = keys
+    .map(k => `${JSON.stringify(k)}:${stableStringify((value as Record<string, unknown>)[k])}`)
+    .join(',');
+  return `{${body}}`;
+}
+
 /** 根据文件名检测语言标识（用于 Markdown 代码块） */
 export function detectLanguage(filename: string): string {
   const ext = filename.split('.').pop()?.toLowerCase() || '';

@@ -74,6 +74,10 @@ contextBridge.exposeInMainWorld('metonaDesktop', {
     saveMessage: (msg: unknown) => ipcRenderer.invoke('db:saveMessage', msg),
     saveMessagesBatch: (msgs: unknown[]) => ipcRenderer.invoke('db:saveMessagesBatch', msgs),
     getMessages: (sessionId: string) => ipcRenderer.invoke('db:getMessages', sessionId),
+    /** 会话全部消息 ID（差量同步基线） */
+    getMessageIds: (sessionId: string) => ipcRenderer.invoke('db:getMessageIds', sessionId),
+    /** 删除会话中指定 ID 的消息（/undo、/retry、/compress 裁剪后同步落库） */
+    deleteMessages: (sessionId: string, ids: string[]) => ipcRenderer.invoke('db:deleteMessages', sessionId, ids),
     saveSetting: (key: string, value: unknown) => ipcRenderer.invoke('db:saveSetting', key, value),
     /** 批量保存设置（单事务 + 单次刷盘） */
     saveSettingsBatch: (entries: Array<{ key: string; value: unknown }>) => ipcRenderer.invoke('db:saveSettingsBatch', entries),

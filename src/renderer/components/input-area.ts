@@ -16,11 +16,11 @@ import { addToolCard, startToolCard, updateToolCard, clearToolCardsExternal, cle
 import { ChatDB } from '../db/chat-db.js';
 import { OllamaAPI } from '../api/ollama.js';
 import { runAgentLoop } from '../services/agent-engine.js';
-import { formatToolResultForModel } from '../services/result-formatter.js';
+import { buildHistoryMessages } from '../services/history-builder.js';
 import { estimateTokens } from '../services/context-manager.js';
 import { showToolConfirm } from './tool-confirm-modal.js';
 import { logInfo, logStream, logError, logSuccess, logWarn, resetVideoProgress, updateVideoProgress } from '../services/log-service.js';
-import type { ChatSession, ChatMessage, OllamaStreamChunk, OllamaMessage, FileContent, ChatFile, ToolCallRecord, AgentMode } from '../types.js';
+import type { ChatSession, ChatMessage, OllamaStreamChunk, FileContent, ChatFile, ToolCallRecord, AgentMode } from '../types.js';
 
 let chatInputEl: HTMLTextAreaElement;
 let btnSendEl: HTMLButtonElement;
@@ -480,10 +480,11 @@ async function handleRetry(): Promise<void> {
     return;
   }
 
-  // 找到最后一条 user 消息
+  // 找到最后一条 user 消息（跳过压缩摘要——它不是真实的用户输入，不应成为重试目标）
   let lastUserIdx = -1;
   for (let i = currentSession.messages.length - 1; i >= 0; i--) {
-    if (currentSession.messages[i].role === 'user') { lastUserIdx = i; break; }
+    const m = currentSession.messages[i];
+    if (m.role === 'user' && !m.compressed) { lastUserIdx = i; break; }
   }
   if (lastUserIdx < 0) { showToast('没有找到用户消息', 'warning'); return; }
 
@@ -512,13 +513,8 @@ async function handleRetry(): Promise<void> {
   updateSendButton(true);
 
   // 始终走 Agent Loop
-  // ── 构建历史消息（不含最后一条用户消息，因为它是重试目标）──
-  const historyMessages = buildHistoryMessages(
-    currentSession.messages
-      .filter(m => m.role === 'user' || m.role === 'assistant')
-      .slice(0, -1), // 不包含刚保留的最后一条 user 消息
-    30
-  );
+  // ── 构建历史消息：history-builder 自动排除末尾的当前用户消息（重试目标）──
+  const historyMessages = buildHistoryMessages(currentSession.messages, 30);
 
     let retryMonitor: ReturnType<typeof setInterval> | null = null;
 
@@ -554,9 +550,13 @@ async function handleRetry(): Promise<void> {
           });
         },
         onNewIteration: (toolCalls, stats) => {
-          removeCurrentPlaceholder();
-          const hasContent = !!retryContent?.trim();
-          if (hasContent || retryIterations === 0) {
+          // 与发送路径一致：完全空白的上一轮跳过入库（旧的 retryIterations===0 条件
+          // 会在首轮迭代产生无内容的幽灵 assistant 消息）
+          const hasPrevPayload = !!(retryContent || '').trim()
+            || !!(retryThinkContent || '').trim()
+            || retryIterationToolRecords.length > 0
+            || !!(stats?.eval_count || stats?.prompt_eval_count);
+          if (hasPrevPayload) {
             const now = Date.now();
             const prevMsg: ChatMessage = {
               role: 'assistant', content: retryContent || '', model: getSelectedModel(),
@@ -568,14 +568,16 @@ async function handleRetry(): Promise<void> {
               ...(stats?.prompt_eval_count && { prompt_eval_count: stats.prompt_eval_count }),
               ...(stats?.total_duration && { total_duration: stats.total_duration }),
             };
-            retryIterationToolRecords = [];
             state.update(KEYS.CURRENT_SESSION, (s: any) => ({
               ...s, messages: [...s.messages, prevMsg], updatedAt: Date.now()
             }));
             renderMessages();
           }
+          retryIterationToolRecords = [];
+          removeCurrentPlaceholder();
           appendAssistantPlaceholder();
           retryContent = '';
+          retryThinkContent = '';
           retryIterations++;
         },
         onThinkingStart: () => {
@@ -691,8 +693,9 @@ async function handleUndo(): Promise<void> {
   let removeEnd = msgs.length;
   let removeStart = msgs.length - 1;
 
-  // 找到最后一条 user 消息的位置
-  while (removeStart >= 0 && msgs[removeStart].role !== 'user') {
+  // 找到最后一条 user 消息的位置（跳过压缩摘要——撤销应针对真实用户输入，
+  // 摘要随其后一并删除）
+  while (removeStart >= 0 && (msgs[removeStart].role !== 'user' || msgs[removeStart].compressed)) {
     removeStart--;
   }
   if (removeStart < 0) { showToast('没有找到用户消息', 'warning'); return; }
@@ -779,8 +782,10 @@ async function handleCompress(): Promise<void> {
     }
 
     // 构建压缩后的摘要消息（标记 compressed）
+    // role 必须为 user：system 消息既不渲染也不进入 buildHistoryMessages，
+    // 会导致手动压缩完全无效；与 compressWithLLM 的 C5 规则保持一致
     const summaryMsg: ChatMessage = {
-      role: 'system',
+      role: 'user',
       content: `📋 以下是对之前对话的摘要（已压缩 ${uncompressedMiddle.length} 条消息）：\n\n${summary}`,
       timestamp: Date.now(),
       compressed: true
@@ -951,76 +956,8 @@ function buildFileContentParts(fileContents: Array<{ name: string; language: str
   }).filter(Boolean);
 }
 
-/**
- * 从会话消息构建 Ollama 格式的历史消息列表。
- * 注入 assistant + user（含 _apiContent）+ tool_calls + role:'tool' 结果。
- * 不注入 system 消息——保证传给 API 时始终只有 1 条 system 且排在首位。
- */
-function buildHistoryMessages(msgs: ChatMessage[], maxCount = 20): OllamaMessage[] {
-  const result: OllamaMessage[] = [];
-
-  for (const msg of msgs) {
-    if (msg.role !== 'assistant' && msg.role !== 'user') continue;
-    if (result.length >= maxCount) break;
-
-    if (msg.role === 'user') {
-      // 用 _apiContent（含附件 JSON 结构化数据），没有则回退 content
-      const content = (msg as any)._apiContent || msg.content || '';
-      result.push({ role: 'user', content, ...(msg.images?.length && { images: msg.images }) });
-      continue;
-    }
-
-    if (msg.role === 'assistant') {
-      const content = msg.content || '';
-      const assistantMsg: OllamaMessage = {
-        role: 'assistant',
-        content,
-        ...(msg.think && { thinking: msg.think }),
-        ...(msg.images?.length && { images: msg.images }),
-      };
-
-      // ── 注入 tool_calls（Ollama 格式）──
-      if (msg.toolCalls?.length) {
-        assistantMsg.tool_calls = msg.toolCalls.map(tc => ({
-          type: 'function' as const,
-          function: {
-            name: tc.name,
-            arguments: tc.arguments,
-          },
-        }));
-      }
-
-      result.push(assistantMsg);
-
-      // ── 注入 tool 结果消息（role: 'tool'）──
-      // 复用 formatToolResultForModel 保持与当前 Loop 格式一致
-      if (msg.toolCalls?.length) {
-        for (const tc of msg.toolCalls) {
-          if (!tc.result) continue;
-          if (result.length >= maxCount) break;
-          const formattedResult = formatToolResultForModel(tc.name, tc.result);
-          // R92: 工具结果格式标准化 — 添加统一头信息 + 数据边界标记
-          const resultDuration = Date.now() - tc.timestamp;
-          const resultSize = formattedResult.length;
-          const sizeCategory = resultSize > 10000 ? 'large' : resultSize > 2000 ? 'medium' : 'small';
-          const r92Header = `[工具:${tc.name} 状态:${tc.status} 耗时:${resultDuration}ms 大小:${sizeCategory}(${resultSize}字符)]`;
-          result.push({
-            role: 'tool',
-            tool_name: tc.name,
-            content: `<<<TOOL_RESULT_START name="${tc.name}">>>\n${r92Header}\n${formattedResult}\n<<<TOOL_RESULT_END>>>`,
-          });
-        }
-      }
-    }
-  }
-
-  // 超过 maxCount 从尾部截取
-  if (result.length > maxCount) {
-    return result.slice(-maxCount);
-  }
-
-  return result;
-}
+// buildHistoryMessages 已抽取为独立纯函数模块 history-builder.ts
+// （发送/重试共用唯一实现，当前轮输入由函数契约自动排除，便于单元测试）
 
 export async function sendMessage(): Promise<void> {
   const text = chatInputEl.value.trim();
@@ -1203,10 +1140,9 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
 
   // 构建历史消息
   // ── 构建历史消息（含工具调用和结果，消除跨 Loop 上下文断裂）──
-  const historyMessages = buildHistoryMessages(
-    freshSession.messages.filter(m => m.role === 'user' || m.role === 'assistant'),
-    30  // 预留空间给 tool 结果消息，实际有效轮次仍约 20 轮
-  );
+  // history-builder 自动排除末尾的当前用户消息（由 handleInit 以
+  // userContent/images 重新注入），否则用户消息与图片会被发送两份
+  const historyMessages = buildHistoryMessages(freshSession.messages, 30);
 
   let assistantContent = '';
   let thinkContent = '';
@@ -1232,27 +1168,34 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
         });
       },
       onNewIteration: (toolCalls, stats) => {
-        // 保存上一轮的卡片（含工具记录）
-        const prevMsg: ChatMessage = {
-          role: 'assistant',
-          content: assistantContent || '',
-          model: getSelectedModel(),
-          timestamp: Date.now(),
-          ...(thinkContent && { think: thinkContent }),
-          ...(currentIterationToolRecords.length > 0 && { toolCalls: [...currentIterationToolRecords] }),
-          // P0 修复：中间迭代消息携带本轮独立 token 统计
-          ...(stats?.eval_count && { eval_count: stats.eval_count }),
-          ...(stats?.prompt_eval_count && { prompt_eval_count: stats.prompt_eval_count }),
-          ...(stats?.total_duration && { total_duration: stats.total_duration }),
-        };
+        // 保存上一轮的卡片（含工具记录）。
+        // 完全空白的上一轮（无内容/思考/工具/统计）跳过入库，避免幽灵消息污染会话与 DB
+        const hasPrevPayload = !!(assistantContent || '').trim()
+          || !!(thinkContent || '').trim()
+          || currentIterationToolRecords.length > 0
+          || !!(stats?.eval_count || stats?.prompt_eval_count);
+        if (hasPrevPayload) {
+          const prevMsg: ChatMessage = {
+            role: 'assistant',
+            content: assistantContent || '',
+            model: getSelectedModel(),
+            timestamp: Date.now(),
+            ...(thinkContent && { think: thinkContent }),
+            ...(currentIterationToolRecords.length > 0 && { toolCalls: [...currentIterationToolRecords] }),
+            // P0 修复：中间迭代消息携带本轮独立 token 统计
+            ...(stats?.eval_count && { eval_count: stats.eval_count }),
+            ...(stats?.prompt_eval_count && { prompt_eval_count: stats.prompt_eval_count }),
+            ...(stats?.total_duration && { total_duration: stats.total_duration }),
+          };
+          state.update(KEYS.CURRENT_SESSION, (session: any) => ({
+            ...session,
+            messages: [...session.messages, prevMsg],
+            updatedAt: Date.now()
+          }));
+          // P0-P1 修复：中间迭代消息必须持久化，否则崩溃时前几轮的 assistant 消息全丢失
+          saveCurrentSession().catch(e => logError('onNewIteration 保存失败', String(e)));
+        }
         currentIterationToolRecords = [];
-        state.update(KEYS.CURRENT_SESSION, (session: any) => ({
-          ...session,
-          messages: [...session.messages, prevMsg],
-          updatedAt: Date.now()
-        }));
-        // P0-P1 修复：中间迭代消息必须持久化，否则崩溃时前几轮的 assistant 消息全丢失
-        saveCurrentSession().catch(e => logError('onNewIteration 保存失败', String(e)));
         // P1-R3 修复：先移除旧 placeholder → 渲染历史 → 创建新 placeholder，避免渲染空隙
         removeCurrentPlaceholder();
         renderMessages();
@@ -1367,19 +1310,25 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
       const abortToolRecords = state.get<ToolCallRecord[] | null>('_abortToolRecords', null);
       if (abortToolRecords) state.set('_abortToolRecords', null);
 
-      const partialMsg: ChatMessage = {
-        role: 'assistant',
-        content: assistantContent,
-        timestamp: Date.now(),
-        ...(thinkContent && { think: thinkContent }),
-        ...(abortToolRecords?.length && { toolCalls: abortToolRecords }),
-        stopped: true
-      };
-      state.update(KEYS.CURRENT_SESSION, (session: any) => ({
-        ...session,
-        messages: [...session.messages, partialMsg],
-        updatedAt: Date.now()
-      }));
+      // 与 onNewIteration 一致：完全空白的 partial 消息不入库，避免幽灵行
+      const hasPartialPayload = !!(assistantContent || '').trim()
+        || !!(thinkContent || '').trim()
+        || !!abortToolRecords?.length;
+      if (hasPartialPayload) {
+        const partialMsg: ChatMessage = {
+          role: 'assistant',
+          content: assistantContent,
+          timestamp: Date.now(),
+          ...(thinkContent && { think: thinkContent }),
+          ...(abortToolRecords?.length && { toolCalls: abortToolRecords }),
+          stopped: true
+        };
+        state.update(KEYS.CURRENT_SESSION, (session: any) => ({
+          ...session,
+          messages: [...session.messages, partialMsg],
+          updatedAt: Date.now()
+        }));
+      }
       appendSystemMessage('⏹ 已停止生成');
       await saveCurrentSession();
     } else {

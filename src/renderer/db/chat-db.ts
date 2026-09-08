@@ -3,7 +3,10 @@
  * v4.0: 桌面端走 IPC → SQLite，Web 端仍用 IndexedDB
  */
 
-import type { ChatSession } from '../types.js';
+import type { ChatSession, ChatFile, ChatMessage } from '../types.js';
+
+/** 消息级视频元数据（_videos 字段结构） */
+interface VideoMeta { fileName: string; frameCount: number; duration: number }
 
 /** 检查是否在桌面环境 */
 function isDesktop(): boolean {
@@ -69,8 +72,48 @@ export class ChatDB {
 
   // ── Sessions ──
 
-  // P1-P1 修复：追踪已保存的消息 ID，避免每次 saveSession 全量重写所有消息
-  private _savedMsgIds = new Set<string>();
+  // P1-P1 修复：追踪已保存的消息 ID，避免每次 saveSession 全量重写所有消息。
+  // 0.17.2：按会话追踪 + 差量删除——/undo、/retry、/compress 裁剪掉的消息
+  // 同步从 SQLite 删除，防止重载后"复活"或新旧消息交织。
+  private _savedIdsBySession = new Map<string, Set<string>>();
+
+  /** 会话消息的持久化 ID（确定性：时间戳+角色+索引，同一消息跨次保存 ID 不变） */
+  private _messageRowId(sessionId: string, msg: ChatMessage, index: number): string {
+    return `${sessionId}_${msg.timestamp}_${msg.role}_${index}`;
+  }
+
+  /** 会话消息行 → SQLite 行（attachments 携带文件/视频/压缩摘要标记） */
+  private _messageToRow(sessionId: string, msg: ChatMessage, index: number): Record<string, unknown> {
+    return {
+      id: this._messageRowId(sessionId, msg, index),
+      session_id: sessionId,
+      role: msg.role,
+      content: msg.content || null,
+      thinking: msg.think || null,
+      images: msg.images?.length ? JSON.stringify(msg.images) : null,
+      tool_calls: msg.toolCalls?.length ? JSON.stringify(msg.toolCalls) : null,
+      tool_name: null,
+      attachments: JSON.stringify({
+        ...(msg.files?.length && { files: msg.files }),
+        ...((msg as { _videos?: VideoMeta[] })._videos?.length && { videos: (msg as { _videos?: VideoMeta[] })._videos }),
+        ...(msg.compressed && { compressed: true }),
+      }),
+      eval_count: msg.eval_count || null,
+      prompt_eval_count: msg.prompt_eval_count || null,
+      total_duration: msg.total_duration || null,
+      created_at: msg.timestamp
+    };
+  }
+
+  /** 解析 attachments JSON（容错） */
+  private _parseAttachments(raw: string | null): { files?: ChatFile[]; videos?: Array<{ fileName: string; frameCount: number; duration: number }>; compressed?: boolean } {
+    try {
+      const a = JSON.parse(raw || '{}');
+      return { files: a.files, videos: a.videos, compressed: a.compressed === true };
+    } catch {
+      return {};
+    }
+  }
 
   async saveSession(session: ChatSession): Promise<string> {
     if (isDesktop()) {
@@ -85,31 +128,45 @@ export class ChatDB {
         updated_at: session.updatedAt
       };
       await dbBridge().saveSession(row);
-      // 只保存新增消息（不在 _savedMsgIds 中的），并合并为一次批量 IPC + 单事务
+
+      // ── 差量同步：插入新增消息 + 删除被裁剪的消息 ──
+      let saved = this._savedIdsBySession.get(session.id);
+      if (!saved) {
+        // 首次接触该会话（应用重启后 / 加载历史）：以 DB 现有行 ID 为基线，
+        // 否则之前运行遗留的已裁剪行无法被 diff 出来
+        saved = new Set(await dbBridge().getMessageIds(session.id));
+      }
+
+      const currentIds: string[] = [];
       const newMsgs: Array<Record<string, unknown>> = [];
       for (let mi = 0; mi < session.messages.length; mi++) {
         const msg = session.messages[mi];
-        const msgId = `${session.id}_${msg.timestamp}_${msg.role}_${mi}`;
-        if (this._savedMsgIds.has(msgId)) continue; // 已保存，跳过
-        this._savedMsgIds.add(msgId);
-        newMsgs.push({
-          id: msgId,
-          session_id: session.id,
-          role: msg.role,
-          content: msg.content || null,
-          thinking: msg.think || null,
-          images: msg.images?.length ? JSON.stringify(msg.images) : null,
-          tool_calls: msg.toolCalls?.length ? JSON.stringify(msg.toolCalls) : null,
-          tool_name: null,
-          attachments: JSON.stringify({ files: msg.files, videos: (msg as any)._videos }),
-          eval_count: msg.eval_count || null,
-          prompt_eval_count: msg.prompt_eval_count || null,
-          total_duration: msg.total_duration || null,
-          created_at: msg.timestamp
-        });
+        const msgId = this._messageRowId(session.id, msg, mi);
+        currentIds.push(msgId);
+        if (saved.has(msgId)) continue;
+        newMsgs.push(this._messageToRow(session.id, msg, mi));
+      }
+
+      const currentIdSet = new Set(currentIds);
+      const removedIds = [...saved].filter(id => !currentIdSet.has(id));
+      let deleteOk = true;
+      if (removedIds.length > 0) {
+        const delResult = await dbBridge().deleteMessages(session.id, removedIds);
+        deleteOk = !delResult || delResult.success !== false;
       }
       if (newMsgs.length > 0) {
         await dbBridge().saveMessagesBatch(newMsgs as never[]);
+      }
+
+      if (deleteOk) {
+        // 同步成功才提交追踪集
+        this._savedIdsBySession.set(session.id, currentIdSet);
+      } else {
+        // 删除失败：把被删 ID 保留在追踪集中，下次保存时重试差量删除，
+        // 否则这些行将永远失去清理机会（重载后"复活"）
+        const retrySet = new Set(currentIdSet);
+        for (const id of removedIds) retrySet.add(id);
+        this._savedIdsBySession.set(session.id, retrySet);
       }
       return session.id;
     }
@@ -118,7 +175,7 @@ export class ChatDB {
 
   /** P1-P1 修复：切换会话时重置已保存消息追踪，释放内存 */
   resetSavedMsgTracking(): void {
-    this._savedMsgIds.clear();
+    this._savedIdsBySession.clear();
   }
 
   async getSession(id: string): Promise<ChatSession | null> {
@@ -127,10 +184,12 @@ export class ChatDB {
       if (!row) return null;
       const msgRows = await dbBridge().getMessages(id);
       const messages = msgRows.map((r: any) => {
-        let files, videos;
-        try { const a = JSON.parse(r.attachments || '{}'); files = a.files; videos = a.videos; } catch { /* ignore */ }
+        const att = this._parseAttachments(r.attachments);
+        // 旧版 /compress 曾以 role:'system' 存储摘要（不渲染也不进入后续上下文），
+        // 读取时归一化为 user + compressed，保存后自愈
+        const legacySummary = r.role === 'system';
         return {
-          role: r.role,
+          role: legacySummary ? 'user' : r.role,
           content: r.content || '',
           timestamp: r.created_at,
           think: r.thinking || undefined,
@@ -139,8 +198,9 @@ export class ChatDB {
           prompt_eval_count: r.prompt_eval_count || undefined,
           total_duration: r.total_duration || undefined,
           toolCalls: r.tool_calls ? JSON.parse(r.tool_calls) : undefined,
-          ...(files?.length && { files }),
-          ...(videos?.length && { _videos: videos })
+          ...((legacySummary || att.compressed) && { compressed: true as const }),
+          ...(att.files?.length && { files: att.files }),
+          ...(att.videos?.length && { _videos: att.videos })
         };
       });
       return {
@@ -168,10 +228,11 @@ export class ChatDB {
       for (const row of data.sessions) {
         const msgRows = bySession.get(row.id) || [];
         const messages = msgRows.map((r: any) => {
-          let files, videos;
-          try { const a = JSON.parse(r.attachments || '{}'); files = a.files; videos = a.videos; } catch { /* ignore */ }
+          const att = this._parseAttachments(r.attachments);
+          // 与 getSession 一致：旧版 system 摘要行归一化为 user + compressed
+          const legacySummary = r.role === 'system';
           return {
-            role: r.role,
+            role: legacySummary ? 'user' : r.role,
             content: r.content || '',
             timestamp: r.created_at,
             think: r.thinking || undefined,
@@ -180,8 +241,9 @@ export class ChatDB {
             prompt_eval_count: r.prompt_eval_count || undefined,
             total_duration: r.total_duration || undefined,
             toolCalls: r.tool_calls ? JSON.parse(r.tool_calls) : undefined,
-            ...(files?.length && { files }),
-            ...(videos?.length && { _videos: videos })
+            ...((legacySummary || att.compressed) && { compressed: true as const }),
+            ...(att.files?.length && { files: att.files }),
+            ...(att.videos?.length && { _videos: att.videos })
           };
         });
         sessions.push({
@@ -256,7 +318,14 @@ export class ChatDB {
           thinking: m.think || null,
           images: m.images?.length ? JSON.stringify(m.images) : null,
           tool_calls: m.toolCalls?.length ? JSON.stringify(m.toolCalls) : null,
-          tool_name: null, eval_count: m.eval_count || null,
+          tool_name: null,
+          // 导入路径同样携带 attachments，避免备份恢复丢失文件/视频/摘要标记
+          attachments: JSON.stringify({
+            ...(m.files?.length && { files: m.files }),
+            ...((m as { _videos?: VideoMeta[] })._videos?.length && { videos: (m as { _videos?: VideoMeta[] })._videos }),
+            ...(m.compressed && { compressed: true }),
+          }),
+          eval_count: m.eval_count || null,
           prompt_eval_count: m.prompt_eval_count || null,
           total_duration: m.total_duration || null, created_at: m.timestamp
         }))),

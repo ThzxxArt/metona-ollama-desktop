@@ -10,7 +10,7 @@ import { mainWindow } from './main.js';
 import { showNotification } from './utils.js';
 import {
   initDatabase, saveSession, getSession, getAllSessions, deleteSession, clearAllSessions,
-  saveMessage, saveMessagesBatch, getMessagesBySession,
+  saveMessage, saveMessagesBatch, getMessagesBySession, getMessageIds, deleteMessages,
   saveSetting, getSetting, saveSettingsBatch,
   saveTrace, saveTracesBatch, getTracesBySession,
   exportAllSessions, importSessions,
@@ -357,6 +357,16 @@ export async function setupIPC(): Promise<void> {
   ipcMain.handle('db:getMessages', (_, sessionId) => {
     try { return getMessagesBySession(sessionId); }
     catch { return []; }
+  });
+
+  // ── 消息差量同步（/undo、/retry、/compress 裁剪会话消息后删除落库）──
+  ipcMain.handle('db:getMessageIds', (_, sessionId: string) => {
+    try { return getMessageIds(String(sessionId || '')); }
+    catch { return []; }
+  });
+  ipcMain.handle('db:deleteMessages', (_, sessionId: string, ids: string[]) => {
+    try { return { success: true, deleted: deleteMessages(String(sessionId || ''), Array.isArray(ids) ? ids.map(String) : []) }; }
+    catch (err) { return { success: false, error: (err as Error).message }; }
   });
 
   // ── 会话摘要（单条 SQL，历史列表/搜索不再全量加载消息）──

@@ -424,6 +424,34 @@ export function getMessagesBySession(sessionId: string): MessageRow[] {
   return queryAll(getDb(), 'SELECT * FROM messages WHERE session_id = ? ORDER BY created_at ASC', [sessionId]) as unknown as MessageRow[];
 }
 
+/** 获取会话全部消息 ID（渲染端做差量同步的基线） */
+export function getMessageIds(sessionId: string): string[] {
+  return queryAll(getDb(), 'SELECT id FROM messages WHERE session_id = ?', [sessionId])
+    .map(r => String(r.id));
+}
+
+/**
+ * 删除会话中指定 ID 的消息（分块 IN 子句，单事务）。
+ * 用于 /undo、/retry、/compress 等裁剪会话消息后同步落库，
+ * 防止被移除的消息在重载后"复活"。
+ */
+export function deleteMessages(sessionId: string, ids: string[]): number {
+  const validIds = ids.filter(id => typeof id === 'string' && id.length > 0);
+  if (validIds.length === 0) return 0;
+  const d = getDb();
+  const CHUNK = 500;
+  runTransaction(d, () => {
+    for (let i = 0; i < validIds.length; i += CHUNK) {
+      const chunk = validIds.slice(i, i + CHUNK);
+      const placeholders = chunk.map(() => '?').join(',');
+      runExec(d, `DELETE FROM messages WHERE session_id = ? AND id IN (${placeholders})`,
+        [sessionId, ...chunk]);
+    }
+  });
+  schedulePersist();
+  return validIds.length;
+}
+
 // ─── Settings CRUD ───
 
 export function saveSetting(key: string, value: unknown): void {

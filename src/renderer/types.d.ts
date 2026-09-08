@@ -545,6 +545,10 @@ export interface DBAPI {
   saveMessage: (msg: MessageRow) => Promise<{ success: boolean; id?: string; error?: string }>;
   saveMessagesBatch: (msgs: MessageRow[]) => Promise<{ success: boolean; count?: number; error?: string }>;
   getMessages: (sessionId: string) => Promise<MessageRow[]>;
+  /** 会话全部消息 ID（差量同步基线） */
+  getMessageIds: (sessionId: string) => Promise<string[]>;
+  /** 删除会话中指定 ID 的消息（/undo、/retry、/compress 裁剪后同步落库） */
+  deleteMessages: (sessionId: string, ids: string[]) => Promise<{ success: boolean; deleted?: number; error?: string }>;
   saveSetting: (key: string, value: unknown) => Promise<{ success: boolean; error?: string }>;
   getSetting: <T = unknown>(key: string, defaultValue?: T) => Promise<T>;
   saveSettingsBatch: (entries: Array<{ key: string; value: unknown }>) => Promise<{ success: boolean; error?: string }>;

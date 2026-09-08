@@ -243,6 +243,9 @@ const FETCH_MAX_RETRIES = 3;          // fetch 阶段最多重试 3 次
 const FETCH_RETRY_DELAYS = [2000, 4000, 6000]; // 指数退避 (ms)，由 jitter() 随机化
 /** 自动抓取最大条数硬上限 — 防止上下文爆炸 */
 const MAX_AUTO_FETCH = 8;
+/** 自动抓取单页内容字符上限 — 整页全文进结果会造成内存/上下文尖峰，
+ *  最终仅靠 truncateToolResult 的 100k 兜底太晚；搜索场景 8k 字符足够 */
+const AUTO_FETCH_MAX_CHARS = 8000;
 /** fetch 全部失败后自动回退到浏览器渲染 */
 const BROWSER_FALLBACK_ENABLED = true;
 /** 内容过短阈值：小于此字符数且是 HTML 时，自动升级到浏览器渲染 */
@@ -966,7 +969,7 @@ async function applyAutoFetch(result: ToolResult, fetchTop: number, fetchMode: '
   const tryFetchOne = async (url: string, title: string): Promise<boolean> => {
     if (fetchedUrls.has(url)) return false;
     try {
-      const fetchResult = await handleWebFetch({ url, retry: false });
+      const fetchResult = await handleWebFetch({ url, retry: false, max_chars: AUTO_FETCH_MAX_CHARS });
       if (fetchResult.success && fetchResult.content) {
         fetched.push({ url, title, content: String(fetchResult.content) });
         fetchedUrls.add(url);

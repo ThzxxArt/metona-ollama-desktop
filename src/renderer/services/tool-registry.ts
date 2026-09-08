@@ -1348,7 +1348,12 @@ export async function executeTool(toolName: string, args: Record<string, unknown
       switch (action) {
         case 'search': {
           const query = args.query as string;
-const limit = (args.limit as number) || 0; // 0 = 不限制
+          // 未指定 limit 时默认 8（与工具 schema 描述一致）；
+          // 旧实现 0=不限，模型省略参数会返回全部记忆撑爆上下文
+          const rawLimit = args.limit as number | undefined;
+          const limit = typeof rawLimit === 'number' && Number.isFinite(rawLimit) && rawLimit > 0
+            ? Math.floor(rawLimit)
+            : 8;
 if (!query) return { success: false, error: '缺少 query 参数' };
 const results = await search(query, limit);
           logToolResult('memory', true, `${results.length} 条结果`);

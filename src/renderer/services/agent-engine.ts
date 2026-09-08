@@ -72,6 +72,7 @@ import {
 import { executeHooks, addWrittenFile } from './hooks.js';
 import { recordIteration, recordToolCall, startSessionMetrics, endSessionMetrics } from './agent-metrics.js';
 import { getEffectiveNumCtx } from '../components/model-bar.js';
+import { stableStringify } from '../utils/utils.js';
 import type {
   OllamaMessage,
   OllamaStreamChunk,
@@ -276,10 +277,20 @@ function getAdjustedToolTimeout(toolName: string, args: Record<string, unknown>)
   return timeout;
 }
 
+/** run_command 超时/中止时通过主进程终止子进程（killToolProcess），
+ *  避免"伪超时"后命令仍在后台继续执行、占用资源或继续产生副作用 */
+function killToolSubprocess(toolName: string): void {
+  if (toolName !== 'run_command') return;
+  try {
+    void window.metonaDesktop?.workspace?.cmdKill?.();
+  } catch { /* 终止失败不阻塞超时返回 */ }
+}
+
 /** R3: 带超时的工具执行包装器
  * P0-E1 修正：executeTool 不接受 AbortSignal，此处用 Promise + settled 标志实现"伪超时"。
- * 注意：超时/中止后底层 executeTool 仍在后台执行（fire-and-forget），对有副作用的工具
- * （write_file/run_command 等）用户应知晓"中止"只是不再等待结果，副作用可能已发生。
+ * run_command 例外：超时/中止时同步调用主进程 killToolProcess 终止子进程。
+ * 注意：其他工具超时/中止后底层 executeTool 仍在后台执行（fire-and-forget），对有副作用的工具
+ * （write_file 等）用户应知晓"中止"只是不再等待结果，副作用可能已发生。
  */
 async function executeToolWithTimeout(
   toolName: string,
@@ -293,6 +304,7 @@ async function executeToolWithTimeout(
 
   // 外部已中止
   if (abortSignal?.aborted) {
+    killToolSubprocess(toolName);
     return { success: false, error: '用户中止' };
   }
 
@@ -318,16 +330,21 @@ async function executeToolWithTimeout(
 
     // 超时
     timer = setTimeout(() => {
+      killToolSubprocess(toolName);
       settle({ success: false, error: `工具 ${toolName} 执行超时 (${timeoutMs / 1000}s)，请尝试拆分任务或优化参数` });
     }, timeoutMs);
 
     // 外部中止
     if (abortSignal) {
       if (abortSignal.aborted) {
+        killToolSubprocess(toolName);
         settle({ success: false, error: '用户中止' });
         return;
       }
-      onExternalAbort = () => settle({ success: false, error: '用户中止' });
+      onExternalAbort = () => {
+        killToolSubprocess(toolName);
+        settle({ success: false, error: '用户中止' });
+      };
       abortSignal.addEventListener('abort', onExternalAbort, { once: true });
     }
 
@@ -548,10 +565,10 @@ function isCacheValid(toolName: string, timestamp: number): boolean {
   return Date.now() - timestamp < ttl;
 }
 
-/** 生成工具调用缓存 key */
+/** 生成工具调用缓存 key（稳定序列化：键排序，键序不同参数相同也命中同一缓存） */
 function getToolCacheKey(name: string, args: Record<string, unknown>): string {
   try {
-    return name + '::' + JSON.stringify(args, Object.keys(args).sort());
+    return name + '::' + stableStringify(args);
   } catch {
     return name + '::' + String(args);
   }
@@ -1847,6 +1864,10 @@ async function handleObserving(
 
   // 统一上下文统计（第二次计算，裁剪后重新统计，复用于后续所有判断）
   ctxStats = calculateContextStats(ctx.messages, numCtx);
+  // Token 趋势采样 — 每轮迭代仅记录一次，且记录裁剪后的值
+  // （这才是下一轮实际发送的上下文规模；此前在 calculateContextStats 内部采样，
+  // 一轮内多次调用会产生重复数据点，污染趋势预测的线性回归）
+  recordTokenUsage(ctxStats.contentTokens, numCtx);
 
   // R53: 主动上下文压缩 — 使用统一计算的趋势预测结果
   {

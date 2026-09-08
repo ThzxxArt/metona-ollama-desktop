@@ -1015,6 +1015,10 @@ function calculateTotalTokens(messages: OllamaMessage[]): number {
 
 /**
  * 统一上下文统计 — 单次计算替代多次遍历
+ *
+ * 注意：本函数是纯计算（无副作用）。Token 趋势采样（recordTokenUsage）
+ * 由调用方在合适的频率执行——本函数在 OBSERVING 中一轮内会被调用多次，
+ * 若在此处采样会导致同一轮被记录多个数据点，趋势预测失真。
  */
 export function calculateContextStats(
   messages: OllamaMessage[],
@@ -1030,9 +1034,6 @@ export function calculateContextStats(
 
   const usageRatio = numCtx > 0 ? totalTokens / numCtx : 0;
   const msgCount = messages.length;
-
-  // 记录当前迭代的 token 使用量（必须在 predictContextOverflow 之前调用）
-  recordTokenUsage(contentTokens, numCtx);
 
   // 压力等级计算（内联，避免重复遍历）
   let level: ContextPressureLevel;

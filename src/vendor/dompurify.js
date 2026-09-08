@@ -1395,4 +1395,4 @@ function createDOMPurify() {
 var purify = createDOMPurify();
 
 export { purify as default };
-//# sourceMappingURL=purify.es.mjs.map
+

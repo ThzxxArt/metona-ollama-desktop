@@ -190,8 +190,8 @@ export function appendMessageDOM(msg: ChatMessage, index: number): void {
   div.className = `message ${msg.role}`;
   div.dataset.index = String(index);
 
-  const avatar = msg.role === 'user' ? '👤' : '🤖';
-  const roleLabel = msg.role === 'user' ? '你' : 'AI';
+  const avatar = msg.compressed ? '📋' : msg.role === 'user' ? '👤' : '🤖';
+  const roleLabel = msg.compressed ? '上下文摘要' : msg.role === 'user' ? '你' : 'AI';
   const modelTag = (msg.role === 'assistant' && msg.model)
     ? `<span class="model-tag">${escapeHtml(msg.model)}</span>`
     : '';
@@ -199,7 +199,18 @@ export function appendMessageDOM(msg: ChatMessage, index: number): void {
   let contentHtml = '';
   let safeContent = (msg.content != null) ? String(msg.content) : '';
 
-  if (msg.role === 'assistant') {
+  if (msg.compressed) {
+    // ── 上下文压缩摘要卡片：可见、可折叠；role:user 保证进入后续模型上下文 ──
+    contentHtml += `
+      <div class="msg-compressed-card">
+        <div class="compressed-header" onclick="this.parentElement.classList.toggle('expanded')">
+          <span class="compressed-icon">📋</span>
+          <span>已压缩的历史对话摘要（仍会作为上下文提供给模型）</span>
+          <svg class="compressed-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+        </div>
+        <div class="compressed-body">${safeMarkdown(safeContent)}</div>
+      </div>`;
+  } else if (msg.role === 'assistant') {
     // ── 系统提示词折叠卡片（仅会话首条 assistant 消息展示，避免重复）──
     if (!_sysPromptRendered) {
       const sysPrompt = state.get<string>('_lastSystemPrompt', '');

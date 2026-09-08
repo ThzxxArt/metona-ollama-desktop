@@ -14,6 +14,7 @@
 
 import type { OllamaMessage } from '../types.js';
 import { logInfo } from './log-service.js';
+import { stableStringify } from '../utils/utils.js';
 
 // ═══════════════════════════════════════════════════════════════
 // R51: 工具结果离线存储
@@ -60,7 +61,7 @@ const _toolCallHistory: string[] = [];
 
 /** 记录工具调用到历史序列（供快照/恢复） */
 export function recordToolCallHistory(toolName: string, args: Record<string, unknown>): void {
-  const key = `${toolName}:${JSON.stringify(args, Object.keys(args).sort()).slice(0, 100)}`;
+  const key = `${toolName}:${stableStringify(args).slice(0, 100)}`;
   _toolCallHistory.push(key);
   if (_toolCallHistory.length > 8) _toolCallHistory.shift();
 }

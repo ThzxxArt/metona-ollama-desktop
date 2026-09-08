@@ -4470,3 +4470,38 @@ html, body {
 .md-severity-medium { background: var(--caution-bg); color: var(--caution); }
 .md-severity-low { background: var(--success-bg); color: var(--success); }
 .md-suggestion-msg { color: var(--text-secondary); flex: 1; }
+
+/* ── 上下文压缩摘要卡片（/compress 与自动压缩摘要的可见渲染）── */
+.msg-compressed-card {
+    margin: 6px 0;
+    border: 1px solid var(--border-subtle);
+    border-left: 3px solid var(--caution);
+    border-radius: var(--radius-control);
+    background: var(--bg-layer);
+    overflow: hidden;
+}
+.msg-compressed-card .compressed-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    user-select: none;
+}
+.msg-compressed-card .compressed-chevron {
+    margin-left: auto;
+    flex-shrink: 0;
+    transition: transform var(--transition-fast);
+}
+.msg-compressed-card.expanded .compressed-chevron { transform: rotate(180deg); }
+.msg-compressed-card .compressed-body {
+    display: none;
+    padding: 0 12px 10px;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text-primary);
+    overflow-wrap: break-word;
+}
+.msg-compressed-card.expanded .compressed-body { display: block; }

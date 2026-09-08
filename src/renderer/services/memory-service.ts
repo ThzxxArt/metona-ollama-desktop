@@ -535,9 +535,14 @@ function scheduleHitsFlush(): void {
   _hitsFlushTimer = setTimeout(async () => {
     _hitsFlushTimer = null;
     try {
-      if (_entriesCache && _entriesCache.length > 0) {
-        // 仅为访问统计（hits/last）写回，不新增/改动记忆条目
-        await writeMemoryFile(serializeMemoryMd(_entriesCache), '访问统计写回，无新条目');
+      const entries = _entriesCache;
+      if (entries && entries.length > 0) {
+        // 仅为访问统计（hits/last）写回，不新增/改动记忆条目。
+        // 必须走写入锁：否则与 add/replace/remove 并发时，
+        // 旧缓存快照可能覆盖掉正在写入的新条目（丢失记忆）
+        await withWriteLock(() =>
+          writeMemoryFile(serializeMemoryMd(entries), '访问统计写回，无新条目')
+        );
       }
     } catch {
       // 写回失败不影响主流程，下次访问会再次调度

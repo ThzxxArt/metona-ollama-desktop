@@ -86,7 +86,7 @@ src/
 │   │   ├── tool-confirm-modal.ts     # 工具执行确认对话框（主/子代理共用）
 │   │   ├── tools-modal.ts            # 工具列表面板（33 个工具卡片）
 │   │   └── workspace-panel.ts        # 工作空间面板（终端 + 工具卡片 + 文件浏览）
-│   ├── services/                      # 12 个服务模块
+│   ├── services/                      # 14 个服务模块（含 history-builder 历史消息构建）
 │   │   ├── agent-engine.ts           # ★ ReAct Agent Loop 核心引擎（8 状态机）
 │   │   ├── tool-registry.ts          # 工具注册与调度中心（33 内置 + MCP 动态 + Plan Mode）
 │   │   ├── result-formatter.ts       # 工具结果 → 模型友好格式（纯函数，自 agent-engine 拆分）
@@ -122,7 +122,8 @@ src/
 │
 └── docs/                              # 项目文档
     ├── DEVELOPMENT.md                 # 本文档
-    └── AI_Agent_ReAct_Harness_Engineering.md  # Harness Engineering 学术参考
+    ├── Agentic-Loop详解.md            # Agentic Loop 概念与分层体系参考
+    └── ollama-api-docs-20260518.html  # Ollama API 参考（离线快照）
 ```
 
 ---
@@ -237,6 +238,7 @@ INIT → THINKING → PARSING → EXECUTING → OBSERVING → REFLECTING → (CO
 - 应用退出（before-quit）强制刷盘，崩溃时最多丢失最近 300ms 写入
 - Schema 使用 `PRAGMA user_version` + 顺序迁移数组管理（新增列/表只追加迁移项）
 - 会话列表/搜索使用摘要查询（`getSessionSummaries` / `searchSessions` 单条 SQL，含消息计数），不加载消息正文；导出走 `getAllSessionsData` 一次 IPC 取回全部行（渲染端不再 N+1 往返）
+- 消息保存采用**差量同步**：新增消息批量插入，被裁剪消息（/undo、/retry、/compress）通过 `db:deleteMessages` 差量删除落库，重启后不会"复活"
 
 ### 5.4 Harness Engineering 体系
 
