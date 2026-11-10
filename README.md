@@ -237,22 +237,33 @@ SQLite (sql.js WASM 内存库)，6 张表；写入采用 **防抖批量落盘**�
 
 ## 🚀 快速开始
 
+### 下载安装包（推荐）
+
+前往 [Releases](https://github.com/ThzxxArt/metona-ollama-desktop/releases/latest) 下载：
+
+- **Windows x64**：NSIS 安装包（官方支持）
+- **Linux x64**：AppImage / deb（实验性）
+- **macOS**：x64 / arm64 zip（实验性，未签名；首次打开需右键或 `xattr -cr`）
+
+### 从源码运行
+
 ```bash
-git clone https://gitee.com/thzxx/metona-ollama-desktop.git
+git clone https://github.com/ThzxxArt/metona-ollama-desktop.git
 cd metona-ollama-desktop
 npm config set registry https://registry.npmmirror.com
 npm install
 npm start
 ```
 
-## 📦 构建 Windows 安装包
+## 📦 构建安装包
 
 ```bash
-# 环境：Ubuntu 24.04 + Node.js v22 + Wine 9.0+
-ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm run dist
+npm run dist:win     # Windows NSIS（建议在 Windows 上原生构建）
+npm run dist:linux   # Linux AppImage + deb（x64）
+npm run dist:mac     # macOS zip（可在 macOS 或 Linux 交叉构建；签名需 macOS）
 ```
 
-产出：`release/Metona Ollama Setup v0.17.2.exe`
+产出位于 `release/`。
 
 ## 🛠️ 常用命令
 
@@ -263,7 +274,9 @@ npm run dev:main       # tsc watch（主进程）
 npm run build          # 完整构建
 npm run typecheck      # 双 tsconfig 类型检查
 npm test               # Vitest 单元测试
-npm run dist           # 构建 Windows 安装包
+npm run dist:win       # 构建 Windows 安装包
+npm run dist:linux     # 构建 Linux AppImage + deb
+npm run dist:mac       # 构建 macOS zip
 ```
 
 ## 💻 系统要求
@@ -485,22 +498,33 @@ SQLite (sql.js WASM in-memory), 6 tables; writes use **debounced batched persist
 
 ## 🚀 Quick Start
 
+### Download installers (recommended)
+
+Get the latest packages from [Releases](https://github.com/ThzxxArt/metona-ollama-desktop/releases/latest):
+
+- **Windows x64**: NSIS installer (officially supported)
+- **Linux x64**: AppImage / deb (experimental)
+- **macOS**: x64 / arm64 zip (experimental, unsigned; right-click open or run `xattr -cr`)
+
+### Run from source
+
 ```bash
-git clone https://gitee.com/thzxx/metona-ollama-desktop.git
+git clone https://github.com/ThzxxArt/metona-ollama-desktop.git
 cd metona-ollama-desktop
 npm config set registry https://registry.npmmirror.com
 npm install
 npm start
 ```
 
-## 📦 Build Windows Installer
+## 📦 Build Installers
 
 ```bash
-# Environment: Ubuntu 24.04 + Node.js v22 + Wine 9.0+
-ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm run dist
+npm run dist:win     # Windows NSIS (native Windows build recommended)
+npm run dist:linux   # Linux AppImage + deb (x64)
+npm run dist:mac     # macOS zip (build on macOS or cross-build on Linux; signing requires macOS)
 ```
 
-Output: `release/Metona Ollama Setup v0.17.2.exe`
+Artifacts are written to `release/`.
 
 ## 🛠️ Common Commands
 
@@ -511,7 +535,9 @@ npm run dev:main       # tsc watch (main process)
 npm run build          # Full build
 npm run typecheck      # Type-check both tsconfigs
 npm test               # Vitest unit tests
-npm run dist           # Build Windows installer
+npm run dist:win       # Build Windows installer
+npm run dist:linux     # Build Linux AppImage + deb
+npm run dist:mac       # Build macOS zip
 ```
 
 ## 💻 System Requirements
