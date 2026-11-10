@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="420" viewBox="0 0 1600 420" role="img" aria-labelledby="title desc">
+  <title id="title">Metona Ollama — 本地优先的桌面 AI Agent</title>
+  <desc id="desc">浅色横幅：羊驼头像、终端提示符、电路线与 Metona Ollama 品牌文字</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FAF7F2"/>
+      <stop offset="1" stop-color="#F3EDE4"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#E8734A"/>
+      <stop offset="1" stop-color="#F2A07B"/>
+    </linearGradient>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="18" flood-color="#2D2016" flood-opacity="0.10"/>
+    </filter>
+    <style>
+      .title { font: 800 76px Inter, 'Noto Sans SC', 'PingFang SC', system-ui, sans-serif; fill: #2D2016; letter-spacing: -2px; }
+      .sub { font: 500 30px Inter, 'Noto Sans SC', 'PingFang SC', system-ui, sans-serif; fill: #6B5B4D; }
+      .tag { font: 600 18px Inter, 'Noto Sans SC', system-ui, sans-serif; fill: #A08D7B; letter-spacing: 3px; }
+      .mono { font: 600 22px 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace; fill: #FAF7F2; }
+      .circuit { stroke: #E8734A; stroke-width: 2; fill: none; opacity: 0.35; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="420" fill="url(#bg)"/>
+  <circle cx="1330" cy="60" r="180" fill="#E8734A" opacity="0.06"/>
+  <circle cx="1480" cy="360" r="120" fill="#E8734A" opacity="0.05"/>
+
+  <!-- 电路线 -->
+  <path class="circuit" d="M 120 330 H 260 V 300 H 380"/>
+  <path class="circuit" d="M 120 360 H 300 V 390 H 430"/>
+  <path class="circuit" d="M 520 90 H 620 V 130 H 700"/>
+  <path class="circuit" d="M 520 120 H 580 V 160 H 700"/>
+  <circle cx="380" cy="300" r="5" fill="#E8734A" opacity="0.5"/>
+  <circle cx="430" cy="390" r="5" fill="#E8734A" opacity="0.5"/>
+  <circle cx="700" cy="130" r="5" fill="#E8734A" opacity="0.5"/>
+  <circle cx="700" cy="160" r="5" fill="#E8734A" opacity="0.5"/>
+
+  <!-- 羊驼头像 -->
+  <g filter="url(#soft)" transform="translate(150 70)">
+    <rect x="0" y="0" width="300" height="280" rx="56" fill="#FFFFFF"/>
+    <rect x="0" y="0" width="300" height="280" rx="56" fill="none" stroke="#EADFD2" stroke-width="2"/>
+    <!-- 耳朵 -->
+    <path d="M 82 96 C 66 54 74 30 92 26 C 108 22 118 46 118 82 Z" fill="#E8734A"/>
+    <path d="M 218 96 C 234 54 226 30 208 26 C 192 22 182 46 182 82 Z" fill="#E8734A"/>
+    <path d="M 92 86 C 84 62 88 46 96 44 C 104 42 108 58 108 82 Z" fill="#F7C6B2"/>
+    <path d="M 208 86 C 216 62 212 46 204 44 C 196 42 192 58 192 82 Z" fill="#F7C6B2"/>
+    <!-- 头部 -->
+    <path d="M 74 152 C 74 96 108 68 150 68 C 192 68 226 96 226 152 C 226 212 196 244 150 244 C 104 244 74 212 74 152 Z" fill="#F3E4D5"/>
+    <!-- 面部 -->
+    <path d="M 104 150 C 104 124 122 110 150 110 C 178 110 196 124 196 150 C 196 194 178 214 150 214 C 122 214 104 194 104 150 Z" fill="#FFF9F3"/>
+    <!-- 眼睛 -->
+    <circle cx="128" cy="146" r="9" fill="#2D2016"/>
+    <circle cx="172" cy="146" r="9" fill="#2D2016"/>
+    <circle cx="131" cy="143" r="3" fill="#FFFFFF"/>
+    <circle cx="175" cy="143" r="3" fill="#FFFFFF"/>
+    <!-- 鼻子与嘴 -->
+    <path d="M 142 176 Q 150 170 158 176 Q 150 184 142 176 Z" fill="#2D2016"/>
+    <path d="M 150 184 V 194" stroke="#2D2016" stroke-width="3" stroke-linecap="round"/>
+    <path d="M 150 194 Q 138 202 132 194" stroke="#2D2016" stroke-width="3" fill="none" stroke-linecap="round"/>
+    <path d="M 150 194 Q 162 202 168 194" stroke="#2D2016" stroke-width="3" fill="none" stroke-linecap="round"/>
+    <!-- 腮红 -->
+    <ellipse cx="112" cy="176" rx="12" ry="7" fill="#F2A07B" opacity="0.5"/>
+    <ellipse cx="188" cy="176" rx="12" ry="7" fill="#F2A07B" opacity="0.5"/>
+  </g>
+
+  <!-- 终端徽标 -->
+  <g transform="translate(150 300)">
+    <rect x="0" y="0" width="300" height="56" rx="16" fill="#2D2016"/>
+    <text x="22" y="36" class="mono">&gt;_ metona</text>
+    <circle cx="268" cy="28" r="6" fill="#E8734A"/>
+  </g>
+
+  <!-- 文字 -->
+  <text x="560" y="150" class="tag">LOCAL-FIRST · TOOL-DRIVEN · PRIVATE BY DEFAULT</text>
+  <text x="556" y="238" class="title">METONA OLLAMA</text>
+  <text x="560" y="292" class="sub">本地优先的桌面 AI Agent</text>
+  <rect x="560" y="318" width="120" height="6" rx="3" fill="url(#accent)"/>
+  <text x="560" y="366" class="tag" style="letter-spacing:1px;">WINDOWS · LINUX · macOS</text>
+</svg>

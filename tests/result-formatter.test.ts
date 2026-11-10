@@ -1,8 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  formatToolResultForModel,
-  summarizeAuditResult,
-} from '../src/renderer/services/result-formatter.js';
+import { formatToolResultForModel, summarizeAuditResult } from '../src/renderer/services/result-formatter.js';
 import type { ToolResult } from '../src/renderer/types.js';
 
 describe('formatToolResultForModel', () => {
@@ -32,19 +29,36 @@ describe('formatToolResultForModel', () => {
   });
 
   it('read_file 返回路径与内容', () => {
-    const out = formatToolResultForModel('read_file', { success: true, path: '/a.txt', content: 'abc', lines: 1, truncated: false });
+    const out = formatToolResultForModel('read_file', {
+      success: true,
+      path: '/a.txt',
+      content: 'abc',
+      lines: 1,
+      truncated: false,
+    });
     expect(out).toContain('/a.txt');
     expect(out).toContain('abc');
   });
 
   it('run_command 返回 stdout/stderr', () => {
-    const out = formatToolResultForModel('run_command', { success: true, stdout: 'out', stderr: '', exitCode: 0, duration: 10 });
+    const out = formatToolResultForModel('run_command', {
+      success: true,
+      stdout: 'out',
+      stderr: '',
+      exitCode: 0,
+      duration: 10,
+    });
     expect(out).toContain('out');
     expect(out).toContain('exitCode');
   });
 
   it('memory add 去重信号转为软提醒', () => {
-    const out = formatToolResultForModel('memory', { success: true, action: 'add', duplicate: true, message: '相同内容已存在' });
+    const out = formatToolResultForModel('memory', {
+      success: true,
+      action: 'add',
+      duplicate: true,
+      message: '相同内容已存在',
+    });
     expect(out).toContain('相同内容已存在');
   });
 
@@ -64,12 +78,22 @@ describe('formatToolResultForModel', () => {
   });
 
   it('delete_file 单个返回删除信息', () => {
-    const out = formatToolResultForModel('delete_file', { success: true, path: '/x', deleted: true, type: 'file', deletedSize: 100 });
+    const out = formatToolResultForModel('delete_file', {
+      success: true,
+      path: '/x',
+      deleted: true,
+      type: 'file',
+      deletedSize: 100,
+    });
     expect(out).toContain('已删除');
   });
 
   it('diff 相同返回 no-position', () => {
-    const out = formatToolResultForModel('diff', { success: true, identical: true, message: '文件内容完全相同，无差异' });
+    const out = formatToolResultForModel('diff', {
+      success: true,
+      identical: true,
+      message: '文件内容完全相同，无差异',
+    });
     expect(out).toContain('完全相同');
   });
 

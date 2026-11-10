@@ -21,7 +21,7 @@ const HOME = os.homedir();
  * - POSIX 下 HOME 可能是系统目录（CI 以 root 运行时 HOME=/root，处于硬红线），
  *   此时改用 /tmp（不在黑名单，且在默认写白名单内）。
  */
-const SAFE_BASE = IS_WIN ? HOME : (isSystemBlockedPath(HOME) ? os.tmpdir() : HOME);
+const SAFE_BASE = IS_WIN ? HOME : isSystemBlockedPath(HOME) ? os.tmpdir() : HOME;
 /** HOME 本身被硬红线拦截时（如 root 容器），依赖 HOME 下敏感目录豁免的正向用例无法成立 */
 const HOME_BLOCKED = !IS_WIN && isSystemBlockedPath(HOME);
 
@@ -72,7 +72,7 @@ describe('tool-security — 路径安全检查', () => {
     expect(checkPathAllowed(deepTraversal, 'read').ok).toBe(false);
     // 少量 .. 的正常相对路径放行
     const shallow = path.join(SAFE_BASE, '..', '..', 'metona-shallow.txt');
-    const shallowSegs = shallow.split(path.sep).filter(s => s === '..').length;
+    const shallowSegs = shallow.split(path.sep).filter((s) => s === '..').length;
     if (shallowSegs <= 5) {
       expect(checkPathAllowed(shallow, 'read').ok).toBe(true);
     }
@@ -173,7 +173,7 @@ describe('tool-security — setAllowedDirs 黑名单穿透过滤', () => {
       setAllowedDirs([blockedDir, validDir]);
       const now = getAllowedDirs();
       expect(now).toContain(path.resolve(validDir));
-      expect(now.some(d => d.startsWith(IS_WIN ? 'C:\\Windows' : '/etc'))).toBe(false);
+      expect(now.some((d) => d.startsWith(IS_WIN ? 'C:\\Windows' : '/etc'))).toBe(false);
     } finally {
       setAllowedDirs(original);
     }

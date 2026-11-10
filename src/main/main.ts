@@ -2,7 +2,7 @@
  * Metona Ollama Desktop - 主进程入口
  */
 
-import { app, BrowserWindow, dialog, session } from 'electron';
+import { app, BrowserWindow, dialog, session, shell } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import { setupIPC } from './ipc.js';
@@ -12,7 +12,10 @@ import { showNotification } from './utils.js';
 import { ensureWorkspaceDir, killAllProcesses } from './workspace.js';
 import { browserClose } from './browser.js';
 import { stopAllServers } from './mcp-manager.js';
-import { getSetting, flushDatabase } from './db/sqlite.js';
+import { flushDatabase } from './db/sqlite.js';
+import { unloadModelsOnExit } from './ollama/client.js';
+import { getOllamaSecretStore } from './ollama/secret-store.js';
+import { abortAllOllamaStreams } from './ipc/ollama.js';
 
 // ── 全局错误处理：写入文件 + 弹窗提示 ──
 const ERROR_LOG = path.join(app.getPath('userData'), 'startup-error.log');
@@ -35,7 +38,6 @@ process.on('unhandledRejection', (err) => {
 const APP_NAME = 'Metona Ollama';
 const ICON_PATH = path.join(__dirname, '..', '..', 'assets', 'icons', 'llama.png');
 const ICO_PATH = path.join(__dirname, '..', '..', 'assets', 'icons', 'llama.ico');
-const IS_DEV = !app.isPackaged;
 
 export let mainWindow: BrowserWindow | null = null;
 export let isQuitting = false;
@@ -49,32 +51,30 @@ export function getIconPath(): string {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// CORS 允许清单：为主窗口（file:// 源）访问 Ollama HTTP API 注入
-// Access-Control-Allow-Origin 响应头。这是开启 webSecurity 前提下
-// 本地 API 可达的正确做法，取代此前全局禁用同源策略的方式。
+// 安全响应头：CSP + 禁止嵌入。Ollama 请求已在主进程完成，
+// 渲染进程不再需要任何跨域放行（0.18.0 删除 CORS 白名单）。
 // ═══════════════════════════════════════════════════════════════
 
-const corsListener = (
-  details: { responseHeaders?: Record<string, string[]> },
-  callback: (response: { responseHeaders?: Record<string, string[]> }) => void,
-): void => {
-  const headers = details.responseHeaders ?? {};
-  headers['Access-Control-Allow-Origin'] = ['*'];
-  callback({ responseHeaders: headers });
-};
+const CSP = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob:",
+  "font-src 'self' data:",
+  "connect-src 'self'",
+  "media-src 'self' data: blob:",
+  "object-src 'none'",
+  "base-uri 'none'",
+  "frame-ancestors 'none'",
+].join('; ');
 
-/** 更新 CORS 允许清单（仅放行 Ollama 服务地址） */
-export function updateCorsAllowlist(rawUrl: string): void {
-  try {
-    const u = new URL(rawUrl);
-    const pattern = [`${u.protocol}//${u.host}/*`];
-    const sess = session.defaultSession;
-    // Electron webRequest API：传 null 清除既有监听后重新注册
-    sess.webRequest.onHeadersReceived(null);
-    sess.webRequest.onHeadersReceived({ urls: pattern }, corsListener);
-  } catch {
-    // 无效 URL 时忽略
-  }
+function installSecurityHeaders(): void {
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    const headers = { ...(details.responseHeaders ?? {}) };
+    headers['Content-Security-Policy'] = [CSP];
+    headers['X-Content-Type-Options'] = ['nosniff'];
+    callback({ responseHeaders: headers });
+  });
 }
 
 function createMainWindow(): BrowserWindow {
@@ -104,20 +104,17 @@ function createMainWindow(): BrowserWindow {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      // sandbox 保持关闭：preload 需要读取 os 信息（homeDir/username 等）。
-      // 开启 sandbox 需将 sys 信息改为 IPC 异步获取，列入后续迭代。
-      sandbox: false,
-      // webSecurity 必须开启（同源策略）。file:// 页面访问 Ollama HTTP API
-      // 的 CORS 问题通过上方 webRequest 允许清单精确放行，而非全局禁用安全策略。
+      sandbox: true,
       webSecurity: true,
       allowRunningInsecureContent: false
     }
   });
 
-  // 开发模式：从 src/renderer/ 加载；生产模式：从 dist/renderer/ 加载
-  const isDev = !app.isPackaged;
-  if (isDev) {
-    mainWindow.loadFile(path.join(__dirname, '..', '..', 'src', 'renderer', 'index.html'));
+  // 渲染进程始终加载构建产物 dist/renderer；开发时由 Vite watch 持续输出。
+  // 如需连接 Vite dev server，可设置 METONA_DEV_URL。
+  const devUrl = process.env.METONA_DEV_URL;
+  if (devUrl) {
+    void mainWindow.loadURL(devUrl);
   } else {
     mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
   }
@@ -174,11 +171,10 @@ function createMainWindow(): BrowserWindow {
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('http://') || url.startsWith('https://')) {
-      const { shell } = require('electron');
       shell.openExternal(url);
-      return { action: 'deny' as const };
     }
-    return { action: 'allow' as const };
+    // 非 http/https 一律拒绝
+    return { action: 'deny' as const };
   });
 
   return mainWindow;
@@ -198,13 +194,10 @@ if (!gotTheLock) {
 }
 
 app.whenReady().then(async () => {
+  installSecurityHeaders();
   ensureWorkspaceDir();
+  await getOllamaSecretStore().init();
   await setupIPC();
-  // 恢复 Ollama 服务地址的 CORS 允许清单（设置面板保存地址时会动态更新）
-  try {
-    const serverUrl = getSetting<string>('serverUrl', 'http://127.0.0.1:11434');
-    updateCorsAllowlist(serverUrl || 'http://127.0.0.1:11434');
-  } catch { /* 数据库未就绪时使用默认地址 */ }
   createMainWindow();
   createTray();
   createMenu();
@@ -238,6 +231,8 @@ app.on('before-quit', async () => {
   isQuitting = true;
   // 强制刷盘：防抖持久化模式下确保最近 300ms 内的写入不丢失
   try { flushDatabase(); } catch { /* 刷盘失败不阻塞退出 */ }
+  // 中止所有 Ollama 流
+  try { abortAllOllamaStreams(); } catch { /* ignore */ }
   // 清理浏览器
   browserClose().catch(() => {});
   // 清理 MCP 服务器
@@ -246,28 +241,8 @@ app.on('before-quit', async () => {
   killAllProcesses();
   // 通知渲染进程释放显存
   mainWindow?.webContents.send('app-quit');
-  // 主进程直接调用 Ollama API 释放显存（更可靠，不依赖渲染进程）
-  // 地址从设置读取（与启动时 CORS 清单逻辑保持一致），避免使用非默认地址时释放请求打到错误端口
+  // 主进程统一卸载：本地/自建远程按策略执行，Ollama Cloud 跳过；5s 超时不阻塞退出
   try {
-    const serverUrl = getSetting<string>('serverUrl', 'http://127.0.0.1:11434');
-    const ollamaUrl = (serverUrl || 'http://127.0.0.1:11434').replace(/\/+$/, '');
-    const psResp = await fetch(`${ollamaUrl}/api/ps`);
-    if (psResp.ok) {
-      const psData = await psResp.json() as { models?: Array<{ name: string }> };
-      const models = psData.models || [];
-      for (const m of models) {
-        try {
-          await fetch(`${ollamaUrl}/api/generate`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ model: m.name, keep_alive: 0 }),
-          });
-        } catch { /* 忽略单个模型释放失败 */ }
-      }
-      if (models.length > 0) {
-        // 豁免：before-quit 阶段渲染进程已进入关闭流程，释放显存结果仅记录到主进程 stderr
-        console.log(`[before-quit] 已释放 ${models.length} 个模型显存`);
-      }
-    }
+    await unloadModelsOnExit(5_000);
   } catch { /* 释放显存失败不影响退出 */ }
 });

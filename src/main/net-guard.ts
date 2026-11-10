@@ -1,6 +1,6 @@
 /**
  * Net Guard — 内网地址访问防护（SSRF 防御）
- * 阻止工具（web_fetch / download_file / browser_open）访问环回/内网/链路本地地址，
+ * 阻止工具（web_fetch / download_file / browser）访问环回/内网/链路本地地址，
  * 防止网页提示注入诱导 Agent 探测本机服务（如 Ollama API）或内网资源后外传数据。
  *
  * 已知限制：检查在请求前解析 DNS，fetch 时会再次解析，理论上存在 DNS rebinding 窗口。

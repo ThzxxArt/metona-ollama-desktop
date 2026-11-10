@@ -1,9 +1,10 @@
 {
   "name": "metona-ollama-desktop",
-  "version": "0.17.2",
-  "description": "Metona Ollama - TypeScript + Electron 桌面 AI 聊天客户端",
+  "version": "0.18.0",
+  "description": "Metona Ollama - 本地优先的桌面 AI Agent，支持本地/远程 Ollama 与 Ollama Cloud",
   "main": "dist/main/main.js",
-  "author": "thzxx",
+  "desktopName": "metona-ollama",
+  "author": "ThzxxArt",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -27,7 +28,13 @@
     "dist:mac": "npm run build && electron-builder --mac --publish never",
     "dist:nsis": "npm run build && electron-builder --win nsis --publish never",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.main.json",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test",
+    "lint": "eslint src tests --max-warnings 0",
+    "format": "prettier --write \"src/shared/**/*.ts\" \"src/main/ollama/**/*.ts\" \"src/main/ipc/**/*.ts\" \"src/main/db/**/*.ts\" \"src/renderer/api/**/*.ts\" \"src/renderer/components/settings-modal.ts\" \"src/renderer/components/tools-modal.ts\" \"src/renderer/components/model-bar.ts\" \"src/renderer/main.ts\" \"tests/**/*.ts\"",
+    "format:check": "prettier --check \"src/shared/**/*.ts\" \"src/main/ollama/**/*.ts\" \"src/main/ipc/**/*.ts\" \"src/main/db/**/*.ts\" \"src/renderer/api/**/*.ts\" \"src/renderer/components/settings-modal.ts\" \"src/renderer/components/tools-modal.ts\" \"src/renderer/components/model-bar.ts\" \"src/renderer/main.ts\" \"tests/**/*.ts\"",
+    "check:no-temperature": "node scripts/check-no-temperature.mjs"
   },
   "build": {
     "appId": "com.metona.ollama-desktop",
@@ -40,17 +47,11 @@
       "dist/**/*",
       "assets/**/*",
       "!node_modules/**/*",
-      "node_modules/sql.js/**/*",
+      "node_modules/zod/**/*",
       "node_modules/ffmpeg-static/**/*"
     ],
     "asarUnpack": [
       "node_modules/ffmpeg-static/**"
-    ],
-    "extraResources": [
-      {
-        "from": "node_modules/sql.js/dist/sql-wasm.wasm",
-        "to": "sql-wasm.wasm"
-      }
     ],
     "win": {
       "target": [
@@ -81,6 +82,7 @@
       ],
       "icon": "assets/icons/llama.png",
       "category": "Utility",
+      "syncDesktopName": true,
       "executableName": "metona-ollama",
       "maintainer": "ThzxxArt <ThzxxArt@users.noreply.github.com>"
     },
@@ -117,20 +119,25 @@
     }
   },
   "devDependencies": {
-    "@types/node": "^20.17.0",
-    "electron": "^33.4.11",
-    "electron-builder": "^25.1.8",
-    "typescript": "^5.7.0",
-    "vite": "^5.4.0",
-    "vitest": "^2.1.9"
+    "@playwright/test": "^1.65.0",
+    "@types/node": "^24.10.0",
+    "@vitest/coverage-v8": "^5.1.0",
+    "electron": "^45.2.3",
+    "electron-builder": "^26.18.0",
+    "eslint": "^10.14.0",
+    "prettier": "^3.9.10",
+    "typescript": "6.0.3",
+    "typescript-eslint": "^8.72.2",
+    "vite": "^8.3.7",
+    "vitest": "^5.1.0"
   },
   "dependencies": {
-    "ffmpeg-static": "^5.2.0",
-    "sql.js": "^1.11.0"
+    "electron-log": "^5.4.4",
+    "ffmpeg-static": "^5.3.0",
+    "zod": "^4.6.7"
   },
   "allowScripts": {
-    "electron@33.4.11": true,
-    "esbuild@0.21.5": true,
-    "ffmpeg-static@5.3.0": true
+    "ffmpeg-static@5.3.0": true,
+    "electron-winstaller@5.4.0": true
   }
 }

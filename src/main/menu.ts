@@ -101,8 +101,8 @@ export function createMenu(): void {
             dialog.showMessageBox(mainWindow!, {
               type: 'info',
               title: '关于 Metona Ollama',
-              message: 'Metona Ollama Desktop v0.17.2',
-              detail: 'TypeScript + Electron Ollama AI 聊天客户端\n\nhttps://gitee.com/thzxx/metona-ollama',
+              message: `Metona Ollama Desktop v${app.getVersion()}`,
+              detail: '本地优先的桌面 AI Agent\n支持本地 / 远程 Ollama 与 Ollama Cloud\n\nhttps://github.com/ThzxxArt/metona-ollama-desktop\n\n© 2026 ThzxxArt',
               icon: getIconPath()
             });
           }

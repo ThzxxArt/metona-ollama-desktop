@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="760" viewBox="0 0 1200 760" role="img" aria-labelledby="title desc">
+  <title id="title">Metona Ollama 主界面（深色）</title>
+  <desc id="desc">深色主题下的聊天、工具卡片与工作空间布局示意</desc>
+  <defs>
+    <style>
+      .bg { fill: #1A1B26; }
+      .panel { fill: #21222E; stroke: #34364A; }
+      .text { font-family: Inter, 'Noto Sans SC', system-ui, sans-serif; fill: #E0E0E8; }
+      .muted { fill: #8C8CA3; }
+      .accent { fill: #E8734A; }
+      .bubble { fill: #262735; stroke: #34364A; }
+      .user { fill: #E8734A; }
+      .card { fill: #2A2B3A; stroke: #34364A; }
+      .mono { font-family: 'JetBrains Mono', Consolas, monospace; }
+    </style>
+  </defs>
+  <rect class="bg" width="1200" height="760"/>
+  <rect x="0" y="0" width="220" height="760" class="panel"/>
+  <rect x="220" y="0" width="740" height="760" class="bg"/>
+  <rect x="960" y="0" width="240" height="760" class="panel"/>
+
+  <text x="24" y="42" class="text" font-size="18" font-weight="700">📋 执行日志</text>
+  <rect x="20" y="64" width="180" height="18" rx="6" fill="#2A2B3A"/>
+  <rect x="20" y="92" width="150" height="18" rx="6" fill="#2A2B3A"/>
+  <rect x="20" y="120" width="172" height="18" rx="6" fill="#2A2B3A"/>
+
+  <text x="248" y="42" class="text" font-size="22" font-weight="800">Metona Ollama</text>
+  <rect x="400" y="24" width="96" height="24" rx="12" fill="#123322"/>
+  <text x="414" y="41" font-size="12" fill="#7BE0A3">远程 · 已连接</text>
+  <rect x="640" y="24" width="300" height="34" rx="10" class="card"/>
+  <text x="656" y="46" font-size="13" class="text">gpt-oss:120b ☁️ · 256K</text>
+
+  <rect x="248" y="86" width="520" height="86" rx="14" class="bubble"/>
+  <text x="266" y="112" font-size="12" class="muted">AI · gpt-oss:120b</text>
+  <text x="266" y="138" font-size="14" class="text">已连接到 Ollama Cloud，开始分析仓库。</text>
+  <rect x="266" y="148" width="180" height="12" rx="6" fill="#34364A"/>
+
+  <rect x="500" y="190" width="340" height="70" rx="14" class="user"/>
+  <text x="518" y="216" font-size="12" fill="#FFF4EC">你</text>
+  <text x="518" y="242" font-size="14" fill="#FFFFFF">检查远程卸载策略是否正确</text>
+
+  <rect x="248" y="278" width="620" height="150" rx="14" class="card"/>
+  <text x="266" y="304" font-size="13" class="text" font-weight="700">🔧 工具调用</text>
+  <rect x="266" y="318" width="580" height="34" rx="8" fill="#1E1F2B" stroke="#34364A"/>
+  <text x="278" y="340" font-size="12" class="mono" fill="#E0E0E8">browser  {"action":"open","url":"https://ollama.com"}</text>
+  <rect x="266" y="360" width="580" height="34" rx="8" fill="#1E1F2B" stroke="#34364A"/>
+  <text x="278" y="382" font-size="12" class="mono" fill="#7BE0A3">✓ 云端跳过自动卸载 · Key 已注入</text>
+
+  <rect x="248" y="452" width="620" height="210" rx="14" class="bubble"/>
+  <text x="266" y="478" font-size="12" class="muted">AI · 思考中</text>
+  <text x="266" y="506" font-size="14" class="text">Ollama Cloud 不会执行 keep_alive:0；自建远程默认卸载。</text>
+  <rect x="266" y="522" width="560" height="14" rx="7" fill="#34364A"/>
+  <rect x="266" y="546" width="500" height="14" rx="7" fill="#34364A"/>
+  <rect x="266" y="570" width="540" height="14" rx="7" fill="#34364A"/>
+  <rect x="266" y="606" width="120" height="32" rx="8" class="card"/>
+  <text x="284" y="627" font-size="12" class="text">🔊 朗读</text>
+
+  <rect x="248" y="686" width="620" height="48" rx="14" class="bubble"/>
+  <text x="266" y="716" font-size="13" class="muted">输入消息…</text>
+  <rect x="806" y="696" width="44" height="28" rx="8" class="accent"/>
+  <text x="818" y="715" font-size="15" fill="#FFFFFF">➤</text>
+
+  <text x="984" y="42" class="text" font-size="16" font-weight="700">🖥️ 工作空间</text>
+  <rect x="980" y="62" width="66" height="26" rx="8" class="accent"/>
+  <text x="990" y="80" font-size="11" fill="#FFFFFF">工具</text>
+  <rect x="1050" y="62" width="66" height="26" rx="8" class="card"/>
+  <text x="1062" y="80" font-size="11" class="text">文件</text>
+  <rect x="980" y="104" width="200" height="120" rx="10" class="card"/>
+  <text x="994" y="128" font-size="12" class="text">🌐 browser.open</text>
+  <text x="994" y="150" font-size="11" class="muted">success · 680ms</text>
+  <rect x="980" y="238" width="200" height="120" rx="10" class="card"/>
+  <text x="994" y="262" font-size="12" class="text">🧠 memory</text>
+  <text x="994" y="284" font-size="11" class="muted">embedding · 12ms</text>
+  <rect x="980" y="372" width="200" height="120" rx="10" class="card"/>
+  <text x="994" y="396" font-size="12" class="text">📄 read_file</text>
+  <text x="994" y="418" font-size="11" class="muted">paths[3] · 24ms</text>
+</svg>

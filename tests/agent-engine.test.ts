@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import {
   sanitizeUntrustedInput,
   truncateByTokenBudget,
-  extractPlanSteps,
   pathsConflict,
   validateToolArgsQuick,
 } from '../src/renderer/services/agent-engine.js';
@@ -59,45 +58,6 @@ describe('truncateByTokenBudget', () => {
   });
 });
 
-describe('extractPlanSteps', () => {
-  it('从 ## 执行计划 章节提取编号步骤', () => {
-    const content = `## 执行计划
-1. **读取配置文件** — 工具: read_file
-2. 分析数据 — 工具: web_search
-3. 生成报告`;
-    const steps = extractPlanSteps(content);
-    expect(steps).toContain('读取配置文件');
-    // 未被 ** 包裹的行，非贪婪捕获会保留分隔符后的文本
-    expect(steps.some(s => s.includes('分析数据'))).toBe(true);
-  });
-
-  it('无 ## 执行计划 章节时回退全局编号匹配（步骤文本需≥5字符）', () => {
-    const content = '1. 读取配置文件\n2. 分析数据并整理';
-    // 回退匹配不要求分隔符，仅需编号行 + 步骤文本 ≥5 字符
-    expect(extractPlanSteps(content).length).toBeGreaterThanOrEqual(1);
-  });
-
-  it('回退模式过滤过短步骤（<5 字符）', () => {
-    // "第一步" 仅 3 字符，被过滤
-    expect(extractPlanSteps('1. 第一步\n2. 第二步')).toEqual([]);
-  });
-
-  it('回退模式保留含分隔符步骤的完整文本', () => {
-    const steps = extractPlanSteps('1. 读取配置 — 工具: read_file\n2. 分析数据 — 工具: web_search');
-    expect(steps[0]).toContain('读取配置');
-  });
-
-  it('限制最多 8 个步骤', () => {
-    let content = '## 执行计划\n';
-    for (let i = 1; i <= 12; i++) content += `${i}. 步骤${i} — 说明\n`;
-    expect(extractPlanSteps(content).length).toBeLessThanOrEqual(8);
-  });
-
-  it('空内容返回空数组', () => {
-    expect(extractPlanSteps('')).toEqual([]);
-  });
-});
-
 describe('pathsConflict', () => {
   it('相同路径冲突', () => {
     expect(pathsConflict('/a/b.txt', '/a/b.txt')).toBe(true);
@@ -133,9 +93,10 @@ describe('validateToolArgsQuick', () => {
     expect(validateToolArgsQuick('web_fetch', { url: 'http://x' })).toBeNull();
   });
 
-  it('move/copy 缺 source/destination 报错', () => {
-    expect(validateToolArgsQuick('move_file', {})).toContain('source');
-    expect(validateToolArgsQuick('copy_file', { source: 'a' })).toContain('destination');
+  it('file_transfer 缺 operation/source/destination 报错', () => {
+    expect(validateToolArgsQuick('file_transfer', {})).toContain('operation');
+    expect(validateToolArgsQuick('file_transfer', { operation: 'copy' })).toContain('source');
+    expect(validateToolArgsQuick('file_transfer', { operation: 'move', source: 'a' })).toContain('destination');
   });
 
   it('edit_file 缺 old/new 文本报错', () => {

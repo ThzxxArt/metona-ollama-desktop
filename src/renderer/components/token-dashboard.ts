@@ -98,11 +98,14 @@ interface RoundData {
   role: string;
   eval_count: number;
   prompt_eval_count: number;
+  prompt_eval_cached_count: number;
   total_duration: number;
   timestamp: number;
   model?: string;
   llmCallCount: number;
 }
+
+let lastCachedInfo: { cached: number; total: number } | null = null;
 
 /**
  * 收集轮次数据 — 按用户消息分组（一次用户消息 = 一轮）。
@@ -124,6 +127,7 @@ function collectRoundData(messages: ChatMessage[]): RoundData[] {
         role: 'assistant',
         eval_count: 0,
         prompt_eval_count: 0,
+        prompt_eval_cached_count: 0,
         total_duration: 0,
         timestamp: msg.timestamp,
         llmCallCount: 0,
@@ -137,6 +141,7 @@ function collectRoundData(messages: ChatMessage[]): RoundData[] {
           role: 'assistant',
           eval_count: 0,
           prompt_eval_count: 0,
+          prompt_eval_cached_count: 0,
           total_duration: 0,
           timestamp: msg.timestamp,
           llmCallCount: 0,
@@ -144,6 +149,7 @@ function collectRoundData(messages: ChatMessage[]): RoundData[] {
       }
       currentTurn.eval_count += msg.eval_count || 0;
       currentTurn.prompt_eval_count += msg.prompt_eval_count || 0;
+      currentTurn.prompt_eval_cached_count += msg.prompt_eval_cached_count || 0;
       currentTurn.total_duration += msg.total_duration || 0;
       currentTurn.llmCallCount++;
       currentTurn.model = msg.model || currentTurn.model;
@@ -228,6 +234,7 @@ function recalcTotals(sessions: SessionTokenStat[]): GlobalTokenTotals {
 /** 渲染全局统计视图 */
 function renderGlobalView(): void {
   const myFetchId = ++globalFetchId;
+  lastCachedInfo = null;
   fetchGlobalStats().then(stats => {
     if (myFetchId !== globalFetchId) return; // P9: 过期响应，丢弃
     if (!stats) {
@@ -250,6 +257,8 @@ function renderGlobalView(): void {
         const totalInput = rounds.reduce((sum, r) => sum + r.prompt_eval_count, 0);
         const totalOutput = rounds.reduce((sum, r) => sum + r.eval_count, 0);
         const totalDuration = rounds.reduce((sum, r) => sum + r.total_duration, 0);
+        const totalCached = rounds.reduce((sum, r) => sum + r.prompt_eval_cached_count, 0);
+        lastCachedInfo = totalInput > 0 ? { cached: totalCached, total: totalInput } : null;
         const sessionStat: SessionTokenStat = {
           session_id: currentSession.id,
           title: currentSession.title,
@@ -327,6 +336,14 @@ function renderGlobalOverview(stats: AllSessionsTokenStats): void {
         <div class="td-stat-value">${formatTokenCount(avgPerRound)}</div>
         <div class="td-stat-label">平均 Token/轮</div>
       </div>
+      ${lastCachedInfo
+        ? `<div class="td-stat-card td-stat-card-small">
+        <div class="td-stat-icon">⚡</div>
+        <div class="td-stat-value">${Math.round((lastCachedInfo.cached / lastCachedInfo.total) * 100)}%</div>
+        <div class="td-stat-label">本会话缓存命中</div>
+        <div class="td-stat-detail">${formatTokenCount(lastCachedInfo.cached)} cached / ${formatTokenCount(lastCachedInfo.total)}</div>
+      </div>`
+        : ''}
   `;
 }
 

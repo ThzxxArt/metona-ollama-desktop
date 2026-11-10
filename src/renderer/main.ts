@@ -16,7 +16,13 @@ import { initToast, showToast } from './components/toast.js';
 import { initLightbox, closeLightbox } from './components/lightbox.js';
 import { initHeader, checkConnection } from './components/header.js';
 import { initModelBar, loadModels, setSelectedModel } from './components/model-bar.js';
-import { initChatArea, renderMessages, clearMessages, enableAutoScroll, initSearchBar } from './components/chat-area.js';
+import {
+  initChatArea,
+  renderMessages,
+  clearMessages,
+  enableAutoScroll,
+  initSearchBar,
+} from './components/chat-area.js';
 import { initInputArea } from './components/input-area.js';
 import { initSettingsModal, closeSettingsModal } from './components/settings-modal.js';
 import { initHistoryModal, closeHistoryModal } from './components/history-modal.js';
@@ -26,7 +32,12 @@ import { initTokenDashboard, closeTokenDashboard } from './components/token-dash
 import { initGlobalToolMode, refreshMCPTools } from './services/tool-registry.js';
 import { startAllMCPServers } from './services/mcp-client.js';
 import { initToolConfirmModal } from './components/tool-confirm-modal.js';
-import { initWorkspacePanel, clearToolCardsExternal, clearTerminalExternal, switchToTab } from './components/workspace-panel.js';
+import {
+  initWorkspacePanel,
+  clearToolCardsExternal,
+  clearTerminalExternal,
+  switchToTab,
+} from './components/workspace-panel.js';
 import { initLogPanel, addLog } from './services/log-service.js';
 import { logInfo, logSuccess, logError, logDebug, logInit, logWarn } from './services/log-service.js';
 import { initGlobalErrorHandler } from './services/infra-service.js';
@@ -35,121 +46,8 @@ import { initKeybindManager } from './components/keybind-manager.js';
 import { initMetricsDashboard } from './components/metrics-dashboard.js';
 import { initHarnessHooks } from './services/hooks.js';
 import { setAppVersion, loadMetricsHistory } from './services/agent-metrics.js';
+import { showConfirm } from './components/prompt-modal.js';
 import type { ChatSession } from './types.js';
-
-// ─── v4.0 数据迁移：IndexedDB → SQLite ───
-
-async function migrateIndexedDBToSQLite(db: ChatDB): Promise<void> {
-  const bridge = window.metonaDesktop;
-  if (!bridge?.isDesktop || !bridge?.db) {
-    logInit('非桌面环境，跳过迁移');
-    return;
-  }
-
-  // 检查是否已迁移
-  const migrated = await bridge.db.getSetting('_indexeddb_migrated', false);
-  if (migrated) {
-    logInit('SQLite 数据库已连接（已迁移）');
-    return;
-  }
-
-  // 检查 IndexedDB 中是否有数据
-  const idb = db.getRawIDB();
-  if (!idb) {
-    logInit('SQLite 数据库已连接（无旧数据）');
-    return;
-  }
-
-  // 读取 IndexedDB 数据
-  try {
-    const sessions: ChatSession[] = await new Promise((resolve, reject) => {
-      const tx = idb.transaction('sessions', 'readonly');
-      const store = tx.objectStore('sessions');
-      const req = store.getAll();
-      req.onsuccess = () => resolve(req.result || []);
-      req.onerror = () => reject(req.error);
-    });
-
-    const memories: Record<string, unknown>[] = await new Promise((resolve, reject) => {
-      const tx = idb.transaction('memories', 'readonly');
-      const store = tx.objectStore('memories');
-      const req = store.getAll();
-      req.onsuccess = () => resolve(req.result || []);
-      req.onerror = () => reject(req.error);
-    });
-
-    const settings: Record<string, unknown>[] = await new Promise((resolve, reject) => {
-      const tx = idb.transaction('settings', 'readonly');
-      const store = tx.objectStore('settings');
-      const req = store.getAll();
-      req.onsuccess = () => resolve(req.result || []);
-      req.onerror = () => reject(req.error);
-    });
-
-    if (sessions.length === 0 && memories.length === 0 && settings.length === 0) {
-      logInit('SQLite 数据库已连接（无旧数据）');
-      await bridge.db.saveSetting('_indexeddb_migrated', true);
-      return;
-    }
-
-    logInit(`发现旧数据: ${sessions.length} 会话, ${memories.length} 记忆, ${settings.length} 设置`);
-
-    // 构造导入数据
-    const importData = {
-      sessions: sessions.map(s => ({
-        id: s.id,
-        title: s.title,
-        model: s.model,
-        system_prompt: null as string | null,
-        parent_id: null as string | null,
-        status: 'active',
-        created_at: s.createdAt,
-        updated_at: s.updatedAt
-      })),
-      messages: (sessions as any[]).flatMap((s: any) =>
-        (s.messages || []).map((m: any, idx: number) => ({
-          id: `${s.id}_msg_${idx}_${m.timestamp}`,
-          session_id: s.id,
-          role: m.role,
-          content: m.content || null,
-          thinking: m.think || null,
-          images: m.images?.length ? JSON.stringify(m.images) : null,
-          tool_calls: m.toolCalls?.length ? JSON.stringify(m.toolCalls) : null,
-          tool_name: null,
-          eval_count: m.eval_count || null,
-          total_duration: m.total_duration || null,
-          created_at: m.timestamp || Date.now()
-        }))
-      ),
-      memories: memories.map((m: Record<string, unknown>) => ({
-        id: m.id,
-        type: m.type,
-        content: m.content,
-        importance: m.importance || 5,
-        tags: (m.tags as any[])?.length ? JSON.stringify(m.tags) : null,
-        source: m.source || null,
-        session_id: m.sessionId || null,
-        use_count: m.useCount || 0,
-        embedding: m.embedding ? JSON.stringify(m.embedding) : null,
-        created_at: m.createdAt,
-        updated_at: m.updatedAt,
-        last_used_at: m.lastUsedAt
-      })),
-      settings: settings.map((s: Record<string, unknown>) => ({ key: s.key, value: s.value })),
-      exportedAt: Date.now()
-    };
-
-    const result = await bridge.db.importSessions(importData);
-    logInit(`迁移完成: 导入 ${result.imported} 个会话, 跳过 ${result.skipped} 个`);
-
-    // 标记迁移完成
-    await bridge.db.saveSetting('_indexeddb_migrated', true);
-    logSuccess('数据迁移完成');
-  } catch (err) {
-    logError('数据迁移失败', (err as Error).message);
-    // 迁移失败不阻塞启动
-  }
-}
 
 function initHelpModal(): void {
   const helpModal = document.querySelector('#helpModal') as HTMLElement;
@@ -176,17 +74,27 @@ function setupDesktopIntegration(): void {
   bridge.onMenuAction((action: string) => {
     logInfo(`菜单操作: ${action}`);
     switch (action) {
-      case 'new-chat': document.querySelector('#btnNewChat')?.dispatchEvent(new Event('click')); break;
-      case 'import': document.querySelector('#btnImportSessions')?.dispatchEvent(new Event('click')); break;
-      case 'export': document.querySelector('#btnExportAll')?.dispatchEvent(new Event('click')); break;
-      case 'help': document.querySelector('#btnHelp')?.dispatchEvent(new Event('click')); break;
+      case 'new-chat':
+        document.querySelector('#btnNewChat')?.dispatchEvent(new Event('click'));
+        break;
+      case 'import':
+        document.querySelector('#btnImportSessions')?.dispatchEvent(new Event('click'));
+        break;
+      case 'export':
+        document.querySelector('#btnExportAll')?.dispatchEvent(new Event('click'));
+        break;
+      case 'help':
+        document.querySelector('#btnHelp')?.dispatchEvent(new Event('click'));
+        break;
     }
   });
 
   bridge.onTrayAction((action: string) => {
     logInfo(`托盘操作: ${action}`);
     switch (action) {
-      case 'new-chat': document.querySelector('#btnNewChat')?.dispatchEvent(new Event('click')); break;
+      case 'new-chat':
+        document.querySelector('#btnNewChat')?.dispatchEvent(new Event('click'));
+        break;
     }
   });
 
@@ -204,13 +112,10 @@ function setupDesktopIntegration(): void {
     addLog(data.level as 'info' | 'success' | 'warn' | 'error' | 'debug', data.message, data.detail);
   });
 
-  // 退出时释放显存
+  // 退出时释放显存：主进程统一执行；渲染进程仅作为补充（云服务会跳过）
   bridge.onAppQuit(() => {
     const api = state.get<OllamaAPI | null>(KEYS.API);
-    const model = state.get<string>('_defaultModel', '');
-    if (api && model) {
-      api.chat({ model, messages: [], keep_alive: 0 }).catch(() => {});
-    }
+    void api?.unloadModels(false).catch(() => {});
   });
 
   // 桌面端快捷键已迁移到 keybind-manager.ts 统一管理
@@ -268,7 +173,7 @@ function createNewSession(): ChatSession {
     model: defaultModel,
     messages: [],
     createdAt: Date.now(),
-    updatedAt: Date.now()
+    updatedAt: Date.now(),
   };
 }
 
@@ -281,11 +186,11 @@ async function startNewSession(): Promise<void> {
   }
 
   const api = state.get<OllamaAPI>(KEYS.API);
-  const model = currentSession?.model || state.get<string>('_defaultModel', '');
-  if (api && model) {
+  if (api) {
     try {
-      await api.chat({ model, messages: [], keep_alive: 0 });
-      logDebug('释放旧模型显存');
+      // 新建会话释放模型：本地 / 自建远程按策略执行；Ollama Cloud 自动跳过
+      await api.unloadModels(false);
+      logDebug('已按连接策略释放模型');
     } catch (e) {
       logWarn('释放显存失败', (e as Error).message);
     }
@@ -335,8 +240,8 @@ async function init(): Promise<void> {
   logInit('启动...');
 
   // ── UI 组件初始化（不依赖数据库，先初始化以避免 catch 路径重复绑定）──
-  initLogPanel();  // ← 日志面板最先初始化，确保后续 init 日志能显示
-  initGlobalErrorHandler();  // R42: 全局错误处理器（紧随日志面板之后）
+  initLogPanel(); // ← 日志面板最先初始化，确保后续 init 日志能显示
+  initGlobalErrorHandler(); // R42: 全局错误处理器（紧随日志面板之后）
   initToast();
   initLightbox();
   initHeader();
@@ -375,15 +280,23 @@ async function init(): Promise<void> {
 
   // ── 防御性重置：确保首次启动不会遗留脏状态 ──
   state.set('toolCallingEnabled', true);
-  state.set('runCommandMode', 'confirm');  // 兼容旧代码读取
+  state.set('runCommandMode', 'confirm');
   state.set('thinkEnabled', false);
+  state.set('thinkLevel', 'off');
 
-  // ── 注入应用版本号到 Agent Metrics ──
+  // ── 注入应用版本号 ──
   const _bridge = window.metonaDesktop;
   if (_bridge?.info) {
-    _bridge.info().then((info: { version?: string }) => {
-      if (info?.version) setAppVersion(info.version);
-    }).catch(() => {});
+    _bridge
+      .info()
+      .then((info: { version?: string }) => {
+        if (info?.version) {
+          setAppVersion(info.version);
+          const el = document.querySelector('#appVersion');
+          if (el) el.textContent = `v${info.version}`;
+        }
+      })
+      .catch(() => {});
   }
 
   try {
@@ -394,13 +307,16 @@ async function init(): Promise<void> {
     // 恢复历史度量数据（localStorage 持久化的 R84 度量历史）
     loadMetricsHistory();
 
-    // v4.0 数据迁移：检测 IndexedDB 是否有旧数据需要迁移到 SQLite
-    await migrateIndexedDBToSQLite(db);
-
-    const serverUrl = await db.getSetting('serverUrl', 'http://127.0.0.1:11434');
-    api = new OllamaAPI(serverUrl);
+    // ── Ollama 连接：0.18.0 由主进程统一管理（不读取旧 serverUrl）──
+    const connection = await _bridge?.ollama?.getConfig();
+    if (connection) {
+      state.set('connection', connection);
+      state.set(KEYS.NUM_CTX, connection.contextLength);
+    }
+    api = new OllamaAPI(connection ? (connection.mode === 'local' ? connection.localUrl : connection.remoteUrl) : '');
     state.set(KEYS.API, api);
-    logInit(`Ollama 地址: ${serverUrl}`);
+    await api.refreshConfig();
+    logInit(`Ollama 连接: ${connection?.mode === 'remote' ? '远程' : '本地'} · ${api.baseUrl}`);
 
     await checkConnection();
     await loadModels();
@@ -423,44 +339,15 @@ async function init(): Promise<void> {
       await db.saveSetting('selectedModel', savedModel);
     }
 
-    const numCtx = await db.getSetting<number>('numCtx', 131072);
-    const temperature = await db.getSetting('temperature', 0.7);
-
-    // 如果首次使用（数据库中无此设置），保存默认 128K
-    const hasNumCtx = await db.getSetting<number | null>('numCtx', null);
-    if (hasNumCtx === null) {
-      await db.saveSetting('numCtx', 131072);
-    }
-
-    state.set(KEYS.NUM_CTX, numCtx);
-    state.set('temperature', temperature);
-
-    // 反显设置面板的下拉框
-    const ctxSelect = document.querySelector('#selectContextLength') as HTMLSelectElement;
-    if (ctxSelect) ctxSelect.value = String(numCtx);
-
-    (document.querySelector('#inputTemperature') as HTMLInputElement).value = String(temperature);
-    document.querySelector('#tempValue')!.textContent = parseFloat(String(temperature)).toFixed(1);
-
     // ── v5.1.1 Agent 最大轮数 ──
     const maxTurns = await db.getSetting('maxTurns', 85);
     state.set('maxTurns', maxTurns);
     (document.querySelector('#inputMaxTurns') as HTMLInputElement).value = String(maxTurns);
 
     // ── v5.2 超时设置：-1=默认, 0=禁用, 正数=自定义 ──
-    let httpTimeout = await db.getSetting<number>('httpTimeout', -1);
-    let streamTimeout = await db.getSetting<number>('streamTimeout', -1);
-    let mcpTimeout = await db.getSetting<number>('mcpTimeout', -1);
-
-    // 兼容旧版：首次升级时，旧版把"未设置"存为0，一次性迁移为-1
-    const migrated = await db.getSetting<boolean>('_timeout_v2_migrated', false);
-    if (!migrated) {
-      if (httpTimeout === 0) { httpTimeout = -1; await db.saveSetting('httpTimeout', -1); }
-      if (streamTimeout === 0) { streamTimeout = -1; await db.saveSetting('streamTimeout', -1); }
-      if (mcpTimeout === 0) { mcpTimeout = -1; await db.saveSetting('mcpTimeout', -1); }
-      await db.saveSetting('_timeout_v2_migrated', true);
-    }
-
+    const httpTimeout = await db.getSetting<number>('httpTimeout', -1);
+    const streamTimeout = await db.getSetting<number>('streamTimeout', -1);
+    const mcpTimeout = await db.getSetting<number>('mcpTimeout', -1);
     // 应用流式超时到 state（agent-engine 读取，0=禁用）
     state.set('streamTimeout', streamTimeout >= 0 ? streamTimeout * 1000 : -1);
     // 存入 state 供 agent-engine 工具级超时读取（网络工具需要跟随用户配置）
@@ -477,10 +364,14 @@ async function init(): Promise<void> {
     }
 
     // 恢复输入框显示（-1显示空, 0显示0, 正数显示数字）
-    (document.querySelector('#inputHttpTimeout') as HTMLInputElement).value = httpTimeout >= 0 ? String(httpTimeout) : '';
-    (document.querySelector('#inputStreamTimeout') as HTMLInputElement).value = streamTimeout >= 0 ? String(streamTimeout) : '';
+    (document.querySelector('#inputHttpTimeout') as HTMLInputElement).value =
+      httpTimeout >= 0 ? String(httpTimeout) : '';
+    (document.querySelector('#inputStreamTimeout') as HTMLInputElement).value =
+      streamTimeout >= 0 ? String(streamTimeout) : '';
     (document.querySelector('#inputMCPTimeout') as HTMLInputElement).value = mcpTimeout >= 0 ? String(mcpTimeout) : '';
-    logInit(`超时设置: HTTP=${httpTimeout>=0?httpTimeout:900}s 流式=${streamTimeout>=0?streamTimeout:'动态'}s MCP=${mcpTimeout>=0?mcpTimeout:60}s`);
+    logInit(
+      `超时设置: HTTP=${httpTimeout >= 0 ? httpTimeout : 900}s 流式=${streamTimeout >= 0 ? streamTimeout : '动态'}s MCP=${mcpTimeout >= 0 ? mcpTimeout : 60}s`,
+    );
 
     // ── 子代理参数 ──
     let subAgentMaxLoops = await db.getSetting<number>('subAgentMaxLoops', 10);
@@ -488,11 +379,15 @@ async function init(): Promise<void> {
     state.set('subAgentMaxLoops', subAgentMaxLoops);
     state.set('subAgentTimeout', subAgentTimeout >= 0 ? subAgentTimeout * 1000 : 300_000);
     (document.querySelector('#inputSubAgentMaxLoops') as HTMLInputElement).value = String(subAgentMaxLoops);
-    (document.querySelector('#inputSubAgentTimeout') as HTMLInputElement).value = subAgentTimeout >= 0 ? String(subAgentTimeout) : '';
+    (document.querySelector('#inputSubAgentTimeout') as HTMLInputElement).value =
+      subAgentTimeout >= 0 ? String(subAgentTimeout) : '';
 
     // ── 子代理权限上限（AI 请求的权限只降不升）──
     {
-      const subAgentMaxPermission = await db.getSetting<'readonly' | 'limited_write' | 'full_write'>('subAgentMaxPermission', 'readonly');
+      const subAgentMaxPermission = await db.getSetting<'readonly' | 'limited_write' | 'full_write'>(
+        'subAgentMaxPermission',
+        'readonly',
+      );
       state.set('subAgentMaxPermission', subAgentMaxPermission);
       const permSelect = document.querySelector('#selectSubAgentPermission') as HTMLSelectElement | null;
       if (permSelect) permSelect.value = subAgentMaxPermission;
@@ -503,47 +398,56 @@ async function init(): Promise<void> {
     state.set('loopWatchdogMs', loopWatchdogMs);
     const watchdogMin = loopWatchdogMs > 0 ? Math.round(loopWatchdogMs / 60_000) : loopWatchdogMs;
     const elWatchdog = document.querySelector('#inputLoopWatchdog') as HTMLInputElement;
-    if (elWatchdog) elWatchdog.value = loopWatchdogMs > 0 ? String(watchdogMin) : (loopWatchdogMs === 0 ? '0' : '');
+    if (elWatchdog) elWatchdog.value = loopWatchdogMs > 0 ? String(watchdogMin) : loopWatchdogMs === 0 ? '0' : '';
 
     // ── Tool Calling 设置（永久开启，不可关闭）──
     state.set('toolCallingEnabled', true);
-    // 全局工具执行模式（统一管理所有工具，不区分工具）
     {
-      // 读取全局模式，默认 confirm
-      let globalMode = await db.getSetting<'auto' | 'confirm'>('globalToolMode', 'confirm');
-      // 兼容旧版：从旧的 toolModes 迁移（如果存在）
-      // 注意：之前用 saveSetting('toolModes', null) 清除旧键，JSON.parse("null") 返回 null
-      // 所以这里必须做 null 防御，否则 Object.keys(null) 会抛出 "Cannot convert undefined or null to object"
-      const savedModes = await db.getSetting<Record<string, 'auto' | 'confirm' | 'disabled'>>('toolModes', {}) ?? {};
-      if (savedModes && Object.keys(savedModes).length > 0) {
-        // 如果旧 toolModes 中所有被管理工具都是 auto，则迁移为 auto；否则 confirm
-        const allAuto = [
-          'run_command', 'write_file', 'create_directory', 'delete_file',
-          'edit_file', 'move_file', 'copy_file',
-          'download_file', 'compress',
-        ].every(t => savedModes[t] === 'auto');
-        globalMode = allAuto ? 'auto' : 'confirm';
-        await db.saveSetting('globalToolMode', globalMode);
-        // 清除旧键：用空对象而非 null，避免 JSON.parse("null") 返回 null 的陷阱
-        await db.saveSetting('toolModes', {});
-      }
+      const globalMode = await db.getSetting<'auto' | 'confirm'>('globalToolMode', 'confirm');
       state.set('globalToolMode', globalMode);
-      // 应用全局模式到所有被管理工具
       initGlobalToolMode(globalMode);
     }
 
-    // ── Plan 自动确认设置 ──
+    // ── 混合记忆检索设置 ──
     {
-      const planAutoConfirm = await db.getSetting<boolean>('planAutoConfirm', false);
-      state.set('planAutoConfirm', planAutoConfirm);
+      const memoryEmbeddingEnabled = await db.getSetting<boolean>('memoryEmbeddingEnabled', false);
+      const memoryEmbeddingModel = await db.getSetting<string>('memoryEmbeddingModel', '');
+      state.set('memoryEmbeddingEnabled', memoryEmbeddingEnabled);
+      state.set('memoryEmbeddingModel', memoryEmbeddingModel);
+      const toggle = document.querySelector('#toggleMemoryEmbedding') as HTMLInputElement | null;
+      if (toggle) toggle.checked = memoryEmbeddingEnabled;
+      const select = document.querySelector('#selectMemoryEmbeddingModel') as HTMLSelectElement | null;
+      if (select && memoryEmbeddingModel) select.value = memoryEmbeddingModel;
     }
 
     // ── MCP 工具注册 ──
     await startAllMCPServers();
     await refreshMCPTools();
 
-
     (document.querySelector('#chatInput') as HTMLElement)?.focus();
+
+    // ── 启动后 5s 异步检查 GitHub 新版本（只提示，不自动安装）──
+    const checkUpdates = await db.getSetting<boolean>('checkUpdates', true);
+    const updateToggle = document.querySelector('#toggleCheckUpdates') as HTMLInputElement | null;
+    if (updateToggle) updateToggle.checked = checkUpdates;
+    if (checkUpdates && _bridge?.checkUpdate) {
+      setTimeout(() => {
+        void (async () => {
+          try {
+            const result = await _bridge.checkUpdate!();
+            if (result.hasUpdate && result.latest) {
+              const ok = await showConfirm(
+                `发现新版本 v${result.latest}（当前 v${result.current}）。是否打开 GitHub Release 页面？`,
+                '发现新版本',
+              );
+              if (ok && result.url) window.metonaDesktop?.openExternal(result.url);
+            }
+          } catch {
+            /* 更新检查失败不影响使用 */
+          }
+        })();
+      }, 5000);
+    }
 
     logSuccess('应用初始化完成');
   } catch (err) {
@@ -564,8 +468,6 @@ async function init(): Promise<void> {
     checkConnection().then(loadModels);
   }
 }
-
-
 
 function bindGlobalEvents(): void {
   document.querySelector('#btnNewChat')?.addEventListener('click', startNewSession);
@@ -590,7 +492,6 @@ function bindGlobalEvents(): void {
   });
 
   // ── 全局错误处理已由 infra-service.ts 的 initGlobalErrorHandler 统一注册 ──
-
 }
 
 init();

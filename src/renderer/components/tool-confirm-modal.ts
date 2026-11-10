@@ -82,7 +82,7 @@ function showNext(): void {
   const args = call.function.arguments || {};
   if (call.function.name === 'read_file' || call.function.name === 'write_file' ||
       call.function.name === 'list_directory' || call.function.name === 'search_files' ||
-      call.function.name === 'create_directory' || call.function.name === 'delete_file') {
+      call.function.name === 'delete_file' || call.function.name === 'file_transfer') {
     // 支持 paths 数组（批量删除）和单个 path
     if (args.paths && Array.isArray(args.paths) && args.paths.length > 0) {
       bodyHtml += `<div class="tool-confirm-row"><span class="tool-confirm-label">路径（${args.paths.length} 项）：</span></div>`;

@@ -3,6 +3,9 @@ release/
 dist/
 out/
 build-resources/
+coverage/
+test-results/
+playwright-report/
 .DS_Store
 Thumbs.db
 *.log

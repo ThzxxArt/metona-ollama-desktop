@@ -3,8 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; media-src 'self' data: blob:; object-src 'none'; base-uri 'none'">
     <meta name="theme-color" content="#FAF7F2">
-    <meta name="description" content="Metona Ollama Desktop - TypeScript + Electron AI 聊天客户端">
+    <meta name="description" content="Metona Ollama - 本地优先的桌面 AI Agent">
     <link rel="icon" href="./assets/icons/llama.ico" type="image/x-icon">
     <title>Metona Ollama</title>
 </head>
@@ -28,7 +29,7 @@
         <div class="header-left">
             <img class="logo" src="./assets/icons/llama.png" alt="logo" />
             <span class="app-title">Metona Ollama</span>
-            <span class="app-version">v0.17.2</span>
+            <span class="app-version" id="appVersion">v0.18.0</span>
             <button class="icon-btn help-btn" id="btnHelp" title="使用帮助">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
@@ -175,23 +176,12 @@
                 </svg>
             </button>
             <textarea class="chat-input" id="chatInput" placeholder="输入消息..." rows="1"></textarea>
-            <label class="think-toggle" id="thinkToggleWrap" title="Think 模式未可用">
-                <input type="checkbox" id="toggleThink" disabled>
-                <span class="think-btn">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M12 2a7 7 0 0 1 7 7c0 2.38-1.19 4.47-3 5.74V17a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1v-2.26C6.19 13.47 5 11.38 5 9a7 7 0 0 1 7-7z"/>
-                        <line x1="9" y1="21" x2="15" y2="21"/>
-                    </svg>
-                </span>
-            </label>
-            <label class="plan-toggle" id="planToggleWrap" title="Plan 模式：先规划后执行">
-                <input type="checkbox" id="togglePlan">
-                <span class="plan-btn">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="9" x2="15" y2="9"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="12" y2="17"/>
-                    </svg>
-                </span>
-            </label>
+            <select class="think-level-select" id="selectThinkLevel" title="Think 档位" disabled>
+                <option value="off">Think 关闭</option>
+                <option value="low">Think low</option>
+                <option value="medium">Think medium</option>
+                <option value="high">Think high</option>
+            </select>
             <button class="send-btn" id="btnSend">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
@@ -302,41 +292,62 @@
                     </select>
                 </div>
                 <p class="text-muted" style="margin-top:4px;font-size:11px;">选择应用界面主题。"跟随系统"会根据操作系统设置自动切换。</p>
+                <label class="switch-label" style="margin-top:8px;">
+                    <input type="checkbox" id="toggleCheckUpdates" checked>
+                    启动时检查 GitHub 新版本（仅提示，不自动安装）
+                </label>
             </div>
             <div class="setting-group">
-                <label class="setting-label">Ollama 服务地址</label>
-                <input class="setting-input" id="inputServerUrl" type="url" placeholder="http://127.0.0.1:11434">
+                <label class="setting-label">Ollama 连接</label>
+                <div class="connection-row">
+                    <select class="setting-input connection-mode" id="selectOllamaMode" aria-label="连接模式">
+                        <option value="local">本地</option>
+                        <option value="remote">远程</option>
+                    </select>
+                    <input class="setting-input connection-url" id="inputServerUrl" type="url" placeholder="http://127.0.0.1:11434">
+                </div>
+                <div id="remoteFields" style="display:none;">
+                    <div class="api-key-row">
+                        <input class="setting-input" id="inputApiKey" type="password" placeholder="API Key（可选，留空保持不变）" autocomplete="off">
+                        <button class="btn btn-sm btn-outline" id="btnToggleApiKey" type="button">显示</button>
+                        <button class="btn btn-sm btn-outline" id="btnClearApiKey" type="button">清除</button>
+                    </div>
+                    <p class="text-muted" style="margin-top:4px;font-size:11px;">仅远程模式需要。Key 由主进程 safeStorage 加密保存，渲染进程与日志均不可见；留空表示保持已保存的 Key。</p>
+                    <p class="text-muted" id="remoteHttpWarning" style="display:none;margin-top:4px;font-size:11px;color:var(--caution);">⚠️ 当前使用 http://，API Key 与对话内容不会加密传输，建议改用 HTTPS。</p>
+                    <div class="connection-kind-row">
+                        <label class="switch-label"><input type="radio" name="remoteKind" id="remoteKindCloud" value="cloud"> Ollama Cloud</label>
+                        <label class="switch-label"><input type="radio" name="remoteKind" id="remoteKindSelf" value="self-hosted"> 自建远程</label>
+                    </div>
+                    <label class="switch-label" id="remoteUnloadWrap" style="margin-top:8px;">
+                        <input type="checkbox" id="toggleRemoteUnload" checked>
+                        新建会话 / 退出时释放远程模型（仅自建远程）
+                    </label>
+                    <p class="text-muted" id="cloudUnloadHint" style="display:none;margin-top:4px;font-size:11px;">Ollama Cloud 模型由服务端管理，不支持本地卸载。</p>
+                </div>
                 <div class="connection-info" id="connInfo">
                     <span class="status-badge" id="connBadge">检测中...</span>
                     <span class="server-version" id="serverVersion"></span>
                 </div>
-                <div class="cors-hint" id="corsHint" style="display:none;">
-                    <p>⚠️ 连接失败，可能是 CORS 问题。请在启动 Ollama 时设置环境变量：</p>
-                    <code>OLLAMA_ORIGINS="*" ollama serve</code>
+                <div style="display:flex;gap:8px;align-items:center;margin-top:8px;">
+                    <button class="btn btn-sm btn-outline" id="btnTestConnection" type="button">测试连接</button>
+                    <span class="text-muted" id="connectionTestResult" style="font-size:11px;"></span>
                 </div>
+                <p class="text-muted" style="margin-top:6px;font-size:11px;">所有 Ollama 请求由主进程代理，无需配置 CORS。远程 <code>http://</code> 地址不会加密传输，请优先使用 HTTPS。</p>
             </div>
             <div class="setting-group">
-                <label class="setting-label" style="margin-top:12px;">温度（Temperature）：<span id="tempValue">0.7</span></label>
-                <input type="range" id="inputTemperature" class="temp-slider" min="0" max="2" step="0.1" value="0.7">
-                <p class="text-muted" style="margin-top:4px;font-size:11px;">低值更精确稳定，高值更有创意多样（0 = 确定性，2 = 最大随机）</p>
+                <label class="setting-label">🧠 Agent 参数</label>
                 <label class="setting-label" style="margin-top:12px;">Agent 最大轮数（maxTurns）</label>
                 <div style="display:flex;gap:8px;align-items:center;">
                     <input class="setting-input" id="inputMaxTurns" type="number" min="1" max="500" step="1" value="85" style="margin-bottom:0;">
                     <span class="text-muted" style="white-space:nowrap;">轮</span>
                 </div>
                 <p class="text-muted" style="margin-top:4px;font-size:11px;">Agent Loop 最大工具调用轮数。默认 85 轮，复杂任务可能需要更多轮次。</p>
-                <label class="setting-label" style="margin-top:12px;">上下文长度（Context Length）</label>
-                <select class="setting-input" id="selectContextLength" style="margin-bottom:0;">
-                    <option value="8192">8K</option>
-                    <option value="16384">16K</option>
-                    <option value="32768">32K</option>
-                    <option value="65536">64K</option>
-                    <option value="131072">128K</option>
-                    <option value="262144">256K</option>
-                    <option value="524288">512K</option>
-                    <option value="1048576">1M</option>
-                </select>
-                <p class="text-muted" style="margin-top:4px;font-size:11px;">发送给模型的最大上下文窗口大小。默认 128K，越大可容纳更长对话但消耗更多显存/内存。</p>
+                <label class="setting-label" style="margin-top:12px;">上下文长度（num_ctx）</label>
+                <div class="ctx-input-row">
+                    <input class="setting-input" id="inputContextLength" type="number" min="1024" max="4194304" step="1024" value="131072" style="margin-bottom:0;">
+                    <span class="text-muted" id="ctxFormatted">≈ 128K</span>
+                </div>
+                <p class="text-muted" style="margin-top:4px;font-size:11px;" id="ctxModelHint">发送给模型的最大上下文窗口。范围 1K–4M，默认 128K；实际发送 min(设置值, 模型上限)。</p>
             </div>
             <div class="setting-group">
                 <label class="setting-label">⏱️ 超时设置（Timeout）</label>
@@ -381,6 +392,14 @@
                     <div class="tool-item"><span>⚙️ 偏好</span><span class="text-muted">语言风格、技术栈偏好</span></div>
                     <div class="tool-item"><span>📏 规则</span><span class="text-muted">编码规范、输出格式要求</span></div>
                 </div>
+                <label class="switch-label" style="margin-top:10px;">
+                    <input type="checkbox" id="toggleMemoryEmbedding">
+                    启用语义检索（关键词 + embedding 余弦相似度）
+                </label>
+                <select class="setting-input" id="selectMemoryEmbeddingModel" style="margin-top:8px;">
+                    <option value="">选择 embedding 模型（如 nomic-embed-text）</option>
+                </select>
+                <p class="text-muted" style="margin-top:4px;font-size:11px;">默认关闭。启用后会调用 /api/embed，无模型或调用失败时自动回退关键词检索；向量缓存于 SQLite memory_embeddings 表。</p>
             </div>
             <div class="setting-group">
                 <label class="setting-label">🤖 子代理默认模型</label>
@@ -471,19 +490,18 @@
         </div>
         <div class="modal-body">
             <div class="help-section"><h4>🚀 快速开始</h4><ol><li>确保 Ollama 已启动（默认 <code>http://127.0.0.1:11434</code>，可在设置中修改）</li><li>顶部模型栏选择一个模型，右侧会显示模型能力徽章（🧠 Think / 👁️ Vision / 🔧 Tools）</li><li>输入消息，按 <kbd>Enter</kbd> 发送，<kbd>Shift+Enter</kbd> 换行</li></ol></div>
-            <div class="help-section"><h4>💬 聊天功能</h4><ul><li><strong>流式回复</strong> — 实时打字效果，随时点 ■ 停止</li><li><strong>Think 推理</strong> — 下方 Think 按钮切换，让模型展示深度思考过程（需模型支持，如 Qwen3）</li><li><strong>上下文长度手动控制</strong> — 设置面板下拉选择（8K–1M 共 8 档），默认 128K。模型栏显示当前配置值，下拉框中每个模型旁显示其自身的上下文长度</li><li><strong>Qwen3 兼容</strong> — 自动保证 system 消息唯一且位于首位，避免 Qwen3 等模型 400 错误</li><li><strong>多模态</strong> — 上传图片或视频（≤10MB），模型需支持 Vision。图片自动压缩，视频 1fps 提取帧序列带时序标注</li><li><strong>文件分析</strong> — 支持 50+ 种文本/代码格式，单文件 ≤500KB，自动剥离注释并按上下文预算智能截断</li><li><strong>AI 回复顶部</strong> — 每条 AI 回复上方展示 📋 系统提示词折叠卡片，可点击查看实际发送给模型的完整上下文</li></ul></div>
-            <div class="help-section"><h4>🔧 Tool Calling（始终开启）</h4><ul><li>所有消息均通过 <strong>Agent Loop 自主调用本地工具</strong>，像一个本地 Agent，无普通聊天模式</li><li><strong>33 个工具</strong>，分为 9 类：<ul><li><strong>文件系统</strong>（14 个）：read_file / write_file / list_directory / search_files / create_directory / delete_file / move_file（跨盘自动回退 copy+delete）/ copy_file / edit_file / tree / download_file / read_multiple_files / compress / diff（unified diff 三种比对模式）</li><li><strong>命令执行</strong>（1 个）：run_command（实时流式输出，支持自动/需确认/禁用三种模式，可配置超时）</li><li><strong>联网搜索</strong>（2 个）：web_search（支持 SearXNG 元搜索引擎 JSON API / 四引擎 HTML 解析，双模式可切换）/ web_fetch（反爬headers+UA自动切换+自动回退浏览器渲染）</li><li><strong>Git</strong>（1 个）：git（17 个子操作，push/pull/clone 内置60-120s超时保护；参数注入防护）</li><li><strong>浏览器控制</strong>（9 个）：browser_open / browser_screenshot / browser_evaluate / browser_extract / browser_click / browser_type / browser_scroll / browser_wait / browser_close</li><li><strong>记忆 & 会话</strong>（5 个）：memory（统一记忆管理，6 个 action）/ session_list / session_read / spawn_task / plan_track</li><li><strong>系统工具</strong>（1 个）：calculator</li></ul></li><li>read_file 支持 binary模式读取/base64解码/字节分页/2000行默认+截断hint自动续读</li><li>write_file 支持 base64写二进制文件/mode(overwrite+append)合并append_file功能/10MB</li><li>edit_file 支持 use_regex 正则替换</li><li>search_files 支持正则表达式搜索（use_regex=true）</li><li>browser_screenshot 支持全页面截图+元素截图</li><li>browser_extract 支持CSS选择器提取特定区域</li><li>browser_wait 等待元素出现或定时等待</li><li>所有写操作工具均支持三档开关：自动/需确认/禁用（浏览器工具始终自动执行）</li><li>危险命令（<code>rm -rf</code>、<code>mkfs</code>、反弹 shell 等）和系统路径（<code>/etc</code>、<code>~/.ssh</code> 等）被自动拦截；<strong>SSRF 防护</strong>：web_fetch / download_file / browser_open 拦截内网与本机地址（localhost / 127.0.0.1 / 192.168.x 等）</li><li>工具调用以<strong>可视化卡片</strong>展示状态（pending → running → success/error），在工作空间🔧工具页签中显示</li><li>默认最大 <strong>85 轮</strong>工具调用循环（设置面板可调）</li><li>独立工具自动<strong>并行执行</strong>，有依赖关系的工具（如 write→read 路径依赖）自动串行执行</li></ul></div>
+            <div class="help-section"><h4>💬 聊天功能</h4><ul><li><strong>流式回复</strong> — 实时打字效果，随时点 ■ 停止</li><li><strong>Think 档位</strong> — 输入区下拉选择 关闭 / low / medium / high（需模型支持，如 Qwen3）</li><li><strong>上下文长度手动输入</strong> — 设置面板填写任意数值（1K–4M），默认 128K；实际发送 min(设置值, 模型上限)</li><li><strong>本地 / 远程 / 云端</strong> — 设置面板选择连接模式；远程支持 API Key（可选），所有请求由主进程代理</li><li><strong>Qwen3 兼容</strong> — 自动保证 system 消息唯一且位于首位，避免 Qwen3 等模型 400 错误</li><li><strong>多模态</strong> — 上传图片或视频（≤10MB），模型需支持 Vision。图片自动压缩，视频 1fps 提取帧序列带时序标注</li><li><strong>文件分析</strong> — 支持 50+ 种文本/代码格式，单文件 ≤500KB，自动剥离注释并按上下文预算智能截断</li><li><strong>AI 回复顶部</strong> — 每条 AI 回复上方展示 📋 系统提示词折叠卡片，可点击查看实际发送给模型的完整上下文</li></ul></div>
+            <div class="help-section"><h4>🔧 Tool Calling（始终开启，18 个内置工具）</h4><ul><li>所有消息均通过 <strong>Agent Loop 自主调用本地工具</strong>，像一个本地 Agent，无普通聊天模式</li><li><strong>文件系统</strong>：read_file（单文件 / paths 批量）/ write_file（自动建父目录）/ list_directory（format=list|tree）/ search_files / edit_file / delete_file / file_transfer（copy|move）/ download_file / compress / diff</li><li><strong>命令执行</strong>：run_command（实时流式输出，支持自动/需确认）</li><li><strong>联网</strong>：web_search（SearXNG / 四引擎）/ web_fetch（自动回退浏览器渲染）</li><li><strong>浏览器</strong>：browser（open / extract / screenshot / click / type / scroll / wait / evaluate / close）</li><li><strong>Git</strong>：git（status/log/diff/add/commit/push 等 17 个子命令）</li><li><strong>记忆 & 会话</strong>：memory（6 个 action）/ session（list|read）/ spawn_task（子代理）</li><li>工具调用以<strong>可视化卡片</strong>展示状态（pending → running → success/error），在工作空间🔧工具页签中显示</li><li>危险命令（<code>rm -rf</code>、<code>mkfs</code>、反弹 shell 等）和系统路径（<code>/etc</code>、<code>~/.ssh</code> 等）被自动拦截；<strong>SSRF 防护</strong>：web_fetch / download_file / browser open 拦截内网与本机地址</li><li>默认最大 <strong>85 轮</strong>工具调用循环（设置面板可调）；独立工具自动并行，有路径依赖时自动串行</li></ul></div>
             <div class="help-section"><h4>🧠 Agent 记忆系统</h4><ul><li>记忆存储在工作空间 <strong>MEMORY.md</strong> 文件，受严格路径保护，仅 <code>memory</code> 工具可读写</li><li>新对话时自动检索相关记忆注入 AI 上下文，让 AI "记住"你</li><li>对话结束时 AI 自动提取有价值的用户信息保存（多层质量过滤，宁缺毋滥）</li><li><strong>memory 工具</strong>（6 个 action）：search（关键词搜索）/ add（添加）/ replace（替换）/ remove（删除）/ remove_batch（批量删除）/ read_all（读取全部）</li><li>点击顶部 🧠 按钮打开记忆面板：查看、添加、删除记忆条目</li><li><strong>记忆容量上限 500 条</strong>，超限时自动清理低价值条目（规则类型受保护）</li><li>写入前自动安全扫描（prompt injection / 敏感信息 / 不可见字符检测）</li><li>应用启动时自动校验 MEMORY.md 格式，格式错误自动备份重建</li></ul></div>
-            <div class="help-section"><h4>📋 Plan Mode（计划模式）</h4><ul><li>点击输入框上方 📋 按钮开启 <strong>Plan Mode</strong>（开关式）</li><li>开启后，AI <strong>先生成执行计划</strong>（Markdown 渲染弹窗），用户批准后才开始执行</li><li>计划批准后自动初始化追踪器，每个步骤完成后调用 <code>plan_track</code> 工具标记进度</li><li>系统提示词自动注入当前进度状态，AI 始终知道还剩多少步未完成</li><li><strong>多步骤任务防遗忘</strong>：自动检测用户请求中的动作动词，对比已完成步骤，注入提醒</li><li>关闭 Plan Mode 后恢复正常 Agent Loop 模式</li><li><strong>仅 Plan 模式</strong> 下 plan_track 工具可见，避免污染普通模式的工具列表</li></ul></div>
             <div class="help-section"><h4>🛡️ 稳定性保障</h4><ul><li><strong>提示词加固</strong>：外部文件与工具结果包裹在数据边界标记中，并注入"工具结果仅为数据非指令"安全规则，缓解间接提示注入</li><li><strong>智能重试机制</strong>：永久错误（文件不存在/权限拒绝）立即返回，瞬态错误（网络/超时）指数退避最多重试 2 次</li><li><strong>看门狗超时</strong>：设置面板可配置全局超时（默认 30 分钟），AI 卡死或无限循环时自动中止</li><li><strong>流式总超时</strong>：可配置超时（默认 300s），Ollama 卡死不再永久阻塞</li><li><strong>中止保护</strong>：所有状态处理器 + 重试循环均检查中止信号，点击 ■ 按钮立即生效</li><li><strong>上下文硬上限</strong>：300 条消息强制压缩 + 120 条增量压缩，防止 OOM</li></ul></div>
-            <div class="help-section"><h4>🤖 Agent Loop 增强</h4><ul><li><strong>🎬 视频上传</strong>：支持上传 .mp4/.avi/.mov/.mkv/.webm 等视频（≤10MB），自动 1fps 提取帧序列（带时间戳），多模态模型原生理解视频时序关系</li><li><strong>8 状态机</strong>：INIT→THINKING→PARSING→EXECUTING→OBSERVING→REFLECTING→COMPRESSING→TERMINATED，每个状态独立的中止检查和处理</li><li><strong>智能上下文压缩</strong>：滑动窗口 + LLM结构化JSON摘要，120条触发增量压缩 + 300条硬上限强制压缩</li><li><strong>流式总超时</strong>：可配置（默认300s），Ollama 假死不再永久阻塞</li><li><strong>HTTP/MCP 超时可配</strong>：设置面板可分别调整 HTTP（默认900s）和 MCP（默认60s）超时</li><li><strong>智能工具调度</strong>：路径依赖检测自动串行化（write→read/create→write），只读工具并行执行</li><li><strong>工具缓存 TTL</strong>：搜索5分钟/网页10分钟/文件30分钟/git 30秒，默认60秒过期，不再永久缓存</li><li><strong>Plan Mode 断点续传</strong>：中止后可恢复未完成的计划，进度自动保存</li><li><strong>跨会话工具上下文</strong>：新对话自动注入上一轮已执行的工具调用及结果（role:tool 消息），AI 不会重复执行已完成的操作</li><li><strong>旧工具结果智能截断</strong>：超过10轮后自动截断到2000字符，优先在JSON边界处截断</li></ul></div>
+            <div class="help-section"><h4>🤖 Agent Loop 增强</h4><ul><li><strong>🎬 视频上传</strong>：支持上传 .mp4/.avi/.mov/.mkv/.webm 等视频（≤10MB），自动 1fps 提取帧序列（带时间戳），多模态模型原生理解视频时序关系</li><li><strong>8 状态机</strong>：INIT→THINKING→PARSING→EXECUTING→OBSERVING→REFLECTING→COMPRESSING→TERMINATED，每个状态独立的中止检查和处理</li><li><strong>智能上下文压缩</strong>：滑动窗口 + LLM结构化JSON摘要，120条触发增量压缩 + 300条硬上限强制压缩</li><li><strong>流式总超时</strong>：可配置（默认300s），Ollama 假死不再永久阻塞</li><li><strong>HTTP/MCP 超时可配</strong>：设置面板可分别调整 HTTP（默认900s）和 MCP（默认60s）超时</li><li><strong>智能工具调度</strong>：路径依赖检测自动串行化（write→read/create→write），只读工具并行执行</li><li><strong>工具缓存 TTL</strong>：搜索5分钟/网页10分钟/文件30分钟/git 30秒，默认60秒过期，不再永久缓存</li><li><strong>跨会话工具上下文</strong>：新对话自动注入上一轮已执行的工具调用及结果（role:tool 消息），AI 不会重复执行已完成的操作</li><li><strong>旧工具结果智能截断</strong>：超过10轮后自动截断到2000字符，优先在JSON边界处截断</li></ul></div>
             <div class="help-section"><h4>🔌 MCP（Model Context Protocol）</h4><ul><li>支持连接外部 MCP Server，动态扩展工具能力</li><li>设置面板可添加/启用/禁用/删除 MCP 服务器</li><li>MCP 工具以 <code>mcp_{server}__{tool}</code> 前缀注册，与内置工具统一调度</li><li>启动时自动连接已启用的 MCP 服务器</li></ul></div>
             <div class="help-section"><h4>🔍 SearXNG 元搜索引擎</h4><ul><li>点击顶部 🔍 按钮打开配置面板，可接入自部署的 SearXNG 实例</li><li><strong>JSON 模式</strong>：调用 SearXNG JSON API，聚合 70+ 引擎结果，结构化解析</li><li><strong>HTML 模式</strong>：获取原始搜索结果页面，交由 AI 自行分析提取信息</li><li>支持认证 Key（HTTP Header Authorization），保护私有实例</li><li>启用后替代内置四引擎方案；关闭即回退，无缝切换</li><li>所有参数（引擎、语言、安全搜索、时间范围等）均可独立配置</li></ul></div>
             <div class="help-section"><h4>📋 自定义文件（SOUL.md / AGENT.md / USER.md）</h4><ul><li>在工作空间目录创建以下文件即可自定义 AI 行为，修改后下一轮对话立即生效</li><li><strong>SOUL.md</strong> — AI 身份、性格、行为准则（<strong>永远不可被压缩</strong>，注入为最高优先级系统提示词）</li><li><strong>AGENT.md</strong> — 工具调用规则、行为约束（工作空间文件优先；不存在时使用应用内置默认版）</li><li><strong>USER.md</strong> — 用户画像：技术栈、偏好、习惯等个人信息，AI 在对话中自动参考（仅工作空间，无内置默认）</li><li><strong>安全保护</strong>：SOUL.md / AGENT.md / USER.md 对所有工具<strong>只读</strong>（防止 AI 被网页提示注入诱导改写自身人格文件），仅用户可手动编辑；MEMORY.md 仅 memory 工具可访问</li><li>可在 AI 回复顶部的 📋 系统提示词卡片中查看实际注入的完整上下文</li><li>删除工作空间中的 SOUL.md / AGENT.md 可恢复内置默认版本；USER.md 无内置版，工作空间不存在则不注入</li></ul></div>
             <div class="help-section"><h4>📊 Token 实时监控</h4><ul><li>点击顶部 📊 按钮打开 Token 监控仪表盘</li><li><strong>全局统计</strong> — 跨会话累计 Token 消耗，柱状图按会话展示趋势</li><li><strong>当前会话</strong> — 实时显示本轮对话的 Token 消耗，按轮次展示明细</li><li>每 2 秒自动刷新数据，支持输入/输出分色显示</li></ul></div>
             <div class="help-section"><h4>🖥️ 布局说明</h4><ul><li><strong>左侧面板</strong> — 执行日志，实时显示应用运行日志（连接、模型加载、工具调用等）</li><li><strong>中间区域</strong> — 聊天消息，顶部 Header + 模型栏，底部输入框</li><li><strong>右侧面板</strong> — 工作空间（常驻显示），包含 3 个页签：<ul><li><strong>💻 命令行 Tab</strong> — 终端界面，实时流式输出，支持长时间运行（无超时），单一终端进程</li><li><strong>🔧 工具 Tab</strong> — 展示本轮对话的工具调用卡片，含状态统计（总数 ✅ 成功 ❌ 失败），AI 执行命令时自动切到此页签</li><li><strong>📁 文件 Tab</strong> — 浏览工作空间目录，点击文件预览内容（带行号），支持上级目录导航</li></ul></li><li>工作空间目录可在设置中修改</li></ul></div>
             <div class="help-section"><h4>🕐 历史记录</h4><ul><li>所有会话自动保存到本地 SQLite</li><li>点击顶部 🕐 按钮查看、搜索、恢复历史会话</li><li>支持导出 JSON / <code>.metona</code> 加密备份</li></ul></div>
-            <div class="help-section"><h4>⚡ 快捷键 & 命令</h4><table class="help-shortcuts"><tr><td><kbd>Enter</kbd></td><td>发送消息</td></tr><tr><td><kbd>Shift + Enter</kbd></td><td>换行</td></tr><tr><td><kbd>Ctrl + Enter</kbd></td><td>发送消息（任何时候）</td></tr><tr><td><kbd>Ctrl + N</kbd></td><td>新建会话</td></tr><tr><td><kbd>Ctrl + K</kbd></td><td>聚焦输入框</td></tr><tr><td><kbd>Ctrl + F</kbd></td><td>对话内搜索</td></tr><tr><td><kbd>Ctrl + L</kbd></td><td>清空当前对话（需确认）</td></tr><tr><td><kbd>Ctrl + P</kbd></td><td>切换 Plan Mode</td></tr><tr><td><kbd>Ctrl + Shift + Backspace</kbd></td><td>中止 Agent</td></tr><tr><td><kbd>Ctrl + M</kbd></td><td>记忆管理</td></tr><tr><td><kbd>Ctrl + H</kbd></td><td>历史记录</td></tr><tr><td><kbd>Ctrl + ,</kbd></td><td>打开设置</td></tr><tr><td><kbd>Ctrl + Shift + L</kbd></td><td>切换日志面板</td></tr><tr><td><kbd>Esc</kbd></td><td>关闭弹窗</td></tr></table><p style="margin-top:8px;font-size:12px;color:var(--text-secondary);">输入框命令（直接输入后发送）：</p><table class="help-shortcuts"><tr><td><code>/retry</code></td><td>重试上一轮回复</td></tr><tr><td><code>/undo</code></td><td>撤销最后一条用户消息及回复</td></tr><tr><td><code>/compress</code></td><td>用 AI 摘要压缩长对话上下文</td></tr></table></div>
+            <div class="help-section"><h4>⚡ 快捷键 & 命令</h4><table class="help-shortcuts"><tr><td><kbd>Enter</kbd></td><td>发送消息</td></tr><tr><td><kbd>Shift + Enter</kbd></td><td>换行</td></tr><tr><td><kbd>Ctrl + Enter</kbd></td><td>发送消息（任何时候）</td></tr><tr><td><kbd>Ctrl + N</kbd></td><td>新建会话</td></tr><tr><td><kbd>Ctrl + K</kbd></td><td>聚焦输入框</td></tr><tr><td><kbd>Ctrl + F</kbd></td><td>对话内搜索</td></tr><tr><td><kbd>Ctrl + L</kbd></td><td>清空当前对话（需确认）</td></tr><tr><td><kbd>Ctrl + Shift + Backspace</kbd></td><td>中止 Agent</td></tr><tr><td><kbd>Ctrl + M</kbd></td><td>记忆管理</td></tr><tr><td><kbd>Ctrl + H</kbd></td><td>历史记录</td></tr><tr><td><kbd>Ctrl + ,</kbd></td><td>打开设置</td></tr><tr><td><kbd>Ctrl + Shift + L</kbd></td><td>切换日志面板</td></tr><tr><td><kbd>Esc</kbd></td><td>关闭弹窗</td></tr></table><p style="margin-top:8px;font-size:12px;color:var(--text-secondary);">输入框命令（直接输入后发送）：</p><table class="help-shortcuts"><tr><td><code>/retry</code></td><td>重试上一轮回复</td></tr><tr><td><code>/undo</code></td><td>撤销最后一条用户消息及回复</td></tr><tr><td><code>/compress</code></td><td>用 AI 摘要压缩长对话上下文</td></tr></table></div>
         </div>
     </div>
 </div>
@@ -492,7 +510,7 @@
 <div class="modal-overlay" id="toolsModal" style="display:none;">
     <div class="modal">
         <div class="modal-header">
-            <h3>🔧 工具面板（32 个 + 1 Plan 专属）</h3>
+            <h3>🔧 工具面板（18 个）</h3>
             <button class="icon-btn" id="btnCloseTools">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
@@ -500,12 +518,12 @@
             </button>
         </div>
         <div class="modal-body">
-            <p class="text-muted" style="font-size:12px;margin-bottom:12px;">AI 始终可在对话中自主调用以下工具（Tool Calling 永久开启）。高风险操作需用户确认。</p>
+            <p class="text-muted" style="font-size:12px;margin-bottom:12px;">AI 始终可在对话中自主调用以下 18 个内置工具（Tool Calling 永久开启）。高风险操作需用户确认。</p>
             <div style="margin-bottom:16px;padding:12px;background:var(--bg-card);border:1px solid var(--border-default);border-radius:8px;">
                 <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
                     <div>
                         <div style="font-weight:600;font-size:14px;">⚙️ 全局工具执行模式</div>
-                        <div style="font-size:11px;color:var(--text-secondary);margin-top:2px;">统一管理所有工具的执行模式，不区分工具</div>
+                        <div style="font-size:11px;color:var(--text-secondary);margin-top:2px;">统一管理所有写操作工具的执行模式</div>
                     </div>
                     <select id="select_global_tool_mode" style="font-size:13px;padding:6px 12px;background:var(--bg-card);color:var(--text-primary);border:1px solid var(--border-default);border-radius:6px;min-width:140px;">
                         <option value="confirm">需确认</option>
@@ -513,147 +531,7 @@
                     </select>
                 </div>
             </div>
-            <div class="tools-grid">
-                <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">📄</span><span class="tool-card-name">read_file</span><span class="tool-card-badge auto">自动</span></div>
-                    <div class="tool-card-desc">读取文件(文本/binary/base64)，2000行默认，截断自动提示续读</div>
-                </div>
-                <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">✏️</span><span class="tool-card-name">write_file</span><span class="tool-card-badge confirm">需确认</span></div>
-                    <div class="tool-card-desc">写入/追加文件，支持base64二进制，最大10MB</div>
-                </div>
-                <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">📁</span><span class="tool-card-name">list_directory</span><span class="tool-card-badge auto">自动</span></div>
-                    <div class="tool-card-desc">列出目录内容(2000条上限)，支持递归/偏移分页/扩展名过滤</div>
-                </div>
-                <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">🔍</span><span class="tool-card-name">search_files</span><span class="tool-card-badge auto">自动</span></div>
-                    <div class="tool-card-desc">按文件名或内容搜索，支持正则表达式</div>
-                </div>
-                <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">📂</span><span class="tool-card-name">create_directory</span><span class="tool-card-badge confirm">需确认</span></div>
-                    <div class="tool-card-desc">创建目录，自动创建父级</div>
-                </div>
-                <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">🗑️</span><span class="tool-card-name">delete_file</span><span class="tool-card-badge confirm">需确认</span></div>
-                    <div class="tool-card-desc">删除文件或目录，返回被删文件数和总大小</div>
-                </div>
-                <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">📦</span><span class="tool-card-name">move_file</span><span class="tool-card-badge confirm">需确认</span></div>
-                    <div class="tool-card-desc">移动或重命名文件/目录</div>
-                </div>
-                <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">📋</span><span class="tool-card-name">copy_file</span><span class="tool-card-badge confirm">需确认</span></div>
-                    <div class="tool-card-desc">复制文件或目录到新位置</div>
-                </div>
-                <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">🌐</span><span class="tool-card-name">web_fetch</span><span class="tool-card-badge auto">自动</span></div>
-                    <div class="tool-card-desc">抓取网页内容，反爬headers+UA切换+自动回退浏览器渲染</div>
-                </div>
-                <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">✂️</span><span class="tool-card-name">edit_file</span><span class="tool-card-badge confirm">需确认</span></div>
-                    <div class="tool-card-desc">查找替换(支持正则use_regex)，全部或单次替换</div>
-                </div>
-                <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">💻</span><span class="tool-card-name">run_command</span><span class="tool-card-badge confirm">需确认</span></div>
-                    <div class="tool-card-desc">执行 shell 命令，支持超时配置</div>
-                </div>
-                <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">🌳</span><span class="tool-card-name">tree</span><span class="tool-card-badge auto">自动</span></div>
-                    <div class="tool-card-desc">以树形结构展示目录内容</div>
-                </div>
-                <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">⬇️</span><span class="tool-card-name">download_file</span><span class="tool-card-badge confirm">需确认</span></div>
-                    <div class="tool-card-desc">从 URL 下载文件到本地</div>
-                </div>
-                <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">📚</span><span class="tool-card-name">read_multiple_files</span><span class="tool-card-badge auto">自动</span></div>
-                    <div class="tool-card-desc">并行读取最多50个文件（默认不截断，可按文件限制字符数）</div>
-                </div>
-                <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">🔖</span><span class="tool-card-name">git</span><span class="tool-card-badge auto">自动</span></div>
-                    <div class="tool-card-desc">Git 全操作（17个子命令：status/log/diff/add/commit/push等）</div>
-                </div>
-                <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">🗜️</span><span class="tool-card-name">compress</span><span class="tool-card-badge confirm">需确认</span></div>
-                    <div class="tool-card-desc">创建或解压 zip/tar.gz 归档</div>
-                </div>
-                <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">🔍</span><span class="tool-card-name">diff</span><span class="tool-card-badge auto">自动</span></div>
-                    <div class="tool-card-desc">文件差异比较，unified diff 格式，支持文件vs文件/内容/git HEAD</div>
-                </div>
-                <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">🔍</span><span class="tool-card-name">web_search</span><span class="tool-card-badge auto">自动</span></div>
-                    <div class="tool-card-desc">SearXNG JSON API / 四引擎并行，默认30条</div>
-                </div>
-                <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">🧠</span><span class="tool-card-name">memory</span><span class="tool-card-badge auto">自动</span></div>
-                    <div class="tool-card-desc">统一记忆管理（6 action）：search 关键词搜索 / add 添加 / replace 子串替换 / remove 子串删除 / remove_batch 批量删除 / read_all 读取全部。MEMORY.md 受路径保护</div>
-                </div>
-                <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">📋</span><span class="tool-card-name">session_list</span><span class="tool-card-badge auto">自动</span></div>
-                    <div class="tool-card-desc">列出历史会话，支持按标题搜索</div>
-                </div>
-                <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">📖</span><span class="tool-card-name">session_read</span><span class="tool-card-badge auto">自动</span></div>
-                    <div class="tool-card-desc">读取历史会话消息内容</div>
-                </div>
-                <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">🤖</span><span class="tool-card-name">spawn_task</span><span class="tool-card-badge auto">自动</span></div>
-                    <div class="tool-card-desc">生成子代理独立执行任务，完成后回传结果</div>
-                </div>
-                <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">🌐</span><span class="tool-card-name">browser_open</span><span class="tool-card-badge auto">自动</span></div>
-                    <div class="tool-card-desc">打开URL，支持等待特定CSS元素出现(SPA页面)</div>
-                </div>
-                <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">📸</span><span class="tool-card-name">browser_screenshot</span><span class="tool-card-badge auto">自动</span></div>
-                    <div class="tool-card-desc">截图(视口/全页面/指定元素)，返回base64 PNG</div>
-                </div>
-                <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">⚡</span><span class="tool-card-name">browser_evaluate</span><span class="tool-card-badge auto">自动</span></div>
-                    <div class="tool-card-desc">在浏览器页面中执行 JavaScript</div>
-                </div>
-                <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">📰</span><span class="tool-card-name">browser_extract</span><span class="tool-card-badge auto">自动</span></div>
-                    <div class="tool-card-desc">提取页面文本+链接，支持CSS选择器指定区域</div>
-                </div>
-                <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">👆</span><span class="tool-card-name">browser_click</span><span class="tool-card-badge auto">自动</span></div>
-                    <div class="tool-card-desc">点击元素，支持等待出现+自动滚动到视图</div>
-                </div>
-                <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">⌨️</span><span class="tool-card-name">browser_type</span><span class="tool-card-badge auto">自动</span></div>
-                    <div class="tool-card-desc">输入文本，支持追加模式(不先清空)+自动提交表单</div>
-                </div>
-                <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">↕️</span><span class="tool-card-name">browser_scroll</span><span class="tool-card-badge auto">自动</span></div>
-                    <div class="tool-card-desc">滚动页面(上/下/顶/底)或滚动到指定元素</div>
-                </div>
-                <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">⏳</span><span class="tool-card-name">browser_wait</span><span class="tool-card-badge auto">自动</span></div>
-                    <div class="tool-card-desc">等待指定元素出现或固定时间延迟</div>
-                </div>
-                <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">❌</span><span class="tool-card-name">browser_close</span><span class="tool-card-badge auto">自动</span></div>
-                    <div class="tool-card-desc">关闭 Agent 浏览器并释放资源</div>
-                </div>
-                <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">🔢</span><span class="tool-card-name">calculator</span><span class="tool-card-badge auto">自动</span></div>
-                    <div class="tool-card-desc">安全数学计算（+ - * / ** % ()，递归下降解析器）</div>
-                </div>
-                <div class="tool-card">
-                    <div class="tool-card-header"><span class="tool-card-icon">📋</span><span class="tool-card-name">plan_track</span><span class="tool-card-badge confirm" id="badge_plan_track">需确认</span></div>
-                    <div class="tool-card-desc">Plan 模式专属：追踪执行进度，标记/查看步骤完成状态</div>
-                    <div style="margin-top:6px;display:flex;align-items:center;gap:8px;">
-                        <label style="margin:0;font-size:11px;color:var(--text-secondary);">计划确认：</label>
-                        <select id="select_plan_confirm" style="font-size:11px;padding:2px 6px;background:var(--bg-card);color:var(--text-primary);border:1px solid var(--border-default);border-radius:4px;">
-                            <option value="confirm">需确认</option>
-                            <option value="auto">自动确认</option>
-                        </select>
-                    </div>
-                </div>
-            </div>
+            <div class="tools-grid" id="toolsGrid"></div>
         </div>
     </div>
 </div>

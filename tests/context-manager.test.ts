@@ -71,7 +71,11 @@ describe('scoreMessageImportance', () => {
   });
 
   it('工具调用消息加分', () => {
-    const m: OllamaMessage = { role: 'assistant', content: '', tool_calls: [{ type: 'function', function: { name: 'read_file', arguments: {} } }] };
+    const m: OllamaMessage = {
+      role: 'assistant',
+      content: '',
+      tool_calls: [{ type: 'function', function: { name: 'read_file', arguments: {} } }],
+    };
     const base = scoreMessageImportance({ role: 'assistant', content: 'hello' });
     expect(scoreMessageImportance(m)).toBeGreaterThan(base);
   });
@@ -132,12 +136,27 @@ describe('chooseCompressionStrategy', () => {
   });
 
   it('critical 压力用 llm', () => {
-    const d = chooseCompressionStrategy([{ role: 'user', content: 'x' }, { role: 'assistant', content: 'y' }, { role: 'user', content: 'z' }], numCtx, 'critical');
+    const d = chooseCompressionStrategy(
+      [
+        { role: 'user', content: 'x' },
+        { role: 'assistant', content: 'y' },
+        { role: 'user', content: 'z' },
+      ],
+      numCtx,
+      'critical',
+    );
     expect(d.strategy).toBe('llm');
   });
 
   it('中等压力用 medium', () => {
-    const d = chooseCompressionStrategy([{ role: 'user', content: 'x' }, { role: 'assistant', content: 'y' }], numCtx, 'medium');
+    const d = chooseCompressionStrategy(
+      [
+        { role: 'user', content: 'x' },
+        { role: 'assistant', content: 'y' },
+      ],
+      numCtx,
+      'medium',
+    );
     expect(d.strategy).toBe('medium');
   });
 });

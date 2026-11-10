@@ -286,7 +286,7 @@ export function scoreMessageImportance(msg: OllamaMessage): number {
   // R20: 工具结果类型感知 — 不同工具结果的价值不同
   if (msg.role === 'tool' && msg.tool_name) {
     // 写类工具结果：高价值（记录了操作结果）
-    if (/write_file|edit_file|delete_file|create_directory|move_file|copy_file/.test(msg.tool_name)) {
+    if (/write_file|edit_file|delete_file|file_transfer/.test(msg.tool_name)) {
       score += 2;
     }
     // 搜索类工具结果：中等价值
@@ -687,7 +687,19 @@ export async function compressWithLLM(
         }],
         stream: true,
         think: false,
-        options: { num_ctx: 8192, temperature: 0.3 }
+        format: {
+          type: 'object',
+          properties: {
+            topics: { type: 'array', items: { type: 'string' } },
+            decisions: { type: 'array', items: { type: 'string' } },
+            pendingTasks: { type: 'array', items: { type: 'string' } },
+            constraints: { type: 'array', items: { type: 'string' } },
+            knowledge: { type: 'array', items: { type: 'string' } },
+            toolResults: { type: 'array', items: { type: 'string' } },
+          },
+          required: ['topics', 'decisions', 'pendingTasks', 'constraints', 'knowledge', 'toolResults'],
+        },
+        options: { num_ctx: 8192 }
       },
       (chunk: OllamaStreamChunk) => {
         if (chunk.message?.content) {

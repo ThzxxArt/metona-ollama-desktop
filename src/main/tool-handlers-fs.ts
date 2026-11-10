@@ -644,12 +644,12 @@ export async function handleTree(params: { path: string; max_depth?: number; inc
 
 export async function handleReadMultipleFiles(params: { paths: string[]; max_chars_per_file?: number }): Promise<ToolResult> {
   try {
-    // URL 检测：read_multiple_files 仅支持本地文件，URL 请使用 web_fetch
+    // URL 检测：read_file.paths 仅支持本地文件，URL 请使用 web_fetch
     const urlPaths = (params.paths || []).filter(p => isUrl(p));
     if (urlPaths.length > 0) {
       return {
         success: false,
-        error: `read_multiple_files 仅支持本地文件路径，不支持 URL。以下路径是 URL，请改用 web_fetch 工具逐个抓取：\n${urlPaths.join('\n')}`
+        error: `read_file.paths 仅支持本地文件路径，不支持 URL。以下路径是 URL，请改用 web_fetch 工具逐个抓取：\n${urlPaths.join('\n')}`
       };
     }
     const maxChars = params.max_chars_per_file || 0; // 0 = 不截断
@@ -692,7 +692,7 @@ export async function handleMoveFile(params: { source: string; destination: stri
     const destCheck = checkPathAllowed(dest, 'write');
     if (!destCheck.ok) return { success: false, error: destCheck.reason };
 
-    sendLog('info', `📦 move_file`, `${src} → ${dest}`);
+    sendLog('info', `📦 file_transfer(move)`, `${src} → ${dest}`);
     try {
       await fs.rename(src, dest);
     } catch (renameErr) {
@@ -709,15 +709,15 @@ export async function handleMoveFile(params: { source: string; destination: stri
           await fs.copyFile(src, dest);
           await fs.unlink(src);
         }
-        sendLog('info', `📦 move_file 跨盘回退`, `rename 失败(${code})，已改用 copy+delete`);
+        sendLog('info', `📦 file_transfer(move) 跨盘回退`, `rename 失败(${code})，已改用 copy+delete`);
       } else {
         throw renameErr;
       }
     }
-    sendLog('success', `📦 move_file 完成`, dest);
+    sendLog('success', `📦 file_transfer(move) 完成`, dest);
     return { success: true, source: src, destination: dest };
   } catch (err) {
-    sendLog('error', `📦 move_file 失败`, (err as Error).message);
+    sendLog('error', `📦 file_transfer(move) 失败`, (err as Error).message);
     return { success: false, error: (err as Error).message };
   }
 }
@@ -732,7 +732,7 @@ export async function handleCopyFile(params: { source: string; destination: stri
     if (!destCheck.ok) return { success: false, error: destCheck.reason };
 
     const stat = await fs.stat(src);
-    sendLog('info', `📋 copy_file`, `${src} → ${dest}${stat.isDirectory() ? ' (目录)' : ''}`);
+    sendLog('info', `📋 file_transfer(copy)`, `${src} → ${dest}${stat.isDirectory() ? ' (目录)' : ''}`);
     if (stat.isDirectory()) {
       await fs.cp(src, dest, { recursive: params.recursive !== false });
     } else {
@@ -740,10 +740,10 @@ export async function handleCopyFile(params: { source: string; destination: stri
       await fs.mkdir(destDir, { recursive: true });
       await fs.copyFile(src, dest);
     }
-    sendLog('success', `📋 copy_file 完成`, dest);
+    sendLog('success', `📋 file_transfer(copy) 完成`, dest);
     return { success: true, source: src, destination: dest, isDirectory: stat.isDirectory() };
   } catch (err) {
-    sendLog('error', `📋 copy_file 失败`, (err as Error).message);
+    sendLog('error', `📋 file_transfer(copy) 失败`, (err as Error).message);
     return { success: false, error: (err as Error).message };
   }
 }

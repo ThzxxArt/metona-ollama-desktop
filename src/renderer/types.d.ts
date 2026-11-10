@@ -12,21 +12,19 @@ export interface OllamaMessage {
   compressed?: boolean;
   /** 标记此消息为临时性消息（预算警告等），上下文裁剪时优先丢弃 */
   ephemeral?: boolean;
-  /** 标记此消息为 Plan Mode 约束消息（首轮禁止工具调用），批准后据此精确清理 */
-  planConstraint?: boolean;
 }
 
 export interface OllamaChatParams {
   model: string;
   messages: OllamaMessage[];
   stream?: boolean;
-  think?: boolean;
+  think?: boolean | 'low' | 'medium' | 'high';
   system?: string;
   tools?: ToolDefinition[];
   keep_alive?: number | string;
+  format?: unknown;
   options?: {
     num_ctx?: number;
-    temperature?: number;
     [key: string]: unknown;
   };
 }
@@ -41,8 +39,10 @@ export interface OllamaStreamChunk {
     tool_calls?: ToolCall[];
   };
   done?: boolean;
+  done_reason?: string;
   eval_count?: number;
   prompt_eval_count?: number;
+  prompt_eval_cached_count?: number;
   total_duration?: number;
 }
 
@@ -51,6 +51,8 @@ export interface OllamaModelInfo {
   size?: number;
   digest?: string;
   modified_at?: string;
+  remote_model?: string;
+  remote_host?: string;
 }
 
 export interface OllamaModelDetail {
@@ -79,6 +81,7 @@ export interface OllamaPsResponse {
   models?: Array<{
     name: string;
     size_vram?: number;
+    context_length?: number;
     [key: string]: unknown;
   }>;
 }
@@ -110,6 +113,7 @@ export interface ChatMessage {
   think?: string;
   eval_count?: number;
   prompt_eval_count?: number;
+  prompt_eval_cached_count?: number;
   total_duration?: number;
   images?: string[];
   files?: ChatFile[];
@@ -154,13 +158,17 @@ export interface WorkspaceDirResult {
   error?: string;
 }
 
+import type { OllamaBridgeAPI } from '../shared/contracts/ollama.js';
+
 export interface MetonaDesktopAPI {
   isDesktop: boolean;
   info: () => Promise<AppInfo>;
+  /** 检查 GitHub 最新 Release（只提示，不自动安装） */
+  checkUpdate: () => Promise<{ hasUpdate: boolean; current?: string; latest?: string; url?: string; error?: string }>;
   /** 读取应用内置资源（SOUL.md / AGENT.md），basename 防路径穿越 */
   readAppResource: (name: string) => Promise<{ success: boolean; content?: string; error?: string }>;
-  /** 更新 Ollama 服务地址的 CORS 允许清单 */
-  setOllamaOrigin: (url: string) => Promise<{ success: boolean }>;
+  /** Ollama 主进程代理（连接 / 认证 / 流式 / 卸载） */
+  ollama: OllamaBridgeAPI;
   sys: {
     homeDir: string;
     tmpDir: string;
@@ -273,7 +281,6 @@ export type StateKey =
   | 'numCtx'
   | 'historyPage'
   | 'historySearchQuery'
-  | 'temperature'
   | 'thinkEnabled'
   | 'toolCallingEnabled'
   | 'runCommandMode'
@@ -289,12 +296,9 @@ export type StateKey =
   | 'subAgentMaxLoops'
   | 'subAgentTimeout'
   | 'subAgentModel'
-  | 'agentMode'
   | 'loopWatchdogMs'
-  | '_planTracker'
-  | '_planResumeData'
   | 'globalToolMode'
-  | 'planAutoConfirm';
+  | 'connection';
 
 // ═══════════════════════════════════════════════════════════
 // Tool Calling 类型
@@ -394,18 +398,16 @@ export interface LoopContext {
   loopEvalCount: number;
   /** 本轮 prompt_eval tokens */
   loopPromptEvalCount: number;
+  /** 本轮缓存命中 tokens */
+  loopCachedCount?: number;
+  /** 本轮停止原因（stop / length / ...） */
+  doneReason?: string;
   /** 本轮推理时间 */
   loopInferenceNs: number;
   /** 上一轮成功工具调用的缓存键（用于去重） */
   prevLoopSuccessKeys: string[];
   /** 上一轮工具调用（用于 onNewIteration） */
   prevToolCalls: ToolCall[];
-  /** Agent 模式：auto（直接执行）| plan（先规划后执行） */
-  mode: AgentMode;
-  /** Plan 模式下等待用户确认的 Promise resolve */
-  planApproved?: boolean;
-  /** Plan Mode 重试计数（防止无限循环） */
-  planRetries: number;
   /** 循环开始时间 */
   startTime: number;
   /** 上一轮独立 stats（供 onNewIteration / makeStats 使用，避免累计值导致重复计算） */
@@ -419,9 +421,6 @@ export interface LoopContext {
   /** 上下文压缩标记 — 防止同一轮重复触发压缩 */
   compressedThisCycle: boolean;
 }
-
-/** Agent 运行模式 */
-export type AgentMode = 'auto' | 'plan';
 
 /** System Prompt 分区（支持 LLM Prefix Caching） */
 export interface SystemPromptZones {
@@ -581,6 +580,9 @@ export interface DBAPI {
   saveToolAudit(audit: unknown): Promise<{ success: boolean; id?: string; error?: string }>;
   getToolAudits(sessionId: string): Promise<{ success: boolean; audits: unknown[]; error?: string }>;
   getAllToolAudits(limit?: number): Promise<{ success: boolean; audits: unknown[]; error?: string }>;
+  getMemoryEmbeddings(model: string): Promise<Array<{ entry_id: string; vector: number[] }>>;
+  saveMemoryEmbedding(entryId: string, model: string, vector: number[]): Promise<{ success: boolean; error?: string }>;
+  clearMemoryEmbeddings(): Promise<{ success: boolean; error?: string }>;
 }
 
 // ── Window global 声明 ──

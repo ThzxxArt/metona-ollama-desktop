@@ -24,7 +24,7 @@ export const KEYBINDS: Keybind[] = [
   { keys: 'Ctrl+L', description: '清空当前对话', category: 'chat' },
   { keys: 'Ctrl+F', description: '对话内搜索', category: 'chat' },
   { keys: 'Ctrl+Shift+C', description: '复制最后一条 AI 回复', category: 'chat' },
-  { keys: 'Ctrl+P', description: '切换 Plan Mode', category: 'agent' },
+  { keys: 'Ctrl+,', description: '打开设置', category: 'system' },
   { keys: 'Ctrl+Shift+Backspace', description: '中止 Agent', category: 'agent' },
   { keys: 'Ctrl+M', description: '打开记忆面板', category: 'navigation' },
   { keys: 'Ctrl+H', description: '打开历史记录', category: 'navigation' },
@@ -79,16 +79,6 @@ function abortAgent(): void {
     logInfo('快捷键中止 Agent');
   } else {
     showToast('当前没有正在运行的 Agent', 'info');
-  }
-}
-
-/** 切换 Plan Mode */
-function togglePlanMode(): void {
-  const toggle = document.getElementById('togglePlan') as HTMLInputElement | null;
-  if (toggle) {
-    toggle.checked = !toggle.checked;
-    toggle.dispatchEvent(new Event('change', { bubbles: true }));
-    showToast(toggle.checked ? 'Plan Mode 已开启' : 'Plan Mode 已关闭', 'info');
   }
 }
 
@@ -197,11 +187,6 @@ export function initKeybindManager(): void {
       case 'f':
         e.preventDefault();
         document.getElementById('btnSearch')?.click();
-        break;
-
-      case 'p':
-        e.preventDefault();
-        togglePlanMode();
         break;
 
       case 'm':

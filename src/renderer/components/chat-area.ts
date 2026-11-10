@@ -278,8 +278,9 @@ export function appendMessageDOM(msg: ChatMessage, index: number): void {
       const names: Record<string, string> = {
         read_file: 'read_file', write_file: 'write_file', list_directory: 'list_directory',
         search_files: 'search_files', run_command: 'run_command', web_fetch: 'web_fetch',
-        web_search: 'web_search', git: 'git', browser_open: 'browser_open',
-        memory_search: 'memory_search', memory_add: 'memory_add', spawn_task: 'spawn_task',
+        web_search: 'web_search', git: 'git', browser: 'browser',
+        memory: 'memory', session: 'session', spawn_task: 'spawn_task',
+        file_transfer: 'file_transfer', diff: 'diff', compress: 'compress',
       };
       return names[t.name] || t.name;
     }).slice(0, 5).join(', ') + (tcCount > 5 ? ` +${tcCount - 5}` : '');
@@ -824,6 +825,45 @@ function addMessageActions(): void {
       }
     });
     actionBar.appendChild(copyBtn);
+
+    // 朗读按钮（仅 AI 消息，Web Speech API）
+    if (msg.classList.contains('assistant') && 'speechSynthesis' in window) {
+      const ttsBtn = document.createElement('button');
+      ttsBtn.className = 'msg-action-btn msg-tts-btn';
+      ttsBtn.textContent = '🔊';
+      ttsBtn.title = '朗读回复';
+      ttsBtn.style.cssText = 'padding:2px 6px;font-size:12px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:4px;cursor:pointer;';
+      let speaking = false;
+      const reset = (): void => { speaking = false; ttsBtn.textContent = '🔊'; ttsBtn.title = '朗读回复'; };
+      ttsBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        if (speaking) {
+          window.speechSynthesis.cancel();
+          reset();
+          return;
+        }
+        const contentEl = msg.querySelector('.msg-content');
+        const raw = contentEl ? contentEl.textContent || '' : '';
+        // 朗读前清理代码块、URL 与多余空白
+        const text = raw
+          .replace(/```[\s\S]*?```/g, '（代码块）')
+          .replace(/https?:\/\/\S+/g, '链接')
+          .replace(/\s+/g, ' ')
+          .trim();
+        if (!text) return;
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(text.slice(0, 8000));
+        utterance.lang = 'zh-CN';
+        utterance.rate = 1;
+        utterance.onend = reset;
+        utterance.onerror = reset;
+        speaking = true;
+        ttsBtn.textContent = '⏹';
+        ttsBtn.title = '停止朗读';
+        window.speechSynthesis.speak(utterance);
+      });
+      actionBar.appendChild(ttsBtn);
+    }
 
     msg.addEventListener('mouseenter', () => { actionBar.style.opacity = '1'; });
     msg.addEventListener('mouseleave', () => { actionBar.style.opacity = '0'; });

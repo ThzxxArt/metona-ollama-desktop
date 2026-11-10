@@ -1,579 +1,308 @@
-﻿<p align="center">
-  <img src="assets/icons/llama.png" alt="Metona Ollama Desktop" width="128">
-</p>
+﻿<div align="center">
 
-<h1 align="center">Metona Ollama Desktop</h1>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/banner-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="docs/assets/banner-light.svg">
+  <img alt="Metona Ollama — 本地优先的桌面 AI Agent" src="docs/assets/banner-light.svg" width="100%">
+</picture>
 
-<p align="center">
-  <strong>🤖 本地 AI 桌面客户端 · Local AI Desktop Client</strong>
-</p>
+# Metona Ollama Desktop
 
-<p align="center">
-  <a href="#-中文"><img src="https://img.shields.io/badge/🇨🇳-中文-E8734A?style=flat-square" alt="中文"></a>
-  <a href="#-english"><img src="https://img.shields.io/badge/🇬🇧-English-47848F?style=flat-square" alt="English"></a>
-</p>
+**本地优先的桌面 AI Agent：本地 / 远程 / Ollama Cloud 三种连接，18 个内置工具，数据留在自己手里。**
 
-<p align="center">
-  <a href="https://github.com/ThzxxArt/metona-ollama-desktop/actions/workflows/ci.yml"><img src="https://github.com/ThzxxArt/metona-ollama-desktop/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <img src="https://img.shields.io/badge/version-v0.17.2-E8734A?style=flat-square" alt="version">
-  <img src="https://img.shields.io/badge/electron-33+-47848F?style=flat-square&logo=electron" alt="electron">
-  <img src="https://img.shields.io/badge/typescript-5.7+-3178C6?style=flat-square&logo=typescript" alt="typescript">
-  <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="license">
-  <img src="https://img.shields.io/badge/platform-Windows%20x64-blue?style=flat-square" alt="platform">
-</p>
+[简体中文](README.md) · [English](README.en.md)
 
-<p align="center">
-  <em>所有 AI 推理在本地完成，数据不离开本机。</em><br>
-  <em>All AI inference runs locally — data never leaves your machine.</em>
-</p>
+[![Release](https://img.shields.io/github/v/release/ThzxxArt/metona-ollama-desktop?style=flat-square&color=E8734A)](https://github.com/ThzxxArt/metona-ollama-desktop/releases/latest)
+[![CI](https://img.shields.io/github/actions/workflow/status/ThzxxArt/metona-ollama-desktop/ci.yml?style=flat-square&label=CI)](https://github.com/ThzxxArt/metona-ollama-desktop/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/ThzxxArt/metona-ollama-desktop?style=flat-square&color=2E7D32)](LICENSE)
+[![Electron](https://img.shields.io/badge/Electron-45-47848F?style=flat-square&logo=electron&logoColor=white)](https://www.electronjs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Ollama](https://img.shields.io/badge/Ollama-0.40%2B-000000?style=flat-square)](https://ollama.com/)
+[![Platform](https://img.shields.io/badge/Windows%20%7C%20Linux%20%7C%20macOS-3C3C3C?style=flat-square)](#下载安装)
+[![Downloads](https://img.shields.io/github/downloads/ThzxxArt/metona-ollama-desktop/total?style=flat-square&color=E8734A)](https://github.com/ThzxxArt/metona-ollama-desktop/releases)
+[![Stars](https://img.shields.io/github/stars/ThzxxArt/metona-ollama-desktop?style=flat-square&color=E8734A)](https://github.com/ThzxxArt/metona-ollama-desktop/stargazers)
+
+</div>
 
 ---
 
-# 🇨🇳 中文
+## 为什么选择 Metona
 
-## ✨ 特性
+| 🏠 本地优先 | 🔐 Key 不出主进程 | 🧰 18 个内置工具 | 🧠 长期记忆 |
+|---|---|---|---|
+| 默认连接 `127.0.0.1:11434`，不登录、不上传会话 | 远程 API Key 由 `safeStorage` 加密，渲染进程只能看到“是否已配置” | 文件、命令、Git、搜索、浏览器、子代理，覆盖日常开发任务 | 工作空间 `MEMORY.md` + 可选 embedding 语义检索 |
+| 离线也能用，模型和聊天记录都在本机 | 日志、SQLite、`.metona` 备份均不写入 Key | 工具面板与实际注册表同源，不再出现“面板 33 个、实际 18 个” | 关键词 / IDF + `/api/embed` 余弦相似度混合排序 |
 
-| | 功能 | 说明 |
-|:---:|:---|:---|
-| 🤖 | **ReAct Agent Loop** | 始终开启的唯一对话模式。8 状态机（INIT→THINKING→PARSING→EXECUTING→OBSERVING→REFLECTING→COMPRESSING→TERMINATED），最大 85 轮（可配置），智能重试（永久错误立即返回、瞬态错误指数退避），工具去重，智能路径依赖串行化，看门狗超时保护 |
-| 🛡️ | **提示词加固** | 参考数据标记（<<<REFERENCE_DATA_START>>>）+ 工具结果仅为数据非指令的安全规则注入 |
-| 📋 | **Plan Mode** | 开关切换，AI 首先生成执行计划（Markdown 渲染确认弹窗），批准后按步骤追踪执行，plan_track 工具标记完成状态，**支持断点续传**（中止后可恢复未完成计划） |
-| 🔧 | **33 个内置工具** | 文件系统（14个，含 diff） · 命令执行 · 联网搜索 · 浏览器控制（9个） · Git · 记忆 · 会话 · 子代理 · 系统工具 · Plan Mode 追踪 |
-| 🧠 | **智能记忆系统** | 三类记忆（fact / preference / rule），存储于工作空间 MEMORY.md 文件，受路径保护仅 memory 工具可访问，写入前安全扫描，容量 500 条，对话结束自动提取，严格格式校验，访问统计随条目持久化（TTL 衰减保护） |
-| 📋 | **自定义文件** | SOUL.md（人格，不可压缩）+ AGENT.md（行为准则，内置 fallback）+ USER.md（用户画像，仅工作空间读取，不存在则不注入） |
-| 🌐 | **MCP 协议扩展** | JSON-RPC 2.0 over stdio，动态工具发现，Shadowing 防护 |
-| 🔍 | **联网搜索（双模式）** | SearXNG 元搜索引擎 JSON API（70+引擎聚合）/ 四引擎 HTML 解析（Bing+百度+搜狗+360），双模式可切换；web_fetch 支持反爬+UA切换+浏览器回退 |
-| 🌏 | **浏览器控制** | 打开网页 · 截图 · 执行 JS · 提取内容 · 点击 · 输入 · 滚动 · 关闭 |
-| 🖥️ | **工作空间面板** | 终端（增量流式输出）+ 文件浏览器，命令安全检查 |
-| 🔢 | **上下文长度手动控制** | 设置面板下拉选择（8K–1M 共 8 档），默认 128K，模型栏显示当前配置值，下拉框中显示每个模型自身的上下文长度 |
-| 🗜️ | **智能上下文管理** | 滑动窗口 + Token 自动校准 + 消息重要性评分 + LLM 结构化 JSON 压缩，智能触发（120 条增量压缩 + 300 条硬上限） |
-| ⏱️ | **智能超时保护** | Agent Loop 看门狗（可配，默认 30min）+ 流式总超时（可配，默认 300s）+ 工具 HTTP/MCP 超时可配 |
-| 🪝 | **Hook 系统** | 4 阶段生命周期钩子（pre_tool / post_tool / post_iteration / pre_completion），内置安全检查（SecurityCheck）与文件写入去重（FileWriteDedup） |
-| 👥 | **子代理委派** | spawn_task 工具，独立上下文 + 超时保护；权限分级（readonly / limited_write / full_write）且**只降不升**（AI 请求的权限封顶于用户设置），写类工具与主 Agent 共用确认管线，路径沙箱覆盖全部文件类工具 |
-| 📈 | **Token 仪表盘** | 全局 + 会话统计，消耗趋势柱状图，2 秒刷新，输入/输出分色 |
-| 📋 | **系统提示词卡片** | 每条 AI 回复顶部折叠卡片，点击查看实际发送给模型的完整上下文 |
-| 🎨 | **暖色调 UI** | 奶白 `#FAF7F2` + 珊瑚橙 `#E8734A`，长时间使用不疲劳，流式渲染优化 |
-| 🔔 | **系统托盘** | 原生托盘集成 |
-| 🔐 | **备份加密** | 会话备份文件 AES-256-GCM 编码（密钥内置于应用内，用于防误读与基本混淆，不构成针对攻击者的安全边界，敏感数据请自行额外加密） |
-| 🧪 | **可观测性** | 执行轨迹缓冲批量写入 SQLite + Agent Metrics 仪表盘（JSON / Prometheus 文本双格式导出） |
+## 功能亮点
 
-## 🔧 工具清单
+- **三种连接模式**：本地 Ollama、自建远程 Ollama、Ollama Cloud，一个下拉框切换。
+- **可选 API Key**：远程模式可填，留空表示保持已保存的 Key；所有 Ollama 接口按需携带 `Authorization: Bearer`。
+- **主进程代理**：渲染进程不再直接 `fetch` Ollama，CORS 白名单已删除，`sandbox: true` + CSP 生效。
+- **18 个内置工具**：33 → 18，合并重复能力，减少模型选择噪声与 schema token。
+- **Plan Mode 已移除**：不再有 `plan_track`、计划确认弹窗、`Ctrl+P` 或隐藏分支；Agent Loop 保持 8 状态机。
+- **上下文长度手动输入**：默认 128K，范围 1K–4M，实际发送 `min(设置值, 模型上限)`。
+- **远程模型卸载**：自建远程默认在新建会话/退出时释放；Ollama Cloud 自动跳过；支持手动“释放显存”。
+- **Ollama 0.40 能力**：`done_reason` 截断提示、`prompt_eval_cached_count` 缓存命中、云模型徽章、Think 档位、结构化输出。
+- **混合记忆检索**：关键词/IDF + embedding 余弦相似度，缓存于 `memory_embeddings` 表，失败自动回退关键词。
+- **`.metona` v3 备份**：可选密码，PBKDF2 + AES-256-GCM；旧版 v1/v2 备份不再支持导入。
+- **消息朗读**：Web Speech API 本地朗读，预留 Ollama speech 适配。
+- **更新检查**：启动后异步检查 GitHub Release，只提示，不静默安装。
 
-<details>
-<summary><strong>📁 文件系统（14 个）</strong></summary>
+> [!WARNING]
+> **0.18.0 是破坏性版本**：不读取 v0.17.2 的 `metona.db`，不导入旧 `.metona` 备份，不兼容旧设置键与旧工具名。升级前请自行备份原始数据库与会话；升级后需要重新配置连接。
 
-| 工具 | 功能 |
-|------|------|
-| `read_file` | 读取文件（文本/binary，2000行默认） |
-| `write_file` | 写入/追加文件（支持base64二进制） |
-| `list_directory` | 列出目录内容 |
-| `search_files` | 搜索文件（正则/通配符） |
-| `create_directory` | 创建目录 |
-| `delete_file` | 删除文件/目录（返回大小） |
-| `move_file` | 移动/重命名文件（跨盘自动回退 copy+delete） |
-| `copy_file` | 复制文件 |
-| `edit_file` | 编辑文件（支持正则替换） |
-| `tree` | 目录树结构（默认5层深度） |
-| `download_file` | 下载文件 |
-| `read_multiple_files` | 批量读取（默认不截断，可按文件限制字符数） |
-| `compress` | 压缩文件/目录 |
-| `diff` | 文件差异比对（file_vs_file / file_vs_content / file_vs_git_head 三种模式，unified diff 输出） |
+## 界面预览
 
-</details>
+> 以下为界面示意图（SVG），实际 UI 以运行版本为准。
 
-<details>
-<summary><strong>⚡ 命令执行（1 个）</strong></summary>
+<div align="center">
 
-| 工具 | 功能 |
-|------|------|
-| `run_command` | 执行 shell 命令，实时流式输出，支持自动/需确认/禁用三种模式 |
-
-</details>
-
-<details>
-<summary><strong>🔍 联网搜索（2 个）</strong></summary>
-
-| 工具 | 功能 |
-|------|------|
-| `web_search` | SearXNG JSON API / 四引擎并行，默认 30 条结果 |
-| `web_fetch` | 网页内容抓取，自动重试（指数退避），移动端UA切换，SPA页面自动升级到浏览器渲染 |
-
-</details>
-
-<details>
-<summary><strong>🌐 浏览器控制（9 个）</strong></summary>
-
-| 工具 | 功能 |
-|------|------|
-| `browser_open` | 打开网页 |
-| `browser_screenshot` | 页面截图 |
-| `browser_evaluate` | 执行 JavaScript |
-| `browser_extract` | 提取页面内容 |
-| `browser_click` | 点击元素 |
-| `browser_type` | 输入文本 |
-| `browser_scroll` | 页面滚动 |
-| `browser_wait` | 等待元素/延时 |
-| `browser_close` | 关闭浏览器 |
-
-</details>
-
-<details>
-<summary><strong>📦 Git（1 个，17 个子命令）</strong></summary>
-
-| 子命令 | 功能 |
-|--------|------|
-| `init` `clone` `add` `commit` `push` `pull` | 基础操作 |
-| `diff` `log` `status` `branch` `checkout` | 查看与切换 |
-| `merge` `stash` `reset` `tag` `remote` | 高级操作 |
-
-</details>
-
-<details>
-<summary><strong>🧠 记忆管理（1 个）</strong></summary>
-
-| 工具 | 功能 |
-|------|------|
-| `memory` | 统一记忆管理（6 个 action：search 搜索 / add 添加 / replace 替换 / remove 删除 / remove_batch 批量删除 / read_all 读取全部）。工作空间 MEMORY.md 受路径保护，仅此工具可访问 |
-
-</details>
-
-<details>
-<summary><strong>📊 会话 / 子代理（3 个）</strong></summary>
-
-| 工具 | 功能 |
-|------|------|
-| `session_list` | 列出历史会话 |
-| `session_read` | 读取会话内容 |
-| `spawn_task` | 委派子代理（独立上下文 + 超时保护） |
-
-</details>
-
-<details>
-<summary><strong>🕐 系统工具（1 个）</strong></summary>
-
-| 工具 | 功能 |
-|------|------|
-| `calculator` | 安全数学计算（+ - * / ** % ()，递归下降解析器） |
-
-</details>
-
-<details>
-<summary><strong>📋 Plan Mode（1 个，仅 Plan 模式激活）</strong></summary>
-
-| 工具 | 功能 |
-|------|------|
-| `plan_track` | Plan 模式执行进度追踪，标记步骤完成，自动统计剩余 |
-
-</details>
-
-## 🏗️ 架构
-
-```
-用户消息 → 扫描工作空间 SOUL.md（不可压缩层）→ AGENT.md → USER.md（工作空间，不存在则跳过）
-              ↓
-         记忆检索 (MEMORY.md 关键词搜索) → 上下文注入
-              ↓
-         Agent Engine (8 状态机 ReAct Loop, ≤85 轮, 智能重试, 路径依赖串行化, 看门狗+分级超时)
-              ↓
-         提示词加固（参考数据标记 + 工具结果安全规则）
-              ↓
-         Ollama API (流式响应，num_ctx 用户可配 8K–1M 共 8 档)
-              ↓
-         Tool Registry (33 内置 + MCP 动态 + Plan Mode plan_track)
-              ↓
-         Hook 系统 (pre/post tool/iteration/completion) → 观察结果 → 反思 → 循环 / 最终回答
-```
-
-### 🧩 UI 组件（原生 DOM）
-
-```
-main.ts (入口)
-  ├── header.ts              # 顶部导航栏
-  ├── model-bar.ts           # 模型选择栏
-  ├── chat-area.ts           # 聊天消息区域
-  ├── input-area.ts          # 输入框 + 文件上传 + Plan Mode 开关
-  ├── workspace-panel.ts     # 终端 + 文件浏览器 + 工具卡片
-  ├── settings-modal.ts      # 设置面板（含看门狗超时配置）
-  ├── history-modal.ts       # 会话历史
-  ├── memory-modal.ts        # 记忆管理
-  ├── tools-modal.ts         # 工具列表
-  ├── token-dashboard.ts     # Token 消耗仪表盘
-  ├── tool-confirm-modal.ts  # 工具执行确认
-  ├── prompt-modal.ts        # 系统提示词查看 + Plan 确认弹窗
-  ├── toast.ts               # Toast 通知
-  └── lightbox.ts            # 图片灯箱
-```
-
-### 🗄️ 数据库
-
-SQLite (sql.js WASM 内存库)，6 张表；写入采用 **防抖批量落盘**（写操作合并为 300ms 一次全库快照 + temp 文件原子替换 + 退出强制刷盘），Schema 使用 `PRAGMA user_version` 顺序迁移管理：
-
-| 表 | 用途 |
+| 主界面（浅色） | 主界面（深色） |
 |---|---|
-| `sessions` | 会话（parent_id 父子关系） |
-| `messages` | 消息（外键级联删除） |
-| `tool_calls` | 工具调用记录 |
-| `settings` | 设置（JSON 序列化） |
-| `traces` | ReAct 执行轨迹 |
-| `tool_audit` | 工具执行审计日志 |
+| <img src="docs/assets/screenshots/main-light.svg" alt="主界面浅色" width="100%"> | <img src="docs/assets/screenshots/main-dark.svg" alt="主界面深色" width="100%"> |
 
-## 🔒 安全机制
+| 远程连接设置 | 18 个工具 |
+|---|---|
+| <img src="docs/assets/screenshots/settings-remote.svg" alt="远程连接设置" width="100%"> | <img src="docs/assets/screenshots/tools.svg" alt="工具面板" width="100%"> |
 
-| 层级 | 措施 |
-|------|------|
-| 📁 文件系统 | `checkPathAllowed()` — 路径黑名单（系统目录 + 用户敏感目录）；系统目录为**硬红线**（工作空间/白名单也不可豁免） |
-| 🧾 身份文件保护 | `MEMORY.md` 全工具禁写禁读（仅 memory 工具）；`SOUL.md` / `AGENT.md` / `USER.md` **可读不可写**（防提示注入改写人格实现持久化劫持，仅用户手动编辑） |
-| ⚡ 命令执行 | `checkCommandAllowed()` — 命令黑名单（含 POSIX + Windows）+ 三种模式 |
-| 🔀 参数注入防护 | git 工具用户可控参数禁止 `-` 开头（防 `--upload-pack` 类注入）；`git add` 强制 `--` 分隔 |
-| 🌐 SSRF 防护 | `net-guard` — web_fetch / download_file / browser_open 拦截环回/内网/链路本地地址（域名 DNS 解析后校验真实 IP）；browser_open 仅允许 http/https 协议 |
-| 🖥️ 前端渲染 | HTML 净化器（白名单标签 + URI 协议检查）；toast/HTML 导出使用 textContent/escapeHtml 防 XSS |
-| 🔒 Electron | `webSecurity: true`（同源策略开启，Ollama API 通过 webRequest CORS 允许清单精确放行）+ `contextIsolation: true` + IPC 白名单 + IPC fs 路径验证；Agent 浏览器使用 `memory:` 内存分区（退出清空 cookie/storage） |
-| 👥 子代理权限 | 权限分级（readonly / limited_write / full_write）**只降不升**（AI 请求封顶于用户设置）；写类工具与主 Agent 共用确认管线；路径沙箱覆盖全部文件类工具 |
-| 🔐 备份编码 | AES-256-GCM（密钥内置，防误读混淆用途，非安全边界） |
-| 🧠 记忆安全 | 写入前 Prompt Injection / 敏感信息检测，多层级去重过滤 |
-| 🌐 MCP 安全 | Shadowing 防护 + 双下划线分隔防歧义；tools/list 支持分页（nextCursor） |
-| 🌐 网络安全 | `web_fetch` 流式体积限制（10MB）+ 无 content-length 时防 OOM；搜索可达性预检只取响应头（Range: bytes=0-0） |
-| ⚡ 进程安全 | Windows `taskkill` 强制终止 + 工作空间路径大小写不敏感校验；工作空间不可设为系统目录 |
+</div>
 
-## 🚀 快速开始
+## 下载安装
 
-### 下载安装包（推荐）
+前往 [Releases](https://github.com/ThzxxArt/metona-ollama-desktop/releases/latest) 下载最新版本：
 
-前往 [Releases](https://github.com/ThzxxArt/metona-ollama-desktop/releases/latest) 下载：
+| 平台 | 产物 | 说明 |
+|---|---|---|
+| Windows x64 | `Metona.Ollama.Setup.v0.18.0.exe` | NSIS 安装包；未签名，SmartScreen 可能提示 |
+| Linux x64 | `Metona.Ollama.v0.18.0-x86_64.AppImage` | 免安装，`chmod +x` 后运行 |
+| Linux x64 | `metona-ollama_0.18.0_amd64.deb` | Debian / Ubuntu 安装包 |
+| macOS x64 | `Metona.Ollama.v0.18.0-mac-x64.zip` | 未签名、未公证 |
+| macOS arm64 | `Metona.Ollama.v0.18.0-mac-arm64.zip` | Apple Silicon |
 
-- **Windows x64**：NSIS 安装包（官方支持）
-- **Linux x64**：AppImage / deb（实验性）
-- **macOS**：x64 / arm64 zip（实验性，未签名；首次打开需右键或 `xattr -cr`）
+每个 Release 附带 `SHA256SUMS.txt`。macOS 首次打开如被拦截，可在“系统设置 → 隐私与安全性”中允许，或执行：
 
-### 从源码运行
+```bash
+xattr -dr com.apple.quarantine "/Applications/Metona Ollama.app"
+```
+
+## 快速开始
+
+### 1. 本地 Ollama
+
+```bash
+# 安装并启动 Ollama
+ollama serve
+ollama pull qwen3:8b
+
+# 启动 Metona
+# 设置 → Ollama 连接 → 本地 → http://127.0.0.1:11434
+```
+
+本地模式不需要 API Key。Metona 默认连接 `http://127.0.0.1:11434`。
+
+### 2. 自建远程 Ollama
+
+```bash
+# 在远程服务器上（示例：只监听内网，由反向代理做 TLS）
+OLLAMA_HOST=0.0.0.0:11434 ollama serve
+```
+
+在 Metona 中：
+
+1. 打开 **设置 → Ollama 连接**。
+2. 模式选择 **远程**，地址填写 `https://ollama.example.com`。
+3. 如服务端启用了认证，填写 API Key；留空表示不发送 `Authorization`。
+4. 选择 **自建远程**，按需保留“新建会话 / 退出时释放远程模型”。
+
+> 远程 `http://` 不会加密传输，建议使用 HTTPS 反向代理。卸载请求会携带 API Key，并在退出时最多等待 5 秒，不阻塞关闭。
+
+### 3. Ollama Cloud
+
+1. 在 [ollama.com](https://ollama.com) 创建 API Key。
+2. Metona 设置中选择 **远程**，地址 `https://ollama.com`，类型 **Ollama Cloud**。
+3. 填入 API Key 后点击“测试连接”。
+
+云模型由服务端管理，**不会执行自动卸载**，也无法手动释放显存。
+
+## 远程连接与 API Key
+
+- API Key 只存在于主进程，使用 Electron `safeStorage` 加密后写入 `userData`。
+- 渲染进程、DevTools、日志、SQLite、`.metona` 备份均不包含明文 Key。
+- 未设置 Key 时绝不发送 `Authorization` 头；设置后 `/api/tags`、`/api/version`、`/api/ps`、`/api/show`、`/api/chat`、`/api/embed`、`/api/generate` 全部携带 `Bearer`。
+- 已保存 Key 时，输入框留空表示保持原值；只有点击“清除”才会删除。
+- 系统安全存储不可用时，Key 仅当前会话有效，界面会明确提示。
+
+## 18 个内置工具
+
+<details>
+<summary><strong>点击展开完整工具矩阵</strong></summary>
+
+| # | 工具 | 说明 |
+|---:|---|---|
+| 1 | `read_file` | 单文件读取；`paths` 批量读取（最多 50 个） |
+| 2 | `write_file` | 写入/追加；自动创建父目录 |
+| 3 | `list_directory` | `format: list \| tree`，列表/树形二合一 |
+| 4 | `search_files` | 文件名/内容搜索，支持正则 |
+| 5 | `edit_file` | 精确替换 / 正则替换 |
+| 6 | `delete_file` | 单删 / 批量删除 |
+| 7 | `file_transfer` | `operation: copy \| move` |
+| 8 | `download_file` | URL 下载到本地 |
+| 9 | `compress` | zip / tar.gz 压缩与解压 |
+| 10 | `diff` | 文件 vs 文件 / 内容 / git HEAD |
+| 11 | `run_command` | Shell 命令，实时流式输出 |
+| 12 | `web_search` | SearXNG / 四引擎搜索 |
+| 13 | `web_fetch` | 网页正文提取，必要时回退浏览器 |
+| 14 | `browser` | `action: open/extract/screenshot/click/type/scroll/wait/evaluate/close` |
+| 15 | `git` | status/log/diff/add/commit/push 等 17 个子命令 |
+| 16 | `memory` | search/add/replace/remove/remove_batch/read_all |
+| 17 | `session` | `action: list \| read` |
+| 18 | `spawn_task` | 子代理委派 |
+
+</details>
+
+已删除且不再接受旧名称：`read_multiple_files`、`create_directory`、`tree`、`copy_file`、`move_file`、`browser_*`（9 个）、`session_list`、`session_read`、`calculator`、`plan_track`。
+
+## 架构
+
+```mermaid
+flowchart LR
+  subgraph Renderer["Renderer（sandbox + CSP）"]
+    UI[原生 DOM 组件]
+    Agent[Agent Loop / 18 Tools]
+    Ctx[Context Manager]
+    UI --> Agent --> Ctx
+  end
+
+  subgraph Preload["Preload（薄白名单）"]
+    Bridge[metonaDesktop / ollama]
+  end
+
+  subgraph Main["Main Process"]
+    Ollama[OllamaService<br/>Key / 流式 / 卸载]
+    DB[(node:sqlite<br/>WAL)]
+    Tool[ToolService]
+    Secret[SecretStore<br/>safeStorage]
+  end
+
+  Agent --> Bridge --> Ollama
+  Ollama -->|Bearer Key| Remote[(本地 / 自建 / Cloud)]
+  UI --> Bridge --> DB
+  Bridge --> Tool
+  Ollama --- Secret
+```
+
+- **渲染进程**：不直接访问 Ollama、不读 Node 模块；所有网络与文件能力经 preload 白名单。
+- **主进程**：统一 Ollama 代理、`node:sqlite`（WAL）、工具执行、路径/命令/网络/密钥安全。
+- **契约层**：`src/shared/contracts` + `src/shared/schemas`，IPC 入参用 zod 校验，并校验发送方。
+
+## 安全与隐私
+
+- `contextIsolation: true`、`nodeIntegration: false`、`sandbox: true`。
+- CSP：`default-src 'self'`、`script-src 'self'`、`object-src 'none'`、`frame-ancestors 'none'`。
+- 删除 CORS 白名单；渲染进程不再需要跨域访问 Ollama。
+- 非 `http/https` 的 `window.open` 一律拒绝。
+- 路径沙箱、危险命令拦截、SSRF 防护、日志脱敏（`Authorization` / key / token / password）。
+- `.metona` 备份不包含 Ollama Key、SearXNG Key。
+
+更多细节见 [docs/SECURITY.md](docs/SECURITY.md)。
+
+## 开发
+
+要求：**Node.js 24+**、npm 12+。
 
 ```bash
 git clone https://github.com/ThzxxArt/metona-ollama-desktop.git
 cd metona-ollama-desktop
-npm config set registry https://registry.npmmirror.com
-npm install
+npm ci
+npm run typecheck
+npm test
+npm run build
 npm start
 ```
 
-## 📦 构建安装包
+常用命令：
 
-```bash
-npm run dist:win     # Windows NSIS（建议在 Windows 上原生构建）
-npm run dist:linux   # Linux AppImage + deb（x64）
-npm run dist:mac     # macOS zip（可在 macOS 或 Linux 交叉构建；签名需 macOS）
-```
-
-产出位于 `release/`。
-
-## 🚢 发布新版本
-
-```bash
-# 1. 更新 package.json 中的 version
-# 2. 创建并推送 tag
-git tag v0.17.3
-git push origin v0.17.3
-```
-
-推送 `v*` tag 后，GitHub Actions 会自动在 4 个 runner 上构建 Windows / Linux / macOS 安装包，并创建或更新对应 Release（含 `SHA256SUMS.txt`）。也可在 Actions 页面手动运行 `Release` 工作流做构建验证。
-
-## 🛠️ 常用命令
-
-```bash
-npm start              # 构建并运行
-npm run dev:renderer   # Vite watch（渲染进程）
-npm run dev:main       # tsc watch（主进程）
-npm run build          # 完整构建
-npm run typecheck      # 双 tsconfig 类型检查
-npm test               # Vitest 单元测试
-npm run dist:win       # 构建 Windows 安装包
-npm run dist:linux     # 构建 Linux AppImage + deb
-npm run dist:mac       # 构建 macOS zip
-```
-
-## 💻 系统要求
-
-- 🖥️ Windows 10/11（64 位）
-- 🤖 Ollama 本地运行中（默认 `http://localhost:11434`）
-- 💾 建议 8GB+ 内存
-
-## 📄 许可证
-
-[MIT](LICENSE)
-
----
-
-# 🇬🇧 English
-
-## ✨ Features
-
-| | Feature | Description |
-|:---:|:---|:---|
-| 🤖 | **ReAct Agent Loop** | Always-on, only chat mode. 8-state machine, up to 85 iterations (configurable), smart retry (permanent errors return immediately, transient errors use exponential backoff), tool dedup, path-aware dependency serialization, watchdog + tiered timeout protection |
-| 🛡️ | **Prompt Hardening** | Reference data markers (<<<REFERENCE_DATA_START>>>) + tool results are data-not-instructions safety rules |
-| 📋 | **Plan Mode** | Toggle switch. AI first generates an execution plan (Markdown-rendered confirmation dialog), then tracks step-by-step execution, **supports resume** (interrupted plans restore on next session) |
-| 🔧 | **33 Built-in Tools** | File system (14, incl. diff) · Command · Web search · Browser · Git · Memory · Sessions · Sub-agent · System · Plan Mode tracking |
-| 🧠 | **Smart Memory System** | Three types (fact / preference / rule), stored in workspace MEMORY.md file, path-protected — only the memory tool can access it, pre-write security scan, 500 capacity, auto-extract on conversation end, strict format validation, access stats persisted per entry (TTL decay protection) |
-| 📋 | **Custom Files** | SOUL.md (persona, never compressed) + AGENT.md (behavior rules, built-in fallback) + USER.md (user profile, workspace only, skipped if absent) |
-| 🌐 | **MCP Protocol Extension** | JSON-RPC 2.0 over stdio, dynamic tool discovery, Shadowing protection |
-| 🔍 | **Web Search (dual-mode)** | SearXNG meta-search JSON API (70+ engines) / quad-engine HTML parsing (Bing+Baidu+Sogou+360), switchable; web_fetch with auto-retry+mobile UA+SPA browser fallback |
-| 🌏 | **Browser Control** | Open pages · Screenshot · JS execution · Content extraction · Click · Type · Scroll · Close |
-| 🖥️ | **Workspace Panel** | Terminal (incremental streaming) + file browser, command security checks |
-| 🔢 | **Manual Context Length** | Settings dropdown (8 tiers, 8K–1M), default 128K. Model bar shows configured value, dropdown shows per-model context length |
-| 🗜️ | **Smart Context Manager** | Sliding window + Token auto-calibration + message importance scoring + LLM structured JSON compression, smart triggers (120 msg incremental + 300 msg hard limit) |
-| ⏱️ | **Smart Timeout Protection** | Agent Loop watchdog (configurable, default 30min) + stream total timeout (configurable, default 300s) + configurable HTTP/MCP timeouts |
-| 🪝 | **Hook System** | 4-phase lifecycle hooks (pre_tool / post_tool / post_iteration / pre_completion), built-in SecurityCheck + FileWriteDedup |
-| 👥 | **Sub-agent Delegation** | spawn_task tool, isolated context + timeout protection; permission tiers (readonly / limited_write / full_write) that can only be **downgraded** (capped by user setting); write tools share the main agent's confirmation pipeline; path sandbox covers all file tools |
-| 📈 | **Token Dashboard** | Global + session stats, consumption trend bar chart, 2s refresh, input/output color-coded |
-| 📋 | **System Prompt Card** | Collapsible card atop each AI reply — click to inspect the full context sent to the model |
-| 🎨 | **Warm-tone UI** | Cream `#FAF7F2` + coral `#E8734A`, fatigue-free for extended use, streaming render optimized |
-| 🔔 | **System Tray** | Native tray integration |
-| 🔐 | **Backup Encoding** | AES-256-GCM encoded session backups (key embedded in app — obfuscation against casual reading, not a security boundary) |
-| 🧪 | **Observability** | Buffered trace persistence to SQLite + Agent Metrics dashboard with JSON / Prometheus text export |
-
-## 🔧 Tool List
-
-<details>
-<summary><strong>📁 File System (14)</strong></summary>
-
-| Tool | Function |
-|------|------|
-| `read_file` | Read file (text/binary, 2000 lines default) |
-| `write_file` | Write/append file (base64 binary support) |
-| `list_directory` | List directory contents |
-| `search_files` | Search files (regex/wildcard) |
-| `create_directory` | Create directory |
-| `delete_file` | Delete file/dir (returns size) |
-| `move_file` | Move/rename (cross-device fallback to copy+delete) |
-| `copy_file` | Copy file |
-| `edit_file` | Edit file (regex support) |
-| `tree` | Directory tree (default 5 levels) |
-| `download_file` | Download file |
-| `read_multiple_files` | Batch read (no truncation by default, per-file char limit optional) |
-| `compress` | Compress file/directory |
-| `diff` | Compare files (file_vs_file / file_vs_content / file_vs_git_head, unified diff output) |
-
-</details>
-
-<details>
-<summary><strong>⚡ Command Execution (1)</strong></summary>
-
-| Tool | Function |
-|------|------|
-| `run_command` | Execute shell command, real-time streaming, auto/confirm/disabled modes |
-
-</details>
-
-<details>
-<summary><strong>🔍 Web Search (2)</strong></summary>
-
-| Tool | Function |
-|------|------|
-| `web_search` | SearXNG JSON API / quad-engine parallel, 30 results default |
-| `web_fetch` | Fetch web page content, auto-retry with backoff, mobile UA toggle, SPA auto-upgrade to browser rendering |
-
-</details>
-
-<details>
-<summary><strong>🌐 Browser Control (9)</strong></summary>
-
-| Tool | Function |
-|------|------|
-| `browser_open` | Open web page |
-| `browser_screenshot` | Page screenshot |
-| `browser_evaluate` | Execute JavaScript |
-| `browser_extract` | Extract page content |
-| `browser_click` | Click element |
-| `browser_type` | Type text |
-| `browser_scroll` | Scroll page |
-| `browser_close` | Close browser |
-
-</details>
-
-<details>
-<summary><strong>📦 Git (1 tool, 17 subcommands)</strong></summary>
-
-| Subcommands | Function |
-|--------|------|
-| `init` `clone` `add` `commit` `push` `pull` | Basic operations |
-| `diff` `log` `status` `branch` `checkout` | View & switch |
-| `merge` `stash` `reset` `tag` `remote` | Advanced operations |
-
-</details>
-
-<details>
-<summary><strong>🧠 Memory Management (1)</strong></summary>
-
-| Tool | Function |
-|------|------|
-| `memory` | Unified memory management (6 actions: search / add / replace / remove / remove_batch / read_all). Workspace MEMORY.md is path-protected, only this tool can access it |
-
-</details>
-
-<details>
-<summary><strong>📊 Sessions / Sub-agent (3)</strong></summary>
-
-| Tool | Function |
-|------|------|
-| `session_list` | List session history |
-| `session_read` | Read session content |
-| `spawn_task` | Delegate sub-agent (isolated context + timeout) |
-
-</details>
-
-<details>
-<summary><strong>🕐 System Tools (1)</strong></summary>
-
-| Tool | Function |
-|------|------|
-| `calculator` | Safe math evaluation (+ - * / ** % (), recursive descent parser) |
-
-</details>
-
-<details>
-<summary><strong>📋 Plan Mode (1, only active in Plan Mode)</strong></summary>
-
-| Tool | Function |
-|------|------|
-| `plan_track` | Plan Mode execution progress tracking, mark steps complete, auto tally remaining |
-
-</details>
-
-## 🏗️ Architecture
-
-```
-User message → workspace SOUL.md (never compressed) → AGENT.md → USER.md (workspace, skipped if absent)
-              ↓
-         Memory Retrieval (MEMORY.md keyword search) → Context Injection
-              ↓
-         Agent Engine (8-state ReAct Loop, ≤85 iter, smart retry, path-aware serialization, watchdog+tiered timeout)
-              ↓
-         Prompt Hardening (reference data markers + tool result safety rules)
-              ↓
-         Ollama API (Streaming Response, num_ctx user-configurable 8 tiers, 8K–1M)
-              ↓
-         Tool Registry (33 Built-in + MCP Dynamic + Plan Mode plan_track)
-              ↓
-         Hook System (pre/post tool/iteration/completion) → Observation → Reflection → Loop / Final Answer
-```
-
-### 🧩 UI Components (Native DOM)
-
-```
-main.ts (Entry)
-  ├── header.ts              # Top navigation bar
-  ├── model-bar.ts           # Model selector
-  ├── chat-area.ts           # Chat message area
-  ├── input-area.ts          # Input box + file upload + Plan Mode toggle
-  ├── workspace-panel.ts     # Terminal + file browser + tool cards
-  ├── settings-modal.ts      # Settings panel (with watchdog timeout config)
-  ├── history-modal.ts       # Session history
-  ├── memory-modal.ts        # Memory management
-  ├── tools-modal.ts         # Tool list
-  ├── token-dashboard.ts     # Token consumption dashboard
-  ├── tool-confirm-modal.ts  # Tool execution confirmation
-  ├── prompt-modal.ts        # System prompt viewer + Plan confirm dialog
-  ├── toast.ts               # Toast notifications
-  └── lightbox.ts            # Image lightbox
-```
-
-### 🗄️ Database
-
-SQLite (sql.js WASM in-memory), 6 tables; writes use **debounced batched persistence** (writes coalesced into one full snapshot every 300ms + atomic temp-file rename + forced flush on quit); schema managed via `PRAGMA user_version` sequential migrations:
-
-| Table | Purpose |
+| 命令 | 作用 |
 |---|---|
-| `sessions` | Sessions (parent_id hierarchy) |
-| `messages` | Messages (cascade delete) |
-| `tool_calls` | Tool call records |
-| `settings` | Settings (JSON serialization) |
-| `traces` | ReAct execution traces |
-| `tool_audit` | Tool execution audit log |
+| `npm run dev:renderer` | Vite 监听构建渲染进程 |
+| `npm run dev:main` | TypeScript 监听编译主进程 |
+| `npm run lint` | ESLint（TypeScript + tests） |
+| `npm run format:check` | Prettier 检查 |
+| `npm run check:no-temperature` | 防止 temperature 回归 |
+| `npm run test:coverage` | 覆盖率测试 |
+| `npm run test:e2e` | Playwright Electron E2E（Linux 需 xvfb） |
+| `npm run dist:win` / `dist:linux` / `dist:mac` | 本地打包 |
 
-## 🔒 Security
+技术栈：Electron 45 · TypeScript 6.0 · Vite 8 · Vitest 5 · `node:sqlite` · zod 4。详见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) 与 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
 
-| Layer | Measure |
-|------|------|
-| 📁 File System | `checkPathAllowed()` — path blacklist (system + user-sensitive dirs); system dirs are a **hard red line** (not exempted even by workspace/allowlist) |
-| 🧾 Identity File Protection | `MEMORY.md` blocked from all tools (memory tool only); `SOUL.md` / `AGENT.md` / `USER.md` **read-only for tools** (prevents prompt-injection persona hijacking; user-editable only) |
-| ⚡ Command Execution | `checkCommandAllowed()` — command blacklist (POSIX + Windows) + three modes |
-| 🔀 Argument Injection Guard | git user-controllable args must not start with `-` (blocks `--upload-pack` style injection); `git add` forces `--` separator |
-| 🌐 SSRF Guard | `net-guard` — web_fetch / download_file / browser_open block loopback/private/link-local addresses (DNS-resolved IP checked); browser_open allows http/https only |
-| 🖥️ Frontend Rendering | HTML sanitizer (whitelist tags + URI protocol check); toast/HTML export use textContent/escapeHtml against XSS |
-| 🔒 Electron | `webSecurity: true` (same-origin enforced; Ollama API precisely allowed via webRequest CORS allowlist) + `contextIsolation: true` + IPC whitelist + IPC fs path validation; agent browser uses `memory:` in-memory partition (cookies/storage wiped on exit) |
-| 👥 Sub-agent Permissions | Permission tiers that can only be **downgraded** (capped by user setting); write tools share the main agent's confirmation pipeline; path sandbox covers all file tools |
-| 🔐 Backup Encoding | AES-256-GCM (embedded key — obfuscation, not a security boundary) |
-| 🧠 Memory Security | Pre-write prompt injection / sensitive info detection, multi-layer dedup filtering |
-| 🌐 MCP Security | Shadowing protection + double-underscore delimiter disambiguation; paginated tools/list (nextCursor) |
-| 🌐 Network Security | `web_fetch` streaming size limit (10MB) + OOM prevention without content-length; search reachability precheck fetches headers only (Range: bytes=0-0) |
-| ⚡ Process Security | Windows `taskkill` forced termination + case-insensitive workspace path validation; workspace cannot be set to a system directory |
-
-## 🚀 Quick Start
-
-### Download installers (recommended)
-
-Get the latest packages from [Releases](https://github.com/ThzxxArt/metona-ollama-desktop/releases/latest):
-
-- **Windows x64**: NSIS installer (officially supported)
-- **Linux x64**: AppImage / deb (experimental)
-- **macOS**: x64 / arm64 zip (experimental, unsigned; right-click open or run `xattr -cr`)
-
-### Run from source
+## 发布
 
 ```bash
-git clone https://github.com/ThzxxArt/metona-ollama-desktop.git
-cd metona-ollama-desktop
-npm config set registry https://registry.npmmirror.com
-npm install
-npm start
+git tag v0.18.0
+git push origin v0.18.0
 ```
 
-## 📦 Build Installers
+GitHub Actions 会构建 Windows / Linux / macOS 产物，生成 `SHA256SUMS.txt` 并创建 Release。发布流程见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#发布)。
 
-```bash
-npm run dist:win     # Windows NSIS (native Windows build recommended)
-npm run dist:linux   # Linux AppImage + deb (x64)
-npm run dist:mac     # macOS zip (build on macOS or cross-build on Linux; signing requires macOS)
-```
+## Roadmap
 
-Artifacts are written to `release/`.
+- **0.19**：Provider 抽象（OpenAI / Anthropic 兼容协议）、TS 7.1 评估、更多 Ollama speech 能力。
+- **后续**：可选签名/公证、增量更新、跨设备同步（需单独隐私设计）。
 
-## 🚢 Publishing a Release
+> 0.18.0 已移除 Plan Mode；后续如需“先规划后执行”，将以普通 Agent 提示词策略实现，不再引入并行状态机。
 
-```bash
-# 1. Update the version in package.json
-# 2. Create and push the tag
-git tag v0.17.3
-git push origin v0.17.3
-```
+## FAQ
 
-Pushing a `v*` tag triggers GitHub Actions to build Windows / Linux / macOS installers on four runners and create or update the matching Release (including `SHA256SUMS.txt`). You can also run the `Release` workflow manually for a build-only validation.
+<details>
+<summary><strong>连接失败 / 401 / 403 怎么办？</strong></summary>
 
-## 🛠️ Common Commands
+- 401/403：检查 API Key 是否正确、是否有该模型权限。
+- 404：模型不存在或地址路径错误；远程地址不要以 `/api` 结尾（Metona 会自动归一化）。
+- 429：请求频率过高，稍后重试。
+- TLS：检查证书链；自签名证书需要系统信任。
+- 网络：检查地址、端口、防火墙与代理。
+</details>
 
-```bash
-npm start              # Build and run
-npm run dev:renderer   # Vite watch (renderer)
-npm run dev:main       # tsc watch (main process)
-npm run build          # Full build
-npm run typecheck      # Type-check both tsconfigs
-npm test               # Vitest unit tests
-npm run dist:win       # Build Windows installer
-npm run dist:linux     # Build Linux AppImage + deb
-npm run dist:mac       # Build macOS zip
-```
+<details>
+<summary><strong>还需要设置 OLLAMA_ORIGINS 吗？</strong></summary>
 
-## 💻 System Requirements
+不需要。0.18.0 起所有 Ollama 请求由主进程代理，CORS 白名单已删除。
+</details>
 
-- 🖥️ Windows 10/11 (64-bit)
-- 🤖 Ollama running locally (default `http://localhost:11434`)
-- 💾 8GB+ RAM recommended
+<details>
+<summary><strong>上下文长度填多少？</strong></summary>
 
-## 📄 License
+默认 131072（128K）。可填 1024–4194304；Metona 会按模型 `context_length` 钳制后发送。云端模型可能忽略 `num_ctx`。
+</details>
 
-[MIT](LICENSE)
+<details>
+<summary><strong>为什么升级后会话不见了？</strong></summary>
 
----
+0.18.0 是破坏性版本，不读取 v0.17.2 的 `metona.db`。升级前请自行备份原始数据库；新版本会创建全新数据库。
+</details>
 
-<p align="center">
+<details>
+<summary><strong>macOS 提示“已损坏”或无法打开？</strong></summary>
+
+产物未签名/未公证。可在“隐私与安全性”中允许，或执行 `xattr -dr com.apple.quarantine "/Applications/Metona Ollama.app"`。
+</details>
+
+<details>
+<summary><strong>Plan Mode 去哪了？</strong></summary>
+
+0.18.0 已完全移除 Plan Mode、`plan_track`、计划确认弹窗与 `Ctrl+P`。Agent Loop 仍保留 8 状态机。
+</details>
+
+## 致谢
+
+- [Ollama](https://ollama.com/) — 本地大模型运行时与 API。
+- [Electron](https://www.electronjs.org/)、[Vite](https://vite.dev/)、[Vitest](https://vitest.dev/)、[zod](https://zod.dev/)。
+- 所有提交 Issue、反馈与 Star 的用户。
+
+## License
+
+[MIT](LICENSE) © 2026 **ThzxxArt**
+
+<div align="center">
   <sub>Made with ❤️ by <a href="https://github.com/ThzxxArt">ThzxxArt</a></sub>
-</p>
+</div>

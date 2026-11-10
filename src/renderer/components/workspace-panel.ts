@@ -990,16 +990,13 @@ function renderToolCalls(): void {
 function getToolDisplayName(name: string): string {
   const names: Record<string, string> = {
     read_file: '读取文件', write_file: '写入文件', list_directory: '列出目录',
-    search_files: '搜索文件', create_directory: '创建目录', delete_file: '删除文件', run_command: '执行命令',
-    move_file: '移动文件', copy_file: '复制文件', web_fetch: '网页抓取',
-    edit_file: '编辑文件', tree: '目录树', download_file: '下载文件',
-    read_multiple_files: '批量读取',
+    search_files: '搜索文件', delete_file: '删除文件', run_command: '执行命令',
+    file_transfer: '复制/移动', web_fetch: '网页抓取',
+    edit_file: '编辑文件', download_file: '下载文件',
     git: 'Git 操作', compress: '压缩/解压', web_search: '联网搜索',
-    memory: '记忆管理',
-
-    session_list: '会话列表', session_read: '读取会话', spawn_task: '子代理委派', plan_track: '计划追踪',
-    browser_open: '打开网页', browser_screenshot: '浏览器截图', browser_evaluate: '执行JS', browser_extract: '提取内容',
-    browser_click: '点击元素', browser_type: '输入文本', browser_scroll: '滚动页面', browser_close: '关闭浏览器'
+    memory: '记忆管理', diff: '文件差异',
+    session: '会话读取', spawn_task: '子代理委派',
+    browser: '浏览器控制',
   };
   return names[name] || name;
 }
@@ -1007,16 +1004,13 @@ function getToolDisplayName(name: string): string {
 function getToolIcon(name: string): string {
   const icons: Record<string, string> = {
     read_file: '📄', write_file: '✏️', list_directory: '📁',
-    search_files: '🔍', create_directory: '📂', delete_file: '🗑️', run_command: '💻',
-    move_file: '📦', copy_file: '📋', web_fetch: '🌐',
-    edit_file: '✂️', tree: '🌳', download_file: '⬇️',
-    read_multiple_files: '📚',
+    search_files: '🔍', delete_file: '🗑️', run_command: '💻',
+    file_transfer: '📦', web_fetch: '🌐',
+    edit_file: '✂️', download_file: '⬇️',
     git: '🔖', compress: '🗜️', web_search: '🔍',
-    memory: '🧠',
-
-    session_list: '📋', session_read: '📖', spawn_task: '🤖', plan_track: '📋',
-    browser_open: '🌐', browser_screenshot: '📸', browser_evaluate: '⚡', browser_extract: '📰',
-    browser_click: '👆', browser_type: '⌨️', browser_scroll: '↕️', browser_close: '❌'
+    memory: '🧠', diff: '🔍',
+    session: '📖', spawn_task: '🤖',
+    browser: '🌐',
   };
   return icons[name] || '🔧';
 }
@@ -1084,8 +1078,8 @@ function renderToolCard(tc: ToolCallRecord): string {
         } else {
           resultHtml = `<div class="tool-result-entry">✅ 已删除 ${escapeHtml(String(r.path || ''))}</div>`;
         }
-      } else if (tc.name === 'create_directory') {
-        resultHtml = `<div class="tool-result-entry">✅ 已创建 ${escapeHtml(String(r.path || ''))}</div>`;
+      } else if (tc.name === 'file_transfer') {
+        resultHtml = `<div class="tool-result-entry">✅ ${escapeHtml(String(r.source || ''))} → ${escapeHtml(String(r.destination || ''))}</div>`;
       } else {
         // P2-1: 通用成功显示，统一截断到 500 字符
         const maxResultChars = 500;

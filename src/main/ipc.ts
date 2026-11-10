@@ -16,7 +16,8 @@ import {
   exportAllSessions, importSessions,
   getSessionSummaries, searchSessions, getAllSessionsData,
   getAllSessionsTokenStats,
-  saveToolAudit, getToolAuditsBySession, getAllToolAudits
+  saveToolAudit, getToolAuditsBySession, getAllToolAudits,
+  getAllMemoryEmbeddings, saveMemoryEmbedding, clearMemoryEmbeddings
 } from './db/sqlite.js';
 import type { ExportData, MessageRow, SessionSummaryRow } from './db/sqlite.js';
 
@@ -33,7 +34,7 @@ import { startServer, stopServer, stopAllServers, callTool, getAllTools, getServ
 import { getAllowedDirs, getBlockedDirs, setAllowedDirs, checkPathAllowed } from './tool-security.js';
 import { startProcess, killProcess, getWorkspaceDir, setWorkspaceDir, listWorkspaceDir } from './workspace.js';
 import { setHTTPTimeout } from './tool-handlers-system.js';
-import { updateCorsAllowlist } from './main.js';
+import { registerOllamaIPC } from './ipc/ollama.js';
 import { execFile } from 'child_process';
 import * as crypto from 'crypto';
 import ffmpegStatic from 'ffmpeg-static';
@@ -47,24 +48,20 @@ function getFFmpegPath(): string {
 /** 工具结果摘要（用于日志面板） */
 function summarizeResult(toolName: string, result: Record<string, unknown>): string {
   switch (toolName) {
-    case 'read_file': return `${result.path} (${result.lines} 行${result.truncated ? ', 已截断' : ''})`;
+    case 'read_file': return result.total !== undefined ? `${result.total} 个文件` : `${result.path} (${result.lines} 行${result.truncated ? ', 已截断' : ''})`;
     case 'write_file': return `${result.path} (${result.bytesWritten}B${result.created ? ', 新建' : ''})`;
-    case 'list_directory': return `${result.path} (${result.total} 项${result.truncated ? ', 已截断' : ''})`;
+    case 'list_directory': return `${result.path} (${result.total ?? result.fileCount ?? 0} 项${result.truncated ? ', 已截断' : ''})`;
     case 'search_files': return `"${result.query}" → ${result.total_matches} 匹配 / ${result.total_files} 文件`;
-    case 'create_directory': return String(result.path);
     case 'delete_file': return result.batch ? `批量删除 ${result.successCount}/${result.totalPaths} 个路径` : String(result.path);
-    case 'move_file': return `${result.source} → ${result.destination}`;
-    case 'copy_file': return `${result.source} → ${result.destination}`;
+    case 'file_transfer': return `${result.source} → ${result.destination}`;
     case 'web_fetch': return `${result.status} | ${result.length} chars`;
     case 'web_search': return `[${String(result._mode) === 'searxng' ? 'SearXNG' : '内置'}] "${result.query}" → ${result.total} 条结果`;
     case 'edit_file': return `${result.path} (${result.replaceCount} 处替换)`;
-    case 'tree': return `${result.path} (${result.fileCount} 文件 / ${result.dirCount} 目录)`;
     case 'download_file': return `${result.url} → ${result.destination} (${result.size}B)`;
-    case 'read_multiple_files': return `${result.total} 个文件`;
     case 'git': return `${result.action} ✓`;
     case 'compress': return `${result.action} → ${result.archive || result.destination}`;
     case 'diff': return result.identical ? '无差异' : `+${result.additions} -${result.deletions} (${result.hunk_count} hunks)`;
-    case 'calculator': return `${result.expression} = ${result.result}`;
+    case 'browser': return `browser.${result.action} ✓`;
     default: return '完成';
   }
 }
@@ -152,6 +149,62 @@ export async function setupIPC(): Promise<void> {
     userDataPath: require('electron').app.getPath('userData')
   }));
 
+  // 系统信息：sandbox 开启后 preload 不再直接 import os
+  ipcMain.handle('app:sys', () => ({
+    homeDir: os.homedir(),
+    tmpDir: os.tmpdir(),
+    shell: process.env.SHELL || process.env.ComSpec || (process.platform === 'win32' ? 'cmd.exe' : 'bash'),
+    arch: os.arch(),
+    platform: os.platform(),
+    hostname: os.hostname(),
+    username: os.userInfo().username,
+  }));
+
+  // sandbox preload 同步读取系统信息（不 import os）
+  ipcMain.on('app:sys:sync', (event) => {
+    event.returnValue = {
+      homeDir: os.homedir(),
+      tmpDir: os.tmpdir(),
+      shell: process.env.SHELL || process.env.ComSpec || (process.platform === 'win32' ? 'cmd.exe' : 'bash'),
+      arch: os.arch(),
+      platform: os.platform(),
+      hostname: os.hostname(),
+      username: os.userInfo().username,
+    };
+  });
+
+  // ── 更新检查（只提示，不静默下载/安装）──
+  ipcMain.handle('app:checkUpdate', async () => {
+    try {
+      const electronApp = require('electron').app;
+      const current = String(electronApp.getVersion());
+      const response = await fetch('https://api.github.com/repos/ThzxxArt/metona-ollama-desktop/releases/latest', {
+        headers: { 'User-Agent': `Metona-Ollama/${current}`, Accept: 'application/vnd.github+json' },
+      });
+      if (!response.ok) return { hasUpdate: false, current };
+      const release = await response.json() as { tag_name?: string; html_url?: string };
+      const latest = String(release.tag_name || '').replace(/^v/, '');
+      if (!latest) return { hasUpdate: false, current };
+      const cmp = (a: string, b: string): number => {
+        const pa = a.split('.').map(n => parseInt(n, 10) || 0);
+        const pb = b.split('.').map(n => parseInt(n, 10) || 0);
+        for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+          const d = (pa[i] || 0) - (pb[i] || 0);
+          if (d !== 0) return d;
+        }
+        return 0;
+      };
+      return {
+        hasUpdate: cmp(latest, current) > 0,
+        current,
+        latest,
+        url: release.html_url || 'https://github.com/ThzxxArt/metona-ollama-desktop/releases/latest',
+      };
+    } catch (err) {
+      return { hasUpdate: false, error: (err as Error).message };
+    }
+  });
+
   // ── 内置资源读取（SOUL.md / AGENT.md 等；basename 防路径穿越）──
   // 取代渲染进程在 file:// 页面上直接 fetch 相对路径（webSecurity 开启后不可用）
   ipcMain.handle('app:readResource', (_, name: string) => {
@@ -171,12 +224,6 @@ export async function setupIPC(): Promise<void> {
     } catch {
       return { success: false, error: `资源不存在: ${safe}` };
     }
-  });
-
-  // ── 更新 Ollama 地址的 CORS 允许清单（设置面板保存地址后调用）──
-  ipcMain.handle('app:setOllamaOrigin', (_, url: string) => {
-    updateCorsAllowlist(url);
-    return { success: true };
   });
 
   ipcMain.handle('window:minimize', () => mainWindow?.minimize());
@@ -314,6 +361,9 @@ export async function setupIPC(): Promise<void> {
   await initDatabase();
   sendLog('success', '📦 SQLite 数据库已初始化');
 
+  // Ollama 主进程代理（连接/认证/流式/卸载）— 必须在数据库初始化之后
+  registerOllamaIPC();
+
   // ── 恢复工作空间目录 ──
   try {
     const savedWsDir = getSetting<string>('workspaceDir', '');
@@ -423,6 +473,20 @@ export async function setupIPC(): Promise<void> {
   ipcMain.handle('db:importSessions', (_, data: ExportData) => {
     try { return importSessions(data); }
     catch (err) { sendLog('error', '导入失败', (err as Error).message); return { imported: 0, skipped: 0 }; }
+  });
+
+  // ── Memory embeddings 缓存（混合记忆检索）──
+  ipcMain.handle('db:getMemoryEmbeddings', (_: unknown, model: string) => {
+    try { return getAllMemoryEmbeddings(String(model || '')); }
+    catch { return []; }
+  });
+  ipcMain.handle('db:saveMemoryEmbedding', (_: unknown, entryId: string, model: string, vector: number[]) => {
+    try { saveMemoryEmbedding(String(entryId || ''), String(model || ''), Array.isArray(vector) ? vector : []); return { success: true }; }
+    catch (err) { return { success: false, error: (err as Error).message }; }
+  });
+  ipcMain.handle('db:clearMemoryEmbeddings', () => {
+    try { clearMemoryEmbeddings(); return { success: true }; }
+    catch (err) { return { success: false, error: (err as Error).message }; }
   });
 
   // ── Token 全局统计 ──

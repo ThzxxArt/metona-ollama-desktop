@@ -21,29 +21,24 @@ export type SubAgentPermission = 'readonly' | 'limited_write' | 'full_write';
 
 /** 只读工具白名单 */
 const READONLY_TOOLS = new Set([
-  'read_file', 'list_directory', 'search_files', 'tree',
-  'read_multiple_files', 'diff',
+  'read_file', 'list_directory', 'search_files', 'diff',
   'web_search', 'web_fetch',
-  'browser_extract', 'browser_screenshot',
   'memory',
-  'session_list', 'session_read',
-  'calculator',
+  'session',
 ]);
 
 /** 有限写权限工具（不含 delete_file、run_command）*/
 const LIMITED_WRITE_TOOLS = new Set([
   ...READONLY_TOOLS,
-  'write_file', 'edit_file', 'create_directory',
-  'move_file', 'copy_file', 'compress',
+  'write_file', 'edit_file', 'file_transfer', 'compress',
+  // browser 含 click/type 等交互动作，归入写权限
+  'browser',
 ]);
 
 /** 全写权限工具（含 run_command、delete_file、git）*/
 const FULL_WRITE_TOOLS = new Set([
   ...LIMITED_WRITE_TOOLS,
   'delete_file', 'run_command', 'git', 'download_file',
-  'browser_open', 'browser_click', 'browser_type',
-  'browser_scroll', 'browser_wait', 'browser_close',
-  'browser_evaluate',
 ]);
 
 /** 根据权限级别获取工具白名单 */
@@ -57,7 +52,7 @@ function getToolsForPermission(permission: SubAgentPermission): Set<string> {
 }
 
 /** 根据权限级别获取可用工具定义
- * C3: 以全局已启用工具为基线（含 MCP 动态工具 + plan_track 注册状态），
+ * C3: 以全局已启用工具为基线（含 MCP 动态工具），
  * 再叠加权限白名单，确保被用户禁用的工具不会喂给子代理 LLM。 */
 function getSubAgentTools(permission: SubAgentPermission = 'readonly'): ToolDefinition[] {
   const allowed = getToolsForPermission(permission);
@@ -111,9 +106,9 @@ function toolResultEnvelope(toolName: string, payload: unknown): string {
 
 /** 子代理文件路径沙箱覆盖的全部工具（与主 Agent 的 FILE_PATH_TOOLS 对齐） */
 const SUB_FILE_TOOLS = new Set([
-  'read_file', 'write_file', 'edit_file', 'delete_file', 'create_directory',
-  'list_directory', 'search_files', 'tree', 'compress',
-  'move_file', 'copy_file', 'download_file', 'read_multiple_files',
+  'read_file', 'write_file', 'edit_file', 'delete_file',
+  'list_directory', 'search_files', 'compress',
+  'file_transfer', 'download_file',
 ]);
 
 /** 从工具参数中提取首个路径类参数（path/source/destination） */
@@ -230,7 +225,7 @@ export async function executeSubAgent(
             stream: true,
             think: false,
             tools: tools as any,
-            options: { num_ctx: numCtx, temperature: 0.3 }
+            options: { num_ctx: numCtx }
           } as any, (chunk: any) => {
             if (chunk.message?.content) content += chunk.message.content;
             if (chunk.message?.tool_calls?.length) {

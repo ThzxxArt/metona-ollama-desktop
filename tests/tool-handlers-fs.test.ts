@@ -139,7 +139,7 @@ describe('handleCreateDir / handleTree', () => {
     const dir = path.join(tmpDir, 'newdir');
     const r = await handleCreateDir({ path: dir });
     expect(r.success).toBe(true);
-    expect(await fs.stat(dir).then(s => s.isDirectory())).toBe(true);
+    expect(await fs.stat(dir).then((s) => s.isDirectory())).toBe(true);
   });
 
   it('tree 返回目录结构', async () => {
@@ -215,7 +215,7 @@ describe('handleReadMultipleFiles', () => {
     const r = await handleReadMultipleFiles({ paths: [p1, p2] });
     expect(r.success).toBe(true);
     expect(r.total).toBe(2);
-    const contents = (r.files as Array<{ path: string; success: boolean; content?: string }>).map(f => f.content);
+    const contents = (r.files as Array<{ path: string; success: boolean; content?: string }>).map((f) => f.content);
     expect(contents).toContain('one');
     expect(contents).toContain('two');
   });

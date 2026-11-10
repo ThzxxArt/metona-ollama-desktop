@@ -14,12 +14,13 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'read_file',
-      description: 'Read a LOCAL file from the filesystem. Does NOT support URLs — use web_fetch for web pages. Supports text mode (utf-8/latin1, line-based pagination) and binary mode (base64, byte-based pagination). Files up to 5MB (text) or 50MB (binary). When truncated, returns remaining_lines/remaining_bytes and a hint to continue reading. Use start_line/end_line for text files, offset_bytes/limit_bytes for binary files or raw byte access.',
+      description: 'Read one or more LOCAL files. Use "path" for a single file, or "paths" to batch-read up to 50 files in parallel. Does NOT support URLs — use web_fetch for web pages. Supports text (utf-8/latin1, line pagination) and binary (base64, byte pagination). Files up to 5MB (text) or 50MB (binary). When truncated, returns remaining_lines/remaining_bytes and a hint to continue.',
       parameters: {
         type: 'object',
-        required: ['path'],
         properties: {
-          path: { type: 'string', description: 'Local file path only (NOT a URL). Absolute or relative to workspace. For web URLs, use web_fetch instead.' },
+          path: { type: 'string', description: 'Single local file path (NOT a URL). Absolute or relative to workspace.' },
+          paths: { type: 'array', items: { type: 'string' }, description: 'Batch-read multiple local files (max 50). Mutually exclusive with path.' },
+          max_chars_per_file: { type: 'integer', description: 'Max chars per file when using paths. Default: 10000.' },
           encoding: { type: 'string', enum: ['utf-8', 'latin1', 'base64'], description: 'File encoding. Default: utf-8. Use base64 for binary content.' },
           start_line: { type: 'integer', description: 'Start line (1-indexed) for text files. Use with end_line for pagination.' },
           end_line: { type: 'integer', description: 'End line (inclusive). Default: start_line + 2000.' },
@@ -51,14 +52,15 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'list_directory',
-      description: 'List directory contents up to 2000 entries. Returns names, types, sizes, modification times. Supports offset pagination, recursion, and extension filtering.',
+      description: 'List directory contents up to 2000 entries, or render a tree when format="tree". Returns names, types, sizes, modification times. Supports offset pagination, recursion, and extension filtering.',
       parameters: {
         type: 'object',
         required: ['path'],
         properties: {
           path: { type: 'string', description: 'Directory path.' },
+          format: { type: 'string', enum: ['list', 'tree'], description: 'list = flat entries; tree = nested directory tree. Default: list.' },
           recursive: { type: 'boolean', description: 'List recursively. Default: false.' },
-          max_depth: { type: 'integer', description: 'Max recursion depth. Default: 3.' },
+          max_depth: { type: 'integer', description: 'Max recursion depth. Default: 3 (list) / 5 (tree).' },
           include_hidden: { type: 'boolean', description: 'Include hidden files. Default: false.' },
           filter_extension: { type: 'string', description: 'Filter files by extension (e.g. ".txt"). Only files matching this extension are returned. Default: no filter.' },
           offset: { type: 'integer', description: 'Skip first N entries for pagination. Default: 0.' }
@@ -82,20 +84,6 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
           max_results: { type: 'integer', description: 'Max results. Default: 0 (no limit).' },
           file_extensions: { type: 'array', items: { type: 'string' }, description: 'Filter extensions, e.g. [".ts", ".js"]' },
           use_regex: { type: 'boolean', description: 'Treat query as regular expression. Default: false.' }
-        }
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'create_directory',
-      description: 'Create a new directory. Creates parents automatically.',
-      parameters: {
-        type: 'object',
-        required: ['path'],
-        properties: {
-          path: { type: 'string', description: 'Directory path to create.' }
         }
       }
     }
@@ -133,30 +121,16 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     type: 'function',
     function: {
-      name: 'move_file',
-      description: 'Move or rename a file/directory. Requires user confirmation.',
+      name: 'file_transfer',
+      description: 'Copy or move a file/directory. operation="copy" copies, operation="move" moves or renames. Creates destination parent directories automatically.',
       parameters: {
         type: 'object',
-        required: ['source', 'destination'],
+        required: ['operation', 'source', 'destination'],
         properties: {
-          source: { type: 'string', description: 'Source path.' },
-          destination: { type: 'string', description: 'Destination path.' }
-        }
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'copy_file',
-      description: 'Copy a file or directory to a new location. Requires user confirmation.',
-      parameters: {
-        type: 'object',
-        required: ['source', 'destination'],
-        properties: {
+          operation: { type: 'string', enum: ['copy', 'move'], description: 'copy = duplicate, move = move or rename.' },
           source: { type: 'string', description: 'Source path.' },
           destination: { type: 'string', description: 'Destination path.' },
-          recursive: { type: 'boolean', description: 'Copy directories recursively. Default: true.' }
+          recursive: { type: 'boolean', description: 'Copy directories recursively (copy only). Default: true.' }
         }
       }
     }
@@ -200,22 +174,6 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     type: 'function',
     function: {
-      name: 'tree',
-      description: 'Display directory structure as a tree. Shows nested files and folders. Default depth: 5 levels.',
-      parameters: {
-        type: 'object',
-        required: ['path'],
-        properties: {
-          path: { type: 'string', description: 'Root directory path.' },
-          max_depth: { type: 'integer', description: 'Max depth. Default: 5.' },
-          include_hidden: { type: 'boolean', description: 'Include hidden files. Default: false.' }
-        }
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
       name: 'download_file',
       description: 'Download a file from a URL to a local path. Requires user confirmation.',
       parameters: {
@@ -224,21 +182,6 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         properties: {
           url: { type: 'string', description: 'URL to download (http/https).' },
           destination: { type: 'string', description: 'Local path to save the file.' }
-        }
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'read_multiple_files',
-      description: 'Read up to 50 LOCAL files at once in parallel. Does NOT support URLs — use web_fetch for web pages. Returns content of all requested files (10KB each by default).',
-      parameters: {
-        type: 'object',
-        required: ['paths'],
-        properties: {
-          paths: { type: 'array', items: { type: 'string' }, description: 'Array of LOCAL file paths to read (NOT URLs). For web URLs, use web_fetch instead.' },
-          max_chars_per_file: { type: 'integer', description: 'Max chars per file. Default: 10000.' }
         }
       }
     }
@@ -361,45 +304,13 @@ TIP: Use remove_batch when deleting multiple entries — it's much more efficien
     }
   },
   // ══════════════════════════════════════════════
-  // 会话管理工具
-  // ══════════════════════════════════════════════
-  {
-    type: 'function',
-    function: {
-      name: 'session_list',
-      description: 'List previous chat sessions with their titles and timestamps. Useful for referencing past conversations.',
-      parameters: {
-        type: 'object',
-        properties: {
-          limit: { type: 'integer', description: 'Max sessions to return. Default: 20.' },
-          search: { type: 'string', description: 'Filter sessions by title keyword.' }
-        }
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'session_read',
-      description: 'Read the messages from a previous chat session. Use when the user references something from a past conversation.',
-      parameters: {
-        type: 'object',
-        required: ['session_id'],
-        properties: {
-          session_id: { type: 'string', description: 'The session ID to read.' },
-          max_messages: { type: 'integer', description: 'Max messages to return. Default: 50.' }
-        }
-      }
-    }
-  },
-  // ══════════════════════════════════════════════
   // v4.3 新增工具：子代理委派
   // ══════════════════════════════════════════════
   {
     type: 'function',
     function: {
 name: 'spawn_task',
-description: 'Spawn a sub-agent to independently execute a task. Default permission is "readonly" (file reading, web search, browser viewing, memory/session queries). Set permission to "limited_write" for file editing tasks (write_file, edit_file, create_directory) or "full_write" for full capability (run_command, git, delete_file). Use this to parallelize independent sub-tasks. The model is configured in Settings and cannot be overridden per call.',
+description: 'Spawn a sub-agent to independently execute a task. Default permission is "readonly" (file reading, web search, browser viewing, memory/session queries). Set permission to "limited_write" for file editing tasks (write_file, edit_file, file_transfer, browser) or "full_write" for full capability (run_command, git, delete_file). Use this to parallelize independent sub-tasks. The model is configured in Settings and cannot be overridden per call.',
 parameters: {
 type: 'object',
 required: ['task'],
@@ -412,168 +323,64 @@ permission: { type: 'string', enum: ['readonly', 'limited_write', 'full_write'],
     }
   },
   // ══════════════════════════════════════════════
-  // 新增工具：Plan Mode 执行追踪
+  // 会话读取（合并原两个会话工具）
   // ══════════════════════════════════════════════
   {
     type: 'function',
     function: {
-      name: 'plan_track',
-      description: 'Manage Plan Mode execution progress. Use this to mark plan steps as completed so you always know what remains. REQUIRED in Plan Mode — call plan_track after completing each step.',
+      name: 'session',
+      description: 'Read previous chat sessions. action="list" lists sessions (optional search/limit); action="read" reads messages of a session (requires session_id).',
       parameters: {
         type: 'object',
         required: ['action'],
         properties: {
-          action: { type: 'string', enum: ['status', 'mark_done', 'mark_undone', 'mark_all_done'], description: 'status=查看当前进度, mark_done=标记步骤完成, mark_undone=撤销步骤完成标记, mark_all_done=全部完成' },
-          step_index: { type: 'integer', description: 'Step number (1-indexed) to mark as done. Required for mark_done.' },
-          step_label: { type: 'string', description: 'Optional: description of what was completed, for logging.' }
+          action: { type: 'string', enum: ['list', 'read'], description: 'list = list sessions, read = read one session.' },
+          session_id: { type: 'string', description: '[read REQUIRED] Session ID to read.' },
+          max_messages: { type: 'integer', description: '[read] Max messages to return. Default: 50.' },
+          limit: { type: 'integer', description: '[list] Max sessions to return. Default: 20.' },
+          search: { type: 'string', description: '[list] Filter sessions by title keyword.' }
         }
       }
     }
   },
   // ══════════════════════════════════════════════
-  // v5.0 新增工具：浏览器控制
-  // ══════════════════════════════════════════════
-  // v5.1 Browser 控制工具（增强版）
+  // 浏览器控制（合并 9 个 browser_* 工具）
   // ══════════════════════════════════════════════
   {
     type: 'function',
     function: {
-      name: 'browser_open',
-      description: 'Open a URL in the agent browser. Waits for page load. Use wait_selector to wait for a specific element (useful for SPA pages). Returns page title and URL.',
+      name: 'browser',
+      description: `Control the agent browser via action:
+- open: {"action":"open","url":"https://example.com","wait_selector":"#main"}
+- extract: {"action":"extract","selector":"article","max_chars":15000}
+- screenshot: {"action":"screenshot","full_page":true} or {"selector":"#chart"}
+- click: {"action":"click","selector":"button.submit","wait":true}
+- type: {"action":"type","selector":"input[name=q]","text":"query","clear":true,"submit":true}
+- scroll: {"action":"scroll","direction":"down"} or {"selector":"#footer"}
+- wait: {"action":"wait","selector":".loaded"} or {"time_ms":1000}
+- evaluate: {"action":"evaluate","js":"document.title"}
+- close: {"action":"close"}`,
       parameters: {
         type: 'object',
-        required: ['url'],
+        required: ['action'],
         properties: {
-          url: { type: 'string', description: 'The URL to open (http/https).' },
-          wait_selector: { type: 'string', description: 'CSS selector to wait for after page load. Useful for SPA/dynamic pages. Default: none.' }
+          action: { type: 'string', enum: ['open', 'extract', 'screenshot', 'click', 'type', 'scroll', 'wait', 'evaluate', 'close'], description: 'Browser action.' },
+          url: { type: 'string', description: '[open REQUIRED] URL (http/https).' },
+          wait_selector: { type: 'string', description: '[open] CSS selector to wait for after load.' },
+          selector: { type: 'string', description: '[extract/click/type/scroll/wait/screenshot] CSS selector.' },
+          max_chars: { type: 'integer', description: '[extract] Max characters. Default: 15000.' },
+          full_page: { type: 'boolean', description: '[screenshot] Capture full page.' },
+          wait: { type: 'boolean', description: '[click] Wait up to 10s for element.' },
+          text: { type: 'string', description: '[type REQUIRED] Text to type.' },
+          clear: { type: 'boolean', description: '[type] Clear input first. Default: true.' },
+          submit: { type: 'boolean', description: '[type] Submit form after typing.' },
+          direction: { type: 'string', enum: ['down', 'up', 'top', 'bottom'], description: '[scroll] Direction. Default: down.' },
+          time_ms: { type: 'integer', description: '[wait] Fixed delay in ms. Default: 1000.' },
+          js: { type: 'string', description: '[evaluate REQUIRED] JavaScript to execute.' }
         }
       }
     }
   },
-  {
-    type: 'function',
-    function: {
-      name: 'browser_screenshot',
-      description: 'Take a screenshot of the current page. Supports viewport (default), full_page (entire scrollable page), or selector (specific element only). Returns base64 PNG.',
-      parameters: {
-        type: 'object',
-        properties: {
-          full_page: { type: 'boolean', description: 'Capture the entire scrollable page. Default: false.' },
-          selector: { type: 'string', description: 'CSS selector of element to capture. Overrides full_page.' }
-        }
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'browser_evaluate',
-      description: 'Execute JavaScript in the browser page. Returns the result as JSON string. Use to read DOM, extract data, or interact programmatically.',
-      parameters: {
-        type: 'object',
-        required: ['js'],
-        properties: {
-          js: { type: 'string', description: 'JavaScript code to execute in the page context.' }
-        }
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'browser_extract',
-      description: 'Extract text and links from the current page. Use selector to extract only from a specific element (e.g. "main", "#content", "article"). Without selector, extracts full page. Returns title, text, and up to 50 links.',
-      parameters: {
-        type: 'object',
-        properties: {
-          selector: { type: 'string', description: 'CSS selector to extract from. Default: entire body.' },
-          max_chars: { type: 'integer', description: 'Max characters to return. Default: 15000.' }
-        }
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'browser_click',
-      description: 'Click an element by CSS selector. Use wait=true to wait up to 10s for the element to appear first (useful after page navigation). Scrolls element into view before clicking.',
-      parameters: {
-        type: 'object',
-        required: ['selector'],
-        properties: {
-          selector: { type: 'string', description: 'CSS selector for the element to click.' },
-          wait: { type: 'boolean', description: 'Wait for element to appear before clicking (max 10s). Default: false.' }
-        }
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'browser_type',
-      description: 'Type text into an input field. Use clear=false to append instead of replacing. Use submit=true to press Enter or submit the parent form after typing.',
-      parameters: {
-        type: 'object',
-        required: ['selector', 'text'],
-        properties: {
-          selector: { type: 'string', description: 'CSS selector for the input element.' },
-          text: { type: 'string', description: 'Text to type into the input.' },
-          clear: { type: 'boolean', description: 'Clear existing text first. Default: true.' },
-          submit: { type: 'boolean', description: 'Submit the form or press Enter after typing. Default: false.' }
-        }
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'browser_scroll',
-      description: 'Scroll the page. Use direction for up/down/top/bottom, or selector to scroll a specific element into view.',
-      parameters: {
-        type: 'object',
-        properties: {
-          direction: { type: 'string', enum: ['down', 'up', 'top', 'bottom'], description: 'Scroll direction. Default: down.' },
-          selector: { type: 'string', description: 'CSS selector to scroll into view (overrides direction).' }
-        }
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'browser_wait',
-      description: 'Wait for a condition. Use selector to wait for an element to appear, or time_ms for a fixed delay. Default: 1 second.',
-      parameters: {
-        type: 'object',
-        properties: {
-          selector: { type: 'string', description: 'CSS selector to wait for. Returns found: true/false.' },
-          time_ms: { type: 'integer', description: 'Fixed wait time in milliseconds. Default: 1000.' }
-        }
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'browser_close',
-      description: 'Close the agent browser and free resources.',
-      parameters: { type: 'object', properties: {} }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'calculator',
-      description: 'Safely evaluate a mathematical expression. Supports + - * / ** % () and floating-point numbers. Uses a pure JS recursive descent parser — no eval(), CSP-safe. Returns the numeric result.',
-      parameters: {
-        type: 'object',
-        required: ['expression'],
-        properties: {
-          expression: { type: 'string', description: 'The mathematical expression to evaluate (e.g., "(3 + 5) * 2 ** 3"). Max 500 characters.' }
-        }
-      }
-    }
-  }
 ];
 
 // 支持三档开关的工具列表（auto/confirm/disabled）
@@ -581,8 +388,8 @@ permission: { type: 'string', enum: ['readonly', 'limited_write', 'full_write'],
 // 导出供 tools-modal.ts 等 UI 复用，保持单一事实来源
 export const MODE_TOOLS = [
   'run_command',
-  'write_file', 'create_directory', 'delete_file',
-  'edit_file', 'move_file', 'copy_file',
+  'write_file', 'delete_file',
+  'edit_file', 'file_transfer',
   'download_file', 'compress',
 ];
 
@@ -634,34 +441,11 @@ export function initGlobalToolMode(mode: ToolMode): void {
   }
 }
 
-let enabledTools: Set<string> = new Set([
-  'read_file', 'list_directory', 'search_files',
-  'write_file', 'create_directory', 'delete_file',
-  'run_command',
-  'move_file', 'copy_file', 'web_fetch', 'web_search', 'edit_file',
-  'tree', 'download_file',
-  'read_multiple_files', 'git', 'compress', 'diff',
-  'memory',
-  'session_list', 'session_read', 'spawn_task',
-  'browser_open', 'browser_screenshot', 'browser_evaluate', 'browser_extract',
-  'browser_click', 'browser_type', 'browser_scroll', 'browser_wait', 'browser_close',
-  'calculator'
-]);
+let enabledTools: Set<string> = new Set(TOOL_DEFINITIONS.map(def => def.function.name));
 
 export function setToolEnabled(toolName: string, enabled: boolean): void {
   if (enabled) enabledTools.add(toolName);
   else enabledTools.delete(toolName);
-}
-
-/** Plan Mode 激活时注册 plan_track，关闭时移除 */
-export function setPlanModeActive(active: boolean): void {
-  if (active) {
-    enabledTools.add('plan_track');
-  } else {
-    enabledTools.delete('plan_track');
-    // 清除追踪器状态（同时清模块变量和 state）
-    clearPlanTracker();
-  }
 }
 
 
@@ -680,38 +464,23 @@ const CORE_TOOLS = new Set([
 
 /** 工具关键词映射 — 用于语义匹配 */
 const TOOL_KEYWORDS: Record<string, string[]> = {
-  read_file: ['read', 'file', '读取', '文件', '看', '查看', '内容', '打开文件', 'cat', 'less', 'head', 'tail'],
-  write_file: ['write', 'file', '写入', '保存', '创建文件', '输出', '写入文件', '写入内容', 'echo'],
-  list_directory: ['list', 'directory', '目录', '文件夹', '列', 'ls', '列出', '查看目录'],
-  search_files: ['search', 'find', '搜索', '查找', 'grep', 'find', '正则', '通配符', 'rg', 'ag'],
-  create_directory: ['create', 'directory', 'mkdir', '创建目录', '新建', '新建文件夹'],
+  read_file: ['read', 'file', '读取', '文件', '看', '查看', '内容', '打开文件', 'cat', 'less', 'head', 'tail', '批量读取', '多个文件'],
+  write_file: ['write', 'file', '写入', '保存', '创建文件', '输出', '写入文件', '写入内容', 'echo', 'mkdir', '创建目录', '新建文件夹'],
+  list_directory: ['list', 'directory', '目录', '文件夹', '列', 'ls', '列出', '查看目录', 'tree', '树', '目录结构', '层级'],
+  search_files: ['search', 'find', '搜索', '查找', 'grep', '正则', '通配符', 'rg', 'ag'],
   delete_file: ['delete', 'remove', '删除', 'rm', '移除', '清空'],
   run_command: ['run', 'command', 'shell', '执行', '命令', '终端', 'cmd', 'powershell', 'bash', '脚本'],
-  move_file: ['move', 'rename', '移动', '重命名', 'mv', '改名', '移动文件'],
-  copy_file: ['copy', '复制', 'cp', '拷贝'],
+  file_transfer: ['move', 'rename', 'copy', '移动', '重命名', 'mv', '复制', 'cp', '拷贝'],
   web_fetch: ['fetch', 'url', '网页', '抓取', '获取', '爬虫', '网页内容', '页面', '网址', '链接', '请求'],
   web_search: ['search', 'web', '搜索', '联网', '查', 'google', 'bing', '百度', '搜狗', '360', '查询', '在线搜索'],
   edit_file: ['edit', 'replace', '编辑', '替换', '修改', 'sed', '补丁', 'patch', '修改文件'],
-  tree: ['tree', '结构', '树', '目录结构', '层级', 'find'],
   download_file: ['download', '下载', '保存到本地', '下载文件'],
-  read_multiple_files: ['read', 'multiple', '批量读取', '多个文件', '并行读取', '批量'],
   git: ['git', 'commit', 'push', 'pull', 'branch', '仓库', '版本控制', 'checkout', 'merge', 'diff', 'log', 'stash', 'tag'],
   compress: ['compress', 'zip', 'tar', '压缩', '解压', 'extract', '打包', '归档', '解压缩', 'gzip'],
   memory: ['memory', '记忆', 'remember', 'save', 'rule', '规则', '记住', '偏好', '事实', '遗忘', '回忆'],
-  session_list: ['session', 'history', '会话', '历史', '历史记录', '会话列表'],
-  session_read: ['session', 'read', '读取会话', '查看会话', '历史会话'],
+  session: ['session', 'history', '会话', '历史', '历史记录', '会话列表', '读取会话'],
   spawn_task: ['sub', 'agent', 'delegate', '子代理', '委派', '并行', '子任务', '委派任务'],
-  plan_track: ['plan', 'track', '计划', '进度', '步骤', '追踪', '计划追踪'],
-  browser_open: ['browser', 'open', '浏览器', '打开网页', '访问', '浏览', '打开网站', '访问网页'],
-  browser_screenshot: ['screenshot', '截图', '屏幕', '截屏', '画面', '截取'],
-  browser_evaluate: ['evaluate', 'javascript', 'js', '执行JS', '运行JS', '脚本执行', 'DOM'],
-  browser_extract: ['extract', '提取', '内容', '读取网页', '获取内容', '网页文本'],
-  browser_click: ['click', '点击', '按钮', '链接', '选择', '按下'],
-  browser_type: ['type', 'input', '输入', '填写', '表单', '输入框'],
-  browser_scroll: ['scroll', '滚动', '翻页', '滑', '向下', '向上'],
-  browser_wait: ['wait', '等待', '加载', '延时', '延迟'],
-  browser_close: ['close', '关闭浏览器', '关闭网页', '退出浏览器'],
-  calculator: ['calculate', 'math', '计算', '算', '算术', '求值', '数学', '表达式'],
+  browser: ['browser', 'open', '浏览器', '打开网页', '访问', '浏览', '截图', '点击', '输入', '滚动', '等待', 'javascript'],
 };
 
 /** R55: 根据用户查询语义过滤工具定义，减少 token 占用 */
@@ -815,7 +584,7 @@ function hasCommandInjection(command: string): boolean {
 /** R28: 工具安全验证 — 在执行前检查安全风险 */
 export function validateToolSecurity(toolName: string, args: Record<string, unknown>): string | null {
   // R28: URL 检测 — 本地文件工具不接受 URL
-  const localFileTools = ['read_file', 'read_multiple_files', 'write_file', 'edit_file', 'list_directory', 'search_files', 'create_directory', 'delete_file', 'move_file', 'copy_file', 'tree'];
+  const localFileTools = ['read_file', 'write_file', 'edit_file', 'list_directory', 'search_files', 'delete_file', 'file_transfer'];
   if (localFileTools.includes(toolName)) {
     const pathFields = ['path', 'source', 'destination', 'file1', 'file2'];
     for (const field of pathFields) {
@@ -826,7 +595,7 @@ export function validateToolSecurity(toolName: string, args: Record<string, unkn
         }
       }
     }
-    // paths 数组检查（read_multiple_files）
+    // paths 数组检查（read_file 批量读取）
     if (Array.isArray(args.paths)) {
       const urls = (args.paths as string[]).filter(p => {
         if (typeof p !== 'string') return false;
@@ -834,7 +603,7 @@ export function validateToolSecurity(toolName: string, args: Record<string, unkn
         return lower.startsWith('http://') || lower.startsWith('https://');
       });
       if (urls.length > 0) {
-        return `paths 数组中包含 ${urls.length} 个 URL，read_multiple_files 仅支持本地文件。请改用 web_fetch 工具逐个抓取以下 URL:\n${urls.join('\n')}`;
+        return `paths 数组中包含 ${urls.length} 个 URL，read_file 仅支持本地文件。请改用 web_fetch 工具逐个抓取以下 URL:\n${urls.join('\n')}`;
       }
     }
   }
@@ -847,7 +616,7 @@ export function validateToolSecurity(toolName: string, args: Record<string, unkn
     }
   }
 
-  // 多路径参数检查（read_multiple_files）
+  // 多路径参数检查（read_file 批量读取）
   if (Array.isArray(args.paths)) {
     for (const p of args.paths) {
       if (typeof p === 'string' && hasPathTraversal(p)) {
@@ -1165,7 +934,7 @@ export function suggestToolFix(toolName: string, args: Record<string, unknown>, 
 
   // 网络错误
   if (err.includes('network') || err.includes('timeout') || err.includes('econnrefused') || err.includes('fetch')) {
-    return `网络请求失败。建议：1) 检查 URL 是否正确; 2) 确认网络连接; 3) 某些站点可能需要使用 browser_open 工具代替 web_fetch。`;
+    return `网络请求失败。建议：1) 检查 URL 是否正确; 2) 确认网络连接; 3) 某些站点可能需要使用 browser action="open" 工具代替 web_fetch。`;
   }
 
   // JSON 解析错误
@@ -1263,8 +1032,7 @@ function formatToolResult(toolName: string, result: ToolResult): ToolResult {
 
   // 为特定工具添加结构化摘要
   switch (toolName) {
-    case 'list_directory':
-    case 'tree': {
+    case 'list_directory': {
       // 目录列表添加统计摘要
       const entries = (result as any).entries || (result as any).items;
       if (Array.isArray(entries)) {
@@ -1407,45 +1175,46 @@ const results = await search(query, limit);
           return { success: false, error: `未知操作: ${action}。支持: search / add / replace / remove / read_all` };
       }
     }
-    if (toolName === 'session_list') {
+    if (toolName === 'session') {
       const bridge = window.metonaDesktop;
       if (!bridge?.db) return { success: false, error: '桌面 API 不可用' };
-      const limit = (args.limit as number) || 0;
-      const search = (args.search as string) || '';
-      // 使用会话摘要（单条 SQL），避免为列表工具全量加载所有消息
-      const summaries = await bridge.db.getSessionSummaries();
-      let filtered = summaries.map((s: { id: string; title: string; model: string; message_count: number; created_at: number; updated_at: number }) => ({
-        id: s.id,
-        title: s.title,
-        model: s.model,
-        messageCount: s.message_count,
-        createdAt: s.created_at,
-        updatedAt: s.updated_at
-      }));
-      if (search) {
-        filtered = filtered.filter(s => s.title.toLowerCase().includes(search.toLowerCase()));
+      const action = args.action as string || 'list';
+      if (action === 'list') {
+        const limit = (args.limit as number) || 0;
+        const search = (args.search as string) || '';
+        const summaries = await bridge.db.getSessionSummaries();
+        let filtered = summaries.map((s: { id: string; title: string; model: string; message_count: number; created_at: number; updated_at: number }) => ({
+          id: s.id,
+          title: s.title,
+          model: s.model,
+          messageCount: s.message_count,
+          createdAt: s.created_at,
+          updatedAt: s.updated_at
+        }));
+        if (search) {
+          filtered = filtered.filter(s => s.title.toLowerCase().includes(search.toLowerCase()));
+        }
+        filtered.sort((a: { updatedAt: number }, b: { updatedAt: number }) => b.updatedAt - a.updatedAt);
+        if (limit > 0) filtered = filtered.slice(0, limit);
+        logToolResult('session', true, `${filtered.length} 个会话`);
+        return { success: true, action: 'list', sessions: filtered, total: filtered.length };
       }
-      filtered.sort((a: { updatedAt: number }, b: { updatedAt: number }) => b.updatedAt - a.updatedAt);
-      if (limit > 0) filtered = filtered.slice(0, limit);
-      logToolResult('session_list', true, `${filtered.length} 个会话`);
-      return { success: true, sessions: filtered, total: filtered.length };
-    }
-    if (toolName === 'session_read') {
-      const bridge = window.metonaDesktop;
-      if (!bridge?.db) return { success: false, error: '桌面 API 不可用' };
-      const sessionId = args.session_id as string;
-      const maxMessages = (args.max_messages as number) || 0; // 0 = 不限制
-      if (!sessionId) return { success: false, error: '缺少 session_id 参数' };
-      const session = await bridge.db.getSession(sessionId);
-      if (!session) return { success: false, error: `会话 ${sessionId} 不存在` };
-      const messages = await bridge.db.getMessages(sessionId);
-      const msgs = (maxMessages > 0 ? messages.slice(0, maxMessages) : messages).map((m: any) => ({
-        role: m.role,
-        content: m.content || '',
-        timestamp: m.created_at
-      }));
-      logToolResult('session_read', true, `${msgs.length} 条消息`);
-      return { success: true, session: { id: session.id, title: session.title, model: session.model }, messages: msgs, total: messages.length };
+      if (action === 'read') {
+        const sessionId = args.session_id as string;
+        const maxMessages = (args.max_messages as number) || 0;
+        if (!sessionId) return { success: false, error: '缺少 session_id 参数' };
+        const session = await bridge.db.getSession(sessionId);
+        if (!session) return { success: false, error: `会话 ${sessionId} 不存在` };
+        const messages = await bridge.db.getMessages(sessionId);
+        const msgs = (maxMessages > 0 ? messages.slice(0, maxMessages) : messages).map((m: any) => ({
+          role: m.role,
+          content: m.content || '',
+          timestamp: m.created_at
+        }));
+        logToolResult('session', true, `${msgs.length} 条消息`);
+        return { success: true, action: 'read', session: { id: session.id, title: session.title, model: session.model }, messages: msgs, total: messages.length };
+      }
+      return { success: false, error: `未知 action: ${action}。支持: list / read` };
     }
 
     // v4.3 spawn_task 走子代理（模型只能从设置面板指定，不允许 AI 自选）
@@ -1473,56 +1242,6 @@ const results = await search(query, limit);
       const result = await executeSubAgent(task, context, { model, permission, confirmHandler: _subAgentConfirmHandler ?? undefined });
       logToolResult('spawn_task', result.success, result.success ? `完成, ${(result as any).loops} 轮` : result.error);
       return result;
-    }
-
-    // plan_track — Plan Mode 执行追踪
-    if (toolName === 'plan_track') {
-      const action = args.action as string;
-      const stepIndex = args.step_index as number | undefined;
-      const stepLabel = (args.step_label as string) || '';
-      const tracker = getPlanTracker();
-      if (action === 'status') {
-        return { success: true, action: 'status', steps: tracker.steps, total: tracker.total, done: tracker.done };
-      }
-      if (action === 'mark_done' && typeof stepIndex === 'number' && stepIndex > 0) {
-        if (!Number.isInteger(stepIndex)) {
-          return { success: false, error: `step_index 必须是整数，收到 ${stepIndex}` };
-        }
-        const idx = stepIndex - 1;
-        if (idx >= 0 && idx < tracker.steps.length) {
-          tracker.steps[idx].done = true;
-          tracker.done = tracker.steps.filter(s => s.done).length;
-          if (stepLabel) tracker.steps[idx].label = stepLabel;
-          savePlanTracker(tracker);
-          const remaining = tracker.total - tracker.done;
-          logToolResult('plan_track', true, `步骤 ${stepIndex} 已完成 (${tracker.done}/${tracker.total}${remaining > 0 ? `, 剩余 ${remaining}` : ', 全部完成!'})`);
-          return { success: true, action: 'mark_done', step: stepIndex, done: tracker.done, total: tracker.total, remaining };
-        }
-        return { success: false, error: `步骤 ${stepIndex} 不存在（共 ${tracker.total} 步）` };
-      }
-      if (action === 'mark_undone' && typeof stepIndex === 'number' && stepIndex > 0) {
-        if (!Number.isInteger(stepIndex)) {
-          return { success: false, error: `step_index 必须是整数，收到 ${stepIndex}` };
-        }
-        const idx = stepIndex - 1;
-        if (idx >= 0 && idx < tracker.steps.length) {
-          tracker.steps[idx].done = false;
-          tracker.done = tracker.steps.filter(s => s.done).length;
-          savePlanTracker(tracker);
-          const remaining = tracker.total - tracker.done;
-          logToolResult('plan_track', true, `步骤 ${stepIndex} 已撤销完成标记 (${tracker.done}/${tracker.total}, 剩余 ${remaining})`);
-          return { success: true, action: 'mark_undone', step: stepIndex, done: tracker.done, total: tracker.total, remaining };
-        }
-        return { success: false, error: `步骤 ${stepIndex} 不存在（共 ${tracker.total} 步）` };
-      }
-      if (action === 'mark_all_done') {
-        for (const s of tracker.steps) s.done = true;
-        tracker.done = tracker.total;
-        savePlanTracker(tracker);
-        logToolResult('plan_track', true, `全部 ${tracker.total} 步已完成`);
-        return { success: true, action: 'mark_all_done', done: tracker.total, total: tracker.total, remaining: 0 };
-      }
-      return { success: false, error: `未知操作: ${action}` };
     }
 
     // run_command 走 workspace IPC
@@ -1575,98 +1294,30 @@ const results = await search(query, limit);
 export function getToolIcon(name: string): string {
   const icons: Record<string, string> = {
     read_file: '📄', write_file: '✏️', list_directory: '📁',
-    search_files: '🔍', create_directory: '📂', delete_file: '🗑️', run_command: '💻',
-    move_file: '📦', copy_file: '📋', web_fetch: '🌐',
-    edit_file: '✂️', tree: '🌳', download_file: '⬇️',
-    read_multiple_files: '📚',
+    search_files: '🔍', delete_file: '🗑️', run_command: '💻',
+    file_transfer: '📦', web_fetch: '🌐',
+    edit_file: '✂️', download_file: '⬇️',
     git: '🔖', compress: '🗜️', web_search: '🔍',
     memory: '🧠',
-    session_list: '📋', session_read: '📖', spawn_task: '🤖',
-    plan_track: '📋',
-    browser_open: '🌐', browser_screenshot: '📸', browser_evaluate: '⚡', browser_extract: '📰',
-    browser_click: '👆', browser_type: '⌨️', browser_scroll: '↕️', browser_close: '❌',
-    browser_wait: '⏳',
-    calculator: '🔢'
+    session: '📖', spawn_task: '🤖',
+    browser: '🌐',
+    diff: '🔍',
   };
   return icons[name] || '🔧';
-}
-
-/** ── Plan Mode 执行追踪器 ── */
-
-export interface PlanStep {
-  index: number;
-  label: string;
-  done: boolean;
-}
-
-export interface PlanTracker {
-  steps: PlanStep[];
-  total: number;
-  done: number;
-  active: boolean;
-}
-
-let _planTracker: PlanTracker = { steps: [], total: 0, done: 0, active: false };
-
-const EMPTY_TRACKER: PlanTracker = { steps: [], total: 0, done: 0, active: false };
-
-export function getPlanTracker(): PlanTracker {
-  // 始终从 state 同步最新状态；state 为 null 时返回空追踪器
-  const saved = state.get<PlanTracker | null>('_planTracker', null);
-  _planTracker = saved ?? EMPTY_TRACKER;
-  return _planTracker;
-}
-
-export function savePlanTracker(tracker: PlanTracker): void {
-  _planTracker = tracker;
-  state.set('_planTracker', tracker);
-}
-
-export function initPlanTracker(steps: string[]): PlanTracker {
-  const tracker: PlanTracker = {
-    steps: steps.map((label, i) => ({ index: i + 1, label, done: false })),
-    total: steps.length,
-    done: 0,
-    active: true,
-  };
-  savePlanTracker(tracker);
-  logInfo('Plan Tracker 已初始化', `${tracker.total} 个步骤`);
-  return tracker;
-}
-
-export function clearPlanTracker(): void {
-  _planTracker = EMPTY_TRACKER;
-  state.set('_planTracker', null);
-}
-
-export function formatPlanStatus(): string {
-  const t = getPlanTracker();
-  if (!t.active || t.steps.length === 0) return '';
-  const lines = t.steps.map(s => {
-    const icon = s.done ? '✅' : '⬜';
-    return `${icon} 步骤${s.index}: ${s.label}`;
-  });
-  const pct = t.total > 0 ? Math.round(t.done / t.total * 100) : 0;
-  const hint = t.done >= t.total ? '✅ 全部步骤已完成，请给出最终回答。' : '';
-  return `[Plan Mode 执行进度: ${t.done}/${t.total} (${pct}%)]\n${lines.join('\n')}${hint ? '\n\n' + hint : ''}`;
 }
 
 export function formatToolName(name: string): string {
   const names: Record<string, string> = {
     read_file: '读取文件', write_file: '写入文件', list_directory: '列出目录',
-    search_files: '搜索文件', create_directory: '创建目录', delete_file: '删除文件',
-    run_command: '执行命令', move_file: '移动文件', copy_file: '复制文件',
+    search_files: '搜索文件', delete_file: '删除文件',
+    run_command: '执行命令', file_transfer: '复制/移动',
     web_fetch: '网页抓取', edit_file: '编辑文件',
-    tree: '目录树', download_file: '下载文件',
-    read_multiple_files: '批量读取',
+    download_file: '下载文件',
     git: 'Git 操作', compress: '压缩/解压', web_search: '联网搜索',
     memory: '记忆管理',
-    session_list: '会话列表', session_read: '读取会话', spawn_task: '子代理委派',
-    plan_track: '计划追踪',
-    browser_open: '打开网页', browser_screenshot: '浏览器截图', browser_evaluate: '执行JS', browser_extract: '提取内容',
-    browser_click: '点击元素', browser_type: '输入文本', browser_scroll: '滚动页面', browser_close: '关闭浏览器',
-    browser_wait: '等待',
-    calculator: '计算器'
+    session: '会话读取', spawn_task: '子代理委派',
+    browser: '浏览器控制',
+    diff: '文件差异',
   };
   return names[name] || name;
 }

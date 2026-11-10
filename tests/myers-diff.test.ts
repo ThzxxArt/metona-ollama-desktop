@@ -4,30 +4,30 @@ import { diffLines, buildUnifiedHunks } from '../src/main/myers-diff.js';
 describe('diffLines', () => {
   it('全同文件返回全 equal', () => {
     const ops = diffLines(['a', 'b', 'c'], ['a', 'b', 'c']);
-    expect(ops.every(op => op.op === 'equal')).toBe(true);
+    expect(ops.every((op) => op.op === 'equal')).toBe(true);
     expect(ops).toHaveLength(3);
   });
 
   it('纯新增', () => {
     const ops = diffLines(['a'], ['a', 'x', 'y']);
-    const inserts = ops.filter(op => op.op === 'insert');
+    const inserts = ops.filter((op) => op.op === 'insert');
     expect(inserts).toHaveLength(2);
-    expect(ops.filter(op => op.op === 'equal')).toHaveLength(1);
-    expect(ops.filter(op => op.op === 'delete')).toHaveLength(0);
+    expect(ops.filter((op) => op.op === 'equal')).toHaveLength(1);
+    expect(ops.filter((op) => op.op === 'delete')).toHaveLength(0);
   });
 
   it('纯删除', () => {
     const ops = diffLines(['a', 'x', 'y', 'b'], ['a', 'b']);
-    expect(ops.filter(op => op.op === 'delete')).toHaveLength(2);
-    expect(ops.filter(op => op.op === 'insert')).toHaveLength(0);
+    expect(ops.filter((op) => op.op === 'delete')).toHaveLength(2);
+    expect(ops.filter((op) => op.op === 'insert')).toHaveLength(0);
   });
 
   it('中部修改：前后缀裁剪 + LCS 精确差异', () => {
     const old = ['h1', 'h2', 'old1', 'old2', 't1', 't2'];
     const now = ['h1', 'h2', 'new1', 't1', 't2'];
     const ops = diffLines(old, now);
-    expect(ops.filter(op => op.op === 'delete').map(op => old[op.oldIdx!])).toEqual(['old1', 'old2']);
-    expect(ops.filter(op => op.op === 'insert').map(op => now[op.newIdx!])).toEqual(['new1']);
+    expect(ops.filter((op) => op.op === 'delete').map((op) => old[op.oldIdx!])).toEqual(['old1', 'old2']);
+    expect(ops.filter((op) => op.op === 'insert').map((op) => now[op.newIdx!])).toEqual(['new1']);
     // 前后缀 equal 保留
     expect(ops[0].op).toBe('equal');
     expect(ops[ops.length - 1].op).toBe('equal');
@@ -43,9 +43,9 @@ describe('diffLines', () => {
     const old = ['a', 'b', 'c', 'd'];
     const now = ['b', 'd'];
     const ops = diffLines(old, now);
-    expect(ops.filter(op => op.op === 'equal')).toHaveLength(2); // b、d 被识别为公共
-    expect(ops.filter(op => op.op === 'delete')).toHaveLength(2); // a、c 删除
-    expect(ops.filter(op => op.op === 'insert')).toHaveLength(0);
+    expect(ops.filter((op) => op.op === 'equal')).toHaveLength(2); // b、d 被识别为公共
+    expect(ops.filter((op) => op.op === 'delete')).toHaveLength(2); // a、c 删除
+    expect(ops.filter((op) => op.op === 'insert')).toHaveLength(0);
   });
 });
 

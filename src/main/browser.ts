@@ -30,11 +30,11 @@ export function isBrowserOpen(): boolean {
 /** 获取浏览器状态：确保浏览器已打开并加载了页面 */
 function ensureBrowserReady(): { ok: boolean; error?: string; win?: BrowserWindow } {
   if (!isBrowserOpen()) {
-    return { ok: false, error: '浏览器未打开，请先使用 browser_open 加载页面' };
+    return { ok: false, error: '浏览器未打开，请先使用 browser action="open" 加载页面' };
   }
   const win = agentBrowser!;
   if (win.webContents.getURL() === 'about:blank') {
-    return { ok: false, error: '浏览器未加载任何页面，请先使用 browser_open 加载页面' };
+    return { ok: false, error: '浏览器未加载任何页面，请先使用 browser action="open" 加载页面' };
   }
   return { ok: true, win };
 }
@@ -86,12 +86,12 @@ export async function browserOpen(url: string, waitSelector?: string): Promise<{
   try {
     // 协议白名单：仅 http/https（阻止 file:// 读取本地文件绕过路径安全层）
     if (!/^https?:\/\//i.test(url)) {
-      return { success: false, error: `browser_open 仅支持 http/https 协议，收到: ${url.slice(0, 60)}` };
+      return { success: false, error: `browser action="open" 仅支持 http/https 协议，收到: ${url.slice(0, 60)}` };
     }
     // SSRF 防护：阻止访问环回/内网地址
     const netCheck = await checkPublicHttpUrl(url);
     if (!netCheck.ok) {
-      sendLog('warn', `🌐 browser_open 安全拦截`, netCheck.reason || '');
+      sendLog('warn', `🌐 browser open 安全拦截`, netCheck.reason || '');
       return { success: false, error: `安全拦截: ${netCheck.reason}` };
     }
 

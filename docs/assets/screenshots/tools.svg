@@ -1,0 +1,159 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="760" viewBox="0 0 1200 760" role="img" aria-labelledby="title desc">
+  <title id="title">18 个内置工具面板</title>
+  <desc id="desc">工具面板以卡片网格展示 18 个内置工具及执行模式</desc>
+  <defs>
+    <style>
+      .bg { fill: #FAF7F2; }
+      .card { fill: #FFFFFF; stroke: #EADFD2; }
+      .text { font-family: Inter, 'Noto Sans SC', system-ui, sans-serif; fill: #2D2016; }
+      .muted { fill: #8A7A6A; }
+      .accent { fill: #E8734A; }
+      .auto { fill: #E8F5E9; }
+      .autoText { fill: #2E7D32; }
+      .confirm { fill: #FFF3E0; }
+      .confirmText { fill: #B26A00; }
+      .mono { font-family: 'JetBrains Mono', Consolas, monospace; }
+    </style>
+  </defs>
+  <rect class="bg" width="1200" height="760"/>
+  <text x="40" y="56" font-size="26" font-weight="800" class="text">🔧 工具面板（18 个）</text>
+  <text x="40" y="86" font-size="13" class="muted">AI 始终可自主调用；写操作可配置为自动 / 需确认。</text>
+  <rect x="880" y="36" width="280" height="42" rx="10" class="card"/>
+  <text x="900" y="62" font-size="13" class="text">全局模式：需确认 ▾</text>
+
+  <!-- row 1 -->
+  <g transform="translate(40 120)">
+    <rect width="270" height="112" rx="14" class="card"/>
+    <text x="18" y="34" font-size="16" class="text">📄 read_file</text>
+    <rect x="196" y="18" width="56" height="22" rx="11" class="auto"/>
+    <text x="208" y="33" font-size="10" class="autoText">自动</text>
+    <text x="18" y="62" font-size="11" class="muted">单文件 / paths 批量 / 分页续读</text>
+  </g>
+  <g transform="translate(330 120)">
+    <rect width="270" height="112" rx="14" class="card"/>
+    <text x="18" y="34" font-size="16" class="text">✏️ write_file</text>
+    <rect x="196" y="18" width="56" height="22" rx="11" class="confirm"/>
+    <text x="208" y="33" font-size="10" class="confirmText">需确认</text>
+    <text x="18" y="62" font-size="11" class="muted">自动创建父目录 / 追加模式</text>
+  </g>
+  <g transform="translate(620 120)">
+    <rect width="270" height="112" rx="14" class="card"/>
+    <text x="18" y="34" font-size="16" class="text">📁 list_directory</text>
+    <rect x="196" y="18" width="56" height="22" rx="11" class="auto"/>
+    <text x="208" y="33" font-size="10" class="autoText">自动</text>
+    <text x="18" y="62" font-size="11" class="muted">format = list | tree</text>
+  </g>
+  <g transform="translate(910 120)">
+    <rect width="250" height="112" rx="14" class="card"/>
+    <text x="18" y="34" font-size="16" class="text">🔍 search_files</text>
+    <rect x="176" y="18" width="56" height="22" rx="11" class="auto"/>
+    <text x="188" y="33" font-size="10" class="autoText">自动</text>
+    <text x="18" y="62" font-size="11" class="muted">文件名 / 内容 / 正则</text>
+  </g>
+
+  <!-- row 2 -->
+  <g transform="translate(40 250)">
+    <rect width="270" height="112" rx="14" class="card"/>
+    <text x="18" y="34" font-size="16" class="text">✂️ edit_file</text>
+    <rect x="196" y="18" width="56" height="22" rx="11" class="confirm"/>
+    <text x="208" y="33" font-size="10" class="confirmText">需确认</text>
+    <text x="18" y="62" font-size="11" class="muted">精确替换 / 正则替换</text>
+  </g>
+  <g transform="translate(330 250)">
+    <rect width="270" height="112" rx="14" class="card"/>
+    <text x="18" y="34" font-size="16" class="text">🗑️ delete_file</text>
+    <rect x="196" y="18" width="56" height="22" rx="11" class="confirm"/>
+    <text x="208" y="33" font-size="10" class="confirmText">需确认</text>
+    <text x="18" y="62" font-size="11" class="muted">单删 / 批量删除</text>
+  </g>
+  <g transform="translate(620 250)">
+    <rect width="270" height="112" rx="14" class="card"/>
+    <text x="18" y="34" font-size="16" class="text">📦 file_transfer</text>
+    <rect x="196" y="18" width="56" height="22" rx="11" class="confirm"/>
+    <text x="208" y="33" font-size="10" class="confirmText">需确认</text>
+    <text x="18" y="62" font-size="11" class="muted">operation = copy | move</text>
+  </g>
+  <g transform="translate(910 250)">
+    <rect width="250" height="112" rx="14" class="card"/>
+    <text x="18" y="34" font-size="16" class="text">⬇️ download_file</text>
+    <rect x="176" y="18" width="56" height="22" rx="11" class="confirm"/>
+    <text x="188" y="33" font-size="10" class="confirmText">需确认</text>
+    <text x="18" y="62" font-size="11" class="muted">URL → 本地</text>
+  </g>
+
+  <!-- row 3 -->
+  <g transform="translate(40 380)">
+    <rect width="270" height="112" rx="14" class="card"/>
+    <text x="18" y="34" font-size="16" class="text">🗜️ compress</text>
+    <rect x="196" y="18" width="56" height="22" rx="11" class="confirm"/>
+    <text x="208" y="33" font-size="10" class="confirmText">需确认</text>
+    <text x="18" y="62" font-size="11" class="muted">zip / tar.gz</text>
+  </g>
+  <g transform="translate(330 380)">
+    <rect width="270" height="112" rx="14" class="card"/>
+    <text x="18" y="34" font-size="16" class="text">🔍 diff</text>
+    <rect x="196" y="18" width="56" height="22" rx="11" class="auto"/>
+    <text x="208" y="33" font-size="10" class="autoText">自动</text>
+    <text x="18" y="62" font-size="11" class="muted">file / content / git HEAD</text>
+  </g>
+  <g transform="translate(620 380)">
+    <rect width="270" height="112" rx="14" class="card"/>
+    <text x="18" y="34" font-size="16" class="text">💻 run_command</text>
+    <rect x="196" y="18" width="56" height="22" rx="11" class="confirm"/>
+    <text x="208" y="33" font-size="10" class="confirmText">需确认</text>
+    <text x="18" y="62" font-size="11" class="muted">实时输出 / 可中止</text>
+  </g>
+  <g transform="translate(910 380)">
+    <rect width="250" height="112" rx="14" class="card"/>
+    <text x="18" y="34" font-size="16" class="text">🔍 web_search</text>
+    <rect x="176" y="18" width="56" height="22" rx="11" class="auto"/>
+    <text x="188" y="33" font-size="10" class="autoText">自动</text>
+    <text x="18" y="62" font-size="11" class="muted">SearXNG / 多引擎</text>
+  </g>
+
+  <!-- row 4 -->
+  <g transform="translate(40 510)">
+    <rect width="270" height="112" rx="14" class="card"/>
+    <text x="18" y="34" font-size="16" class="text">🌐 web_fetch</text>
+    <rect x="196" y="18" width="56" height="22" rx="11" class="auto"/>
+    <text x="208" y="33" font-size="10" class="autoText">自动</text>
+    <text x="18" y="62" font-size="11" class="muted">正文提取 / 浏览器回退</text>
+  </g>
+  <g transform="translate(330 510)">
+    <rect width="270" height="112" rx="14" class="card"/>
+    <text x="18" y="34" font-size="16" class="text">🌐 browser</text>
+    <rect x="196" y="18" width="56" height="22" rx="11" class="auto"/>
+    <text x="208" y="33" font-size="10" class="autoText">自动</text>
+    <text x="18" y="62" font-size="11" class="muted">9 个 action 合并</text>
+  </g>
+  <g transform="translate(620 510)">
+    <rect width="270" height="112" rx="14" class="card"/>
+    <text x="18" y="34" font-size="16" class="text">🔖 git</text>
+    <rect x="196" y="18" width="56" height="22" rx="11" class="auto"/>
+    <text x="208" y="33" font-size="10" class="autoText">自动</text>
+    <text x="18" y="62" font-size="11" class="muted">17 个子命令</text>
+  </g>
+  <g transform="translate(910 510)">
+    <rect width="250" height="112" rx="14" class="card"/>
+    <text x="18" y="34" font-size="16" class="text">🧠 memory</text>
+    <rect x="176" y="18" width="56" height="22" rx="11" class="auto"/>
+    <text x="188" y="33" font-size="10" class="autoText">自动</text>
+    <text x="18" y="62" font-size="11" class="muted">6 个 action</text>
+  </g>
+
+  <!-- row 5 -->
+  <g transform="translate(40 640)">
+    <rect width="270" height="90" rx="14" class="card"/>
+    <text x="18" y="34" font-size="16" class="text">📖 session</text>
+    <rect x="196" y="18" width="56" height="22" rx="11" class="auto"/>
+    <text x="208" y="33" font-size="10" class="autoText">自动</text>
+    <text x="18" y="62" font-size="11" class="muted">action = list | read</text>
+  </g>
+  <g transform="translate(330 640)">
+    <rect width="270" height="90" rx="14" class="card"/>
+    <text x="18" y="34" font-size="16" class="text">🤖 spawn_task</text>
+    <rect x="196" y="18" width="56" height="22" rx="11" class="auto"/>
+    <text x="208" y="33" font-size="10" class="autoText">自动</text>
+    <text x="18" y="62" font-size="11" class="muted">子代理委派</text>
+  </g>
+</svg>

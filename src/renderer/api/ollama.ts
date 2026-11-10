@@ -1,152 +1,125 @@
 /**
- * Ollama API 客户端封装
+ * Ollama API 客户端（渲染进程薄封装）
+ * 0.18.0 起所有请求统一走主进程代理，API Key 不进入渲染进程。
  */
 
 import type {
-  OllamaChatParams, OllamaStreamChunk, OllamaModelsResponse,
-  OllamaPsResponse, OllamaVersionResponse, OllamaModelDetail,
-  OllamaEmbedResponse, ToolDefinition
+  OllamaChatParams,
+  OllamaStreamChunk,
+  OllamaModelsResponse,
+  OllamaPsResponse,
+  OllamaVersionResponse,
+  OllamaModelDetail,
+  OllamaEmbedResponse,
+  ToolDefinition,
 } from '../types.js';
+import type { OllamaBridgeAPI, OllamaChatRequestBody } from '../../shared/contracts/ollama.js';
+
+function bridge(): OllamaBridgeAPI {
+  const api = window.metonaDesktop?.ollama;
+  if (!api) {
+    throw new Error('Ollama 代理不可用：请在桌面端运行 Metona');
+  }
+  return api;
+}
 
 export class OllamaAPI {
+  /** 仅用于 UI 展示当前服务地址；真实请求由主进程配置决定 */
   baseUrl: string;
+  private _configLoaded = false;
 
-  constructor(baseUrl = 'http://127.0.0.1:11434') {
-    this.baseUrl = baseUrl.replace(/\/+$/, '');
+  constructor(baseUrl = '') {
+    this.baseUrl = baseUrl;
   }
 
-  private async _request(path: string, options: RequestInit = {}): Promise<Response> {
-    const url = `${this.baseUrl}${path}`;
-    const config: RequestInit = {
-      ...options,
-      headers: { 'Content-Type': 'application/json', ...(options.headers as Record<string, string> || {}) }
-    };
-    const response = await fetch(url, config);
-    if (!response.ok) {
-      const errorBody = await response.text().catch(() => '');
-      throw new Error(`Ollama API 错误 ${response.status}: ${errorBody || response.statusText}`);
+  /** 从主进程同步连接配置（模式 / 地址 / 上下文） */
+  async refreshConfig(): Promise<void> {
+    try {
+      const cfg = await bridge().getConfig();
+      this.baseUrl = cfg.mode === 'local' ? cfg.localUrl : cfg.remoteUrl;
+      this._configLoaded = true;
+    } catch {
+      // 保持构造时的地址，UI 会显示未连接
     }
-    return response;
   }
 
-  private async _json<T = unknown>(path: string, body: unknown = null, signal?: AbortSignal): Promise<T> {
-    const options: RequestInit = body ? { method: 'POST', body: JSON.stringify(body) } : {};
-    if (signal) options.signal = signal;
-    const response = await this._request(path, options);
-    return response.json() as Promise<T>;
+  private async _ensureConfig(): Promise<void> {
+    if (!this._configLoaded) await this.refreshConfig();
   }
 
-  async listModels(): Promise<OllamaModelsResponse> {
-    return this._json('/api/tags');
-  }
-
-  async psModels(): Promise<OllamaPsResponse> {
-    return this._json('/api/ps');
-  }
-
-  async getVersion(): Promise<OllamaVersionResponse> {
-    return this._json('/api/version');
-  }
-
-  async showModel(model: string): Promise<OllamaModelDetail> {
-    return this._json('/api/show', { model });
-  }
-
-  async chat(params: Omit<OllamaChatParams, 'stream'> & { signal?: AbortSignal }): Promise<unknown> {
-    const body: Record<string, unknown> = {
+  private _body(params: OllamaChatParams & { tools?: ToolDefinition[] }): OllamaChatRequestBody {
+    const body: OllamaChatRequestBody = {
       model: params.model,
       messages: params.messages,
-      stream: false,
-      keep_alive: '1h',
     };
     if (params.think !== undefined) body.think = params.think;
     if (params.system) body.system = params.system;
     if (params.keep_alive !== undefined) body.keep_alive = params.keep_alive;
+    if (params.format !== undefined) body.format = params.format;
     if (params.options) body.options = params.options;
-    return this._json('/api/chat', body, params.signal);
+    if (params.tools?.length) body.tools = params.tools;
+    return body;
+  }
+
+  async listModels(): Promise<OllamaModelsResponse> {
+    await this._ensureConfig();
+    return bridge().models();
+  }
+
+  async psModels(): Promise<OllamaPsResponse> {
+    await this._ensureConfig();
+    return bridge().ps();
+  }
+
+  async getVersion(): Promise<OllamaVersionResponse> {
+    const result = await this.testConnection();
+    if (!result.ok || !result.version) {
+      throw new Error(result.error || '无法连接 Ollama');
+    }
+    return { version: result.version };
+  }
+
+  async testConnection(): Promise<{
+    ok: boolean;
+    version?: string;
+    modelCount?: number;
+    latencyMs?: number;
+    error?: string;
+  }> {
+    await this.refreshConfig();
+    return bridge().test();
+  }
+
+  async showModel(model: string): Promise<OllamaModelDetail> {
+    await this._ensureConfig();
+    return (await bridge().show(model)) as OllamaModelDetail;
+  }
+
+  async chat(params: Omit<OllamaChatParams, 'stream'> & { signal?: AbortSignal }): Promise<unknown> {
+    await this._ensureConfig();
+    return bridge().chat(this._body(params as OllamaChatParams), params.signal);
   }
 
   async chatStream(
     params: OllamaChatParams & { tools?: ToolDefinition[] },
     onChunk: (chunk: OllamaStreamChunk) => void,
-    abortController?: AbortController
+    abortController?: AbortController,
   ): Promise<void> {
-    const body: Record<string, unknown> = {
-      model: params.model,
-      messages: params.messages,
-      stream: true,
-      keep_alive: '1h',
-    };
-    if (params.think !== undefined) body.think = params.think;
-    if (params.system) body.system = params.system;
-    if (params.keep_alive !== undefined) body.keep_alive = params.keep_alive;
-    if (params.options) body.options = params.options;
-    if (params.tools?.length) body.tools = params.tools;
-
-    const fetchOptions: RequestInit = {
-      method: 'POST',
-      body: JSON.stringify(body)
-    };
-
-    if (abortController) {
-      fetchOptions.signal = abortController.signal;
-    }
-
-    const response = await this._request('/api/chat', fetchOptions);
-    const reader = response.body!.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    if (abortController) {
-      abortController.signal.addEventListener('abort', () => {
-        reader.cancel();
-      }, { once: true });
-    }
-
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) {
-          break;
-        }
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          let chunk: OllamaStreamChunk;
-          try {
-            chunk = JSON.parse(line);
-          } catch {
-            continue; // 跳过无法解析的行（可能是不完整的 JSON）
-          }
-          // onChunk 回调错误不再被静默吞掉，而是向上传播给调用方
-          if (onChunk) onChunk(chunk);
-          if (chunk.done) {
-            return;
-          }
-        }
-      }
-    } catch (err) {
-      // abort 导致 reader.cancel() 会使 reader.read() 抛出异常，属于正常中止流程
-      if (abortController?.signal.aborted) return;
-      throw err;
-    }
-
-    if (buffer.trim()) {
-      let chunk: OllamaStreamChunk;
-      try {
-        chunk = JSON.parse(buffer);
-      } catch {
-        return; // 末尾 buffer 无法解析，忽略
-      }
-      if (onChunk) onChunk(chunk);
-    }
+    await this._ensureConfig();
+    await bridge().chatStream(
+      this._body(params),
+      onChunk as (chunk: import('../../shared/contracts/ollama.js').OllamaStreamChunk) => void,
+      abortController?.signal,
+    );
   }
 
   async embed(model: string, input: string): Promise<OllamaEmbedResponse> {
-    return this._json('/api/embed', { model, input });
+    await this._ensureConfig();
+    return bridge().embed(model, input);
+  }
+
+  /** 手动释放显存（本地 / 自建远程；云服务禁用） */
+  async unloadModels(manual = true): Promise<{ success: boolean; unloaded: number; error?: string }> {
+    return bridge().unload({ manual });
   }
 }

@@ -281,7 +281,7 @@ export function generateImprovementSuggestions(): ImprovementSuggestion[] {
         suggestions.push({
           pattern: err.pattern,
           frequency: err.count,
-          suggestion: `web_fetch 频繁失败 (${err.count}次)。考虑在 AGENT.md 中添加规则：优先使用 browser_open + browser_extract 作为替代方案。`,
+          suggestion: `web_fetch 频繁失败 (${err.count}次)。考虑在 AGENT.md 中添加规则：优先使用 browser action="open" + action="extract" 作为替代方案。`,
           severity: 'high',
         });
       } else if (tool === 'web_search' && err.count >= 3) {

@@ -83,7 +83,7 @@ export function showPrompt(options: {
   message?: string;
   defaultValue?: string;
   placeholder?: string;
-  type?: 'text' | 'textarea' | 'select';
+  type?: 'text' | 'textarea' | 'select' | 'password';
   options?: Array<{ value: string; label: string }>;
 }): Promise<string | null> {
   ensureModal();
@@ -104,7 +104,8 @@ export function showPrompt(options: {
     } else if (options.type === 'textarea') {
       html += `<textarea class="setting-input" id="promptInput" rows="4" placeholder="${escapeHtml(options.placeholder || '')}" style="resize:vertical;min-height:80px;">${escapeHtml(options.defaultValue || '')}</textarea>`;
     } else {
-      html += `<input class="setting-input" id="promptInput" type="text" value="${escapeHtml(options.defaultValue || '')}" placeholder="${escapeHtml(options.placeholder || '')}">`;
+      const inputType = options.type === 'password' ? 'password' : 'text';
+      html += `<input class="setting-input" id="promptInput" type="${inputType}" value="${escapeHtml(options.defaultValue || '')}" placeholder="${escapeHtml(options.placeholder || '')}">`;
     }
 
     bodyEl!.innerHTML = html;
@@ -134,7 +135,7 @@ export function showHtmlConfirm(html: string, title = '确认', wide = false): P
     bodyEl!.innerHTML = html;
     inputEl = null;
     overlayEl!.style.display = '';
-    // 宽屏模式：Plan Mode 确认框需要更大空间
+    // 宽屏模式：提示弹窗需要更大空间
     const modalEl = overlayEl!.querySelector('.modal') as HTMLElement;
     if (modalEl) {
       modalEl.style.maxWidth = wide ? '640px' : '420px';

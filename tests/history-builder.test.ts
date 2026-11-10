@@ -18,9 +18,9 @@ describe('buildHistoryMessages — 历史消息构建', () => {
       userMsg('当前轮问题'), // 当前输入，必须被排除
     ];
     const out = buildHistoryMessages(msgs, 30);
-    expect(out.some(m => m.role === 'user' && m.content === '当前轮问题')).toBe(false);
-    expect(out.some(m => m.content === '第一轮问题')).toBe(true);
-    expect(out.some(m => m.content === '第一轮回答')).toBe(true);
+    expect(out.some((m) => m.role === 'user' && m.content === '当前轮问题')).toBe(false);
+    expect(out.some((m) => m.content === '第一轮问题')).toBe(true);
+    expect(out.some((m) => m.content === '第一轮回答')).toBe(true);
   });
 
   it('当前用户消息之后的孤立消息一并排除', () => {
@@ -30,8 +30,8 @@ describe('buildHistoryMessages — 历史消息构建', () => {
       assistantMsg('当前轮的回复'), // 位于当前输入之后，不属于历史
     ];
     const out = buildHistoryMessages(msgs, 30);
-    expect(out.some(m => m.content === '当前轮的回复')).toBe(false);
-    expect(out.some(m => m.content === '历史')).toBe(true);
+    expect(out.some((m) => m.content === '当前轮的回复')).toBe(false);
+    expect(out.some((m) => m.content === '历史')).toBe(true);
   });
 
   it('当前用户消息的 _apiContent 不进入历史（由 handleInit 重新注入）', () => {
@@ -51,7 +51,7 @@ describe('buildHistoryMessages — 历史消息构建', () => {
       userMsg('当前轮'),
     ];
     const out = buildHistoryMessages(msgs, 30);
-    const first = out.find(m => m.role === 'user')!;
+    const first = out.find((m) => m.role === 'user')!;
     expect(first.content).toBe('{"file_name":"a.txt"}');
   });
 
@@ -59,21 +59,23 @@ describe('buildHistoryMessages — 历史消息构建', () => {
     const msgs = [
       userMsg('读一下'),
       assistantMsg('', {
-        toolCalls: [{
-          name: 'read_file',
-          arguments: { path: 'a.txt' },
-          result: { success: true, path: 'a.txt', content: 'hello' },
-          status: 'success',
-          timestamp: Date.now(),
-        }],
+        toolCalls: [
+          {
+            name: 'read_file',
+            arguments: { path: 'a.txt' },
+            result: { success: true, path: 'a.txt', content: 'hello' },
+            status: 'success',
+            timestamp: Date.now(),
+          },
+        ],
       }),
       userMsg('当前轮'),
     ];
     const out = buildHistoryMessages(msgs, 30);
-    const assistant = out.find(m => m.role === 'assistant')!;
+    const assistant = out.find((m) => m.role === 'assistant')!;
     expect(assistant.tool_calls?.length).toBe(1);
     expect(assistant.tool_calls![0].function.name).toBe('read_file');
-    const toolMsg = out.find(m => m.role === 'tool')!;
+    const toolMsg = out.find((m) => m.role === 'tool')!;
     expect(toolMsg.content).toContain('<<<TOOL_RESULT_START name="read_file">>>');
     expect(toolMsg.content).toContain('<<<TOOL_RESULT_END>>>');
     expect(toolMsg.tool_name).toBe('read_file');
@@ -83,12 +85,14 @@ describe('buildHistoryMessages — 历史消息构建', () => {
     const msgs = [
       userMsg('问'),
       assistantMsg('', {
-        toolCalls: [{ name: 'read_file', arguments: { path: 'a' }, result: null, status: 'pending', timestamp: Date.now() }],
+        toolCalls: [
+          { name: 'read_file', arguments: { path: 'a' }, result: null, status: 'pending', timestamp: Date.now() },
+        ],
       }),
       userMsg('当前轮'),
     ];
     const out = buildHistoryMessages(msgs, 30);
-    expect(out.some(m => m.role === 'tool')).toBe(false);
+    expect(out.some((m) => m.role === 'tool')).toBe(false);
   });
 
   it('永不注入 system 消息（系统提示词由 handleInit 统一构建）', () => {
@@ -99,7 +103,7 @@ describe('buildHistoryMessages — 历史消息构建', () => {
       userMsg('当前轮'),
     ];
     const out = buildHistoryMessages(msgs, 30);
-    expect(out.some(m => m.role === 'system')).toBe(false);
+    expect(out.some((m) => m.role === 'system')).toBe(false);
   });
 
   it('超过 maxCount 从尾部截取', () => {
@@ -119,12 +123,19 @@ describe('buildHistoryMessages — 历史消息构建', () => {
   it('裁剪点不落在 tool 消息上（不产生孤立 tool 结果）', () => {
     const msgs: ChatMessage[] = [userMsg('起点')];
     for (let i = 0; i < 5; i++) {
-      msgs.push(assistantMsg('', {
-        toolCalls: [{
-          name: 'read_file', arguments: { path: `f${i}.txt` },
-          result: { success: true, content: `内容${i}` }, status: 'success', timestamp: Date.now(),
-        }],
-      }));
+      msgs.push(
+        assistantMsg('', {
+          toolCalls: [
+            {
+              name: 'read_file',
+              arguments: { path: `f${i}.txt` },
+              result: { success: true, content: `内容${i}` },
+              status: 'success',
+              timestamp: Date.now(),
+            },
+          ],
+        }),
+      );
       msgs.push(userMsg(`追问${i}`));
     }
     const out = buildHistoryMessages(msgs, 5);
@@ -144,13 +155,9 @@ describe('buildHistoryMessages — 历史消息构建', () => {
   });
 
   it('assistant 的 thinking 映射为 thinking 字段', () => {
-    const msgs = [
-      userMsg('问'),
-      assistantMsg('答', { think: '推理过程' }),
-      userMsg('当前轮'),
-    ];
+    const msgs = [userMsg('问'), assistantMsg('答', { think: '推理过程' }), userMsg('当前轮')];
     const out = buildHistoryMessages(msgs, 30);
-    const assistant = out.find(m => m.role === 'assistant')!;
+    const assistant = out.find((m) => m.role === 'assistant')!;
     expect((assistant as { thinking?: string }).thinking).toBe('推理过程');
   });
 });

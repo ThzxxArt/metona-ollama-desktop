@@ -345,7 +345,7 @@ export async function handleWebFetch(params: { url: string; max_chars?: number; 
           lastError = `HTTP ${resp.status}: ${resp.statusText}（将重试）`;
           continue;
         }
-        return { success: false, error: `HTTP ${resp.status}: ${resp.statusText}。可尝试用 browser_open 直接打开页面。` };
+        return { success: false, error: `HTTP ${resp.status}: ${resp.statusText}。可尝试用 browser action="open" 直接打开页面。` };
       }
 
       const contentType = resp.headers.get('content-type') || '';
@@ -465,7 +465,7 @@ export async function handleWebFetch(params: { url: string; max_chars?: number; 
         sendLog('warn', `🌐 web_fetch 所有 fetch 均失败(${errMsg})，触发浏览器回退`, url);
         break;
       }
-      return { success: false, error: `fetch 失败: ${errMsg}。可尝试用 browser_open 直接打开页面。` };
+      return { success: false, error: `fetch 失败: ${errMsg}。可尝试用 browser action="open" 直接打开页面。` };
     }
   }
 
@@ -1390,4 +1390,4 @@ export async function handleCompress(params: { action: string; path: string; des
   }
 }
 
-// calculator 已抽取为独立纯函数模块 calculator.ts（便于单元测试）
+// 0.18.0 内置工具说明请见 src/renderer/services/tool-registry.ts

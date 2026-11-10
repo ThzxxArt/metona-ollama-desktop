@@ -18,8 +18,8 @@ describe('buildContext — 滑动窗口构建', () => {
     const msgs = makeMsgs(30);
     const out = buildContext(msgs, { windowSize: 10, maxTokens: 131072 });
     // 最近的 10 条（索引 20-29）保留
-    expect(out.some(m => m.content === '消息 25')).toBe(true);
-    expect(out.some(m => m.content === '消息 0')).toBe(false);
+    expect(out.some((m) => m.content === '消息 25')).toBe(true);
+    expect(out.some((m) => m.content === '消息 0')).toBe(false);
   });
 
   it('system 消息置于最前', () => {
@@ -39,7 +39,7 @@ describe('buildContext — 滑动窗口构建', () => {
       memoryContext: '[memory 上下文]',
       workspaceContext: '[workspace 目录]',
     });
-    const sys = out.find(m => m.role === 'system');
+    const sys = out.find((m) => m.role === 'system');
     expect(sys?.content).toContain('[memory 上下文]');
     expect(sys?.content).toContain('[workspace 目录]');
   });
@@ -51,7 +51,7 @@ describe('buildContext — 滑动窗口构建', () => {
       { role: 'user', content: '你好' },
     ];
     const out = buildContext(msgs, { windowSize: 20, maxTokens: 131072 });
-    const sysCount = out.filter(m => m.role === 'system').length;
+    const sysCount = out.filter((m) => m.role === 'system').length;
     expect(sysCount).toBeLessThanOrEqual(2);
   });
 

@@ -15,12 +15,8 @@ function summarizeAuditResult(toolName: string, result: ToolResult): string {
         return `编辑 ${result.path || ''} (${result.replaceCount || 0} 处替换)`;
       case 'delete_file':
         return result.batch ? `批量删除 ${result.successCount}/${result.totalPaths}` : `删除 ${result.path || ''}`;
-      case 'create_directory':
-        return `创建目录 ${result.path || ''}`;
-      case 'move_file':
-        return `移动 ${(result as Record<string, unknown>).source} → ${(result as Record<string, unknown>).destination}`;
-      case 'copy_file':
-        return `复制 ${(result as Record<string, unknown>).source} → ${(result as Record<string, unknown>).destination}`;
+      case 'file_transfer':
+        return `${(result as Record<string, unknown>).operation === 'move' ? '移动' : '复制'} ${(result as Record<string, unknown>).source} → ${(result as Record<string, unknown>).destination}`;
       case 'run_command':
         return `命令执行 ${result.exitCode === 0 ? '成功' : '失败'} (exit ${result.exitCode})`;
       case 'git':
@@ -83,6 +79,13 @@ export function formatToolResultForModel(toolName: string, result: ToolResult): 
     }
 
     case 'read_file': {
+      if (Array.isArray(result.files)) {
+        return JSON.stringify({
+          success: true,
+          files: result.files,
+          total: result.total
+        });
+      }
       return JSON.stringify({
         success: true,
         path: result.path,
@@ -90,14 +93,6 @@ export function formatToolResultForModel(toolName: string, result: ToolResult): 
         lines: result.lines,
         truncated: result.truncated,
         line_range: result.line_range
-      });
-    }
-
-    case 'read_multiple_files': {
-      return JSON.stringify({
-        success: true,
-        files: result.files,
-        total: result.total
       });
     }
 
@@ -227,28 +222,11 @@ export function formatToolResultForModel(toolName: string, result: ToolResult): 
       });
     }
 
-    case 'create_directory': {
+    case 'file_transfer': {
       return JSON.stringify({
         success: true,
-        message: `目录已创建：${result.path}`,
-        path: result.path,
-        created: (result as Record<string, unknown>).created,
-      });
-    }
-
-    case 'move_file': {
-      return JSON.stringify({
-        success: true,
-        message: `已移动：${(result as Record<string, unknown>).source} → ${(result as Record<string, unknown>).destination}`,
-        source: (result as Record<string, unknown>).source,
-        destination: (result as Record<string, unknown>).destination,
-      });
-    }
-
-    case 'copy_file': {
-      return JSON.stringify({
-        success: true,
-        message: `已复制：${(result as Record<string, unknown>).source} → ${(result as Record<string, unknown>).destination}`,
+        message: `已处理：${(result as Record<string, unknown>).source} → ${(result as Record<string, unknown>).destination}`,
+        operation: (result as Record<string, unknown>).operation,
         source: (result as Record<string, unknown>).source,
         destination: (result as Record<string, unknown>).destination,
         bytesCopied: (result as Record<string, unknown>).bytesCopied,

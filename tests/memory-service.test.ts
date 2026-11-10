@@ -11,7 +11,11 @@ import {
 
 function makeEntry(partial: Partial<MemoryEntry> & { content: string }): MemoryEntry {
   return {
-    id: partial.id || `mem_20260101_${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`,
+    id:
+      partial.id ||
+      `mem_20260101_${Math.floor(Math.random() * 1000)
+        .toString()
+        .padStart(3, '0')}`,
     type: (partial.type || 'fact') as MemoryType,
     content: partial.content,
     importance: partial.importance ?? 5,
@@ -23,27 +27,45 @@ function makeEntry(partial: Partial<MemoryEntry> & { content: string }): MemoryE
 
 describe('searchMemory', () => {
   const entries: MemoryEntry[] = [
-    makeEntry({ id: 'mem_20260101_001', type: 'fact', content: '用户使用 Rust 开发后端', importance: 8, tags: ['rust', 'backend'] }),
-    makeEntry({ id: 'mem_20260101_002', type: 'fact', content: '用户喜欢喝咖啡', importance: 5, tags: ['咖啡', '偏好'] }),
+    makeEntry({
+      id: 'mem_20260101_001',
+      type: 'fact',
+      content: '用户使用 Rust 开发后端',
+      importance: 8,
+      tags: ['rust', 'backend'],
+    }),
+    makeEntry({
+      id: 'mem_20260101_002',
+      type: 'fact',
+      content: '用户喜欢喝咖啡',
+      importance: 5,
+      tags: ['咖啡', '偏好'],
+    }),
     makeEntry({ id: 'mem_20260101_003', type: 'rule', content: '回答时必须使用中文', importance: 10, tags: ['语言'] }),
-    makeEntry({ id: 'mem_20260101_004', type: 'preference', content: '用户偏好深色主题', importance: 6, tags: ['主题'] }),
+    makeEntry({
+      id: 'mem_20260101_004',
+      type: 'preference',
+      content: '用户偏好深色主题',
+      importance: 6,
+      tags: ['主题'],
+    }),
   ];
 
   it('匹配内容关键词', () => {
     const results = searchMemory(entries, 'rust');
-    expect(results.some(r => r.content.includes('Rust'))).toBe(true);
+    expect(results.some((r) => r.content.includes('Rust'))).toBe(true);
   });
 
   it('匹配标签', () => {
     const results = searchMemory(entries, 'backend');
-    expect(results.some(r => r.content.includes('Rust'))).toBe(true);
+    expect(results.some((r) => r.content.includes('Rust'))).toBe(true);
   });
 
   it('rule/preference 类型全局注入（高优先级）', () => {
     const results = searchMemory(entries, '完全无关的查询关键词');
     // rule / preference 始终进入结果，即便不匹配查询
-    expect(results.some(r => r.type === 'rule')).toBe(true);
-    expect(results.some(r => r.type === 'preference')).toBe(true);
+    expect(results.some((r) => r.type === 'rule')).toBe(true);
+    expect(results.some((r) => r.type === 'preference')).toBe(true);
   });
 
   it('limit 限制结果数量', () => {
@@ -57,9 +79,9 @@ describe('searchMemory', () => {
   });
 
   it('访问统计被更新', () => {
-    const copy = entries.map(e => ({ ...e }));
+    const copy = entries.map((e) => ({ ...e }));
     searchMemory(copy, 'rust');
-    const rustEntry = copy.find(e => e.content.includes('Rust'))!;
+    const rustEntry = copy.find((e) => e.content.includes('Rust'))!;
     expect(rustEntry.accessCount).toBeGreaterThan(0);
     expect(rustEntry.lastAccessed).toBeGreaterThan(0);
   });
@@ -179,15 +201,33 @@ describe('simpleSimilarity — 相似度', () => {
 
 describe('searchMemory — 去重与访问统计', () => {
   it('相同内容不去重（不同 id 均返回）', () => {
-    const a = makeEntry({ id: 'mem_20260101_001', type: 'fact', content: '用户用 Rust 开发', importance: 5, tags: ['rust'] });
-    const b = makeEntry({ id: 'mem_20260101_002', type: 'fact', content: '用户用 Rust 开发', importance: 5, tags: ['rust'] });
+    const a = makeEntry({
+      id: 'mem_20260101_001',
+      type: 'fact',
+      content: '用户用 Rust 开发',
+      importance: 5,
+      tags: ['rust'],
+    });
+    const b = makeEntry({
+      id: 'mem_20260101_002',
+      type: 'fact',
+      content: '用户用 Rust 开发',
+      importance: 5,
+      tags: ['rust'],
+    });
     // searchMemory 不去重内容本身，保留所有匹配
     const results = searchMemory([a, b], 'rust');
     expect(results.length).toBe(2);
   });
 
   it('模糊匹配短词（编辑距离 1）', () => {
-    const entry = makeEntry({ id: 'mem_20260101_003', type: 'fact', content: '用户使用 Pyton 开发', importance: 5, tags: [] });
+    const entry = makeEntry({
+      id: 'mem_20260101_003',
+      type: 'fact',
+      content: '用户使用 Pyton 开发',
+      importance: 5,
+      tags: [],
+    });
     const results = searchMemory([entry], 'python');
     // "pyton" 与 "python" 编辑距离 1，应被模糊匹配到
     expect(results.length).toBeGreaterThan(0);
@@ -196,7 +236,15 @@ describe('searchMemory — 去重与访问统计', () => {
   it('rule/preference 全局注入上限（10 条）', () => {
     const entries: MemoryEntry[] = [];
     for (let i = 0; i < 15; i++) {
-      entries.push(makeEntry({ id: `mem_20260101_${String(i).padStart(3, '0')}`, type: 'rule', content: `规则${i}`, importance: 9, tags: ['r'] }));
+      entries.push(
+        makeEntry({
+          id: `mem_20260101_${String(i).padStart(3, '0')}`,
+          type: 'rule',
+          content: `规则${i}`,
+          importance: 9,
+          tags: ['r'],
+        }),
+      );
     }
     const results = searchMemory(entries, '一个不匹配的查询');
     // alwaysInclude 受限 MAX_GLOBAL_INJECT=10
@@ -204,8 +252,20 @@ describe('searchMemory — 去重与访问统计', () => {
   });
 
   it('匹配分数含重要性加权', () => {
-    const low = makeEntry({ id: 'mem_20260101_010', type: 'fact', content: '用户喜欢 Rust', importance: 2, tags: ['rust'] });
-    const high = makeEntry({ id: 'mem_20260101_011', type: 'fact', content: '用户喜欢 Rust', importance: 10, tags: ['rust'] });
+    const low = makeEntry({
+      id: 'mem_20260101_010',
+      type: 'fact',
+      content: '用户喜欢 Rust',
+      importance: 2,
+      tags: ['rust'],
+    });
+    const high = makeEntry({
+      id: 'mem_20260101_011',
+      type: 'fact',
+      content: '用户喜欢 Rust',
+      importance: 10,
+      tags: ['rust'],
+    });
     const results = searchMemory([low, high], 'rust');
     // 高重要性应排在低重要性前面
     expect(results[0].importance).toBe(10);

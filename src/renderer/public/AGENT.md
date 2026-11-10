@@ -12,7 +12,7 @@
 
 ## 工具使用
 
-- 优先使用只读工具（`read_file` / `list_directory` / `search_files` / `tree`）建立认知，再执行写入类工具。
+- 优先使用只读工具（`read_file` / `list_directory`（`format: tree` 可看目录树）/ `search_files`）建立认知，再执行写入类工具。
 - 修改文件优先 `edit_file` 精确替换；新建文件使用 `write_file`。
 - 每轮工具调用保持聚焦：一次解决一个子问题，避免同轮发起互相依赖的调用。
 - 工具返回错误时：先阅读错误信息与恢复建议，修正参数后重试；连续失败 2 次后换思路，不盲目重试。

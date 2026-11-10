@@ -16,6 +16,8 @@
  */
 
 import { logInfo, logWarn, logDebug, logMemory } from './log-service.js';
+import { state, KEYS } from '../state/state.js';
+import type { OllamaAPI } from '../api/ollama.js';
 
 // ═══════════════════════════════════════════════════════════════
 // 类型定义
@@ -586,13 +588,102 @@ export async function loadAllEntries(): Promise<MemoryEntry[]> {
   return _entriesCache;
 }
 
-/** 搜索记忆（读取缓存 → 搜索 → 更新访问计数并调度延迟写回） */
+/** 余弦相似度（向量长度不一致时返回 0） */
+function cosineSimilarity(a: number[], b: number[]): number {
+  if (!a.length || a.length !== b.length) return 0;
+  let dot = 0, na = 0, nb = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    na += a[i] * a[i];
+    nb += b[i] * b[i];
+  }
+  if (na === 0 || nb === 0) return 0;
+  return dot / (Math.sqrt(na) * Math.sqrt(nb));
+}
+
+/**
+ * 语义相似度（/api/embed + memory_embeddings 缓存）。
+ * 无缓存时按需生成；embedding 模型不可用时返回空 Map，由调用方回退关键词。
+ */
+async function semanticScores(
+  entries: MemoryEntry[],
+  query: string,
+  api: OllamaAPI,
+  model: string,
+): Promise<Map<string, number>> {
+  const bridge = window.metonaDesktop;
+  if (!bridge?.db) return new Map();
+
+  const queryResult = await api.embed(model, query);
+  const queryVector = queryResult.embedding || queryResult.embeddings?.[0] || [];
+  if (!queryVector.length) return new Map();
+
+  let cached: Array<{ entry_id: string; vector: number[] }> = [];
+  try {
+    cached = await bridge.db.getMemoryEmbeddings(model);
+  } catch {
+    cached = [];
+  }
+  const vectors = new Map(cached.map(r => [r.entry_id, r.vector]));
+
+  const scores = new Map<string, number>();
+  let generated = 0;
+  for (const entry of entries) {
+    let vector = vectors.get(entry.id);
+    if (!vector && generated < 50) {
+      try {
+        const result = await api.embed(model, entry.content);
+        vector = result.embedding || result.embeddings?.[0] || [];
+        if (vector.length) {
+          vectors.set(entry.id, vector);
+          generated++;
+          void bridge.db.saveMemoryEmbedding(entry.id, model, vector).catch(() => {});
+        }
+      } catch {
+        continue;
+      }
+    }
+    if (vector?.length) {
+      scores.set(entry.id, cosineSimilarity(queryVector, vector));
+    }
+  }
+  return scores;
+}
+
+/** 搜索记忆（读取缓存 → 关键词/IDF + 语义混合 → 更新访问计数并调度延迟写回） */
 export async function search(query: string, limit = 0): Promise<MemorySearchResult[]> {
   try {
     // 触发 TTL 衰减检查（带节流，不会每次搜索都执行）
     maybeRunTTLDecay().catch(() => {}); // 非阻塞，失败不影响搜索
     const entries = await loadAllEntries();
-    const results = searchMemory(entries, query, limit);
+    let results = searchMemory(entries, query, 0);
+
+    // ── 混合检索：关键词分数 + embedding 余弦相似度 ──
+    const embeddingEnabled = state.get<boolean>('memoryEmbeddingEnabled', false);
+    const embeddingModel = state.get<string>('memoryEmbeddingModel', '');
+    const api = state.get<OllamaAPI | null>(KEYS.API, null);
+    if (embeddingEnabled && embeddingModel && api) {
+      try {
+        const semantic = await semanticScores(entries, query, api, embeddingModel);
+        if (semantic.size > 0) {
+          const merged = new Map(results.map(r => [r.id, r]));
+          for (const entry of entries) {
+            const similarity = semantic.get(entry.id) ?? 0;
+            if (similarity < 0.2) continue;
+            const boost = Math.round(similarity * 100);
+            const existing = merged.get(entry.id);
+            if (existing) existing.score += boost;
+            else merged.set(entry.id, { ...entry, score: boost });
+          }
+          results = [...merged.values()].sort((a, b) => b.score - a.score);
+        }
+      } catch (err) {
+        logDebug('语义记忆检索不可用，回退关键词', (err as Error).message);
+      }
+    }
+
+    if (limit > 0) results = results.slice(0, limit);
+
     if (results.length > 0) {
       // 访问计数已在缓存条目上更新，延迟持久化
       scheduleHitsFlush();
@@ -1213,7 +1304,26 @@ ${conversationText.slice(0, 5000)}
       model,
       messages: [{ role: 'user', content: extractPrompt }],
       think: false,
-      options: { num_ctx: 8192, temperature: 0.1 },
+      format: {
+        type: 'object',
+        properties: {
+          entries: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                type: { type: 'string', enum: ['fact', 'preference'] },
+                content: { type: 'string' },
+                importance: { type: 'integer' },
+                tags: { type: 'array', items: { type: 'string' } },
+              },
+              required: ['type', 'content', 'importance', 'tags'],
+            },
+          },
+        },
+        required: ['entries'],
+      },
+      options: { num_ctx: 8192 },
       signal: abortSignal,
     });
 

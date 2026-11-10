@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">Metona Ollama icon</title>
+  <desc id="desc">羊驼头像应用图标</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#E8734A"/>
+      <stop offset="1" stop-color="#F2A07B"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="56" fill="url(#bg)"/>
+  <circle cx="204" cy="44" r="70" fill="#FFFFFF" opacity="0.08"/>
+  <path d="M 74 96 C 60 58 68 36 84 32 C 98 28 108 50 108 84 Z" fill="#FFF4EC"/>
+  <path d="M 182 96 C 196 58 188 36 172 32 C 158 28 148 50 148 84 Z" fill="#FFF4EC"/>
+  <path d="M 66 148 C 66 96 96 70 128 70 C 160 70 194 96 194 148 C 194 200 168 228 128 228 C 88 228 66 200 66 148 Z" fill="#FFF4EC"/>
+  <path d="M 94 146 C 94 122 108 110 128 110 C 148 110 166 122 166 146 C 166 184 150 202 128 202 C 106 202 94 184 94 146 Z" fill="#F3E4D5"/>
+  <circle cx="112" cy="144" r="8" fill="#2D2016"/>
+  <circle cx="146" cy="144" r="8" fill="#2D2016"/>
+  <circle cx="115" cy="141" r="2.6" fill="#FFFFFF"/>
+  <circle cx="149" cy="141" r="2.6" fill="#FFFFFF"/>
+  <path d="M 122 170 Q 128 165 134 170 Q 128 177 122 170 Z" fill="#2D2016"/>
+  <path d="M 128 177 V 186" stroke="#2D2016" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M 128 186 Q 118 193 113 186" stroke="#2D2016" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+  <path d="M 128 186 Q 138 193 143 186" stroke="#2D2016" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+</svg>

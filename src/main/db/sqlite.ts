@@ -1,265 +1,221 @@
 /**
- * Metona Ollama Desktop - SQLite 数据库层
- * 基于 sql.js (WASM 内存库)。
+ * Metona Ollama Desktop - SQLite 数据库层（0.18.0）
  *
- * 持久化策略：sql.js 是纯内存数据库，db.export() 为全库序列化。
- * 为避免"每次写入都全库写盘"的性能退化，采用防抖落盘：
- * - 写操作只标记脏数据并调度 300ms 防抖刷盘
- * - 应用退出（before-quit）强制刷盘
- * - 崩溃时最多丢失最近 300ms 的写入
- *
- * Schema 版本管理：PRAGMA user_version + 顺序迁移数组。
+ * 使用 Node 24 内置 node:sqlite（同步 API + WAL）。
+ * 破坏性策略：不读取 v0.17.2 数据库；首次启动删除旧 metona.db 并创建全新库。
+ * 通过 sidecar 标记文件区分 0.18 新库，避免后续启动误删。
  */
 
-import * as SQL from 'sql.js';
+import { DatabaseSync, type StatementSync } from 'node:sqlite';
 import * as fs from 'fs';
 import * as path from 'path';
 import { app } from 'electron';
 
-// ─── sql.js 兼容层 ───
-
-interface Row { [key: string]: unknown }
-
-function runExec(db: SQL.Database, sql: string, params?: unknown[]): void {
-  if (params && params.length) {
-    const stmt = db.prepare(sql);
-    stmt.bind(params as SQL.BindParams);
-    stmt.step();
-    stmt.free();
-  } else {
-    db.run(sql);
-  }
-}
-
-function queryOne(db: SQL.Database, sql: string, params?: unknown[]): Row | null {
-  const stmt = db.prepare(sql);
-  if (params && params.length) stmt.bind(params as SQL.BindParams);
-  if (stmt.step()) {
-    const cols = stmt.getColumnNames();
-    const vals = stmt.get();
-    const row: Row = {};
-    cols.forEach((c: string, i: number) => { row[c] = vals[i]; });
-    stmt.free();
-    return row;
-  }
-  stmt.free();
-  return null;
-}
-
-function queryAll(db: SQL.Database, sql: string, params?: unknown[]): Row[] {
-  const stmt = db.prepare(sql);
-  if (params && params.length) stmt.bind(params as SQL.BindParams);
-  const cols = stmt.getColumnNames();
-  const rows: Row[] = [];
-  while (stmt.step()) {
-    const vals = stmt.get();
-    const row: Row = {};
-    cols.forEach((c: string, i: number) => { row[c] = vals[i]; });
-    rows.push(row);
-  }
-  stmt.free();
-  return rows;
-}
-
-function runTransaction(db: SQL.Database, fn: () => void): void {
-  db.run('BEGIN TRANSACTION');
-  try {
-    fn();
-    db.run('COMMIT');
-  } catch (err) {
-    db.run('ROLLBACK');
-    throw err;
-  }
-}
-
 // ─── 数据库实例 ───
 
-let db: SQL.Database | null = null;
+let db: DatabaseSync | null = null;
 let dbPath: string | null = null;
 
-/** 获取数据库实例 */
-export function getDb(): SQL.Database {
+const SCHEMA_MARKER = 'metona-0.18.schema';
+const DB_FILENAME = 'metona.db';
+
+export function getDb(): DatabaseSync {
   if (!db) throw new Error('数据库未初始化，请先调用 initDatabase()');
   return db;
 }
 
-// ─── 防抖持久化 ───
+function runExec(database: DatabaseSync, sql: string, params: Array<string | number | null | Uint8Array> = []): void {
+  if (params.length > 0) {
+    const stmt = database.prepare(sql);
+    stmt.run(...params);
+    return;
+  }
+  database.exec(sql);
+}
 
-const PERSIST_DEBOUNCE_MS = 300;
-let _persistTimer: ReturnType<typeof setTimeout> | null = null;
-let _dirty = false;
+function queryOne(
+  database: DatabaseSync,
+  sql: string,
+  params: Array<string | number | null | Uint8Array> = [],
+): Record<string, unknown> | null {
+  const stmt = database.prepare(sql);
+  const row = params.length > 0 ? stmt.get(...params) : stmt.get();
+  return (row as Record<string, unknown> | undefined) ?? null;
+}
 
-/** 立即持久化数据库到磁盘（temp 文件 + rename 防崩溃损坏） */
-function persist(): void {
-  if (!db || !dbPath) return;
-  _dirty = false;
+function queryAll(
+  database: DatabaseSync,
+  sql: string,
+  params: Array<string | number | null | Uint8Array> = [],
+): Record<string, unknown>[] {
+  const stmt = database.prepare(sql);
+  const rows = params.length > 0 ? stmt.all(...params) : stmt.all();
+  return rows as Record<string, unknown>[];
+}
+
+function runTransaction(database: DatabaseSync, fn: () => void): void {
+  database.exec('BEGIN TRANSACTION');
   try {
-    const data = db.export();
-    const buf = Buffer.from(data);
-    const tmpPath = dbPath + '.tmp';
-    fs.writeFileSync(tmpPath, buf);
-    fs.renameSync(tmpPath, dbPath);
+    fn();
+    database.exec('COMMIT');
   } catch (err) {
-    _dirty = true;
-    // 豁免：SQLite 刷盘在应用退出/崩溃时可能无渲染进程可推送日志，落盘错误必须保留到 stderr
-    console.error(`[SQLite persist] 写入失败: ${(err as Error).message}`);
+    database.exec('ROLLBACK');
+    throw err;
   }
 }
 
-/** 调度防抖刷盘：多次写操作合并为一次全库写盘 */
-function schedulePersist(): void {
-  _dirty = true;
-  if (_persistTimer) return;
-  _persistTimer = setTimeout(() => {
-    _persistTimer = null;
-    if (_dirty) persist();
-  }, PERSIST_DEBOUNCE_MS);
+let _cachedStatements = new Map<string, StatementSync>();
+
+function prepared(database: DatabaseSync, sql: string): StatementSync {
+  const cached = _cachedStatements.get(sql);
+  if (cached) return cached;
+  const stmt = database.prepare(sql);
+  _cachedStatements.set(sql, stmt);
+  return stmt;
 }
 
-/** 强制立即刷盘（应用退出 / 导出前调用） */
-export function flushDatabase(): void {
-  if (_persistTimer) {
-    clearTimeout(_persistTimer);
-    _persistTimer = null;
+// ─── Schema ───
+
+const SCHEMA_SQL = `
+  CREATE TABLE IF NOT EXISTS sessions (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    model TEXT NOT NULL,
+    system_prompt TEXT,
+    parent_id TEXT,
+    status TEXT DEFAULT 'active',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    FOREIGN KEY (parent_id) REFERENCES sessions(id)
+  );
+  CREATE TABLE IF NOT EXISTS messages (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    role TEXT NOT NULL,
+    content TEXT,
+    thinking TEXT,
+    images TEXT,
+    tool_calls TEXT,
+    tool_name TEXT,
+    attachments TEXT,
+    eval_count INTEGER,
+    prompt_eval_count INTEGER,
+    total_duration INTEGER,
+    created_at INTEGER NOT NULL,
+    FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, created_at);
+  CREATE TABLE IF NOT EXISTS tool_calls (
+    id TEXT PRIMARY KEY,
+    message_id TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    tool_name TEXT NOT NULL,
+    arguments TEXT,
+    result TEXT,
+    status TEXT DEFAULT 'pending',
+    duration_ms INTEGER,
+    created_at INTEGER NOT NULL,
+    FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_tool_calls_session ON tool_calls(session_id, tool_name);
+  CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS traces (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    step_index INTEGER,
+    thought TEXT,
+    action TEXT,
+    action_input TEXT,
+    observation TEXT,
+    loop_count INTEGER,
+    error_pattern TEXT,
+    created_at INTEGER NOT NULL,
+    FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_traces_session ON traces(session_id, created_at);
+  CREATE TABLE IF NOT EXISTS tool_audit (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    tool_name TEXT NOT NULL,
+    args_json TEXT,
+    result_status TEXT,
+    result_summary TEXT,
+    duration_ms INTEGER,
+    created_at INTEGER NOT NULL,
+    FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_tool_audit_session ON tool_audit(session_id, created_at);
+  CREATE TABLE IF NOT EXISTS memory_embeddings (
+    entry_id TEXT NOT NULL,
+    model TEXT NOT NULL,
+    vector BLOB NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (entry_id, model)
+  );
+  CREATE INDEX IF NOT EXISTS idx_memory_embeddings_model ON memory_embeddings(model);
+`;
+
+/** 删除 v0.17.2 旧库文件（不读取、不解析、不转换） */
+function removeLegacyDatabaseIfNeeded(markerPath: string, databasePath: string): void {
+  if (fs.existsSync(markerPath)) return;
+  const candidates = [databasePath, `${databasePath}-wal`, `${databasePath}-shm`];
+  let removed = false;
+  for (const file of candidates) {
+    try {
+      if (fs.existsSync(file)) {
+        fs.unlinkSync(file);
+        removed = true;
+      }
+    } catch (err) {
+      // 删除失败则让后续 open 抛错，避免误读旧库
+      throw new Error(`无法删除旧数据库 ${file}: ${(err as Error).message}`);
+    }
   }
-  if (db) persist();
-}
-
-// ─── Schema 迁移 ───
-
-/**
- * 顺序迁移数组：MIGRATIONS[v] 将数据库从 user_version=v 升级到 v+1。
- * 新增列/表时只追加迁移项，禁止修改历史迁移。
- */
-const MIGRATIONS: Array<(database: SQL.Database) => void> = [
-  // v0 → v1：初始表结构
-  (database) => {
-    database.run(`
-      CREATE TABLE IF NOT EXISTS sessions (
-        id TEXT PRIMARY KEY,
-        title TEXT NOT NULL,
-        model TEXT NOT NULL,
-        system_prompt TEXT,
-        parent_id TEXT,
-        status TEXT DEFAULT 'active',
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL,
-        FOREIGN KEY (parent_id) REFERENCES sessions(id)
-      );
-      CREATE TABLE IF NOT EXISTS messages (
-        id TEXT PRIMARY KEY,
-        session_id TEXT NOT NULL,
-        role TEXT NOT NULL,
-        content TEXT,
-        thinking TEXT,
-        images TEXT,
-        tool_calls TEXT,
-        tool_name TEXT,
-        eval_count INTEGER,
-        prompt_eval_count INTEGER,
-        total_duration INTEGER,
-        created_at INTEGER NOT NULL,
-        FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
-      );
-      CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, created_at);
-      CREATE TABLE IF NOT EXISTS tool_calls (
-        id TEXT PRIMARY KEY,
-        message_id TEXT NOT NULL,
-        session_id TEXT NOT NULL,
-        tool_name TEXT NOT NULL,
-        arguments TEXT,
-        result TEXT,
-        status TEXT DEFAULT 'pending',
-        duration_ms INTEGER,
-        created_at INTEGER NOT NULL,
-        FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE
-      );
-      CREATE INDEX IF NOT EXISTS idx_tool_calls_session ON tool_calls(session_id, tool_name);
-      CREATE TABLE IF NOT EXISTS settings (
-        key TEXT PRIMARY KEY,
-        value TEXT NOT NULL,
-        updated_at INTEGER NOT NULL
-      );
-      CREATE TABLE IF NOT EXISTS traces (
-        id TEXT PRIMARY KEY,
-        session_id TEXT NOT NULL,
-        step_index INTEGER,
-        thought TEXT,
-        action TEXT,
-        action_input TEXT,
-        observation TEXT,
-        loop_count INTEGER,
-        error_pattern TEXT,
-        created_at INTEGER NOT NULL,
-        FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
-      );
-      CREATE INDEX IF NOT EXISTS idx_traces_session ON traces(session_id, created_at);
-      CREATE TABLE IF NOT EXISTS tool_audit (
-        id TEXT PRIMARY KEY,
-        session_id TEXT NOT NULL,
-        tool_name TEXT NOT NULL,
-        args_json TEXT,
-        result_status TEXT,
-        result_summary TEXT,
-        duration_ms INTEGER,
-        created_at INTEGER NOT NULL,
-        FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
-      );
-      CREATE INDEX IF NOT EXISTS idx_tool_audit_session ON tool_audit(session_id, created_at);
-    `);
-  },
-  // v1 → v2：消息附件列（历史库通过 ALTER 补列，新库已在 v1 内建）
-  (database) => {
-    try { database.run('ALTER TABLE messages ADD COLUMN attachments TEXT'); } catch { /* 列已存在 */ }
-    try { database.run('ALTER TABLE traces ADD COLUMN error_pattern TEXT'); } catch { /* 列已存在 */ }
-  },
-];
-
-function applyMigrations(database: SQL.Database): void {
-  const row = queryOne(database, 'PRAGMA user_version');
-  let current = Number(row?.user_version ?? 0);
-  if (Number.isNaN(current)) current = 0;
-  for (let v = current; v < MIGRATIONS.length; v++) {
-    MIGRATIONS[v](database);
-  }
-  if (current < MIGRATIONS.length || current === 0) {
-    database.run(`PRAGMA user_version = ${MIGRATIONS.length}`);
+  if (removed) {
+    // 豁免：数据库初始化发生在日志面板就绪前，只能输出到主进程 stderr
+    console.log('[db] 已删除旧版数据库文件，0.18.0 将创建全新数据库');
   }
 }
 
-// ─── 初始化 ───
-
-/** 初始化数据库（异步，需加载 WASM） */
-export async function initDatabase(): Promise<SQL.Database> {
+/** 初始化数据库（同步） */
+export async function initDatabase(): Promise<DatabaseSync> {
   if (db) return db;
 
-  // 定位 sql-wasm.wasm 文件（开发时在 node_modules，打包后在 resources）
-  const wasmPath = app.isPackaged
-    ? path.join(process.resourcesPath, 'sql-wasm.wasm')
-    : path.join(app.getAppPath(), 'node_modules/sql.js/dist/sql-wasm.wasm');
+  const userData = app.getPath('userData');
+  const markerPath = path.join(userData, SCHEMA_MARKER);
+  dbPath = path.join(userData, DB_FILENAME);
 
-  const SQLJS = await SQL.default({
-    locateFile: () => wasmPath,
-  });
-  dbPath = path.join(app.getPath('userData'), 'metona.db');
+  removeLegacyDatabaseIfNeeded(markerPath, dbPath);
 
-  // 从磁盘加载已有数据库，或创建新的
-  let data: Uint8Array | undefined;
-  if (fs.existsSync(dbPath)) {
-    data = fs.readFileSync(dbPath);
+  db = new DatabaseSync(dbPath);
+  db.exec('PRAGMA journal_mode = WAL');
+  db.exec('PRAGMA foreign_keys = ON');
+  db.exec('PRAGMA busy_timeout = 5000');
+  db.exec(SCHEMA_SQL);
+  db.exec('PRAGMA user_version = 180');
+
+  try {
+    fs.writeFileSync(markerPath, `schema=180\ncreated=${new Date().toISOString()}\n`);
+  } catch {
+    /* 标记写入失败不影响当前运行 */
   }
-  db = new SQLJS.Database(data);
 
-  // 外键约束（sql.js 内存库不支持 WAL，journal_mode 设置无实际意义故省略）
-  db.run('PRAGMA foreign_keys = ON');
-
-  // Schema 迁移
-  applyMigrations(db);
-
-  // 写入一次确保文件存在
-  persist();
-
+  _cachedStatements = new Map();
   return db;
+}
+
+/** 兼容旧调用：node:sqlite 使用 WAL 同步落盘，无需手动刷盘 */
+export function flushDatabase(): void {
+  if (!db) return;
+  try {
+    db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
+  } catch {
+    // 退出阶段失败不阻塞
+  }
 }
 
 // ─── 类型定义 ───
@@ -334,13 +290,20 @@ export interface TraceRow {
 // ─── Sessions CRUD ───
 
 export function saveSession(session: SessionRow): string {
-  const d = getDb();
-  runExec(d, `INSERT OR REPLACE INTO sessions (id, title, model, system_prompt, parent_id, status, created_at, updated_at)
+  prepared(
+    getDb(),
+    `INSERT OR REPLACE INTO sessions (id, title, model, system_prompt, parent_id, status, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [session.id, session.title, session.model, session.system_prompt, session.parent_id,
-     session.status || 'active', session.created_at, session.updated_at]
+  ).run(
+    session.id,
+    session.title,
+    session.model,
+    session.system_prompt,
+    session.parent_id,
+    session.status || 'active',
+    session.created_at,
+    session.updated_at,
   );
-  schedulePersist();
   return session.id;
 }
 
@@ -352,21 +315,24 @@ export function getAllSessions(): SessionRow[] {
   return queryAll(getDb(), 'SELECT * FROM sessions ORDER BY updated_at DESC') as unknown as SessionRow[];
 }
 
-/** 会话摘要列表（单条 SQL，避免 N+1 全量加载消息） */
 export function getSessionSummaries(): SessionSummaryRow[] {
-  return queryAll(getDb(), `
+  return queryAll(
+    getDb(),
+    `
     SELECT s.id, s.title, s.model, s.created_at, s.updated_at,
       (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id) AS message_count
     FROM sessions s
     ORDER BY s.updated_at DESC
-  `) as unknown as SessionSummaryRow[];
+  `,
+  ) as unknown as SessionSummaryRow[];
 }
 
-/** 按标题或消息内容搜索会话（LIKE 转义，返回摘要） */
 export function searchSessions(query: string, limit = 200): SessionSummaryRow[] {
-  const esc = (s: string): string => s.replace(/[\\%_]/g, m => '\\' + m);
+  const esc = (s: string): string => s.replace(/[\\%_]/g, (m) => '\\' + m);
   const pattern = `%${esc(query)}%`;
-  return queryAll(getDb(), `
+  return queryAll(
+    getDb(),
+    `
     SELECT s.id, s.title, s.model, s.created_at, s.updated_at,
       (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id) AS message_count
     FROM sessions s
@@ -374,10 +340,11 @@ export function searchSessions(query: string, limit = 200): SessionSummaryRow[] 
        OR EXISTS (SELECT 1 FROM messages m WHERE m.session_id = s.id AND m.content LIKE ? ESCAPE '\\')
     ORDER BY s.updated_at DESC
     LIMIT ?
-  `, [pattern, pattern, limit]) as unknown as SessionSummaryRow[];
+  `,
+    [pattern, pattern, limit],
+  ) as unknown as SessionSummaryRow[];
 }
 
-/** 一次性取出全部会话与消息行（导出用，替代渲染端 N+1 IPC 往返） */
 export function getAllSessionsData(): { sessions: SessionRow[]; messages: MessageRow[] } {
   const d = getDb();
   return {
@@ -388,12 +355,10 @@ export function getAllSessionsData(): { sessions: SessionRow[]; messages: Messag
 
 export function deleteSession(id: string): void {
   runExec(getDb(), 'DELETE FROM sessions WHERE id = ?', [id]);
-  schedulePersist();
 }
 
 export function clearAllSessions(): void {
-  getDb().run('DELETE FROM sessions');
-  schedulePersist();
+  getDb().exec('DELETE FROM sessions');
 }
 
 // ─── Messages CRUD ───
@@ -403,40 +368,48 @@ export function saveMessage(msg: MessageRow): string {
   return msg.id;
 }
 
-/** 批量保存消息（单事务 + 单次调度刷盘） */
 export function saveMessagesBatch(msgs: MessageRow[]): number {
   if (!msgs.length) return 0;
   const d = getDb();
+  const stmt = prepared(
+    d,
+    `INSERT OR REPLACE INTO messages (id, session_id, role, content, thinking, images, tool_calls, tool_name, attachments, eval_count, prompt_eval_count, total_duration, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  );
   runTransaction(d, () => {
     for (const msg of msgs) {
-      runExec(d, `INSERT OR REPLACE INTO messages (id, session_id, role, content, thinking, images, tool_calls, tool_name, attachments, eval_count, prompt_eval_count, total_duration, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [msg.id, msg.session_id, msg.role, msg.content, msg.thinking, msg.images,
-         msg.tool_calls, msg.tool_name, msg.attachments, msg.eval_count, msg.prompt_eval_count, msg.total_duration, msg.created_at]
+      stmt.run(
+        msg.id,
+        msg.session_id,
+        msg.role,
+        msg.content,
+        msg.thinking,
+        msg.images,
+        msg.tool_calls,
+        msg.tool_name,
+        msg.attachments,
+        msg.eval_count,
+        msg.prompt_eval_count,
+        msg.total_duration,
+        msg.created_at,
       );
     }
   });
-  schedulePersist();
   return msgs.length;
 }
 
 export function getMessagesBySession(sessionId: string): MessageRow[] {
-  return queryAll(getDb(), 'SELECT * FROM messages WHERE session_id = ? ORDER BY created_at ASC', [sessionId]) as unknown as MessageRow[];
+  return queryAll(getDb(), 'SELECT * FROM messages WHERE session_id = ? ORDER BY created_at ASC', [
+    sessionId,
+  ]) as unknown as MessageRow[];
 }
 
-/** 获取会话全部消息 ID（渲染端做差量同步的基线） */
 export function getMessageIds(sessionId: string): string[] {
-  return queryAll(getDb(), 'SELECT id FROM messages WHERE session_id = ?', [sessionId])
-    .map(r => String(r.id));
+  return queryAll(getDb(), 'SELECT id FROM messages WHERE session_id = ?', [sessionId]).map((r) => String(r.id));
 }
 
-/**
- * 删除会话中指定 ID 的消息（分块 IN 子句，单事务）。
- * 用于 /undo、/retry、/compress 等裁剪会话消息后同步落库，
- * 防止被移除的消息在重载后"复活"。
- */
 export function deleteMessages(sessionId: string, ids: string[]): number {
-  const validIds = ids.filter(id => typeof id === 'string' && id.length > 0);
+  const validIds = ids.filter((id) => typeof id === 'string' && id.length > 0);
   if (validIds.length === 0) return 0;
   const d = getDb();
   const CHUNK = 500;
@@ -444,35 +417,31 @@ export function deleteMessages(sessionId: string, ids: string[]): number {
     for (let i = 0; i < validIds.length; i += CHUNK) {
       const chunk = validIds.slice(i, i + CHUNK);
       const placeholders = chunk.map(() => '?').join(',');
-      runExec(d, `DELETE FROM messages WHERE session_id = ? AND id IN (${placeholders})`,
-        [sessionId, ...chunk]);
+      runExec(d, `DELETE FROM messages WHERE session_id = ? AND id IN (${placeholders})`, [sessionId, ...chunk]);
     }
   });
-  schedulePersist();
   return validIds.length;
 }
 
 // ─── Settings CRUD ───
 
 export function saveSetting(key: string, value: unknown): void {
-  runExec(getDb(), 'INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)',
-    [key, JSON.stringify(value), Date.now()]
+  prepared(getDb(), 'INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)').run(
+    key,
+    JSON.stringify(value),
+    Date.now(),
   );
-  schedulePersist();
 }
 
-/** 批量保存设置（单事务 + 单次调度刷盘） */
 export function saveSettingsBatch(entries: Array<{ key: string; value: unknown }>): void {
   if (!entries.length) return;
   const d = getDb();
+  const stmt = prepared(d, 'INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)');
   runTransaction(d, () => {
     for (const { key, value } of entries) {
-      runExec(d, 'INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)',
-        [key, JSON.stringify(value), Date.now()]
-      );
+      stmt.run(key, JSON.stringify(value), Date.now());
     }
   });
-  schedulePersist();
 }
 
 export function getSetting<T = unknown>(key: string, defaultValue: T | null = null): T {
@@ -488,32 +457,56 @@ export function getSetting<T = unknown>(key: string, defaultValue: T | null = nu
 // ─── Traces CRUD ───
 
 export function saveTrace(trace: TraceRow): string {
-  runExec(getDb(), `INSERT OR REPLACE INTO traces (id, session_id, step_index, thought, action, action_input, observation, loop_count, error_pattern, created_at)
+  prepared(
+    getDb(),
+    `INSERT OR REPLACE INTO traces (id, session_id, step_index, thought, action, action_input, observation, loop_count, error_pattern, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [trace.id, trace.session_id, trace.step_index, trace.thought, trace.action, trace.action_input, trace.observation, trace.loop_count, trace.error_pattern, trace.created_at]
+  ).run(
+    trace.id,
+    trace.session_id,
+    trace.step_index,
+    trace.thought,
+    trace.action,
+    trace.action_input,
+    trace.observation,
+    trace.loop_count,
+    trace.error_pattern,
+    trace.created_at,
   );
-  schedulePersist();
   return trace.id;
 }
 
-/** 批量保存轨迹（单事务 + 单次调度刷盘） */
 export function saveTracesBatch(traces: TraceRow[]): number {
   if (!traces.length) return 0;
   const d = getDb();
+  const stmt = prepared(
+    d,
+    `INSERT OR REPLACE INTO traces (id, session_id, step_index, thought, action, action_input, observation, loop_count, error_pattern, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  );
   runTransaction(d, () => {
     for (const trace of traces) {
-      runExec(d, `INSERT OR REPLACE INTO traces (id, session_id, step_index, thought, action, action_input, observation, loop_count, error_pattern, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [trace.id, trace.session_id, trace.step_index, trace.thought, trace.action, trace.action_input, trace.observation, trace.loop_count, trace.error_pattern, trace.created_at]
+      stmt.run(
+        trace.id,
+        trace.session_id,
+        trace.step_index,
+        trace.thought,
+        trace.action,
+        trace.action_input,
+        trace.observation,
+        trace.loop_count,
+        trace.error_pattern,
+        trace.created_at,
       );
     }
   });
-  schedulePersist();
   return traces.length;
 }
 
 export function getTracesBySession(sessionId: string): TraceRow[] {
-  return queryAll(getDb(), 'SELECT * FROM traces WHERE session_id = ? ORDER BY step_index ASC', [sessionId]) as unknown as TraceRow[];
+  return queryAll(getDb(), 'SELECT * FROM traces WHERE session_id = ? ORDER BY step_index ASC', [
+    sessionId,
+  ]) as unknown as TraceRow[];
 }
 
 // ─── Token 全局统计 ───
@@ -544,7 +537,9 @@ export interface AllSessionsTokenStats {
 
 export function getAllSessionsTokenStats(): AllSessionsTokenStats {
   const d = getDb();
-  const sessionStats = queryAll(d, `
+  const sessionStats = queryAll(
+    d,
+    `
     SELECT
       s.id as session_id,
       s.title,
@@ -558,9 +553,13 @@ export function getAllSessionsTokenStats(): AllSessionsTokenStats {
     LEFT JOIN messages m ON s.id = m.session_id
     GROUP BY s.id
     ORDER BY s.updated_at DESC
-  `);
+  `,
+  );
 
-  let totalInput = 0, totalOutput = 0, totalDuration = 0, totalRounds = 0;
+  let totalInput = 0,
+    totalOutput = 0,
+    totalDuration = 0,
+    totalRounds = 0;
   for (const s of sessionStats) {
     totalInput += (s.total_input as number) || 0;
     totalOutput += (s.total_output as number) || 0;
@@ -576,7 +575,7 @@ export function getAllSessionsTokenStats(): AllSessionsTokenStats {
       total_duration: totalDuration,
       total_rounds: totalRounds,
       session_count: sessionStats.length,
-    }
+    },
   };
 }
 
@@ -594,7 +593,16 @@ export function exportAllSessions(): ExportData {
   const sessions = queryAll(d, 'SELECT * FROM sessions') as unknown as SessionRow[];
   const messages = queryAll(d, 'SELECT * FROM messages') as unknown as MessageRow[];
   const settingsRows = queryAll(d, 'SELECT * FROM settings') as unknown as SettingRow[];
-  const settings = settingsRows.map(r => ({ key: r.key, value: (() => { try { return JSON.parse(r.value); } catch { return r.value; } })() }));
+  const settings = settingsRows.map((r) => ({
+    key: r.key,
+    value: (() => {
+      try {
+        return JSON.parse(r.value);
+      } catch {
+        return r.value;
+      }
+    })(),
+  }));
   return { sessions, messages, settings, exportedAt: Date.now() };
 }
 
@@ -606,7 +614,10 @@ export function importSessions(data: ExportData): { imported: number; skipped: n
   runTransaction(d, () => {
     for (const session of data.sessions) {
       const existing = queryOne(d, 'SELECT id FROM sessions WHERE id = ?', [session.id]);
-      if (existing) { skipped++; continue; }
+      if (existing) {
+        skipped++;
+        continue;
+      }
       saveSession(session);
       imported++;
     }
@@ -619,7 +630,6 @@ export function importSessions(data: ExportData): { imported: number; skipped: n
     }
   });
 
-  schedulePersist();
   return { imported, skipped };
 }
 
@@ -637,21 +647,82 @@ export interface ToolAuditRow {
 }
 
 export function saveToolAudit(audit: Omit<ToolAuditRow, 'id'> & { id?: string }): string {
-  const d = getDb();
   const id = audit.id || `audit_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  runExec(d,
+  prepared(
+    getDb(),
     `INSERT INTO tool_audit (id, session_id, tool_name, args_json, result_status, result_summary, duration_ms, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [id, audit.session_id, audit.tool_name, audit.args_json, audit.result_status, audit.result_summary, audit.duration_ms, audit.created_at]
+  ).run(
+    id,
+    audit.session_id,
+    audit.tool_name,
+    audit.args_json,
+    audit.result_status,
+    audit.result_summary,
+    audit.duration_ms,
+    audit.created_at,
   );
-  schedulePersist();
   return id;
 }
 
 export function getToolAuditsBySession(sessionId: string): ToolAuditRow[] {
-  return queryAll(getDb(), 'SELECT * FROM tool_audit WHERE session_id = ? ORDER BY created_at ASC', [sessionId]) as unknown as ToolAuditRow[];
+  return queryAll(getDb(), 'SELECT * FROM tool_audit WHERE session_id = ? ORDER BY created_at ASC', [
+    sessionId,
+  ]) as unknown as ToolAuditRow[];
 }
 
 export function getAllToolAudits(limit: number = 200): ToolAuditRow[] {
-  return queryAll(getDb(), 'SELECT * FROM tool_audit ORDER BY created_at DESC LIMIT ?', [limit]) as unknown as ToolAuditRow[];
+  return queryAll(getDb(), 'SELECT * FROM tool_audit ORDER BY created_at DESC LIMIT ?', [
+    limit,
+  ]) as unknown as ToolAuditRow[];
+}
+
+// ─── Memory embeddings 缓存（0.18.0 混合记忆检索）───
+
+export interface MemoryEmbeddingRow {
+  entry_id: string;
+  model: string;
+  vector: Uint8Array;
+  updated_at: number;
+}
+
+export function saveMemoryEmbedding(entryId: string, model: string, vector: number[]): void {
+  const buffer = Buffer.from(new Float32Array(vector).buffer);
+  prepared(
+    getDb(),
+    `INSERT OR REPLACE INTO memory_embeddings (entry_id, model, vector, updated_at)
+     VALUES (?, ?, ?, ?)`,
+  ).run(entryId, model, buffer, Date.now());
+}
+
+export function getMemoryEmbedding(entryId: string, model: string): number[] | null {
+  const row = queryOne(getDb(), 'SELECT vector FROM memory_embeddings WHERE entry_id = ? AND model = ?', [
+    entryId,
+    model,
+  ]) as { vector: Uint8Array } | null;
+  if (!row?.vector) return null;
+  const buf = Buffer.from(row.vector);
+  return Array.from(new Float32Array(buf.buffer, buf.byteOffset, buf.byteLength / 4));
+}
+
+export function getAllMemoryEmbeddings(model: string): Array<{ entry_id: string; vector: number[] }> {
+  const rows = queryAll(getDb(), 'SELECT entry_id, vector FROM memory_embeddings WHERE model = ?', [model]) as Array<{
+    entry_id: string;
+    vector: Uint8Array;
+  }>;
+  return rows.map((r) => {
+    const buf = Buffer.from(r.vector);
+    return {
+      entry_id: r.entry_id,
+      vector: Array.from(new Float32Array(buf.buffer, buf.byteOffset, buf.byteLength / 4)),
+    };
+  });
+}
+
+export function deleteMemoryEmbedding(entryId: string): void {
+  runExec(getDb(), 'DELETE FROM memory_embeddings WHERE entry_id = ?', [entryId]);
+}
+
+export function clearMemoryEmbeddings(): void {
+  getDb().exec('DELETE FROM memory_embeddings');
 }

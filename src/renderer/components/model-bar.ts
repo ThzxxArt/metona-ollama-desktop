@@ -14,7 +14,7 @@ let modelSelectEl: HTMLSelectElement;
 let badgeThinkEl: HTMLElement;
 let badgeVisionEl: HTMLElement;
 let badgeToolsEl: HTMLElement;
-let thinkCheckbox: HTMLInputElement;
+let thinkSelect: HTMLSelectElement;
 let thinkWrap: HTMLElement;
 let btnAttachImg: HTMLButtonElement;
 let btnAttachVideo: HTMLButtonElement;
@@ -26,15 +26,17 @@ export function initModelBar(): void {
   badgeThinkEl = document.querySelector('#badgeThink')!;
   badgeVisionEl = document.querySelector('#badgeVision')!;
   badgeToolsEl = document.querySelector('#badgeTools')!;
-  thinkCheckbox = document.querySelector('#toggleThink')!;
-  thinkWrap = document.querySelector('#thinkToggleWrap')!;
+  thinkSelect = document.querySelector('#selectThinkLevel')!;
+  thinkWrap = thinkSelect;
   btnAttachImg = document.querySelector('#btnAttachImg')!;
   btnAttachVideo = document.querySelector('#btnAttachVideo')!;
 
-  // Think 开关：同步 state 中的 thinkEnabled
-  thinkCheckbox.addEventListener('change', () => {
-    state.set('thinkEnabled', thinkCheckbox.checked);
-    logDebug(`Think 模式: ${thinkCheckbox.checked ? '开启' : '关闭'}`);
+  // Think 档位：off / low / medium / high
+  thinkSelect.addEventListener('change', () => {
+    const level = thinkSelect.value;
+    state.set('thinkLevel', level);
+    state.set('thinkEnabled', level !== 'off');
+    logDebug(`Think 档位: ${level}`);
   });
 
   modelSelectEl.addEventListener('change', async () => {
@@ -42,7 +44,7 @@ export function initModelBar(): void {
     const db = state.get<ChatDB | null>(KEYS.DB);
     if (db) await db.saveSetting('selectedModel', model);
     state.set('_defaultModel', model);
-    state.update(KEYS.CURRENT_SESSION, (session: ChatSession | null) => session ? ({ ...session, model }) : session);
+    state.update(KEYS.CURRENT_SESSION, (session: ChatSession | null) => (session ? { ...session, model } : session));
     if (model) {
       logModel(model, '切换');
       await checkModelCapability(model);
@@ -67,8 +69,10 @@ export async function loadModels(): Promise<void> {
 
     if (!data.models || data.models.length === 0) {
       modelSelectEl.innerHTML = '<option value="">未安装任何模型</option>';
-      badgeThinkEl.style.display = 'none'; badgeVisionEl.style.display = 'none';
-      setThinkAvailable(false); setVisionAvailable(false);
+      badgeThinkEl.style.display = 'none';
+      badgeVisionEl.style.display = 'none';
+      setThinkAvailable(false);
+      setVisionAvailable(false);
       logWarn('未检测到已安装模型');
       return;
     }
@@ -77,16 +81,22 @@ export async function loadModels(): Promise<void> {
 
     data.models
       .sort((a, b) => {
-        const nameA = a.name.toLowerCase(), nameB = b.name.toLowerCase();
+        const nameA = a.name.toLowerCase(),
+          nameB = b.name.toLowerCase();
         if (nameA !== nameB) return nameA.localeCompare(nameB);
         return (a.size || 0) - (b.size || 0);
       })
-      .forEach(m => {
+      .forEach((m) => {
         const opt = document.createElement('option');
         opt.value = m.name;
         opt.dataset.size = String(m.size || 0);
+        if (m.remote_model || m.remote_host) {
+          opt.dataset.remoteHost = m.remote_host || 'ollama.com';
+          opt.dataset.remoteModel = m.remote_model || '';
+        }
         const diskSize = formatSize(m.size || 0);
-        opt.textContent = diskSize ? `${m.name} · ${diskSize}` : m.name;
+        const cloud = m.remote_model || m.remote_host ? ' ☁️' : '';
+        opt.textContent = (diskSize ? `${m.name} · ${diskSize}` : m.name) + cloud;
         modelSelectEl.appendChild(opt);
       });
 
@@ -101,8 +111,10 @@ export async function loadModels(): Promise<void> {
   } catch (err) {
     logError('加载模型列表失败', (err as Error).message);
     modelSelectEl.innerHTML = '<option value="">加载失败 - 检查连接</option>';
-    badgeThinkEl.style.display = 'none'; badgeVisionEl.style.display = 'none';
-    setThinkAvailable(false); setVisionAvailable(false);
+    badgeThinkEl.style.display = 'none';
+    badgeVisionEl.style.display = 'none';
+    setThinkAvailable(false);
+    setVisionAvailable(false);
   }
 }
 
@@ -114,6 +126,7 @@ function updateOptionIcons(): void {
     const diskSize = opt.dataset.size ? formatSize(parseInt(opt.dataset.size)) : '';
     const base = diskSize ? `${opt.value} · ${diskSize}` : opt.value;
     const icons: string[] = [];
+    if (opt.dataset.remoteHost) icons.push('☁️');
     if (caps.think) icons.push('🧠');
     if (caps.vision) icons.push('👁️');
     if (caps.tools) icons.push('🔧');
@@ -133,28 +146,30 @@ async function filterEmbedModels(models: Array<{ name: string }>): Promise<void>
       const caps = info.capabilities || [];
       const isCompletion = caps.includes('completion');
 
-	// 从 model_info 提取上下文长度（仅用于显示，不再覆盖用户设置）
-	let contextLength = 2048;
-	for (const key of Object.keys(info.model_info || {})) {
-	  if (key.endsWith('.context_length')) {
-	    contextLength = Number(info.model_info![key]) || 2048;
-	    break;
-	  }
-	}
+      // 从 model_info 提取上下文长度（仅用于显示，不再覆盖用户设置）
+      let contextLength = 2048;
+      for (const key of Object.keys(info.model_info || {})) {
+        if (key.endsWith('.context_length')) {
+          contextLength = Number(info.model_info![key]) || 2048;
+          break;
+        }
+      }
 
-	modelCapabilityCache.set(m.name, {
-	  think: caps.includes('thinking'),
-	  vision: caps.includes('vision'),
-	  tools: caps.includes('tools'),
-	  completion: isCompletion,
-	  contextLength,
-	});
+      modelCapabilityCache.set(m.name, {
+        think: caps.includes('thinking'),
+        vision: caps.includes('vision'),
+        tools: caps.includes('tools'),
+        completion: isCompletion,
+        contextLength,
+      });
       if (!isCompletion) {
         const opt = modelSelectEl.querySelector(`option[value="${CSS.escape(m.name)}"]`);
         if (opt) opt.remove();
         logDebug(`模型 ${m.name} 不是 completion 模型，已移除`);
       }
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }
 
   updateOptionIcons();
@@ -222,14 +237,16 @@ function applyCapability(_modelName: string, caps: { think: boolean; vision: boo
 
 function setThinkAvailable(available: boolean): void {
   if (available) {
-    thinkCheckbox.checked = true;
-    thinkCheckbox.disabled = false;
-    state.set('thinkEnabled', true);
-    thinkWrap.title = 'Think 模式：启用深度推理';
+    thinkSelect.disabled = false;
+    const current = state.get<string>('thinkLevel', 'off');
+    thinkSelect.value = current === 'low' || current === 'medium' || current === 'high' ? current : 'off';
+    state.set('thinkEnabled', thinkSelect.value !== 'off');
+    thinkWrap.title = 'Think 档位：low / medium / high';
     thinkWrap.classList.remove('unavailable');
   } else {
-    thinkCheckbox.checked = false;
-    thinkCheckbox.disabled = true;
+    thinkSelect.value = 'off';
+    thinkSelect.disabled = true;
+    state.set('thinkLevel', 'off');
     state.set('thinkEnabled', false);
     thinkWrap.title = '当前模型不支持 Think 模式';
     thinkWrap.classList.add('unavailable');
@@ -273,7 +290,13 @@ export function setSelectedModel(modelName: string): void {
 }
 
 export function isThinkEnabled(): boolean {
-  return thinkCheckbox.checked && !thinkCheckbox.disabled;
+  return thinkSelect.value !== 'off' && !thinkSelect.disabled;
+}
+
+/** 当前 Think 档位（供请求体使用） */
+export function getThinkLevel(): false | 'low' | 'medium' | 'high' {
+  if (thinkSelect.disabled || thinkSelect.value === 'off') return false;
+  return thinkSelect.value as 'low' | 'medium' | 'high';
 }
 
 /** 检查当前选中的模型是否支持 Tool Calling */
@@ -284,8 +307,12 @@ export function isToolCallingSupported(): boolean {
   return caps?.tools === true;
 }
 
+export function clearModelCapabilityCache(): void {
+  modelCapabilityCache.clear();
+}
+
 export function formatCtxLen(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000_000) return `${Number((n / 1_000_000).toFixed(1))}M`;
   if (n >= 1024) return `${(n / 1024).toFixed(0)}K`;
   return String(n);
 }

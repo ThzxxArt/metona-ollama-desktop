@@ -5,8 +5,8 @@ const HEAD = '# METONA MEMORY\n\n> 条目内容紧跟元数据行，直到下一
 
 describe('MEMORY.md 序列化/解析往返', () => {
   it('解析标准条目并保留访问统计', () => {
-    const md = HEAD +
-      '## fact | id: mem_20260101_001 | importance: 8 | tags: a, b | hits: 3 | last: 1700000000000\n内容甲\n\n';
+    const md =
+      HEAD + '## fact | id: mem_20260101_001 | importance: 8 | tags: a, b | hits: 3 | last: 1700000000000\n内容甲\n\n';
     const entries = parseMemoryMd(md);
     expect(entries).toHaveLength(1);
     expect(entries[0].id).toBe('mem_20260101_001');
@@ -31,9 +31,9 @@ describe('MEMORY.md 序列化/解析往返', () => {
     const out = serializeMemoryMd(entries);
     expect(out).toMatch(/\| hits: 2 \| last: 1700000001000/);
     // 与主进程 validateMemoryContent 同构的条目头正则
-    const headerLine = out.split('\n').find(l => l.startsWith('## '))!;
+    const headerLine = out.split('\n').find((l) => l.startsWith('## '))!;
     expect(headerLine).toMatch(
-      /^##\s+(fact|preference|rule)\s*\|\s*id:\s*mem_\d{8}_\d{3}\s*\|\s*importance:\s*\d{1,2}\s*\|\s*tags:\s+(.+?)(?:\s*\|\s*hits:\s*(\d+)\s*\|\s*last:\s*(\d+))?\s*$/i
+      /^##\s+(fact|preference|rule)\s*\|\s*id:\s*mem_\d{8}_\d{3}\s*\|\s*importance:\s*\d{1,2}\s*\|\s*tags:\s+(.+?)(?:\s*\|\s*hits:\s*(\d+)\s*\|\s*last:\s*(\d+))?\s*$/i,
     );
   });
 
@@ -44,11 +44,12 @@ describe('MEMORY.md 序列化/解析往返', () => {
   });
 
   it('往返保持内容一致', () => {
-    const src = HEAD +
+    const src =
+      HEAD +
       '## preference | id: mem_20260101_005 | importance: 7 | tags: p1, p2\n偏好一\n\n' +
       '## rule | id: mem_20260101_006 | importance: 9 | tags: r1\n规则一\n\n';
     const round = serializeMemoryMd(parseMemoryMd(src));
-    expect(parseMemoryMd(round).map(e => [e.id, e.content])).toEqual([
+    expect(parseMemoryMd(round).map((e) => [e.id, e.content])).toEqual([
       ['mem_20260101_005', '偏好一'],
       ['mem_20260101_006', '规则一'],
     ]);

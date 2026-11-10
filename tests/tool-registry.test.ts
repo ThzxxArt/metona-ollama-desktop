@@ -13,28 +13,29 @@ import {
 import type { ToolResult } from '../src/renderer/types.js';
 
 describe('validateToolArgs', () => {
-  it('read_file 缺少 path 报错', () => {
-    const errors = validateToolArgs('read_file', {});
-    expect(errors.some(e => e.includes('path'))).toBe(true);
+  it('write_file 缺少 path 报错', () => {
+    const errors = validateToolArgs('write_file', {});
+    expect(errors.some((e) => e.includes('path'))).toBe(true);
   });
 
   it('read_file 合法参数不报错', () => {
     expect(validateToolArgs('read_file', { path: 'a.txt' })).toEqual([]);
+    expect(validateToolArgs('read_file', { paths: ['a.txt', 'b.txt'] })).toEqual([]);
   });
 
   it('web_search 缺少 query 报错', () => {
     const errors = validateToolArgs('web_search', {});
-    expect(errors.some(e => e.includes('query'))).toBe(true);
+    expect(errors.some((e) => e.includes('query'))).toBe(true);
   });
 
   it('枚举值校验：git action 非法', () => {
     const errors = validateToolArgs('git', { action: 'frobnicate' });
-    expect(errors.some(e => e.includes('不在允许范围'))).toBe(true);
+    expect(errors.some((e) => e.includes('不在允许范围'))).toBe(true);
   });
 
   it('类型校验：max_results 应为整数', () => {
     const errors = validateToolArgs('web_search', { query: 'x', max_results: 'not-a-number' });
-    expect(errors.some(e => e.includes('应为整数'))).toBe(true);
+    expect(errors.some((e) => e.includes('应为整数'))).toBe(true);
   });
 
   it('未知工具跳过校验（MCP 工具）', () => {
@@ -134,9 +135,59 @@ describe('validateToolSecurity', () => {
     expect(validateToolSecurity('read_file', { path: 'a.txt' })).toBeNull();
   });
 
-  it('read_multiple_files paths 数组含 URL 拒绝', () => {
-    const r = validateToolSecurity('read_multiple_files', { paths: ['http://x/a', '/local/b'] });
+  it('read_file paths 数组含 URL 拒绝', () => {
+    const r = validateToolSecurity('read_file', { paths: ['http://x/a', '/local/b'] });
     expect(r).toContain('URL');
+  });
+});
+
+describe('0.18.0 工具矩阵', () => {
+  it('内置工具严格为 18 个', () => {
+    expect(getEnabledToolDefinitions().filter((t) => !t.function.name.startsWith('mcp_'))).toHaveLength(18);
+  });
+
+  it('不再暴露已删除/合并的旧工具名', () => {
+    const names = getEnabledToolDefinitions().map((t) => t.function.name);
+    for (const legacy of [
+      'read_multiple_files',
+      'create_directory',
+      'tree',
+      'copy_file',
+      'move_file',
+      'browser_open',
+      'browser_screenshot',
+      'browser_evaluate',
+      'browser_extract',
+      'browser_click',
+      'browser_type',
+      'browser_scroll',
+      'browser_wait',
+      'browser_close',
+      'session_list',
+      'session_read',
+      'calculator',
+      'plan_track',
+    ]) {
+      expect(names).not.toContain(legacy);
+    }
+  });
+
+  it('合并工具 schema 正确', () => {
+    const byName = new Map(getEnabledToolDefinitions().map((t) => [t.function.name, t]));
+    expect(byName.get('file_transfer')?.function.parameters.properties.operation.enum).toEqual(['copy', 'move']);
+    expect(byName.get('list_directory')?.function.parameters.properties.format.enum).toEqual(['list', 'tree']);
+    expect(byName.get('browser')?.function.parameters.properties.action.enum).toEqual([
+      'open',
+      'extract',
+      'screenshot',
+      'click',
+      'type',
+      'scroll',
+      'wait',
+      'evaluate',
+      'close',
+    ]);
+    expect(byName.get('session')?.function.parameters.properties.action.enum).toEqual(['list', 'read']);
   });
 });
 
@@ -151,13 +202,13 @@ describe('getRelevantToolDefinitions', () => {
   });
 
   it('包含核心工具', () => {
-    const names = getRelevantToolDefinitions('请读取这个文件并搜索内容').map(t => t.function.name);
+    const names = getRelevantToolDefinitions('请读取这个文件并搜索内容').map((t) => t.function.name);
     expect(names).toContain('read_file');
     expect(names).toContain('search_files');
   });
 
   it('匹配到足够多时不返回全部（含 web 相关）', () => {
-    const names = getRelevantToolDefinitions('帮我搜索网页并抓取内容').map(t => t.function.name);
+    const names = getRelevantToolDefinitions('帮我搜索网页并抓取内容').map((t) => t.function.name);
     expect(names).toContain('web_search');
     expect(names).toContain('web_fetch');
   });

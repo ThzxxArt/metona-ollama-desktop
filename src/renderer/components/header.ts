@@ -42,7 +42,10 @@ export async function updateConnectionInfo(): Promise<void> {
 
   const badge = document.querySelector('#connBadge')!;
   const verEl = document.querySelector('#serverVersion')!;
-  const corsHint = document.querySelector('#corsHint') as HTMLElement;
+  const connection = state.get<{ mode?: string; remoteKind?: string } | null>('connection', null);
+  const modeLabel = connection?.mode === 'remote'
+    ? (connection.remoteKind === 'cloud' ? '云端' : '远程')
+    : '本地';
 
   badge.textContent = '检测中...';
   badge.className = 'status-badge warning';
@@ -50,22 +53,15 @@ export async function updateConnectionInfo(): Promise<void> {
 
   try {
     const version = await api.getVersion();
-    badge.textContent = '✓ 已连接';
+    badge.textContent = `✓ 已连接 · ${modeLabel}`;
     badge.className = 'status-badge success';
     verEl.textContent = `v${version.version}`;
-    corsHint.style.display = 'none';
-    logInfo(`Ollama 服务器版本: v${version.version}`);
+    logInfo(`Ollama 服务器版本: v${version.version}（${modeLabel}）`);
   } catch (err) {
     badge.textContent = '✗ 未连接';
     badge.className = 'status-badge error';
     verEl.textContent = '';
     logError('连接检测失败', (err as Error).message);
-
-    if ((err as Error).message.includes('Failed to fetch') || (err as Error).message.includes('NetworkError') || (err as Error).message.includes('CORS')) {
-      corsHint.style.display = '';
-    } else {
-      corsHint.style.display = 'none';
-    }
   }
 }
 
@@ -84,7 +80,7 @@ export async function updateRunningModels(): Promise<void> {
     container.innerHTML = data.models.map(m => `
       <div class="running-model">
         <span class="model-name">${m.name}</span>
-        <span class="model-vram">${formatSize(m.size_vram || 0)} VRAM</span>
+        <span class="model-vram">${formatSize(m.size_vram || 0)} VRAM${m.context_length ? ` · ${Math.round(m.context_length / 1024)}K ctx` : ''}</span>
       </div>
     `).join('');
     logDebug(`运行中模型: ${data.models.length}`, data.models.map(m => m.name).join(', '));
