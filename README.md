@@ -265,6 +265,17 @@ npm run dist:mac     # macOS zip（可在 macOS 或 Linux 交叉构建；签名�
 
 产出位于 `release/`。
 
+## 🚢 发布新版本
+
+```bash
+# 1. 更新 package.json 中的 version
+# 2. 创建并推送 tag
+git tag v0.17.3
+git push origin v0.17.3
+```
+
+推送 `v*` tag 后，GitHub Actions 会自动在 4 个 runner 上构建 Windows / Linux / macOS 安装包，并创建或更新对应 Release（含 `SHA256SUMS.txt`）。也可在 Actions 页面手动运行 `Release` 工作流做构建验证。
+
 ## 🛠️ 常用命令
 
 ```bash
@@ -525,6 +536,17 @@ npm run dist:mac     # macOS zip (build on macOS or cross-build on Linux; signin
 ```
 
 Artifacts are written to `release/`.
+
+## 🚢 Publishing a Release
+
+```bash
+# 1. Update the version in package.json
+# 2. Create and push the tag
+git tag v0.17.3
+git push origin v0.17.3
+```
+
+Pushing a `v*` tag triggers GitHub Actions to build Windows / Linux / macOS installers on four runners and create or update the matching Release (including `SHA256SUMS.txt`). You can also run the `Release` workflow manually for a build-only validation.
 
 ## 🛠️ Common Commands
 
