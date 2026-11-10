@@ -32,6 +32,32 @@ src/main/ollama/
 src/main/ipc/ollama.ts
 ```
 
+## 2.1 模块拆分
+
+```text
+src/main/ipc/
+  register.ts  app.ts  ollama.ts  tools.ts  db.ts
+  memory.ts    mcp.ts  media.ts   shared.ts
+src/main/tools/
+  command.ts   # run_command
+  web.ts       # web_fetch / web_search
+  system.ts    # download_file / compress
+src/main/tool-handlers-system.ts  # 兼容入口，re-export
+
+src/renderer/services/agent/
+  state.ts  runtime.ts  prompt.ts  stream.ts
+  tool-planning.ts  trace.ts  stats.ts  types.ts
+  states/{init,parsing,executing,observing,reflecting,compressing}.ts
+src/renderer/services/context/
+  tokenizer.ts  builder.ts  compressor.ts  metrics.ts
+  session-summary.ts  checkpoint.ts  types.ts
+src/renderer/services/tools/
+  catalog.ts  validate.ts  format.ts  analytics.ts
+src/renderer/features/settings/
+  connection.ts  data.ts
+```
+
+
 请求路径：
 
 ```text

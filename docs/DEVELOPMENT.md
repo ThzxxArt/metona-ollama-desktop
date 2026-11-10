@@ -46,10 +46,17 @@ src/
     schemas/            # zod IPC 校验
   main/
     main.ts             # 主进程入口、CSP、窗口、退出卸载
-    ipc.ts              # IPC 注册入口
+    ipc.ts              # IPC 注册入口（49 行）
     ipc/
       register.ts       # 发送方校验 / zod / 日志脱敏
+      app.ts            # 对话框 / 系统信息 / 更新检查
       ollama.ts         # Ollama 代理与流式
+      tools.ts          # 工具 + 工作空间
+      db.ts             # 数据库 / 会话 / 设置 / 统计
+      memory.ts         # MEMORY.md
+      mcp.ts            # MCP
+      media.ts          # 视频帧
+      shared.ts         # 日志桥
     ollama/
       config.ts         # 模式 / URL / 上下文 / 持久化
       secret-store.ts   # safeStorage
@@ -57,10 +64,14 @@ src/
       errors.ts
     db/
       sqlite.ts         # node:sqlite + WAL + 破坏性重建
+    tools/
+      command.ts        # run_command
+      web.ts            # web_fetch / web_search
+      system.ts         # download_file / compress
     preload.ts          # 领域白名单桥
     menu.ts             # 原生菜单（版本用 app.getVersion）
     tool-dispatch.ts    # 18 工具主进程分发
-    tool-handlers-*.ts  # 文件 / 系统 / Git
+    tool-handlers-*.ts  # 文件 / Git
     browser.ts          # Playwright 浏览器控制
     mcp-manager.ts      # MCP
     workspace.ts        # 工作空间进程
@@ -68,10 +79,15 @@ src/
     main.ts             # 入口
     index.html          # 布局 / 设置 / 帮助 / 工具面板
     api/ollama.ts       # 主进程代理的薄封装
+    features/settings/  # connection.ts / data.ts
     services/
-      agent-engine.ts   # 8 状态 Agent Loop
-      tool-registry.ts  # 18 工具定义 / 校验 / 调度
-      context-manager.ts
+      agent-engine.ts   # 8 状态 Agent Loop 编排器
+      agent/            # state/runtime/prompt/stream/tool-planning/trace/stats
+      agent/states/     # init/parsing/executing/observing/reflecting/compressing
+      context/          # tokenizer/builder/compressor/metrics/session-summary/checkpoint
+      tools/            # catalog/validate/format/analytics
+      tool-registry.ts  # 18 工具调度（400 行）
+      context-manager.ts# 公共导出 barrel
       memory-service.ts # MEMORY.md + 混合检索
       sub-agent.ts
     components/         # 原生 DOM 组件
