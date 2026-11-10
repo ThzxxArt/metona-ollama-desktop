@@ -5,6 +5,14 @@
   "main": "dist/main/main.js",
   "author": "thzxx",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ThzxxArt/metona-ollama-desktop.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ThzxxArt/metona-ollama-desktop/issues"
+  },
+  "homepage": "https://github.com/ThzxxArt/metona-ollama-desktop#readme",
   "scripts": {
     "dev:renderer": "vite build --watch",
     "dev:main": "tsc -p tsconfig.main.json --watch",

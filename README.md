@@ -14,6 +14,7 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/ThzxxArt/metona-ollama-desktop/actions/workflows/ci.yml"><img src="https://github.com/ThzxxArt/metona-ollama-desktop/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <img src="https://img.shields.io/badge/version-v0.17.2-E8734A?style=flat-square" alt="version">
   <img src="https://img.shields.io/badge/electron-33+-47848F?style=flat-square&logo=electron" alt="electron">
   <img src="https://img.shields.io/badge/typescript-5.7+-3178C6?style=flat-square&logo=typescript" alt="typescript">
@@ -526,5 +527,5 @@ npm run dist           # Build Windows installer
 ---
 
 <p align="center">
-  <sub>Made with ❤️ by <a href="https://gitee.com/thzxx">thzxx</a></sub>
+  <sub>Made with ❤️ by <a href="https://github.com/ThzxxArt">ThzxxArt</a></sub>
 </p>

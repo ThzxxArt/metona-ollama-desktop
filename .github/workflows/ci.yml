@@ -4,19 +4,25 @@ on:
   push:
     branches: [master]
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   verify:
-    runs-on: debian-latest
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
 
       - name: 安装依赖
-        run: npm install
+        run: npm ci
 
       - name: 类型检查（渲染进程 + 主进程）
         run: npm run typecheck
