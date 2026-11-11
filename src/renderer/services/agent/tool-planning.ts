@@ -163,7 +163,9 @@ export function hasPathDependency(call: ToolCall, prevBatch: ToolCall[]): boolea
       return true;
     }
     if (callWritePath && prevAffectedPath && pathsConflict(callWritePath, prevAffectedPath)) {
-      logInfo(`R27: 串行化(读-写): ${prev.function.name}(${prevAffectedPath}) → ${call.function.name}(${callWritePath})`);
+      logInfo(
+        `R27: 串行化(读-写): ${prev.function.name}(${prevAffectedPath}) → ${call.function.name}(${callWritePath})`,
+      );
       return true;
     }
     if (callReadPath && prevWritePath && pathsConflict(callReadPath, prevWritePath)) {

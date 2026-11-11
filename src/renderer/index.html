@@ -313,6 +313,7 @@
                         <button class="btn btn-sm btn-outline" id="btnClearApiKey" type="button">清除</button>
                     </div>
                     <p class="text-muted" style="margin-top:4px;font-size:11px;">仅远程模式需要。Key 由主进程 safeStorage 加密保存，渲染进程与日志均不可见；留空表示保持已保存的 Key。</p>
+                    <p class="text-muted" id="keyStorageWarning" style="display:none;margin-top:4px;font-size:11px;color:var(--caution);">⚠️ 系统安全存储不可用：API Key 仅本次运行有效，退出后需重新输入。</p>
                     <p class="text-muted" id="remoteHttpWarning" style="display:none;margin-top:4px;font-size:11px;color:var(--caution);">⚠️ 当前使用 http://，API Key 与对话内容不会加密传输，建议改用 HTTPS。</p>
                     <div class="connection-kind-row">
                         <label class="switch-label"><input type="radio" name="remoteKind" id="remoteKindCloud" value="cloud"> Ollama Cloud</label>

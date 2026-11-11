@@ -17,10 +17,11 @@ export function normalizeBaseUrl(rawUrl: string): string {
   if (parsed.username || parsed.password) {
     throw new Error('服务地址不能包含用户名或密码');
   }
-  let base = raw.replace(/\/+$/, '');
+  // 只保留 origin + pathname：丢弃 query / hash，避免拼出 /api/chat?x=1/api/chat
+  let basePath = parsed.pathname.replace(/\/+$/, '');
   // 允许用户粘贴 https://ollama.com/api，避免拼成 /api/api/chat
-  if (/\/api$/i.test(base)) base = base.slice(0, -4);
-  return base;
+  if (/\/api$/i.test(basePath)) basePath = basePath.slice(0, -4);
+  return `${parsed.origin}${basePath}`;
 }
 
 export function buildApiUrl(baseUrl: string, path: string): string {

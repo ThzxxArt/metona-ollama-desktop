@@ -10,10 +10,7 @@ import { showToast } from '../../components/toast.js';
 import { showConfirm, showPrompt } from '../../components/prompt-modal.js';
 import { encryptData, decryptData } from '../../services/crypto.js';
 import { logError, logInfo, logSuccess, logWarn } from '../../services/log-service.js';
-import {
-  getSessionSummariesBackup,
-  restoreSessionSummariesBackup,
-} from '../../services/context-manager.js';
+import { getSessionSummariesBackup, restoreSessionSummariesBackup } from '../../services/context-manager.js';
 import { getMetricsBackup, restoreMetricsBackup } from '../../services/agent-metrics.js';
 import { getTraceFallbackBackup, restoreTraceFallbackBackup } from '../../services/agent-engine.js';
 

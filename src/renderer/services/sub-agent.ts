@@ -6,10 +6,9 @@
 
 import { state, KEYS } from '../state/state.js';
 import { OllamaAPI } from '../api/ollama.js';
-import { getEnabledToolDefinitions, needsConfirmation } from './tool-registry.js';
 import { logInfo, logWarn, logError } from './log-service.js';
 import { validatePathSandbox, checkCommandSafety, snapshotSafetyState, restoreSafetyState, resetAllSafetyState, classifyError, calculateBackoff } from './agent-safety.js';
-import { getWorkspaceDirPath } from '../components/workspace-panel.js';
+import { getWorkspaceDirPath } from './workspace-state.js';
 import type { ToolResult, ToolCall, ToolDefinition } from '../types.js';
 
 const SUB_AGENT_MAX_LOOPS = 10;    // 子代理最多 10 轮
@@ -54,9 +53,12 @@ function getToolsForPermission(permission: SubAgentPermission): Set<string> {
 /** 根据权限级别获取可用工具定义
  * C3: 以全局已启用工具为基线（含 MCP 动态工具），
  * 再叠加权限白名单，确保被用户禁用的工具不会喂给子代理 LLM。 */
-function getSubAgentTools(permission: SubAgentPermission = 'readonly'): ToolDefinition[] {
+function getSubAgentTools(
+  permission: SubAgentPermission = 'readonly',
+  allTools: ToolDefinition[] = [],
+): ToolDefinition[] {
   const allowed = getToolsForPermission(permission);
-  return getEnabledToolDefinitions().filter(d => allowed.has(d.function.name));
+  return allTools.filter((d) => allowed.has(d.function.name));
 }
 
 export interface SubAgentOptions {
@@ -66,6 +68,12 @@ export interface SubAgentOptions {
   permission?: SubAgentPermission;
   /** 工具确认回调（继承主 Agent 的确认管线，防止子代理绕过确认机制） */
   confirmHandler?: (call: ToolCall) => Promise<boolean>;
+  /** 主 Agent 当前启用的工具定义（由 tool-registry 注入，避免反向依赖） */
+  tools?: ToolDefinition[];
+  /** 主 Agent 的确认判定函数（由 tool-registry 注入，避免反向依赖） */
+  needsConfirmation?: (toolName: string) => boolean;
+  /** 工具执行器（由 tool-registry 注入，避免子代理反向 import） */
+  executeTool?: (toolName: string, args: Record<string, unknown>) => Promise<ToolResult>;
 }
 
 /** 根据权限级别构建子代理系统提示词 */
@@ -132,7 +140,7 @@ export async function executeSubAgent(
   }
 
   const permission = options.permission ?? 'readonly';
-  const tools = getSubAgentTools(permission);
+  const tools = getSubAgentTools(permission, options.tools ?? []);
   const toolWhitelist = getToolsForPermission(permission);
   const toolNames = [...toolWhitelist].join(', ');
   logInfo(`子 Agent 启动`, `任务: ${task.slice(0, 80)} | 权限: ${permission} | 工具: ${toolNames} | 模型: ${model}`);
@@ -314,9 +322,23 @@ export async function executeSubAgent(
           }
         }
 
+        // 权限白名单硬校验：即使模型幻觉出越权工具名，也必须在执行前拒绝
+        if (!toolWhitelist.has(tc.name)) {
+          logWarn(`子 Agent 越权工具拦截: ${tc.name}（权限: ${permission}）`);
+          messages.push({
+            role: 'tool',
+            content: toolResultEnvelope(tc.name, {
+              success: false,
+              error: `当前子代理权限（${permission}）不允许使用工具 ${tc.name}`,
+            }),
+            tool_name: tc.name
+          });
+          continue;
+        }
+
         // 确认管线：子代理的写类工具与主 Agent 共用确认机制，
         // 防止借道子代理绕过用户确认（无确认回调时默认拒绝）
-        if (needsConfirmation(tc.name)) {
+        if (options.needsConfirmation?.(tc.name)) {
           const callObj: ToolCall = { type: 'function', function: { name: tc.name, arguments: tc.arguments } };
           const confirmed = options.confirmHandler ? await options.confirmHandler(callObj) : false;
           if (!confirmed) {
@@ -333,8 +355,10 @@ export async function executeSubAgent(
         }
 
         try {
-          const { executeTool } = await import('./tool-registry.js');
-          const result = await executeTool(tc.name, tc.arguments);
+          if (!options.executeTool) {
+            throw new Error('子代理缺少工具执行器');
+          }
+          const result = await options.executeTool(tc.name, tc.arguments);
           const resultStr = formatResult(tc.name, result);
           messages.push({
             role: 'tool',

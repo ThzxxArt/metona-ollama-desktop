@@ -218,7 +218,10 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         required: ['url'],
         properties: {
           url: { type: 'string', description: 'URL to fetch (http/https).' },
-          max_chars: { type: 'integer', description: 'Max characters to return. Default: 0 (no limit, return full content).' },
+          max_chars: {
+            type: 'integer',
+            description: 'Max characters to return. Default: 0 (no limit, return full content).',
+          },
           extract_mode: {
             type: 'string',
             enum: ['text', 'markdown'],
@@ -394,7 +397,8 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
           time_range: {
             type: 'string',
             enum: ['day', 'week', 'month', 'year'],
-            description: 'Filter results by time. Supported by Bing and Google. Use for recent news, latest version, etc.',
+            description:
+              'Filter results by time. Supported by Bing and Google. Use for recent news, latest version, etc.',
           },
           enhance_snippets: {
             type: 'boolean',
@@ -503,7 +507,11 @@ TIP: Use remove_batch when deleting multiple entries — it's much more efficien
         type: 'object',
         required: ['action'],
         properties: {
-          action: { type: 'string', enum: ['list', 'read'], description: 'list = list sessions, read = read one session.' },
+          action: {
+            type: 'string',
+            enum: ['list', 'read'],
+            description: 'list = list sessions, read = read one session.',
+          },
           session_id: { type: 'string', description: '[read REQUIRED] Session ID to read.' },
           max_messages: { type: 'integer', description: '[read] Max messages to return. Default: 50.' },
           limit: { type: 'integer', description: '[list] Max sessions to return. Default: 20.' },

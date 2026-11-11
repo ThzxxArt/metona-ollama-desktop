@@ -15,12 +15,7 @@ import {
   logStreamProgress,
   resetStreamProgress,
 } from '../log-service.js';
-import {
-  compressWithLLM,
-  estimateTokens,
-  recordActualTokens,
-  recordBudgetUsage,
-} from '../context-manager.js';
+import { compressWithLLM, estimateTokens, recordActualTokens, recordBudgetUsage } from '../context-manager.js';
 import { registerAbortController } from './runtime.js';
 import { S, transition, API_MAX_RETRIES, getFilteredTools } from './state.js';
 import { makeStats } from './stats.js';
@@ -39,6 +34,10 @@ export async function handleThinking(
   ctx.content = '';
   ctx.thinking = '';
   ctx.toolCalls.length = 0;
+  // 每轮必须重置上一轮遗留的统计字段，否则某轮没有返回 cached_count / done_reason 时
+  // 会把上一轮的值当作本轮值展示给 Token 仪表盘。
+  ctx.loopCachedCount = 0;
+  ctx.doneReason = '';
 
   const abortController = registerAbortController();
 
@@ -75,6 +74,8 @@ export async function handleThinking(
       ctx.content = '';
       ctx.thinking = '';
       ctx.toolCalls.length = 0;
+      ctx.loopCachedCount = 0;
+      ctx.doneReason = '';
       const retryDelay = 1000 * Math.pow(2, apiAttempt - 1);
       logWarn(`API 重试 ${apiAttempt}/${API_MAX_RETRIES}: 等待 ${retryDelay}ms 后重试`, apiLastErr?.message || '');
       await new Promise((r) => setTimeout(r, retryDelay));

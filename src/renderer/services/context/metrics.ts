@@ -86,11 +86,7 @@ export function calculateContextStats(messages: OllamaMessage[], numCtx: number)
     shouldCompress = true;
     reason = `趋势预测触发: ${prediction.message}`;
     urgency = 'high';
-  } else if (
-    prediction.turnsToOverflow > 0 &&
-    prediction.turnsToOverflow <= 5 &&
-    usageRatio > baseThreshold * 0.8
-  ) {
+  } else if (prediction.turnsToOverflow > 0 && prediction.turnsToOverflow <= 5 && usageRatio > baseThreshold * 0.8) {
     shouldCompress = true;
     reason = `趋势加速: ${prediction.turnsToOverflow} 轮后可能溢出，当前使用率 ${(usageRatio * 100).toFixed(0)}%`;
     urgency = 'medium';
@@ -232,9 +228,7 @@ export function mergeConsecutiveMessages(messages: OllamaMessage[]): OllamaMessa
   }
 
   if (mergedCount > 0) {
-    logInfo(
-      `R96: 消息角色压缩 — 合并了 ${mergedCount} 条连续同角色消息 (${messages.length} → ${result.length})`,
-    );
+    logInfo(`R96: 消息角色压缩 — 合并了 ${mergedCount} 条连续同角色消息 (${messages.length} → ${result.length})`);
   }
 
   return result;

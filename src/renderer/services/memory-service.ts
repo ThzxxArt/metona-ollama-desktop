@@ -558,6 +558,13 @@ async function persistEntries(entries: MemoryEntry[], reason?: string): Promise<
   _entriesCache = entries;
   const fileContent = entries.length > 0 ? serializeMemoryMd(entries) : '';
   await writeMemoryFile(fileContent, reason);
+  // 记忆内容变化后，旧的 embedding 向量不再对应当前文本，必须失效。
+  // 记忆写入频率低，整体清空缓存比逐条追踪更安全（不会留下脏向量）。
+  try {
+    void window.metonaDesktop?.db?.clearMemoryEmbeddings().catch(() => {});
+  } catch {
+    /* 缓存清理失败不影响记忆写入 */
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════

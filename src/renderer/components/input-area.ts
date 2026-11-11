@@ -866,7 +866,7 @@ function stripComments(content: string, language: string): string {
 	 */
 
 function buildFileContentParts(fileContents: Array<{ name: string; language: string; content: string }>): string[] {
-  const numCtx = state.get<number>(KEYS.NUM_CTX, 24576);
+  const numCtx = state.get<number>(KEYS.NUM_CTX, 131072);
   const fileBudget = Math.floor(numCtx * FILE_TOKEN_BUDGET_RATIO);
   let usedTokens = 0;
   const maxSingleFileTokens = Math.floor(fileBudget * 0.5);

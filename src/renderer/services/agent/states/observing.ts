@@ -33,7 +33,13 @@ export async function handleObserving(ctx: LoopContext, _currentSession: ChatSes
 
   {
     const maxToolMsgs =
-      pressureInfo.level === 'critical' ? 30 : pressureInfo.level === 'high' ? 40 : pressureInfo.level === 'medium' ? 60 : 80;
+      pressureInfo.level === 'critical'
+        ? 30
+        : pressureInfo.level === 'high'
+          ? 40
+          : pressureInfo.level === 'medium'
+            ? 60
+            : 80;
     const toolIndices: number[] = [];
     for (let i = 0; i < ctx.messages.length; i++) {
       if (ctx.messages[i].role === 'tool') toolIndices.push(i);

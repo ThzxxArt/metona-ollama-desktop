@@ -237,7 +237,10 @@ const results = await search(query, limit);
         case 'add': {
           const type = (args.type as 'fact' | 'preference' | 'rule') || 'fact';  // 兜底默认 fact
           const content = args.content as string;
-          const importance = (args.importance as number) || 5;
+          const rawImportance = Number(args.importance);
+          const importance = Number.isFinite(rawImportance)
+            ? Math.min(10, Math.max(1, Math.round(rawImportance)))
+            : 5;
           const tags = (args.tags as string[]) || [];
           if (!content || content.length < 2) return { success: false, error: 'add 操作缺少 content 参数或内容太短。示例: {"action":"add","type":"fact","content":"具体的记忆内容"}' };
           try {
@@ -279,7 +282,7 @@ const results = await search(query, limit);
           return { success: true, action, entries, total: entries.length };
         }
         default:
-          return { success: false, error: `未知操作: ${action}。支持: search / add / replace / remove / read_all` };
+          return { success: false, error: `未知操作: ${action}。支持: search / add / replace / remove / remove_batch / read_all` };
       }
     }
     if (toolName === 'session') {
@@ -287,7 +290,10 @@ const results = await search(query, limit);
       if (!bridge?.db) return { success: false, error: '桌面 API 不可用' };
       const action = args.action as string || 'list';
       if (action === 'list') {
-        const limit = (args.limit as number) || 0;
+        const rawLimit = args.limit as number | undefined;
+        const limit = typeof rawLimit === 'number' && Number.isFinite(rawLimit) && rawLimit > 0
+          ? Math.min(100, Math.floor(rawLimit))
+          : 20;
         const search = (args.search as string) || '';
         const summaries = await bridge.db.getSessionSummaries();
         let filtered = summaries.map((s: { id: string; title: string; model: string; message_count: number; created_at: number; updated_at: number }) => ({
@@ -308,12 +314,15 @@ const results = await search(query, limit);
       }
       if (action === 'read') {
         const sessionId = args.session_id as string;
-        const maxMessages = (args.max_messages as number) || 0;
+        const rawMaxMessages = args.max_messages as number | undefined;
+        const maxMessages = typeof rawMaxMessages === 'number' && Number.isFinite(rawMaxMessages) && rawMaxMessages > 0
+          ? Math.min(500, Math.floor(rawMaxMessages))
+          : 50;
         if (!sessionId) return { success: false, error: '缺少 session_id 参数' };
         const session = await bridge.db.getSession(sessionId);
         if (!session) return { success: false, error: `会话 ${sessionId} 不存在` };
         const messages = await bridge.db.getMessages(sessionId);
-        const msgs = (maxMessages > 0 ? messages.slice(0, maxMessages) : messages).map((m: any) => ({
+        const msgs = messages.slice(0, maxMessages).map((m: any) => ({
           role: m.role,
           content: m.content || '',
           timestamp: m.created_at
@@ -346,7 +355,14 @@ const results = await search(query, limit);
         ? requested
         : maxAllowed;
       logInfo(`子代理委派: ${task.slice(0, 80)}${model ? ` (模型: ${model})` : ' (跟随当前模型)'} (权限: ${permission}, 上限: ${maxAllowed})`);
-      const result = await executeSubAgent(task, context, { model, permission, confirmHandler: _subAgentConfirmHandler ?? undefined });
+      const result = await executeSubAgent(task, context, {
+        model,
+        permission,
+        confirmHandler: _subAgentConfirmHandler ?? undefined,
+        tools: getEnabledToolDefinitions(),
+        needsConfirmation,
+        executeTool,
+      });
       logToolResult('spawn_task', result.success, result.success ? `完成, ${(result as any).loops} 轮` : result.error);
       return result;
     }
@@ -361,13 +377,19 @@ const results = await search(query, limit);
       logInfo(`工作空间命令执行: ${command.slice(0, 100)}`);
       const result = await bridge.workspace.execTool(command, cwd);
       logToolResult('run_command', result.success, result.success ? undefined : result.stderr?.slice(0, 200));
-      return {
+      const normalized: ToolResult = {
         success: result.success,
         stdout: result.stdout,
         stderr: result.stderr,
         exitCode: result.exitCode,
         duration: result.duration
       };
+      // run_command 输出可能非常大，必须与其它工具一样走截断/格式化，
+      // 否则一次性把几十 MB 日志塞进上下文。
+      const truncatedResult = truncateToolResult(normalized, toolName);
+      const formattedResult = formatToolResult(toolName, truncatedResult);
+      recordToolAnalytics(toolName, formattedResult.success, Date.now() - startTime, formattedResult.error);
+      return formattedResult;
     }
 
     // 其他工具：IPC 调用（无超时，由 renderer 内部处理）

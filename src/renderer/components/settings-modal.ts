@@ -4,7 +4,6 @@
 
 import { state, KEYS } from '../state/state.js';
 import { debounce } from '../utils/utils.js';
-import { encryptData, decryptData } from '../services/crypto.js';
 import { logSetting, logInfo, logWarn, logError, logSuccess } from '../services/log-service.js';
 import { checkConnection, updateConnectionInfo, updateRunningModels } from './header.js';
 import { initConnectionSettings, refreshConnectionSettingsUI } from '../features/settings/connection.js';
@@ -15,14 +14,9 @@ import {
   populateEmbeddingModels,
 } from '../features/settings/data.js';
 import { showToast } from './toast.js';
-import { showConfirm, showPrompt } from './prompt-modal.js';
+import { showConfirm } from './prompt-modal.js';
 import { OllamaAPI } from '../api/ollama.js';
 import { ChatDB } from '../db/chat-db.js';
-import type { ChatSession } from '../types.js';
-// A2: 备份携带 localStorage 持久化状态（会话摘要/度量历史/轨迹降级缓存）
-import { getSessionSummariesBackup, restoreSessionSummariesBackup } from '../services/context-manager.js';
-import { getMetricsBackup, restoreMetricsBackup } from '../services/agent-metrics.js';
-import { getTraceFallbackBackup, restoreTraceFallbackBackup } from '../services/agent-engine.js';
 
 let settingsModalEl: HTMLElement;
 
@@ -196,10 +190,9 @@ export function initSettingsModal(): void {
       showToast('Ollama API 未连接', 'warning');
       return;
     }
-    const connection = state.get<{ mode: 'local' | 'remote'; remoteKind: 'cloud' | 'self-hosted' } | null>(
-      'connection',
-      null,
-    );
+    const connection =
+      state.get<{ mode: 'local' | 'remote'; remoteKind: 'cloud' | 'self-hosted' } | null>('connection', null) ??
+      (await window.metonaDesktop?.ollama?.getConfig());
     if (connection?.mode === 'remote' && connection.remoteKind === 'cloud') {
       showToast('Ollama Cloud 模型由服务端管理，不支持本地卸载', 'warning');
       return;

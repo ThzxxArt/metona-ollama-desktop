@@ -22,7 +22,18 @@ export function truncateToolResult(result: ToolResult, toolName: string): ToolRe
 
   const truncated = { ...result };
 
-  const largeFields = ['stdout', 'content', 'text', 'result', 'output', 'data', 'formatted', 'snippet', 'error', 'stderr'];
+  const largeFields = [
+    'stdout',
+    'content',
+    'text',
+    'result',
+    'output',
+    'data',
+    'formatted',
+    'snippet',
+    'error',
+    'stderr',
+  ];
   for (const field of largeFields) {
     if (typeof truncated[field] === 'string' && (truncated[field] as string).length > 10000) {
       truncated[field] = truncateStringField(truncated[field] as string);
@@ -37,7 +48,17 @@ export function truncateToolResult(result: ToolResult, toolName: string): ToolRe
         (truncated as Record<string, unknown>)[`_original_${field}_count`] = arr.length;
         (truncated as Record<string, unknown>)[field] = arr.slice(0, 50);
       }
-      const innerLargeKeys = ['content', 'snippet', 'text', 'stdout', 'output', 'formatted', 'data', 'result', 'stderr'];
+      const innerLargeKeys = [
+        'content',
+        'snippet',
+        'text',
+        'stdout',
+        'output',
+        'formatted',
+        'data',
+        'result',
+        'stderr',
+      ];
       for (const item of (truncated as Record<string, unknown>)[field] as unknown[]) {
         if (item && typeof item === 'object' && !Array.isArray(item)) {
           const record = item as Record<string, unknown>;

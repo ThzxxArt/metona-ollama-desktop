@@ -34,7 +34,10 @@ export async function handleReflecting(
   try {
     const hookResult = await executeHooks('pre_completion', ctx);
     if (!hookResult.allPassed) {
-      const reasons = hookResult.results.filter((r) => !r.passed).map((r) => r.message).join('; ');
+      const reasons = hookResult.results
+        .filter((r) => !r.passed)
+        .map((r) => r.message)
+        .join('; ');
       logWarn(`pre_completion Hook 提示: ${reasons}`);
     }
   } catch {

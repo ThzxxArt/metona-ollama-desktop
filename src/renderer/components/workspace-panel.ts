@@ -7,6 +7,7 @@ import { logInfo, logError, logDebug } from '../services/log-service.js';
 import { escapeHtml, formatSize } from '../utils/utils.js';
 import { addToolResultHighlighting } from './chat-area.js';
 import { getEnabledToolDefinitions } from '../services/tool-registry.js';
+import { getWorkspaceDirPath as getSharedWorkspaceDirPath, setWorkspaceDirPath } from '../services/workspace-state.js';
 
 // ── 工具卡片类型 ──
 interface ToolCallRecord {
@@ -181,6 +182,7 @@ export async function initWorkspacePanel(): Promise<void> {
   try {
     const dirInfo = await bridge.workspace.getDir();
     workspaceDir = dirInfo.dir;
+    setWorkspaceDirPath(workspaceDir);
     currentFileDir = workspaceDir;
     logInfo('工作空间目录', workspaceDir);
   } catch (err) {
@@ -217,6 +219,7 @@ export async function initWorkspacePanel(): Promise<void> {
     const newDir = e.detail?.dir;
     if (newDir && newDir !== workspaceDir) {
       workspaceDir = newDir;
+      setWorkspaceDirPath(newDir);
       currentFileDir = newDir;
       logInfo('工作空间目录已刷新', newDir);
       // 如果当前在文件页签，立即重新加载
@@ -1107,7 +1110,7 @@ function renderToolCard(tc: ToolCallRecord): string {
 
 /** 获取工作空间目录 */
 export function getWorkspaceDirPath(): string {
-  return workspaceDir;
+  return getSharedWorkspaceDirPath();
 }
 
 /** 外部自动切换 tab */

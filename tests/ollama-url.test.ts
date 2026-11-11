@@ -11,6 +11,11 @@ describe('normalizeBaseUrl', () => {
     expect(normalizeBaseUrl('https://ollama.com/api/')).toBe('https://ollama.com');
   });
 
+  it('丢弃 query 与 hash，保留反代路径', () => {
+    expect(normalizeBaseUrl('https://example.com/ollama/?token=1#x')).toBe('https://example.com/ollama');
+    expect(normalizeBaseUrl('https://example.com/ollama/api?x=1')).toBe('https://example.com/ollama');
+  });
+
   it('拒绝非 http/https', () => {
     expect(() => normalizeBaseUrl('ftp://example.com')).toThrow('http/https');
     expect(() => normalizeBaseUrl('file:///etc/passwd')).toThrow('http/https');

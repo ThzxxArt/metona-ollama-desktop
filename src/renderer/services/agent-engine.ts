@@ -6,68 +6,26 @@
 
 import { OllamaAPI } from '../api/ollama.js';
 import { state, KEYS } from '../state/state.js';
+import { needsConfirmation, setSubAgentConfirmHandler } from './tool-registry.js';
 import {
-  executeTool,
-  getEnabledToolDefinitions,
-  getRelevantToolDefinitions,
-  needsConfirmation,
-  setSubAgentConfirmHandler,
-} from './tool-registry.js';
-import {
-  compactOldToolResult,
-  resetAllSafetyState,
   classifyError,
   calculateBackoff,
   validatePathSandbox,
-  // 工具结果元数据
   addResultMetadata,
-  // 错误模式学习
   recordErrorPattern,
-  // 命令安全检查
   checkCommandSafety,
-  // 按工具类型智能截断
-  smartTruncateByToolType,
-  // 错误恢复建议
   getErrorRecoverySuggestions,
   formatErrorRecovery,
-  // 诊断报告
-  collectDiagnostics,
-  formatDiagnosticsReport,
 } from './agent-safety.js';
-import { search, formatMemoryContext } from './memory-service.js';
 import { formatToolResultForModel, summarizeAuditResult } from './result-formatter.js';
-import { parseToolCallsFromText } from './tool-parsing.js';
 
 import { showToast } from '../components/toast.js';
-import { logInfo, logWarn, logSuccess, logError, logToolStart, logToolResult, logAgentLoop, logModelResponse, logStreamProgress, resetStreamProgress } from './log-service.js';
-import { getWorkspaceDirPath } from '../components/workspace-panel.js';
-import { generateId } from '../utils/utils.js';
-import {
-  buildContext, estimateTokens, shouldAutoCompress, compressWithLLM,
-  AUTO_COMPRESS_THRESHOLD, recordActualTokens, predictContextOverflow, recordTokenUsage,
-  // R91: 上下文压力分级评估
-  getContextPressureLevel,
-  // 统一上下文统计（替代多次独立计算）
-  calculateContextStats,
-  // R93: Token 预算追踪器
-  recordBudgetUsage, setTokenBudgetNumCtx, resetTokenBudget,
-  // R96: 消息角色压缩
-  mergeConsecutiveMessages,
-  // R98: 压缩触发阈值优化
-  getTrendAwareCompressThreshold,
-  // R100: Token 使用统计报告
-  generateTokenReport, formatTokenReport,
-  // R111: 自适应压缩策略选择
-  chooseCompressionStrategy,
-  // R123: 会话摘要持久化
-  loadSessionSummaries, generateSessionSummary, saveSessionSummary, formatSessionSummariesForContext,
-  // R125: Agent 状态检查点
-  createCheckpoint, clearCheckpoints,
-} from './context-manager.js';
+import { logInfo, logWarn, logError, logToolStart, logToolResult } from './log-service.js';
+import { getWorkspaceDirPath } from './workspace-state.js';
+import { estimateTokens, generateSessionSummary, saveSessionSummary } from './context-manager.js';
 import { executeHooks, addWrittenFile } from './hooks.js';
-import { recordIteration, recordToolCall, startSessionMetrics, endSessionMetrics } from './agent-metrics.js';
+import { recordToolCall, startSessionMetrics, endSessionMetrics } from './agent-metrics.js';
 import { getEffectiveNumCtx } from '../components/model-bar.js';
-import { stableStringify } from '../utils/utils.js';
 import type {
   OllamaMessage,
   OllamaStreamChunk,

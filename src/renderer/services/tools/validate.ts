@@ -167,7 +167,10 @@ export function coerceToolArgs(toolName: string, args: Record<string, unknown>):
       try {
         coerced[key] = JSON.parse(value);
       } catch {
-        coerced[key] = value.split(',').map((s) => s.trim()).filter(Boolean);
+        coerced[key] = value
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean);
       }
     } else if (prop.type === 'object' && typeof value === 'string') {
       try {
@@ -185,7 +188,12 @@ export function coerceToolArgs(toolName: string, args: Record<string, unknown>):
 export function suggestToolFix(toolName: string, args: Record<string, unknown>, error: string): string {
   const err = error.toLowerCase();
 
-  if (err.includes('no such file') || err.includes('not found') || err.includes('文件不存在') || err.includes('enoent')) {
+  if (
+    err.includes('no such file') ||
+    err.includes('not found') ||
+    err.includes('文件不存在') ||
+    err.includes('enoent')
+  ) {
     const path = args.path || args.source || args.file1 || '';
     return `文件路径可能不正确: "${path}"。建议：1) 使用 list_directory 检查路径是否存在; 2) 检查拼写; 3) 尝试绝对路径。`;
   }
@@ -204,7 +212,7 @@ export function suggestToolFix(toolName: string, args: Record<string, unknown>, 
   }
 
   if (err.includes('json') || err.includes('parse') || err.includes('syntax')) {
-    return `数据解析失败。建议：1) 使用 json_format 工具验证 JSON 格式; 2) 检查参数是否为有效的 JSON 字符串。`;
+    return `数据解析失败。建议：1) 检查 JSON 字符串是否完整、引号与逗号是否合法; 2) 确认参数是有效的 JSON 字符串。`;
   }
 
   if (err.includes('git') || err.includes('not a repository')) {

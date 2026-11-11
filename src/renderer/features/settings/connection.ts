@@ -9,10 +9,7 @@ import { checkConnection, updateConnectionInfo } from '../../components/header.j
 import { loadModels, formatCtxLen, clearModelCapabilityCache } from '../../components/model-bar.js';
 import { showToast } from '../../components/toast.js';
 import type { OllamaAPI } from '../../api/ollama.js';
-import type {
-  OllamaConnectionSettings,
-  OllamaConnectionView,
-} from '../../../shared/contracts/ollama.js';
+import type { OllamaConnectionSettings, OllamaConnectionView } from '../../../shared/contracts/ollama.js';
 
 let connectionView: OllamaConnectionView | null = null;
 
@@ -35,6 +32,7 @@ function elements() {
     ctxInput: document.querySelector('#inputContextLength') as HTMLInputElement,
     ctxFormatted: document.querySelector('#ctxFormatted') as HTMLElement,
     ctxModelHint: document.querySelector('#ctxModelHint') as HTMLElement,
+    keyStorageWarning: document.querySelector('#keyStorageWarning') as HTMLElement | null,
   };
 }
 
@@ -59,7 +57,8 @@ function updateModeUI(): void {
   const isCloud = mode === 'remote' && remoteKindCloud.checked;
   remoteUnloadToggle.disabled = isCloud;
   cloudUnloadHint.style.display = isCloud ? '' : 'none';
-  if (isCloud) remoteUnloadToggle.checked = false;
+  // 注意：不要在这里强制取消勾选。否则用户从自建切到 Cloud 再切回自建时，
+  // 之前的自动卸载偏好会被静默清空。
   const httpWarning = document.querySelector('#remoteHttpWarning') as HTMLElement | null;
   if (httpWarning) {
     httpWarning.style.display = mode === 'remote' && /^http:\/\//i.test(urlInput.value.trim()) ? '' : 'none';
@@ -77,6 +76,7 @@ function applyConnectionView(view: OllamaConnectionView): void {
     remoteKindSelf,
     remoteUnloadToggle,
     ctxInput,
+    keyStorageWarning,
   } = elements();
   modeSelect.value = view.mode;
   urlInput.value = view.mode === 'local' ? view.localUrl : view.remoteUrl;
@@ -84,8 +84,11 @@ function applyConnectionView(view: OllamaConnectionView): void {
   remoteKindCloud.checked = view.remoteKind === 'cloud';
   remoteKindSelf.checked = view.remoteKind !== 'cloud';
   remoteUnloadToggle.checked = view.remoteAutoUnload;
-  apiKeyInput.value = '';
+  if (document.activeElement !== apiKeyInput) apiKeyInput.value = '';
   apiKeyInput.placeholder = view.hasApiKey ? 'API Key 已保存（留空保持不变）' : 'API Key（可选）';
+  if (keyStorageWarning) {
+    keyStorageWarning.style.display = view.keyStorageAvailable || view.mode === 'local' ? 'none' : '';
+  }
   ctxInput.value = String(view.contextLength);
   updateCtxDisplay(view.contextLength);
   updateModeUI();
@@ -97,29 +100,25 @@ export async function refreshConnectionSettingsUI(): Promise<void> {
 }
 
 export function initConnectionSettings(): void {
-  const {
-    modeSelect,
-    urlInput,
-    apiKeyInput,
-    remoteKindCloud,
-    remoteKindSelf,
-    remoteUnloadToggle,
-    ctxInput,
-  } = elements();
+  const { modeSelect, urlInput, apiKeyInput, remoteKindCloud, remoteKindSelf, remoteUnloadToggle, ctxInput } =
+    elements();
   const bridge = window.metonaDesktop;
 
-  const saveConnection = debounce(async () => {
+  const saveConnectionNow = async (): Promise<void> => {
     if (!bridge?.ollama) return;
     const mode = modeSelect.value as 'local' | 'remote';
     const url = urlInput.value.trim();
     if (!url) return;
-    const patch: Partial<OllamaConnectionSettings> = {
-      mode,
-      remoteKind: mode === 'remote' && remoteKindCloud.checked ? 'cloud' : 'self-hosted',
-      remoteAutoUnload: mode === 'remote' && remoteKindSelf.checked ? remoteUnloadToggle.checked : false,
-    };
-    if (mode === 'local') patch.localUrl = url;
-    else patch.remoteUrl = url;
+    const patch: Partial<OllamaConnectionSettings> = { mode };
+    if (mode === 'local') {
+      patch.localUrl = url;
+      // 只保存当前模式的字段。不能在编辑本地地址时把 remoteKind / remoteAutoUnload
+      // 重置为 false，否则用户切回远程时偏好已被静默清空。
+    } else {
+      patch.remoteUrl = url;
+      patch.remoteKind = remoteKindCloud.checked ? 'cloud' : 'self-hosted';
+      if (remoteKindSelf.checked) patch.remoteAutoUnload = remoteUnloadToggle.checked;
+    }
     try {
       const view = await bridge.ollama.setConfig(patch);
       applyConnectionView(view);
@@ -138,7 +137,8 @@ export function initConnectionSettings(): void {
       showToast(`连接设置保存失败: ${(err as Error).message}`, 'error');
       logError('连接设置保存失败', (err as Error).message);
     }
-  }, 500);
+  };
+  const saveConnection = debounce(saveConnectionNow, 500);
 
   modeSelect.addEventListener('change', async () => {
     try {
@@ -174,7 +174,7 @@ export function initConnectionSettings(): void {
     const result = await bridge.ollama.setApiKey(key);
     apiKeyInput.value = '';
     if (result.success) {
-      apiKeyInput.placeholder = 'API Key 已保存（留空保持不变）';
+      apiKeyInput.placeholder = result.error ? 'API Key 仅本次运行有效' : 'API Key 已保存（留空保持不变）';
       showToast(result.error || 'API Key 已保存', result.error ? 'warning' : 'success');
     } else {
       showToast(`API Key 保存失败: ${result.error || '未知错误'}`, 'error');
@@ -208,7 +208,8 @@ export function initConnectionSettings(): void {
     if (!bridge?.ollama) return;
     const resultEl = document.querySelector('#connectionTestResult') as HTMLElement;
     resultEl.textContent = '测试中…';
-    await saveConnection();
+    // 必须先落盘再测试：saveConnection 是 500ms 防抖，直接 await 不会等待真正保存
+    await saveConnectionNow();
     const result = await bridge.ollama.test();
     if (result.ok) {
       resultEl.textContent = `✓ Ollama ${result.version || ''} · ${result.modelCount ?? 0} 个模型 · ${result.latencyMs ?? 0}ms`;

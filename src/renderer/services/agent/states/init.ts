@@ -8,7 +8,7 @@ import type { ChatSession, LoopContext, OllamaMessage } from '../../../types.js'
 import { logInfo, logWarn, logSuccess } from '../../log-service.js';
 import { resetAllSafetyState } from '../../agent-safety.js';
 import { getRelevantToolDefinitions } from '../../tool-registry.js';
-import { getWorkspaceDirPath } from '../../../components/workspace-panel.js';
+import { getWorkspaceDirPath } from '../../../services/workspace-state.js';
 import { getEffectiveNumCtx } from '../../../components/model-bar.js';
 import { search, formatMemoryContext } from '../../memory-service.js';
 import {
