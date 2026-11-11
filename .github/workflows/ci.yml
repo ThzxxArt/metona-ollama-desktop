@@ -93,6 +93,11 @@ jobs:
       - name: 安装依赖
         run: npm ci
 
+      - name: 构建（还原 source map，供 E2E 覆盖率映射）
+        run: npm run build
+        env:
+          METONA_COVERAGE: '1'
+
       - name: 下载单元覆盖率
         uses: actions/download-artifact@v4
         with:
