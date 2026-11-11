@@ -137,7 +137,7 @@ INIT → THINKING → PARSING → EXECUTING → OBSERVING
 ```
 
 - 不发送 `temperature`。
-- Think 档位：`false / low / medium / high`。
+- Think 档位：`false / low / medium / high / max`。
 - 压缩与记忆提取使用 `format` JSON Schema。
 - 不包含 Plan Mode、`plan_track`、计划确认、断点续传。
 
@@ -171,7 +171,7 @@ npm test
 npm run test:coverage
 ```
 
-当前基线：79 个测试文件，1661 通过，2 跳过；全仓单测覆盖率 statements 94.90% / branches 85.38% / functions 95.01% / lines 95.78%。
+当前基线：79 个测试文件，1666 通过，2 跳过；全仓单测覆盖率 statements 94.88% / branches 85.35% / functions 94.97% / lines 95.78%。
 
 E2E：
 

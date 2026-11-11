@@ -34,10 +34,10 @@ xvfb-run -a npm run test:e2e
 ## 3. 当前基线
 
 - 测试文件：75
-- 通过：1661（2 skipped）
+- 通过：1666（2 skipped）
 - 跳过：2
-- 单元覆盖率（全仓 `src/**/*.ts`）：statements 94.90% / branches 85.38% / functions 95.01% / lines 95.78%
-- E2E 合并后覆盖率：statements 98.70% / branches 86.55% / functions 95.60% / lines 99.01%
+- 单元覆盖率（全仓 `src/**/*.ts`）：statements 94.88% / branches 85.35% / functions 94.97% / lines 95.78%
+- E2E 合并后覆盖率：statements 98.70% / branches 86.54% / functions 95.56% / lines 99.02%
 
 ## 4. 覆盖率门槛
 

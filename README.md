@@ -36,12 +36,13 @@
 ## 功能亮点
 
 - **五种连接方式**：Ollama 本地、自建远程、Ollama Cloud、OpenAI Chat Completions 兼容、Anthropic Messages 兼容，设置页一个下拉框切换。
-- **第三方 LLM 提供商**：自定义 Base URL、模型名与 API Key；支持流式输出、工具调用、图片输入与用量统计，主进程自动完成 OpenAI / Anthropic 协议转换。
+- **第三方 LLM 提供商**：自定义 Base URL、模型名与 API Key；支持流式输出、工具调用、图片输入与用量统计，主进程自动完成 OpenAI / Anthropic 协议转换；兼容 OpenCode Go 的 `x-opencode-session` 会话头。
 - **独立加密 Key**：Ollama、OpenAI、Anthropic 的 API Key 分别用 `safeStorage` 加密保存，渲染进程只能看到“是否已配置”。
 - **主进程代理**：渲染进程不再直接 `fetch` 任何 LLM，CORS 白名单已删除，`sandbox: true` + CSP 生效。
 - **18 个内置工具**：合并重复能力，减少模型选择噪声与 schema token。
 - **Plan Mode 已移除**：不再有 `plan_track`、计划确认弹窗、`Ctrl+P` 或隐藏分支；Agent Loop 保持 8 状态机。
-- **上下文长度手动输入**：默认 128K，范围 1K–4M，实际发送 `min(设置值, 模型上限)`。
+- **上下文长度手动输入**：默认 128K，范围 1K–4M，实际发送设置值；模型标称上限仅作参考，可手动超过。
+- **最大输出 Token 可调**：默认 4096，范围 256–131072；Ollama 映射 `num_predict`，OpenAI 兼容映射 `max_tokens`（推理模型 `max_completion_tokens`），Anthropic 兼容映射 `max_tokens`。
 - **远程模型卸载**：自建远程默认在新建会话/退出时释放；Ollama Cloud 自动跳过；支持手动“释放显存”。
 - **Ollama 0.40 能力**：`done_reason` 截断提示、`prompt_eval_cached_count` 缓存命中、云模型徽章、Think 档位、结构化输出。
 - **混合记忆检索**：关键词/IDF + embedding 余弦相似度，缓存于 `memory_embeddings` 表，失败自动回退关键词。

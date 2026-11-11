@@ -58,6 +58,8 @@ test('设置面板包含提供商、本地/远程与上下文数字输入', asyn
   await expect(page.locator('#selectOllamaMode')).toBeVisible();
   await expect(page.locator('#inputServerUrl')).toBeVisible();
   await expect(page.locator('#inputContextLength')).toHaveAttribute('type', 'number');
+  await expect(page.locator('#inputMaxOutputTokens')).toHaveAttribute('type', 'number');
+  await expect(page.locator('#selectThinkLevel option[value="max"]')).toHaveCount(1);
   await expect(page.locator('#inputTemperature')).toHaveCount(0);
   await expect(page.locator('#selectContextLength')).toHaveCount(0);
 });

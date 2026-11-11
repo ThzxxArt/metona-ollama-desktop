@@ -250,7 +250,7 @@ describe('agent/stats', () => {
 // ═══════════════════════════════════════════════════════════════
 
 describe('agent/prompt', () => {
-  it('getThinkLevel 仅接受 low/medium/high', () => {
+  it('getThinkLevel 接受 low/medium/high/max', () => {
     expect(getThinkLevel()).toBe(false);
     state.set('thinkLevel', 'low');
     expect(getThinkLevel()).toBe('low');
@@ -258,6 +258,8 @@ describe('agent/prompt', () => {
     expect(getThinkLevel()).toBe('medium');
     state.set('thinkLevel', 'high');
     expect(getThinkLevel()).toBe('high');
+    state.set('thinkLevel', 'max');
+    expect(getThinkLevel()).toBe('max');
     state.set('thinkLevel', 'off');
     expect(getThinkLevel()).toBe(false);
   });

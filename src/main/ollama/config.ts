@@ -7,6 +7,8 @@ import {
   ANTHROPIC_DEFAULT_URL,
   DEFAULT_OLLAMA_CONNECTION,
   LOCAL_DEFAULT_URL,
+  MAX_MAX_OUTPUT_TOKENS,
+  MIN_MAX_OUTPUT_TOKENS,
   OPENAI_DEFAULT_URL,
   REMOTE_CLOUD_URL,
   type LlmProvider,
@@ -50,6 +52,12 @@ function clampContextLengthLocal(value: unknown, fallback: number): number {
   return clampContextLength(value, fallback);
 }
 
+function clampMaxOutputTokens(value: unknown, fallback: number): number {
+  const parsed = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(MAX_MAX_OUTPUT_TOKENS, Math.max(MIN_MAX_OUTPUT_TOKENS, Math.round(parsed)));
+}
+
 function normalizeSettings(raw: Partial<OllamaConnectionSettings> | null | undefined): OllamaConnectionSettings {
   const source = raw ?? {};
   const provider: LlmProvider =
@@ -77,6 +85,7 @@ function normalizeSettings(raw: Partial<OllamaConnectionSettings> | null | undef
     anthropicUrl,
     remoteKind,
     contextLength: clampContextLengthLocal(source.contextLength, DEFAULT_OLLAMA_CONNECTION.contextLength),
+    maxOutputTokens: clampMaxOutputTokens(source.maxOutputTokens, DEFAULT_OLLAMA_CONNECTION.maxOutputTokens),
     remoteAutoUnload: source.remoteAutoUnload !== false,
     requestTimeoutMs:
       typeof source.requestTimeoutMs === 'number' && source.requestTimeoutMs > 0

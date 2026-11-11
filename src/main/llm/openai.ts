@@ -4,14 +4,16 @@
  * 转回渲染层现有的 OllamaStreamChunk 结构。
  */
 
+import { randomUUID } from 'node:crypto';
 import { buildProviderApiUrl } from '../../shared/ollama-url.js';
-import type {
-  OllamaChatRequestBody,
-  OllamaEmbedResponse,
-  OllamaModelsResponse,
-  OllamaShowResponse,
-  OllamaStreamChunk,
-  OllamaTestResult,
+import {
+  DEFAULT_MAX_OUTPUT_TOKENS,
+  type OllamaChatRequestBody,
+  type OllamaEmbedResponse,
+  type OllamaModelsResponse,
+  type OllamaShowResponse,
+  type OllamaStreamChunk,
+  type OllamaTestResult,
 } from '../../shared/contracts/ollama.js';
 import { loadOllamaSettings } from '../ollama/config.js';
 import { getOllamaSecretStore } from '../ollama/secret-store.js';
@@ -61,8 +63,14 @@ interface OpenAIChatResponse {
   usage?: OpenAIUsage;
 }
 
-function authHeaders(): Record<string, string> {
-  return providerHeaders('openai', getOllamaSecretStore().get('openai'));
+const DEFAULT_SESSION_ID: string = randomUUID();
+
+function authHeaders(sessionId: string = DEFAULT_SESSION_ID): Record<string, string> {
+  const headers = providerHeaders('openai', getOllamaSecretStore().get('openai'));
+  headers['User-Agent'] = 'Metona-Ollama-Desktop';
+  // OpenCode Go 要求每个会话携带稳定 ID；其他 OpenAI 兼容服务会忽略此头。
+  headers['x-opencode-session'] = sessionId;
+  return headers;
 }
 
 function serviceOptions(signal?: AbortSignal) {
@@ -101,12 +109,21 @@ function parseToolCalls(raw: OpenAIRawToolCall[] | undefined): NormalizedToolCal
 }
 
 function buildPayload(body: OllamaChatRequestBody, stream: boolean): Record<string, unknown> {
+  const settings = loadOllamaSettings();
   const messages = toOpenAIMessages(normalizeMessages(body.messages));
   if (body.system) messages.unshift({ role: 'system', content: body.system });
+  const maxOutputTokens = settings.maxOutputTokens || DEFAULT_MAX_OUTPUT_TOKENS;
+  // OpenAI 推理模型要求 max_completion_tokens；其余兼容接口仍普遍使用 max_tokens。
+  const reasoningModel = /^(o1|o3|o4|gpt-5)/i.test(body.model) || /reasoning/i.test(body.model);
+  const thinkLevel = body.think === true ? 'medium' : typeof body.think === 'string' ? body.think : '';
+  // OpenAI 没有 max 档位，映射到最高的 high。
+  const reasoningEffort = thinkLevel === 'max' ? 'high' : thinkLevel;
   return {
     model: body.model,
     messages,
     stream,
+    [reasoningModel ? 'max_completion_tokens' : 'max_tokens']: maxOutputTokens,
+    ...(reasoningModel && reasoningEffort && { reasoning_effort: reasoningEffort }),
     ...(body.tools?.length && { tools: body.tools, tool_choice: 'auto' }),
   };
 }
@@ -181,7 +198,7 @@ export async function chat(body: OllamaChatRequestBody, signal?: AbortSignal): P
     url,
     {
       method: 'POST',
-      headers: authHeaders(),
+      headers: authHeaders(body.session_id),
       body: JSON.stringify(buildPayload(body, false)),
       signal,
     },
@@ -202,7 +219,7 @@ export async function chatStream(
     url,
     {
       method: 'POST',
-      headers: authHeaders(),
+      headers: authHeaders(body.session_id),
       body: JSON.stringify(buildPayload(body, true)),
       signal,
     },

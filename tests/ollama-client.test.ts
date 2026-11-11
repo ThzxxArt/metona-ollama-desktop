@@ -8,6 +8,7 @@ const hoisted = vi.hoisted(() => ({
     remoteKind: 'self-hosted' as 'cloud' | 'self-hosted',
     remoteAutoUnload: true,
     requestTimeoutMs: 900_000,
+    maxOutputTokens: 4096,
   },
   baseUrl: 'http://127.0.0.1:11434',
 }));
@@ -75,6 +76,7 @@ beforeEach(() => {
     remoteKind: 'self-hosted',
     remoteAutoUnload: true,
     requestTimeoutMs: 900_000,
+    maxOutputTokens: 4096,
   };
 });
 
@@ -165,6 +167,15 @@ describe('Ollama 客户端请求与认证', () => {
       },
     } as unknown as Response);
     await expect(getVersion()).rejects.toMatchObject({ kind: 'server', status: 500 });
+  });
+
+  it('Ollama 请求注入 options.num_predict', async () => {
+    hoisted.settings.maxOutputTokens = 2048;
+    fetchMock.mockResolvedValueOnce(jsonResponse({ message: { content: 'ok' } }));
+    await chat({ model: 'qwen3', messages: [], options: { num_ctx: 8192 } });
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+    expect(body.options).toEqual({ num_ctx: 8192, num_predict: 2048 });
   });
 
   it('请求超时映射为 network 超时', async () => {

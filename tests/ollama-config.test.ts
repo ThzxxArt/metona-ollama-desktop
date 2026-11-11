@@ -51,7 +51,14 @@ describe('Ollama 连接配置', () => {
     expect(settings.anthropicUrl).toBe('https://api.anthropic.com');
     expect(settings.remoteKind).toBe('cloud');
     expect(settings.contextLength).toBe(DEFAULT_OLLAMA_CONNECTION.contextLength);
+    expect(settings.maxOutputTokens).toBe(DEFAULT_OLLAMA_CONNECTION.maxOutputTokens);
     expect(settings.remoteAutoUnload).toBe(true);
+  });
+
+  it('最大输出 Token 保存并钳制到 256–131072', () => {
+    expect(saveOllamaSettings({ maxOutputTokens: 128 }).maxOutputTokens).toBe(256);
+    expect(saveOllamaSettings({ maxOutputTokens: 999_999 }).maxOutputTokens).toBe(131072);
+    expect(saveOllamaSettings({ maxOutputTokens: 8192 }).maxOutputTokens).toBe(8192);
   });
 
   it('第三方 provider 使用独立地址且不判定为 Cloud', () => {

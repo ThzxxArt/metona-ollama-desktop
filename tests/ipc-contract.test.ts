@@ -15,6 +15,7 @@ describe('IPC zod 契约', () => {
       openaiUrl: 'https://api.openai.com',
       anthropicUrl: 'https://api.anthropic.com',
       contextLength: 131072,
+      maxOutputTokens: 4096,
       remoteAutoUnload: true,
     });
     expect(result.success).toBe(true);
@@ -25,13 +26,17 @@ describe('IPC zod 契约', () => {
     expect(connectionPatchSchema.safeParse({ unknown: 1 }).success).toBe(false);
     expect(connectionPatchSchema.safeParse({ contextLength: 1 }).success).toBe(false);
     expect(connectionPatchSchema.safeParse({ contextLength: 99_999_999 }).success).toBe(false);
+    expect(connectionPatchSchema.safeParse({ maxOutputTokens: 1 }).success).toBe(false);
+    expect(connectionPatchSchema.safeParse({ maxOutputTokens: 999_999 }).success).toBe(false);
+    expect(connectionPatchSchema.safeParse({ maxOutputTokens: 4096 }).success).toBe(true);
   });
 
   it('chat body 校验 model 与非流式字段', () => {
     expect(chatBodySchema.safeParse({ model: 'qwen3', messages: [] }).success).toBe(true);
     expect(chatBodySchema.safeParse({ model: '', messages: [] }).success).toBe(false);
     expect(chatBodySchema.safeParse({ model: 'qwen3', messages: [], think: 'high' }).success).toBe(true);
-    expect(chatBodySchema.safeParse({ model: 'qwen3', messages: [], think: 'max' }).success).toBe(false);
+    expect(chatBodySchema.safeParse({ model: 'qwen3', messages: [], think: 'max' }).success).toBe(true);
+    expect(chatBodySchema.safeParse({ model: 'qwen3', messages: [], session_id: 'session-1' }).success).toBe(true);
   });
 
   it('embed 入参校验', () => {

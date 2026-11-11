@@ -416,7 +416,10 @@ describe('model-bar', () => {
     expect(getModelContextLength()).toBe(32768);
     expect(getCurrentModelName()).toBe('a-model');
     expect(getSelectedModel()).toBe('a-model');
-    expect(getEffectiveNumCtx()).toBe(32768);
+    // 用户设置优先，不再被模型标称上限钳制
+    expect(getEffectiveNumCtx()).toBe(131072);
+    state.set(KEYS.NUM_CTX, 65536);
+    expect(getEffectiveNumCtx()).toBe(65536);
     state.set(KEYS.NUM_CTX, 1024);
     expect(getEffectiveNumCtx()).toBe(1024);
   });
@@ -532,9 +535,14 @@ describe('model-bar', () => {
 
   it('think 下拉切换写入状态', () => {
     const think = el<HTMLSelectElement>('#selectThinkLevel');
+    expect(think.querySelector('option[value="max"]')).not.toBeNull();
     think.value = 'high';
     think.dispatchEvent(new Event('change'));
     expect(state.get('thinkLevel')).toBe('high');
+    expect(state.get('thinkEnabled')).toBe(true);
+    think.value = 'max';
+    think.dispatchEvent(new Event('change'));
+    expect(state.get('thinkLevel')).toBe('max');
     expect(state.get('thinkEnabled')).toBe(true);
     think.value = 'off';
     think.dispatchEvent(new Event('change'));
@@ -618,6 +626,8 @@ describe('model-bar', () => {
     expect(getThinkLevel()).toBe('low');
     state.set(KEYS.NUM_CTX, 4096);
     expect(getEffectiveNumCtx()).toBe(4096);
+    state.set(KEYS.NUM_CTX, 16384);
+    expect(getEffectiveNumCtx()).toBe(16384);
   });
 });
 

@@ -82,8 +82,7 @@ describe('LLM 共享转换边界', () => {
       'anthropic-version': '2023-06-01',
       Authorization: 'Bearer key',
     });
-    expect(inferProviderCapabilities('claude-4-sonnet')).toEqual(
-      expect.arrayContaining(['vision', 'thinking', 'tools']),
-    );
+    expect(inferProviderCapabilities('claude-4-sonnet')).toEqual(['completion', 'tools', 'vision', 'thinking']);
+    expect(inferProviderCapabilities('unknown-model')).toEqual(['completion', 'tools', 'vision', 'thinking']);
   });
 });

@@ -38,6 +38,16 @@ function authHeaders(): Record<string, string> {
   return buildOllamaHeaders(getOllamaSecretStore().get());
 }
 
+/** Ollama 用 options.num_predict 控制最大输出 Token */
+function withOllamaOutputLimit(body: OllamaChatRequestBody): OllamaChatRequestBody {
+  const maxOutputTokens = loadOllamaSettings().maxOutputTokens;
+  if (!maxOutputTokens) return body;
+  return {
+    ...body,
+    options: { ...body.options, num_predict: maxOutputTokens },
+  };
+}
+
 export function getOllamaBaseUrl(): string {
   return getEffectiveBaseUrl(loadOllamaSettings());
 }
@@ -140,7 +150,7 @@ export async function chat(body: OllamaChatRequestBody, signal?: AbortSignal): P
   if (provider === 'anthropic') return anthropic.chat(body, signal);
   return requestJson(
     '/api/chat',
-    { ...body, stream: false },
+    { ...withOllamaOutputLimit(body), stream: false },
     { timeoutMs: loadOllamaSettings().requestTimeoutMs },
     signal,
   );
@@ -192,7 +202,7 @@ export async function chatStream(
   if (signal?.aborted) return;
   const response = await request(
     '/api/chat',
-    { method: 'POST', body: JSON.stringify({ ...body, stream: true }), signal },
+    { method: 'POST', body: JSON.stringify({ ...withOllamaOutputLimit(body), stream: true }), signal },
     { timeoutMs: loadOllamaSettings().requestTimeoutMs },
   );
   const reader = response.body?.getReader();

@@ -58,6 +58,8 @@ function elements() {
     ctxInput: document.querySelector('#inputContextLength') as HTMLInputElement,
     ctxFormatted: document.querySelector('#ctxFormatted') as HTMLElement,
     ctxModelHint: document.querySelector('#ctxModelHint') as HTMLElement,
+    maxOutputInput: document.querySelector('#inputMaxOutputTokens') as HTMLInputElement,
+    maxOutputFormatted: document.querySelector('#maxOutputFormatted') as HTMLElement,
     keyStorageWarning: document.querySelector('#keyStorageWarning') as HTMLElement | null,
   };
 }
@@ -71,11 +73,17 @@ function updateCtxDisplay(value: number): void {
     connectionView?.provider === 'ollama' && connectionView.mode === 'remote' && connectionView.remoteKind === 'cloud'
       ? ' 云端可能忽略 num_ctx。'
       : '';
+  const overNote = limit > 0 && value > limit ? ' 已超过模型标称上限，服务端可能拒绝或截断。' : '';
   if (limit > 0) {
-    ctxModelHint.textContent = `模型上限：${formatCtx(limit)} · 实际发送 min(设置值, 模型上限)。${cloudNote}`;
+    ctxModelHint.textContent = `模型上限（标称）：${formatCtx(limit)} · 实际发送设置值 ${formatCtx(value)}。${overNote}${cloudNote}`;
   } else {
-    ctxModelHint.textContent = `发送给模型的最大上下文窗口。范围 1K–4M，默认 128K；实际发送 min(设置值, 模型上限)。${cloudNote}`;
+    ctxModelHint.textContent = `发送给模型的最大上下文窗口。范围 1K–4M，默认 128K；实际发送设置值。${cloudNote}`;
   }
+}
+
+function updateMaxOutputDisplay(value: number): void {
+  const { maxOutputFormatted } = elements();
+  maxOutputFormatted.textContent = `≈ ${formatCtx(value)}`;
 }
 
 function updateProviderUI(): void {
@@ -130,6 +138,7 @@ function applyConnectionView(view: OllamaConnectionView): void {
     remoteKindSelf,
     remoteUnloadToggle,
     ctxInput,
+    maxOutputInput,
   } = elements();
   const provider = providerOf(view);
   providerSelect.value = provider;
@@ -143,6 +152,9 @@ function applyConnectionView(view: OllamaConnectionView): void {
   apiKeyInput.placeholder = view.hasApiKey ? 'API Key 已保存（留空保持不变）' : 'API Key（可选）';
   ctxInput.value = String(view.contextLength);
   updateCtxDisplay(view.contextLength);
+  const maxOutputTokens = view.maxOutputTokens || 4096;
+  maxOutputInput.value = String(maxOutputTokens);
+  updateMaxOutputDisplay(maxOutputTokens);
   updateProviderUI();
 }
 
@@ -162,6 +174,7 @@ export function initConnectionSettings(): void {
     remoteUnloadToggle,
     providerModelInput,
     ctxInput,
+    maxOutputInput,
   } = elements();
   const bridge = window.metonaDesktop;
 
@@ -380,4 +393,27 @@ export function initConnectionSettings(): void {
   });
   ctxInput.addEventListener('change', saveContextLength);
   ctxInput.addEventListener('blur', saveContextLength);
+
+  const saveMaxOutputTokens = debounce(async () => {
+    if (!bridge?.ollama) return;
+    const raw = maxOutputInput.value.trim();
+    let value = parseInt(raw, 10);
+    if (!Number.isFinite(value)) value = 4096;
+    const clamped = Math.min(131072, Math.max(256, value));
+    if (clamped !== value) {
+      showToast(`最大输出 Token 已钳制到 ${clamped}`, 'warning');
+      maxOutputInput.value = String(clamped);
+    }
+    updateMaxOutputDisplay(clamped);
+    const view = await bridge.ollama.setConfig({ maxOutputTokens: clamped });
+    applyConnectionView(view);
+    state.set('maxOutputTokens', clamped);
+    logSetting('最大输出 Token', formatCtxLen(clamped));
+  }, 500);
+  maxOutputInput.addEventListener('input', () => {
+    const n = parseInt(maxOutputInput.value, 10);
+    updateMaxOutputDisplay(Number.isFinite(n) ? n : 4096);
+  });
+  maxOutputInput.addEventListener('change', saveMaxOutputTokens);
+  maxOutputInput.addEventListener('blur', saveMaxOutputTokens);
 }

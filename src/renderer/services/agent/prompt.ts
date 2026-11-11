@@ -29,9 +29,9 @@ export function sanitizeUntrustedInput(text: string): string {
     .replace(/\[system\]/gi, '...');
 }
 
-export function getThinkLevel(): false | 'low' | 'medium' | 'high' {
+export function getThinkLevel(): false | 'low' | 'medium' | 'high' | 'max' {
   const level = state.get<string>('thinkLevel', 'off');
-  if (level === 'low' || level === 'medium' || level === 'high') return level;
+  if (level === 'low' || level === 'medium' || level === 'high' || level === 'max') return level;
   return false;
 }
 

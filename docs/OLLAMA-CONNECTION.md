@@ -24,8 +24,22 @@ Metona 支持五种连接：
 第三方提供商额外显示：
 [ 模型名称（第三方提供商）··············· ] [使用]
 
+Agent 参数：
+[ 上下文长度 131072 ] ≈ 128K
+[ 最大输出 Token 4096 ] ≈ 4K
+
 [ 测试连接 ]  ✓ Ollama 0.40.16 · 42 个模型 · 42ms
 ```
+
+上下文长度以设置值为准；模型标称上限仅作参考，允许手动超过（服务端可能拒绝或截断）。
+
+最大输出 Token 的映射：
+
+| 提供商 | 实际参数 |
+|---|---|
+| Ollama | `options.num_predict` |
+| OpenAI 兼容 | `max_tokens`；o1/o3/o4/gpt-5 等推理模型使用 `max_completion_tokens` |
+| Anthropic 兼容 | `max_tokens`（必填） |
 
 - 提供商下拉框在地址输入框上方；切换后立即保存。
 - Ollama 本地模式隐藏 Key 与卸载开关。
@@ -84,6 +98,8 @@ OLLAMA_HOST=0.0.0.0:11434 ollama serve
 - Embeddings：`POST {base}/v1/embeddings`，用于混合记忆检索。
 - 认证：`Authorization: Bearer <API Key>`。
 - 流式输出、`tool_calls`、图片输入、`usage` 用量均会转换为 Metona 内部格式。
+- OpenCode Go：自动发送稳定的 `x-opencode-session` 与 `User-Agent: Metona-Ollama-Desktop`，避免 `MissingSessionID`。
+- 第三方模型统一按支持图片 / 推理 / 工具处理，不再按模型名禁用上传或 Think 档位。
 
 ### Anthropic 兼容
 

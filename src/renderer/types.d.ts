@@ -17,8 +17,10 @@ export interface OllamaMessage {
 export interface OllamaChatParams {
   model: string;
   messages: OllamaMessage[];
+  /** 稳定会话 ID，用于 OpenCode 等需要 x-opencode-session 的兼容接口 */
+  sessionId?: string;
   stream?: boolean;
-  think?: boolean | 'low' | 'medium' | 'high';
+  think?: boolean | 'low' | 'medium' | 'high' | 'max';
   system?: string;
   tools?: ToolDefinition[];
   keep_alive?: number | string;

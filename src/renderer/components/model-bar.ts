@@ -31,7 +31,7 @@ export function initModelBar(): void {
   btnAttachImg = document.querySelector('#btnAttachImg')!;
   btnAttachVideo = document.querySelector('#btnAttachVideo')!;
 
-  // Think 档位：off / low / medium / high
+  // Think 档位：off / low / medium / high / max
   thinkSelect.addEventListener('change', () => {
     const level = thinkSelect.value;
     state.set('thinkLevel', level);
@@ -251,9 +251,10 @@ function setThinkAvailable(available: boolean): void {
   if (available) {
     thinkSelect.disabled = false;
     const current = state.get<string>('thinkLevel', 'off');
-    thinkSelect.value = current === 'low' || current === 'medium' || current === 'high' ? current : 'off';
+    thinkSelect.value =
+      current === 'low' || current === 'medium' || current === 'high' || current === 'max' ? current : 'off';
     state.set('thinkEnabled', thinkSelect.value !== 'off');
-    thinkWrap.title = 'Think 档位：low / medium / high';
+    thinkWrap.title = 'Think 档位：low / medium / high / max';
     thinkWrap.classList.remove('unavailable');
   } else {
     thinkSelect.value = 'off';
@@ -306,9 +307,9 @@ export function isThinkEnabled(): boolean {
 }
 
 /** 当前 Think 档位（供请求体使用） */
-export function getThinkLevel(): false | 'low' | 'medium' | 'high' {
+export function getThinkLevel(): false | 'low' | 'medium' | 'high' | 'max' {
   if (thinkSelect.disabled || thinkSelect.value === 'off') return false;
-  return thinkSelect.value as 'low' | 'medium' | 'high';
+  return thinkSelect.value as 'low' | 'medium' | 'high' | 'max';
 }
 
 /** 检查当前选中的模型是否支持 Tool Calling */
@@ -342,12 +343,10 @@ export function getCurrentModelName(): string {
   return modelSelectEl?.value || '';
 }
 
-/** 获取有效的上下文长度：min(模型支持值, 用户设置值) */
+/**
+ * 获取有效的上下文长度：以用户设置为准。
+ * 模型标称上限可能不准确，因此不再用 min(模型值, 用户值) 静默钳制。
+ */
 export function getEffectiveNumCtx(): number {
-  const userCtx = state.get<number>(KEYS.NUM_CTX, 131072);
-  const modelCtx = getModelContextLength();
-  if (modelCtx > 0 && modelCtx < userCtx) {
-    return modelCtx;
-  }
-  return userCtx;
+  return state.get<number>(KEYS.NUM_CTX, 131072);
 }

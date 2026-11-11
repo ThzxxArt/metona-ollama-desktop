@@ -115,7 +115,8 @@ INIT → THINKING → PARSING → EXECUTING → OBSERVING
 
 上下文管理：
 
-- 手动 `num_ctx`，实际发送 `min(用户值, 模型上限)`。
+- 手动 `num_ctx`，实际发送用户设置值；模型标称上限仅作参考，可手动超过。
+- 最大输出 Token：Ollama `options.num_predict`；OpenAI `max_tokens` / `max_completion_tokens`；Anthropic `max_tokens`。
 - 滑动窗口 + LLM 结构化 JSON 摘要。
 - 压缩/记忆提取使用 `format` JSON Schema。
 

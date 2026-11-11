@@ -4,7 +4,12 @@
  */
 
 import { z } from 'zod';
-import { MAX_CONTEXT_LENGTH, MIN_CONTEXT_LENGTH } from '../contracts/ollama.js';
+import {
+  MAX_CONTEXT_LENGTH,
+  MAX_MAX_OUTPUT_TOKENS,
+  MIN_CONTEXT_LENGTH,
+  MIN_MAX_OUTPUT_TOKENS,
+} from '../contracts/ollama.js';
 
 export const ollamaModeSchema = z.enum(['local', 'remote']);
 export const remoteKindSchema = z.enum(['cloud', 'self-hosted']);
@@ -20,6 +25,7 @@ export const connectionPatchSchema = z
     anthropicUrl: z.string().max(2048).optional(),
     remoteKind: remoteKindSchema.optional(),
     contextLength: z.number().int().min(MIN_CONTEXT_LENGTH).max(MAX_CONTEXT_LENGTH).optional(),
+    maxOutputTokens: z.number().int().min(MIN_MAX_OUTPUT_TOKENS).max(MAX_MAX_OUTPUT_TOKENS).optional(),
     remoteAutoUnload: z.boolean().optional(),
     requestTimeoutMs: z.number().int().min(1_000).max(86_400_000).optional(),
   })
@@ -31,8 +37,9 @@ export const chatBodySchema = z
   .object({
     model: z.string().min(1).max(512),
     messages: z.array(z.unknown()).max(100_000),
+    session_id: z.string().min(1).max(128).optional(),
     stream: z.boolean().optional(),
-    think: z.union([z.boolean(), z.enum(['low', 'medium', 'high'])]).optional(),
+    think: z.union([z.boolean(), z.enum(['low', 'medium', 'high', 'max'])]).optional(),
     system: z.string().max(2_000_000).optional(),
     tools: z.array(z.unknown()).max(1024).optional(),
     keep_alive: z.union([z.number(), z.string().max(64)]).optional(),

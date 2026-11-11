@@ -64,6 +64,7 @@ export class OllamaAPI {
       model: params.model,
       messages: params.messages,
     };
+    if (params.sessionId) body.session_id = params.sessionId;
     if (params.think !== undefined) body.think = params.think;
     if (params.system) body.system = params.system;
     if (params.keep_alive !== undefined) body.keep_alive = params.keep_alive;

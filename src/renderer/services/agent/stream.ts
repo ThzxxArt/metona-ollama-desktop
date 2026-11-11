@@ -130,6 +130,7 @@ export async function handleThinking(
         {
           model,
           messages: ctx.messages,
+          sessionId: ctx.sessionId,
           stream: true,
           think: getThinkLevel(),
           options: { num_ctx: getEffectiveNumCtx() },

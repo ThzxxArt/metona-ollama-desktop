@@ -569,9 +569,9 @@ function renderCtxRing(messages: ChatMessage[], isStreaming: boolean): void {
   if (usagePct >= 90) ringColor = '#E8734A'; // 珊瑚红 - 危险
   else if (usagePct >= 70) ringColor = '#F0A040'; // 橙色 - 警告
 
-  // 钳制说明文字
-  const clampNote = modelCtx > 0 && modelCtx < userCtx
-    ? `模型限制 ${formatTokenCount(modelCtx)} < 设置值 ${formatTokenCount(userCtx)}，采用 ${formatTokenCount(effectiveCtx)}`
+  // 模型标称上限仅作参考，实际以用户设置为准
+  const clampNote = modelCtx > 0
+    ? `设置值 ${formatTokenCount(userCtx)} · 模型标称 ${formatTokenCount(modelCtx)}（以设置值为准）`
     : `设置值 ${formatTokenCount(userCtx)}`;
 
   ringEl.innerHTML = `

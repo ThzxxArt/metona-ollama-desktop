@@ -289,16 +289,10 @@ export function toAnthropicTools(tools: unknown[] | undefined): AnthropicTool[] 
 }
 
 /** 第三方接口没有统一的模型能力字段，按常见模型名做保守推断 */
-export function inferProviderCapabilities(model: string): string[] {
-  const name = model.toLowerCase();
-  const caps = ['completion', 'tools'];
-  if (/(gpt-4o|gpt-4\.1|gpt-4-turbo|gpt-4\.5|o3|o4|vision|vl|omni|claude-3|claude-4|sonnet|opus|haiku)/.test(name)) {
-    caps.push('vision');
-  }
-  if (/(o1|o3|o4|reasoning|claude-3-7|claude-4)/.test(name)) {
-    caps.push('thinking');
-  }
-  return caps;
+export function inferProviderCapabilities(_model: string): string[] {
+  // 第三方服务商当前不存在不支持图片/推理的模型，统一开放完整能力，
+  // 避免按模型名推断导致上传与 Think 档位被误禁用。
+  return ['completion', 'tools', 'vision', 'thinking'];
 }
 
 export function providerHeaders(provider: LlmProvider, apiKey: string | null): Record<string, string> {

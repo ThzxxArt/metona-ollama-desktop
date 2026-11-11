@@ -145,21 +145,8 @@ export async function executeSubAgent(
   const toolNames = [...toolWhitelist].join(', ');
   logInfo(`子 Agent 启动`, `任务: ${task.slice(0, 80)} | 权限: ${permission} | 工具: ${toolNames} | 模型: ${model}`);
 
-  // 钳制：取 min(模型支持值, 用户设置值)，防止手动设置超过模型能力
-  const userCtx = state.get<number>(KEYS.NUM_CTX, 131072);
-  let modelCtx = userCtx;
-  // 无论是否是默认模型，都获取模型实际上下文长度做钳制
-  try {
-    const detail = await api.showModel(model);
-    const modelInfo = detail.model_info || {};
-    for (const key of Object.keys(modelInfo)) {
-      if (key.endsWith('.context_length')) {
-        modelCtx = Number(modelInfo[key]) || userCtx;
-        break;
-      }
-    }
-  } catch { /* 获取失败用默认值 */ }
-  const numCtx = Math.min(modelCtx, userCtx);
+  // 以用户设置为准；模型标称上限可能不准确，不再静默钳制。
+  const numCtx = state.get<number>(KEYS.NUM_CTX, 131072);
 
   const systemPrompt = buildSubAgentPrompt(permission, toolNames, context, task);
 

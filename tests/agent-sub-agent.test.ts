@@ -72,7 +72,7 @@ describe('executeSubAgent 基础流程', () => {
     expect(params.messages[0].content).toContain('附加上下文');
     expect(params.messages[0].content).not.toContain('REFERENCE_DATA');
     expect(params.messages[1]).toEqual({ role: 'user', content: '总结项目' });
-    expect(params.options.num_ctx).toBe(4096);
+    expect(params.options.num_ctx).toBe(8192);
     expect(executeTool).not.toHaveBeenCalled();
   });
 
@@ -89,7 +89,7 @@ describe('executeSubAgent 基础流程', () => {
     expect((chatStream.mock.calls[0][0] as Record<string, any>).options.num_ctx).toBe(8192);
   });
 
-  it('上下文长度取模型支持值与用户设置的最小值', async () => {
+  it('上下文长度以用户设置为准，不被模型标称上限钳制', async () => {
     const chatStream = vi.fn(async (_params: any, onChunk: any) => onChunk({ message: { content: 'ok' } }));
     state.set(
       KEYS.API,
@@ -99,7 +99,7 @@ describe('executeSubAgent 基础流程', () => {
       ),
     );
     await executeSubAgent('task', undefined, baseOptions());
-    expect((chatStream.mock.calls[0][0] as Record<string, any>).options.num_ctx).toBe(2048);
+    expect((chatStream.mock.calls[0][0] as Record<string, any>).options.num_ctx).toBe(8192);
   });
 });
 

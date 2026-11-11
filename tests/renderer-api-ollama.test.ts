@@ -71,6 +71,7 @@ describe('渲染进程 OllamaAPI 薄封装', () => {
     await api.chat({
       model: 'qwen3',
       messages: [{ role: 'user', content: 'hi' }],
+      sessionId: 'session-1',
       think: 'high',
       system: 'sys',
       keep_alive: '5m',
@@ -81,6 +82,7 @@ describe('渲染进程 OllamaAPI 薄封装', () => {
     const body = bridge.chat.mock.calls[0][0] as Record<string, unknown>;
     expect(body).toMatchObject({
       model: 'qwen3',
+      session_id: 'session-1',
       think: 'high',
       system: 'sys',
       keep_alive: '5m',

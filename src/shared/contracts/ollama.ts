@@ -20,6 +20,9 @@ export const LLM_PROVIDER_LABELS: Record<LlmProvider, string> = {
 export const DEFAULT_CONTEXT_LENGTH = 131072;
 export const MIN_CONTEXT_LENGTH = 1024;
 export const MAX_CONTEXT_LENGTH = 4194304;
+export const DEFAULT_MAX_OUTPUT_TOKENS = 4096;
+export const MIN_MAX_OUTPUT_TOKENS = 256;
+export const MAX_MAX_OUTPUT_TOKENS = 131072;
 export const DEFAULT_REQUEST_TIMEOUT_MS = 900_000;
 export const DEFAULT_UNLOAD_TIMEOUT_MS = 5_000;
 
@@ -32,6 +35,7 @@ export interface OllamaConnectionSettings {
   anthropicUrl: string;
   remoteKind: RemoteKind;
   contextLength: number;
+  maxOutputTokens: number;
   remoteAutoUnload: boolean;
   requestTimeoutMs: number;
 }
@@ -51,6 +55,7 @@ export const DEFAULT_OLLAMA_CONNECTION: OllamaConnectionSettings = {
   anthropicUrl: ANTHROPIC_DEFAULT_URL,
   remoteKind: 'cloud',
   contextLength: DEFAULT_CONTEXT_LENGTH,
+  maxOutputTokens: DEFAULT_MAX_OUTPUT_TOKENS,
   remoteAutoUnload: true,
   requestTimeoutMs: DEFAULT_REQUEST_TIMEOUT_MS,
 };
@@ -58,8 +63,10 @@ export const DEFAULT_OLLAMA_CONNECTION: OllamaConnectionSettings = {
 export interface OllamaChatRequestBody {
   model: string;
   messages: unknown[];
+  /** 稳定的会话 ID；OpenAI 兼容层用它生成 x-opencode-session */
+  session_id?: string;
   stream?: boolean;
-  think?: boolean | 'low' | 'medium' | 'high';
+  think?: boolean | 'low' | 'medium' | 'high' | 'max';
   system?: string;
   tools?: unknown[];
   keep_alive?: number | string;

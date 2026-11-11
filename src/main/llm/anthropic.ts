@@ -4,13 +4,14 @@
  */
 
 import { buildProviderApiUrl } from '../../shared/ollama-url.js';
-import type {
-  OllamaChatRequestBody,
-  OllamaEmbedResponse,
-  OllamaModelsResponse,
-  OllamaShowResponse,
-  OllamaStreamChunk,
-  OllamaTestResult,
+import {
+  DEFAULT_MAX_OUTPUT_TOKENS,
+  type OllamaChatRequestBody,
+  type OllamaEmbedResponse,
+  type OllamaModelsResponse,
+  type OllamaShowResponse,
+  type OllamaStreamChunk,
+  type OllamaTestResult,
 } from '../../shared/contracts/ollama.js';
 import { loadOllamaSettings } from '../ollama/config.js';
 import { getOllamaSecretStore } from '../ollama/secret-store.js';
@@ -29,7 +30,6 @@ import {
 } from './shared.js';
 
 const SERVICE = 'Anthropic 兼容接口';
-const DEFAULT_MAX_TOKENS = 4096;
 
 interface AnthropicUsage {
   input_tokens?: number;
@@ -75,13 +75,23 @@ function buildPayload(body: OllamaChatRequestBody, stream: boolean): Record<stri
   const converted = toAnthropicMessages(normalizeMessages(body.messages));
   const system = [body.system, converted.system].filter((part): part is string => Boolean(part)).join('\n\n');
   const tools = toAnthropicTools(body.tools);
+  const maxTokens = settings.maxOutputTokens || DEFAULT_MAX_OUTPUT_TOKENS;
+  const thinkLevel = body.think === true ? 'medium' : typeof body.think === 'string' ? body.think : '';
+  const thinkingBudgets: Record<string, number> = { low: 1024, medium: 2048, high: 4096, max: 8192 };
+  const levelBudget = thinkingBudgets[thinkLevel] ?? 0;
+  const thinkingModel = /claude-(3-7|4|.*-4)|thinking/i.test(body.model);
+  // Anthropic 要求 budget_tokens < max_tokens；max 档位受最大输出 Token 上限约束。
+  const thinkingBudget = Math.min(levelBudget, maxTokens - 1024);
   return {
     model: body.model,
-    max_tokens: Math.min(DEFAULT_MAX_TOKENS, Math.max(1024, settings.contextLength)),
+    max_tokens: maxTokens,
     messages: converted.messages,
     stream,
     ...(system && { system }),
     ...(tools?.length && { tools }),
+    ...(thinkingModel && thinkingBudget >= 1024
+      ? { thinking: { type: 'enabled', budget_tokens: thinkingBudget } }
+      : {}),
   };
 }
 

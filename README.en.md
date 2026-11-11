@@ -34,12 +34,13 @@
 ## Highlights
 
 - **Five connection modes**: local Ollama, self-hosted remote, Ollama Cloud, OpenAI Chat Completions compatible, and Anthropic Messages compatible.
-- **Third-party LLM providers**: custom Base URL, model name, and API key; streaming, tool calling, image input, and usage metrics are translated in the main process.
+- **Third-party LLM providers**: custom Base URL, model name, and API key; streaming, tool calling, image input, and usage metrics are translated in the main process, including OpenCode Go's `x-opencode-session` header.
 - **Isolated encrypted keys**: Ollama, OpenAI, and Anthropic keys are stored separately with `safeStorage`; the renderer only sees whether a key is configured.
 - **Main-process proxy**: the renderer no longer calls any LLM directly; CORS is gone, `sandbox: true` and CSP are enabled.
 - **18 built-in tools**: duplicate capabilities merged to reduce model noise and schema tokens.
 - **Plan Mode removed**: no `plan_track`, no plan dialog, no `Ctrl+P`, no hidden branch. The 8-state Agent Loop remains.
-- **Manual context length**: default 128K, range 1K–4M, effective value is `min(setting, model limit)`.
+- **Manual context length**: default 128K, range 1K–4M; the setting is sent as-is, and the reported model limit is advisory only.
+- **Configurable max output tokens**: default 4096, range 256–131072; mapped to Ollama `num_predict`, OpenAI-compatible `max_tokens` (`max_completion_tokens` for reasoning models), and Anthropic-compatible `max_tokens`.
 - **Remote model unloading**: self-hosted remote unloads on new session/exit by default; Ollama Cloud is skipped; manual unload is available.
 - **Ollama 0.40 features**: `done_reason` truncation notice, cached-token metrics, cloud badges, Think levels, structured outputs.
 - **Hybrid memory**: keyword/IDF + embedding cosine similarity, cached in `memory_embeddings`, keyword fallback on failure.

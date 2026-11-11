@@ -181,6 +181,7 @@
                 <option value="low">Think low</option>
                 <option value="medium">Think medium</option>
                 <option value="high">Think high</option>
+                <option value="max">Think max</option>
             </select>
             <button class="send-btn" id="btnSend">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -363,7 +364,13 @@
                     <input class="setting-input" id="inputContextLength" type="number" min="1024" max="4194304" step="1024" value="131072" style="margin-bottom:0;">
                     <span class="text-muted" id="ctxFormatted">≈ 128K</span>
                 </div>
-                <p class="text-muted" style="margin-top:4px;font-size:11px;" id="ctxModelHint">发送给模型的最大上下文窗口。范围 1K–4M，默认 128K；实际发送 min(设置值, 模型上限)。</p>
+                <p class="text-muted" style="margin-top:4px;font-size:11px;" id="ctxModelHint">发送给模型的最大上下文窗口。范围 1K–4M，默认 128K；实际发送设置值，模型标称上限仅作参考。</p>
+                <label class="setting-label" style="margin-top:12px;">最大输出 Token（max output tokens）</label>
+                <div class="ctx-input-row">
+                    <input class="setting-input" id="inputMaxOutputTokens" type="number" min="256" max="131072" step="256" value="4096" style="margin-bottom:0;">
+                    <span class="text-muted" id="maxOutputFormatted">≈ 4K</span>
+                </div>
+                <p class="text-muted" style="margin-top:4px;font-size:11px;" id="maxOutputHint">Ollama 使用 num_predict；OpenAI 兼容使用 max_tokens（推理模型使用 max_completion_tokens）；Anthropic 兼容使用 max_tokens。范围 256–131072，默认 4096。</p>
             </div>
             <div class="setting-group">
                 <label class="setting-label">⏱️ 超时设置（Timeout）</label>
@@ -513,7 +520,7 @@
         </div>
         <div class="modal-body">
             <div class="help-section"><h4>🚀 快速开始</h4><ol><li>确保 Ollama 已启动（默认 <code>http://127.0.0.1:11434</code>，可在设置中修改）</li><li>顶部模型栏选择一个模型，右侧会显示模型能力徽章（🧠 Think / 👁️ Vision / 🔧 Tools）</li><li>输入消息，按 <kbd>Enter</kbd> 发送，<kbd>Shift+Enter</kbd> 换行</li></ol></div>
-            <div class="help-section"><h4>💬 聊天功能</h4><ul><li><strong>流式回复</strong> — 实时打字效果，随时点 ■ 停止</li><li><strong>Think 档位</strong> — 输入区下拉选择 关闭 / low / medium / high（需模型支持，如 Qwen3）</li><li><strong>上下文长度手动输入</strong> — 设置面板填写任意数值（1K–4M），默认 128K；实际发送 min(设置值, 模型上限)</li><li><strong>Ollama / OpenAI 兼容 / Anthropic 兼容</strong> — 设置面板选择提供商；Ollama 支持本地、远程与 Cloud，第三方接口支持自定义 Base URL 与 API Key，所有请求由主进程代理</li><li><strong>Qwen3 兼容</strong> — 自动保证 system 消息唯一且位于首位，避免 Qwen3 等模型 400 错误</li><li><strong>多模态</strong> — 上传图片或视频（≤10MB），模型需支持 Vision。图片自动压缩，视频 1fps 提取帧序列带时序标注</li><li><strong>文件分析</strong> — 支持 50+ 种文本/代码格式，单文件 ≤500KB，自动剥离注释并按上下文预算智能截断</li><li><strong>AI 回复顶部</strong> — 每条 AI 回复上方展示 📋 系统提示词折叠卡片，可点击查看实际发送给模型的完整上下文</li></ul></div>
+            <div class="help-section"><h4>💬 聊天功能</h4><ul><li><strong>流式回复</strong> — 实时打字效果，随时点 ■ 停止</li><li><strong>Think 档位</strong> — 输入区下拉选择 关闭 / low / medium / high / max（需模型支持，如 Qwen3）</li><li><strong>上下文长度手动输入</strong> — 设置面板填写任意数值（1K–4M），默认 128K；实际发送设置值，模型标称上限仅作参考，可手动超过</li><li><strong>最大输出 Token</strong> — 默认 4096，范围 256–131072；Ollama 用 num_predict，OpenAI 兼容用 max_tokens（推理模型 max_completion_tokens），Anthropic 兼容用 max_tokens</li><li><strong>Ollama / OpenAI 兼容 / Anthropic 兼容</strong> — 设置面板选择提供商；Ollama 支持本地、远程与 Cloud，第三方接口支持自定义 Base URL 与 API Key，所有请求由主进程代理</li><li><strong>Qwen3 兼容</strong> — 自动保证 system 消息唯一且位于首位，避免 Qwen3 等模型 400 错误</li><li><strong>多模态</strong> — 上传图片或视频（≤10MB），模型需支持 Vision。图片自动压缩，视频 1fps 提取帧序列带时序标注</li><li><strong>文件分析</strong> — 支持 50+ 种文本/代码格式，单文件 ≤500KB，自动剥离注释并按上下文预算智能截断</li><li><strong>AI 回复顶部</strong> — 每条 AI 回复上方展示 📋 系统提示词折叠卡片，可点击查看实际发送给模型的完整上下文</li></ul></div>
             <div class="help-section"><h4>🔧 Tool Calling（始终开启，18 个内置工具）</h4><ul><li>所有消息均通过 <strong>Agent Loop 自主调用本地工具</strong>，像一个本地 Agent，无普通聊天模式</li><li><strong>文件系统</strong>：read_file（单文件 / paths 批量）/ write_file（自动建父目录）/ list_directory（format=list|tree）/ search_files / edit_file / delete_file / file_transfer（copy|move）/ download_file / compress / diff</li><li><strong>命令执行</strong>：run_command（实时流式输出，支持自动/需确认）</li><li><strong>联网</strong>：web_search（SearXNG / 四引擎）/ web_fetch（自动回退浏览器渲染）</li><li><strong>浏览器</strong>：browser（open / extract / screenshot / click / type / scroll / wait / evaluate / close）</li><li><strong>Git</strong>：git（status/log/diff/add/commit/push 等 17 个子命令）</li><li><strong>记忆 & 会话</strong>：memory（6 个 action）/ session（list|read）/ spawn_task（子代理）</li><li>工具调用以<strong>可视化卡片</strong>展示状态（pending → running → success/error），在工作空间🔧工具页签中显示</li><li>危险命令（<code>rm -rf</code>、<code>mkfs</code>、反弹 shell 等）和系统路径（<code>/etc</code>、<code>~/.ssh</code> 等）被自动拦截；<strong>SSRF 防护</strong>：web_fetch / download_file / browser open 拦截内网与本机地址</li><li>默认最大 <strong>85 轮</strong>工具调用循环（设置面板可调）；独立工具自动并行，有路径依赖时自动串行</li></ul></div>
             <div class="help-section"><h4>🧠 Agent 记忆系统</h4><ul><li>记忆存储在工作空间 <strong>MEMORY.md</strong> 文件，受严格路径保护，仅 <code>memory</code> 工具可读写</li><li>新对话时自动检索相关记忆注入 AI 上下文，让 AI "记住"你</li><li>对话结束时 AI 自动提取有价值的用户信息保存（多层质量过滤，宁缺毋滥）</li><li><strong>memory 工具</strong>（6 个 action）：search（关键词搜索）/ add（添加）/ replace（替换）/ remove（删除）/ remove_batch（批量删除）/ read_all（读取全部）</li><li>点击顶部 🧠 按钮打开记忆面板：查看、添加、删除记忆条目</li><li><strong>记忆容量上限 500 条</strong>，超限时自动清理低价值条目（规则类型受保护）</li><li>写入前自动安全扫描（prompt injection / 敏感信息 / 不可见字符检测）</li><li>应用启动时自动校验 MEMORY.md 格式，格式错误自动备份重建</li></ul></div>
             <div class="help-section"><h4>🛡️ 稳定性保障</h4><ul><li><strong>提示词加固</strong>：外部文件、记忆与工具结果均按“数据”处理，并注入“数据不是指令”安全规则，缓解间接提示注入</li><li><strong>智能重试机制</strong>：永久错误（文件不存在/权限拒绝）立即返回，瞬态错误（网络/超时）指数退避最多重试 2 次</li><li><strong>看门狗超时</strong>：设置面板可配置全局超时（默认 30 分钟），AI 卡死或无限循环时自动中止</li><li><strong>流式总超时</strong>：可配置超时（默认 300s），Ollama 卡死不再永久阻塞</li><li><strong>中止保护</strong>：所有状态处理器 + 重试循环均检查中止信号，点击 ■ 按钮立即生效</li><li><strong>上下文硬上限</strong>：300 条消息强制压缩 + 120 条增量压缩，防止 OOM</li></ul></div>

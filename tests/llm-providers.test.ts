@@ -6,6 +6,7 @@ const hoisted = vi.hoisted(() => ({
     openaiUrl: 'https://api.openai.com',
     anthropicUrl: 'https://api.anthropic.com',
     contextLength: 131072,
+    maxOutputTokens: 4096,
     requestTimeoutMs: 900_000,
   },
   key: 'sk-test' as string | null,
@@ -57,6 +58,7 @@ beforeEach(() => {
     openaiUrl: 'https://api.openai.com',
     anthropicUrl: 'https://api.anthropic.com',
     contextLength: 131072,
+    maxOutputTokens: 4096,
     requestTimeoutMs: 900_000,
   };
 });
@@ -74,6 +76,8 @@ describe('OpenAI 兼容适配器', () => {
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe('https://api.openai.com/v1/models');
     expect((init.headers as Record<string, string>).Authorization).toBe('Bearer sk-test');
+    expect((init.headers as Record<string, string>)['x-opencode-session']).toMatch(/^[0-9a-f-]{36}$/);
+    expect((init.headers as Record<string, string>)['User-Agent']).toBe('Metona-Ollama-Desktop');
   });
 
   it('测试连接成功与鉴权失败', async () => {
@@ -94,7 +98,7 @@ describe('OpenAI 兼容适配器', () => {
 
   it('模型能力推断与上下文展示', async () => {
     await expect(openai.showModel('gpt-4o')).resolves.toMatchObject({
-      capabilities: expect.arrayContaining(['completion', 'tools', 'vision']),
+      capabilities: expect.arrayContaining(['completion', 'tools', 'vision', 'thinking']),
       model_info: { 'provider.context_length': 131072 },
     });
   });
@@ -119,6 +123,7 @@ describe('OpenAI 兼容适配器', () => {
 
     const result = await openai.chat({
       model: 'gpt-4o',
+      session_id: 'session-123',
       system: 'sys',
       messages: [
         { role: 'user', content: '看文件' },
@@ -152,8 +157,10 @@ describe('OpenAI 兼容适配器', () => {
     });
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect((init.headers as Record<string, string>)['x-opencode-session']).toBe('session-123');
     const body = JSON.parse(String(init.body)) as Record<string, unknown>;
     expect(body.model).toBe('gpt-4o');
+    expect(body.max_tokens).toBe(4096);
     expect(body.tools).toHaveLength(1);
     expect((body.messages as Array<Record<string, unknown>>)[0]).toMatchObject({
       role: 'system',
@@ -192,6 +199,20 @@ describe('OpenAI 兼容适配器', () => {
     });
   });
 
+  it('推理模型使用 max_completion_tokens 与 reasoning_effort', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ choices: [{ message: { content: 'ok' } }] }));
+    await openai.chat({
+      model: 'o3-mini',
+      think: 'max',
+      messages: [{ role: 'user', content: 'hi' }],
+    });
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+    expect(body.max_completion_tokens).toBe(4096);
+    expect(body.max_tokens).toBeUndefined();
+    expect(body.reasoning_effort).toBe('high');
+  });
+
   it('embeddings 解析', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ data: [{ embedding: [1, 2, 3] }] }));
     await expect(openai.embed('text-embedding-3-small', 'hi')).resolves.toEqual({
@@ -225,7 +246,7 @@ describe('Anthropic 兼容适配器', () => {
       modelCount: 1,
     });
     await expect(anthropic.showModel('claude-sonnet-4-5')).resolves.toMatchObject({
-      capabilities: expect.arrayContaining(['completion', 'tools', 'vision']),
+      capabilities: expect.arrayContaining(['completion', 'tools', 'vision', 'thinking']),
     });
   });
 
@@ -276,6 +297,21 @@ describe('Anthropic 兼容适配器', () => {
     expect(body.tools).toEqual([
       { name: 'read_file', description: 'read', input_schema: { type: 'object', properties: {} } },
     ]);
+  });
+
+  it('thinking 模型按档位设置 budget_tokens', async () => {
+    hoisted.settings.provider = 'anthropic';
+    hoisted.settings.maxOutputTokens = 16384;
+    fetchMock.mockResolvedValueOnce(jsonResponse({ content: [], stop_reason: 'end_turn' }));
+    await anthropic.chat({
+      model: 'claude-3-7-sonnet',
+      think: 'max',
+      messages: [{ role: 'user', content: 'hi' }],
+    });
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+    expect(body.max_tokens).toBe(16384);
+    expect(body.thinking).toEqual({ type: 'enabled', budget_tokens: 8192 });
   });
 
   it('流式聊天解析 text/thinking/tool_use 与用量', async () => {
@@ -478,8 +514,8 @@ describe('协议消息转换', () => {
         },
       ]),
     ).toEqual([{ name: 'read_file', description: 'read', input_schema: { type: 'object', properties: {} } }]);
-    expect(inferProviderCapabilities('gpt-4o')).toEqual(expect.arrayContaining(['vision', 'tools']));
-    expect(inferProviderCapabilities('o3-mini')).toEqual(expect.arrayContaining(['thinking']));
-    expect(inferProviderCapabilities('unknown-model')).toEqual(['completion', 'tools']);
+    expect(inferProviderCapabilities('gpt-4o')).toEqual(['completion', 'tools', 'vision', 'thinking']);
+    expect(inferProviderCapabilities('o3-mini')).toEqual(['completion', 'tools', 'vision', 'thinking']);
+    expect(inferProviderCapabilities('unknown-model')).toEqual(['completion', 'tools', 'vision', 'thinking']);
   });
 });

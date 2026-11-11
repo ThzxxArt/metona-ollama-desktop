@@ -13,6 +13,7 @@ const hoisted = vi.hoisted(() => ({
     anthropicUrl: 'https://api.anthropic.com',
     remoteKind: 'cloud' as 'cloud' | 'self-hosted',
     contextLength: 131072,
+    maxOutputTokens: 4096,
     remoteAutoUnload: true,
     requestTimeoutMs: 900000,
     hasApiKey: false,
@@ -119,6 +120,7 @@ beforeEach(() => {
     anthropicUrl: 'https://api.anthropic.com',
     remoteKind: 'cloud',
     contextLength: 131072,
+    maxOutputTokens: 4096,
     remoteAutoUnload: true,
     requestTimeoutMs: 900000,
     hasApiKey: false,
@@ -201,6 +203,19 @@ describe('设置连接面板', () => {
     await new Promise((r) => setTimeout(r, 50));
     expect(bridge.ollama.setApiKey).toHaveBeenCalledWith('sk-new');
     expect(bridge.ollama.test).toHaveBeenCalled();
+  });
+
+  it('最大输出 Token 保存并钳制', async () => {
+    await refreshConnectionSettingsUI();
+    await new Promise((r) => setTimeout(r, 600));
+    bridge.ollama.setConfig.mockClear();
+    const input = el<HTMLInputElement>('inputMaxOutputTokens');
+    input.value = '128';
+    input.dispatchEvent(new Event('change'));
+    await new Promise((r) => setTimeout(r, 600));
+    expect(bridge.ollama.setConfig).toHaveBeenCalledWith({ maxOutputTokens: 256 });
+    expect(hoisted.toast).toHaveBeenCalledWith(expect.stringContaining('钳制'), 'warning');
+    expect(el<HTMLElement>('maxOutputFormatted').textContent).toContain('256');
   });
 
   it('上下文长度钳制并提示', async () => {

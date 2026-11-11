@@ -150,7 +150,7 @@ Metona 读取：
 说明：
 
 - `stream: true` 时响应为 NDJSON，每行一个 JSON 对象。
-- `think` 支持 `false` / `"low"` / `"medium"` / `"high"`（模型支持时）。
+- `think` 支持 `false` / `"low"` / `"medium"` / `"high"` / `"max"`（模型支持时）。
 - 0.18.0 **不再发送 `temperature`**，把采样权交还模型默认配置。
 - `options.num_ctx` 实际值 = `min(用户设置, 模型 context_length)`。
 - 工具调用通过 `message.tool_calls` 返回。
@@ -230,7 +230,7 @@ Metona 用于混合记忆检索：
 | 缓存 token | 无 | `prompt_eval_cached_count` |
 | 运行中上下文 | 无 | `/api/ps` 的 `context_length` |
 | 结构化输出 | 有限 | `format` 支持 JSON Schema |
-| 思考档位 | 布尔 | `false` / `low` / `medium` / `high` |
+| 思考档位 | 布尔 / 字符串 | `false` / `low` / `medium` / `high` / `max` |
 | 采样参数 | Metona 硬编码 `temperature` | 不再发送，使用模型默认值 |
 
 ---

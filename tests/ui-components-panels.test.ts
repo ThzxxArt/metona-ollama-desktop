@@ -1279,7 +1279,7 @@ describe('token-dashboard', () => {
     expect(el('#tdTableBody').textContent).toContain('1ms');
     expect(el('#tdCtxRing').textContent).toContain('已用上下文');
     expect(el('#tdCtxRing').textContent).toContain('基于 Ollama 实际计数');
-    expect(el('#tdCtxRing').textContent).toContain('模型限制');
+    expect(el('#tdCtxRing').textContent).toContain('模型标称');
 
     state.set(KEYS.IS_STREAMING, true);
     (el('#tdViewToggle [data-view="global"]') as HTMLElement).click();
@@ -1308,7 +1308,7 @@ describe('token-dashboard', () => {
     (el('#tdViewToggle [data-view="session"]') as HTMLElement).click();
     await new Promise((r) => setTimeout(r, 10));
     expect(el('#tdCtxRing').textContent).toContain('基于估算（含工具/图片开销）');
-    expect(el('#tdCtxRing').textContent).toContain('模型限制');
+    expect(el('#tdCtxRing').textContent).toContain('模型标称');
 
     state.set(KEYS.CURRENT_SESSION, makeSession([]));
     state.set(KEYS.IS_STREAMING, false);

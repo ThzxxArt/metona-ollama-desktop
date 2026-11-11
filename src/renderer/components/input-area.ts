@@ -173,11 +173,11 @@ export function initInputArea(): void {
     }
   });
 
-  // ── Think 档位（关闭 / low / medium / high）──
+  // ── Think 档位（关闭 / low / medium / high / max）──
   const thinkLevelSelect = document.querySelector('#selectThinkLevel') as HTMLSelectElement | null;
   if (thinkLevelSelect) {
     thinkLevelSelect.addEventListener('change', () => {
-      const level = thinkLevelSelect.value as 'off' | 'low' | 'medium' | 'high';
+      const level = thinkLevelSelect.value as 'off' | 'low' | 'medium' | 'high' | 'max';
       state.set('thinkLevel', level);
       state.set('thinkEnabled', level !== 'off');
       logInfo(`Think 档位: ${level === 'off' ? '关闭' : level}`);
