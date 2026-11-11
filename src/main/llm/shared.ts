@@ -288,7 +288,7 @@ export function toAnthropicTools(tools: unknown[] | undefined): AnthropicTool[] 
   return out.length > 0 ? out : undefined;
 }
 
-/** 第三方接口没有统一的模型能力字段，按常见模型名做保守推断 */
+/** 第三方接口没有统一的模型能力字段；不维护模型名清单，统一开放完整能力 */
 export function inferProviderCapabilities(_model: string): string[] {
   // 第三方服务商当前不存在不支持图片/推理的模型，统一开放完整能力，
   // 避免按模型名推断导致上传与 Think 档位被误禁用。

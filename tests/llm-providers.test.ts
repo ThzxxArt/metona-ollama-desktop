@@ -199,18 +199,70 @@ describe('OpenAI 兼容适配器', () => {
     });
   });
 
-  it('推理模型使用 max_completion_tokens 与 reasoning_effort', async () => {
+  it('服务端要求 max_completion_tokens 时自动回退，不依赖模型名', async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          error: {
+            message:
+              "Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead.",
+          },
+        }),
+        { status: 400, headers: { 'content-type': 'application/json' } },
+      ),
+    );
     fetchMock.mockResolvedValueOnce(jsonResponse({ choices: [{ message: { content: 'ok' } }] }));
     await openai.chat({
-      model: 'o3-mini',
+      model: 'any-reasoning-model',
+      think: 'max',
+      messages: [{ role: 'user', content: 'hi' }],
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const first = JSON.parse(String((fetchMock.mock.calls[0] as [string, RequestInit])[1].body)) as Record<
+      string,
+      unknown
+    >;
+    const second = JSON.parse(String((fetchMock.mock.calls[1] as [string, RequestInit])[1].body)) as Record<
+      string,
+      unknown
+    >;
+    expect(first.max_tokens).toBe(4096);
+    expect(first.max_completion_tokens).toBeUndefined();
+    expect(second.max_completion_tokens).toBe(4096);
+    expect(second.max_tokens).toBeUndefined();
+    expect(second.reasoning_effort).toBe('max');
+  });
+
+  it('流式请求同样自动回退 max_completion_tokens', async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: { message: 'max_tokens is not supported' } }), {
+        status: 400,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+    fetchMock.mockResolvedValueOnce(
+      sseResponse(['data: {"choices":[{"delta":{"content":"ok"}}]}\n\n', 'data: [DONE]\n\n']),
+    );
+    const chunks: Array<Record<string, unknown>> = [];
+    await openai.chatStream(
+      { model: 'any-reasoning-model', think: 'max', messages: [{ role: 'user', content: 'hi' }] },
+      (chunk) => chunks.push(chunk as unknown as Record<string, unknown>),
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(chunks.some((chunk) => (chunk.message as Record<string, unknown>)?.content === 'ok')).toBe(true);
+  });
+
+  it('OpenCode / DeepSeek 的 max 档位原样传递', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ choices: [{ message: { content: 'ok' } }] }));
+    await openai.chat({
+      model: 'deepseek-v4.1-flash',
       think: 'max',
       messages: [{ role: 'user', content: 'hi' }],
     });
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     const body = JSON.parse(String(init.body)) as Record<string, unknown>;
-    expect(body.max_completion_tokens).toBe(4096);
-    expect(body.max_tokens).toBeUndefined();
-    expect(body.reasoning_effort).toBe('high');
+    expect(body.max_tokens).toBe(4096);
+    expect(body.reasoning_effort).toBe('max');
   });
 
   it('embeddings 解析', async () => {
@@ -304,7 +356,7 @@ describe('Anthropic 兼容适配器', () => {
     hoisted.settings.maxOutputTokens = 16384;
     fetchMock.mockResolvedValueOnce(jsonResponse({ content: [], stop_reason: 'end_turn' }));
     await anthropic.chat({
-      model: 'claude-3-7-sonnet',
+      model: 'arbitrary-third-party-model',
       think: 'max',
       messages: [{ role: 'user', content: 'hi' }],
     });

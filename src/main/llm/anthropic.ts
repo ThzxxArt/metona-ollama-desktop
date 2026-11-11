@@ -79,8 +79,7 @@ function buildPayload(body: OllamaChatRequestBody, stream: boolean): Record<stri
   const thinkLevel = body.think === true ? 'medium' : typeof body.think === 'string' ? body.think : '';
   const thinkingBudgets: Record<string, number> = { low: 1024, medium: 2048, high: 4096, max: 8192 };
   const levelBudget = thinkingBudgets[thinkLevel] ?? 0;
-  const thinkingModel = /claude-(3-7|4|.*-4)|thinking/i.test(body.model);
-  // Anthropic 要求 budget_tokens < max_tokens；max 档位受最大输出 Token 上限约束。
+  // 不按模型名判断；第三方服务当前均支持推理。Anthropic 要求 budget_tokens < max_tokens。
   const thinkingBudget = Math.min(levelBudget, maxTokens - 1024);
   return {
     model: body.model,
@@ -89,9 +88,7 @@ function buildPayload(body: OllamaChatRequestBody, stream: boolean): Record<stri
     stream,
     ...(system && { system }),
     ...(tools?.length && { tools }),
-    ...(thinkingModel && thinkingBudget >= 1024
-      ? { thinking: { type: 'enabled', budget_tokens: thinkingBudget } }
-      : {}),
+    ...(thinkingBudget >= 1024 ? { thinking: { type: 'enabled', budget_tokens: thinkingBudget } } : {}),
   };
 }
 

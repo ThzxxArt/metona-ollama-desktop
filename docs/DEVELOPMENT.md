@@ -171,7 +171,7 @@ npm test
 npm run test:coverage
 ```
 
-当前基线：79 个测试文件，1666 通过，2 跳过；全仓单测覆盖率 statements 94.88% / branches 85.35% / functions 94.97% / lines 95.78%。
+当前基线：79 个测试文件，1668 通过，2 跳过；全仓单测覆盖率 statements 94.87% / branches 85.34% / functions 94.98% / lines 95.79%。
 
 E2E：
 

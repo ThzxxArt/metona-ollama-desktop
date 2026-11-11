@@ -108,24 +108,35 @@ function parseToolCalls(raw: OpenAIRawToolCall[] | undefined): NormalizedToolCal
   return out;
 }
 
-function buildPayload(body: OllamaChatRequestBody, stream: boolean): Record<string, unknown> {
+type TokenField = 'max_tokens' | 'max_completion_tokens';
+
+function buildPayload(body: OllamaChatRequestBody, stream: boolean, tokenField: TokenField): Record<string, unknown> {
   const settings = loadOllamaSettings();
   const messages = toOpenAIMessages(normalizeMessages(body.messages));
   if (body.system) messages.unshift({ role: 'system', content: body.system });
   const maxOutputTokens = settings.maxOutputTokens || DEFAULT_MAX_OUTPUT_TOKENS;
-  // OpenAI 推理模型要求 max_completion_tokens；其余兼容接口仍普遍使用 max_tokens。
-  const reasoningModel = /^(o1|o3|o4|gpt-5)/i.test(body.model) || /reasoning/i.test(body.model);
   const thinkLevel = body.think === true ? 'medium' : typeof body.think === 'string' ? body.think : '';
-  // OpenAI 没有 max 档位，映射到最高的 high。
-  const reasoningEffort = thinkLevel === 'max' ? 'high' : thinkLevel;
+  // OpenCode / DeepSeek 等兼容服务支持 max；原样传递，不再降级为 high。
+  const reasoningEffort = thinkLevel;
   return {
     model: body.model,
     messages,
     stream,
-    [reasoningModel ? 'max_completion_tokens' : 'max_tokens']: maxOutputTokens,
-    ...(reasoningModel && reasoningEffort && { reasoning_effort: reasoningEffort }),
+    [tokenField]: maxOutputTokens,
+    ...(reasoningEffort && { reasoning_effort: reasoningEffort }),
     ...(body.tools?.length && { tools: body.tools, tool_choice: 'auto' }),
   };
+}
+
+/**
+ * 不在代码里维护模型名清单：
+ * 默认使用兼容性最广的 max_tokens；若服务端明确要求 max_completion_tokens，
+ * 再自动重试一次。
+ */
+function shouldRetryWithCompletionTokens(err: unknown): boolean {
+  if (!(err instanceof OllamaRequestError)) return false;
+  if (err.status !== 400 && err.status !== 422) return false;
+  return /max_tokens|max_completion_tokens|unsupported parameter|unknown (field|parameter)/i.test(err.message);
 }
 
 function toOllamaResponse(body: OllamaChatRequestBody, data: OpenAIChatResponse): OllamaStreamChunk {
@@ -194,16 +205,25 @@ export async function showModel(model: string): Promise<OllamaShowResponse> {
 export async function chat(body: OllamaChatRequestBody, signal?: AbortSignal): Promise<unknown> {
   const settings = loadOllamaSettings();
   const url = buildProviderApiUrl(settings.openaiUrl, '/chat/completions');
-  const data = await providerJson<OpenAIChatResponse>(
-    url,
-    {
-      method: 'POST',
-      headers: authHeaders(body.session_id),
-      body: JSON.stringify(buildPayload(body, false)),
-      signal,
-    },
-    serviceOptions(signal),
-  );
+  const request = (tokenField: TokenField): Promise<OpenAIChatResponse> =>
+    providerJson<OpenAIChatResponse>(
+      url,
+      {
+        method: 'POST',
+        headers: authHeaders(body.session_id),
+        body: JSON.stringify(buildPayload(body, false, tokenField)),
+        signal,
+      },
+      serviceOptions(signal),
+    );
+
+  let data: OpenAIChatResponse;
+  try {
+    data = await request('max_tokens');
+  } catch (err) {
+    if (!shouldRetryWithCompletionTokens(err) || signal?.aborted) throw err;
+    data = await request('max_completion_tokens');
+  }
   return toOllamaResponse(body, data);
 }
 
@@ -215,86 +235,101 @@ export async function chatStream(
   if (signal?.aborted) return;
   const settings = loadOllamaSettings();
   const url = buildProviderApiUrl(settings.openaiUrl, '/chat/completions');
-  const response = await providerFetch(
-    url,
-    {
-      method: 'POST',
-      headers: authHeaders(body.session_id),
-      body: JSON.stringify(buildPayload(body, true)),
-      signal,
-    },
-    serviceOptions(signal),
-  );
+  let emittedAny = false;
+  const emit = (chunk: OllamaStreamChunk): void => {
+    emittedAny = true;
+    onChunk(chunk);
+  };
 
-  const toolCalls = new Map<number, { name: string; arguments: string }>();
-  let finishReason = '';
-  let usage: OpenAIUsage | undefined;
+  const streamOnce = async (tokenField: TokenField): Promise<void> => {
+    const response = await providerFetch(
+      url,
+      {
+        method: 'POST',
+        headers: authHeaders(body.session_id),
+        body: JSON.stringify(buildPayload(body, true, tokenField)),
+        signal,
+      },
+      serviceOptions(signal),
+    );
 
-  await readSse(
-    response,
-    ({ data }) => {
-      if (data.trim() === '[DONE]') return;
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(data);
-      } catch {
-        return;
-      }
-      if (!isRecord(parsed)) return;
-      if (isRecord(parsed.error) && typeof parsed.error.message === 'string') {
-        throw new OllamaRequestError(parsed.error.message, 'server');
-      }
-      if (isRecord(parsed.usage)) usage = parsed.usage as OpenAIUsage;
-      const choices = Array.isArray(parsed.choices) ? parsed.choices : [];
-      for (const rawChoice of choices) {
-        if (!isRecord(rawChoice)) continue;
-        const delta = isRecord(rawChoice.delta) ? rawChoice.delta : null;
-        if (delta) {
-          if (typeof delta.content === 'string' && delta.content) {
-            onChunk({ message: { role: 'assistant', content: delta.content } });
-          }
-          const reasoning =
-            typeof delta.reasoning_content === 'string'
-              ? delta.reasoning_content
-              : typeof delta.reasoning === 'string'
-                ? delta.reasoning
-                : '';
-          if (reasoning) onChunk({ message: { role: 'assistant', thinking: reasoning } });
-          const rawToolCalls = Array.isArray(delta.tool_calls) ? delta.tool_calls : [];
-          for (const rawCall of rawToolCalls) {
-            if (!isRecord(rawCall)) continue;
-            const index = typeof rawCall.index === 'number' ? rawCall.index : 0;
-            const entry = toolCalls.get(index) ?? { name: '', arguments: '' };
-            const fn = isRecord(rawCall.function) ? rawCall.function : null;
-            if (fn && typeof fn.name === 'string') entry.name += fn.name;
-            if (fn && typeof fn.arguments === 'string') entry.arguments += fn.arguments;
-            toolCalls.set(index, entry);
-          }
+    const toolCalls = new Map<number, { name: string; arguments: string }>();
+    let finishReason = '';
+    let usage: OpenAIUsage | undefined;
+
+    await readSse(
+      response,
+      ({ data }) => {
+        if (data.trim() === '[DONE]') return;
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(data);
+        } catch {
+          return;
         }
-        if (typeof rawChoice.finish_reason === 'string') finishReason = rawChoice.finish_reason;
-      }
-    },
-    signal,
-  );
+        if (!isRecord(parsed)) return;
+        if (isRecord(parsed.error) && typeof parsed.error.message === 'string') {
+          throw new OllamaRequestError(parsed.error.message, 'server');
+        }
+        if (isRecord(parsed.usage)) usage = parsed.usage as OpenAIUsage;
+        const choices = Array.isArray(parsed.choices) ? parsed.choices : [];
+        for (const rawChoice of choices) {
+          if (!isRecord(rawChoice)) continue;
+          const delta = isRecord(rawChoice.delta) ? rawChoice.delta : null;
+          if (delta) {
+            if (typeof delta.content === 'string' && delta.content) {
+              emit({ message: { role: 'assistant', content: delta.content } });
+            }
+            const reasoning =
+              typeof delta.reasoning_content === 'string'
+                ? delta.reasoning_content
+                : typeof delta.reasoning === 'string'
+                  ? delta.reasoning
+                  : '';
+            if (reasoning) emit({ message: { role: 'assistant', thinking: reasoning } });
+            const rawToolCalls = Array.isArray(delta.tool_calls) ? delta.tool_calls : [];
+            for (const rawCall of rawToolCalls) {
+              if (!isRecord(rawCall)) continue;
+              const index = typeof rawCall.index === 'number' ? rawCall.index : 0;
+              const entry = toolCalls.get(index) ?? { name: '', arguments: '' };
+              const fn = isRecord(rawCall.function) ? rawCall.function : null;
+              if (fn && typeof fn.name === 'string') entry.name += fn.name;
+              if (fn && typeof fn.arguments === 'string') entry.arguments += fn.arguments;
+              toolCalls.set(index, entry);
+            }
+          }
+          if (typeof rawChoice.finish_reason === 'string') finishReason = rawChoice.finish_reason;
+        }
+      },
+      signal,
+    );
 
-  if (signal?.aborted) return;
-  const parsedCalls: NormalizedToolCall[] = [...toolCalls.entries()]
-    .sort(([a], [b]) => a - b)
-    .map(([, entry]) => ({
-      type: 'function' as const,
-      function: { name: entry.name, arguments: parseToolArguments(entry.arguments) },
-    }))
-    .filter((call) => call.function.name);
-  onChunk({
-    model: body.model,
-    message: {
-      role: 'assistant',
-      ...(parsedCalls.length > 0 && { tool_calls: parsedCalls }),
-    },
-    done: true,
-    done_reason: mapFinishReason(finishReason),
-    ...usageFields(usage),
-  });
+    if (signal?.aborted) return;
+    const parsedCalls: NormalizedToolCall[] = [...toolCalls.entries()]
+      .sort(([a], [b]) => a - b)
+      .map(([, entry]) => ({
+        type: 'function' as const,
+        function: { name: entry.name, arguments: parseToolArguments(entry.arguments) },
+      }))
+      .filter((call) => call.function.name);
+    emit({
+      model: body.model,
+      message: {
+        role: 'assistant',
+        ...(parsedCalls.length > 0 && { tool_calls: parsedCalls }),
+      },
+      done: true,
+      done_reason: mapFinishReason(finishReason),
+      ...usageFields(usage),
+    });
+  };
+
+  try {
+    await streamOnce('max_tokens');
+  } catch (err) {
+    if (emittedAny || signal?.aborted || !shouldRetryWithCompletionTokens(err)) throw err;
+    await streamOnce('max_completion_tokens');
+  }
 }
 
 export async function embed(model: string, input: string): Promise<OllamaEmbedResponse> {

@@ -100,6 +100,8 @@ OLLAMA_HOST=0.0.0.0:11434 ollama serve
 - 流式输出、`tool_calls`、图片输入、`usage` 用量均会转换为 Metona 内部格式。
 - OpenCode Go：自动发送稳定的 `x-opencode-session` 与 `User-Agent: Metona-Ollama-Desktop`，避免 `MissingSessionID`。
 - 第三方模型统一按支持图片 / 推理 / 工具处理，不再按模型名禁用上传或 Think 档位。
+- OpenAI 兼容：Think 档位原样写入 `reasoning_effort`（`low` / `medium` / `high` / `max`），不再把 `max` 降级为 `high`；OpenCode / DeepSeek 等支持 `max` 的服务可直接使用。
+- OpenAI 兼容：最大输出 Token 默认发送 `max_tokens`；若服务端明确要求 `max_completion_tokens`，会自动重试，不在代码里维护模型名清单。
 
 ### Anthropic 兼容
 
