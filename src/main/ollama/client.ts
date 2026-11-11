@@ -168,6 +168,10 @@ export async function chatStream(
   const onAbort = (): void => {
     reader.cancel().catch(() => {});
   };
+  if (signal?.aborted) {
+    await reader.cancel().catch(() => {});
+    return;
+  }
   signal?.addEventListener('abort', onAbort, { once: true });
 
   try {
