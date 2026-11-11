@@ -1,4 +1,4 @@
-# 开发指南（0.18.3）
+# 开发指南（0.18.4）
 
 ## 1. 环境
 
@@ -200,8 +200,8 @@ npm run dist:mac     # x64 + arm64 zip
 ## 11. 发布
 
 ```bash
-git tag v0.18.3
-git push origin v0.18.3
+git tag v0.18.4
+git push origin v0.18.4
 ```
 
 `.github/workflows/release.yml` 会：

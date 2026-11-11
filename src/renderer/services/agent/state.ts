@@ -8,7 +8,7 @@ import type { LoopState, LoopContext, ToolDefinition } from '../../types.js';
 
 export const MAX_RETRIES = 2;
 export const MAX_MESSAGES = 300;
-export const API_MAX_RETRIES = 2;
+export const API_MAX_RETRIES = 5;
 export const MAX_PARALLEL_TOOLS = 5;
 
 export const S = {

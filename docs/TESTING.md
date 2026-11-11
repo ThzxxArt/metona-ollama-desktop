@@ -1,4 +1,4 @@
-# 测试指南（0.18.3）
+# 测试指南（0.18.4）
 
 ## 1. 分层
 
@@ -37,7 +37,7 @@ xvfb-run -a npm run test:e2e
 - 通过：1668（2 skipped）
 - 跳过：2
 - 单元覆盖率（全仓 `src/**/*.ts`）：statements 94.87% / branches 85.34% / functions 94.98% / lines 95.79%
-- E2E 合并后覆盖率：statements 98.69% / branches 86.54% / functions 95.57% / lines 99.02%
+- E2E 合并后覆盖率：statements 98.69% / branches 86.53% / functions 95.57% / lines 99.02%
 
 ## 4. 覆盖率门槛
 

@@ -210,7 +210,7 @@ export async function handleThinking(
       const isAbort = retryAC.signal.aborted;
 
       // 只有计时器真正触发才算超时；配置了 streamTimeout 时用户主动停止
-      // 不能被误判为超时并进入 1s/2s 重试。
+      // 不能被误判为超时并进入指数退避重试。
       if (isAbort && !timedOut) {
         logInfo('流式调用已中止（用户操作）');
         if (ctx.allToolRecords.length > 0) state.set('_abortToolRecords', ctx.allToolRecords);

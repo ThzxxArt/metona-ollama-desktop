@@ -7,6 +7,7 @@
 import { state, KEYS } from '../state/state.js';
 import { OllamaAPI } from '../api/ollama.js';
 import { logInfo, logWarn, logError } from './log-service.js';
+import { API_MAX_RETRIES } from './agent/state.js';
 import { validatePathSandbox, checkCommandSafety, snapshotSafetyState, restoreSafetyState, resetAllSafetyState, classifyError, calculateBackoff } from './agent-safety.js';
 import { getWorkspaceDirPath } from './workspace-state.js';
 import type { ToolResult, ToolCall, ToolDefinition, OllamaStreamChunk } from '../types.js';
@@ -201,17 +202,16 @@ export async function executeSubAgent(
       let toolCalls: Array<{ name: string; arguments: Record<string, unknown> }> = [];
 
       // LLM 调用重试循环 — 瞬态错误时指数退避重试，与主 Agent 一致
-      const SUB_AGENT_API_MAX_RETRIES = 2;
       let llmSuccess = false;
       let llmLastError: Error | null = null;
 
-      for (let apiAttempt = 0; apiAttempt <= SUB_AGENT_API_MAX_RETRIES; apiAttempt++) {
+      for (let apiAttempt = 0; apiAttempt <= API_MAX_RETRIES; apiAttempt++) {
         // 重试前重置本轮状态
         if (apiAttempt > 0) {
           content = '';
           toolCalls = [];
           const retryDelay = calculateBackoff(apiAttempt - 1, 1000);
-          logWarn(`子 Agent API 重试 ${apiAttempt}/${SUB_AGENT_API_MAX_RETRIES}: ${retryDelay}ms 后重试`, llmLastError?.message || '');
+          logWarn(`子 Agent API 重试 ${apiAttempt}/${API_MAX_RETRIES}: ${retryDelay}ms 后重试`, llmLastError?.message || '');
           await new Promise(r => setTimeout(r, retryDelay));
         }
 
@@ -251,7 +251,7 @@ export async function executeSubAgent(
             return { success: false, error: classified.userMessage, loops: loopCount, duration: Date.now() - startTime };
           }
           // 未达最大重试次数则继续
-          if (apiAttempt < SUB_AGENT_API_MAX_RETRIES) {
+          if (apiAttempt < API_MAX_RETRIES) {
             continue;
           }
         }

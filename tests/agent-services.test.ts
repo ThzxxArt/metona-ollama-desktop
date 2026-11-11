@@ -100,7 +100,7 @@ describe('agent/state', () => {
   it('常量符合 0.18 配置', () => {
     expect(MAX_RETRIES).toBe(2);
     expect(MAX_MESSAGES).toBe(300);
-    expect(API_MAX_RETRIES).toBe(2);
+    expect(API_MAX_RETRIES).toBe(5);
     expect(MAX_PARALLEL_TOOLS).toBe(5);
   });
 

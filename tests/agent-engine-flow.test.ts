@@ -561,9 +561,9 @@ describe('runAgentLoop 中止与异常', () => {
     state.set(KEYS.API, makeApi(chatStream));
     const callbacks = makeCallbacks();
     const run = runAgentLoop('hi', [], [], callbacks);
-    await vi.advanceTimersByTimeAsync(10_000);
+    await vi.advanceTimersByTimeAsync(40_000);
     await run;
-    expect(chatStream).toHaveBeenCalledTimes(3);
+    expect(chatStream).toHaveBeenCalledTimes(6);
     expect(callbacks.onDone).toHaveBeenCalledWith('（模型响应异常，已自动中断）', undefined, expect.anything());
   });
 
@@ -579,9 +579,9 @@ describe('runAgentLoop 中止与异常', () => {
     state.set(KEYS.API, makeApi(chatStream));
     const callbacks = makeCallbacks();
     const run = runAgentLoop('hi', [], [], callbacks);
-    await vi.advanceTimersByTimeAsync(20_000);
+    await vi.advanceTimersByTimeAsync(300_000);
     await run;
-    expect(chatStream).toHaveBeenCalledTimes(3);
+    expect(chatStream).toHaveBeenCalledTimes(6);
     expect(callbacks.onDone).toHaveBeenCalledWith('（模型响应异常，已自动中断）', undefined, expect.anything());
   });
 
@@ -635,7 +635,7 @@ describe('runAgentLoop 中止与异常', () => {
     state.set(KEYS.API, makeApi(chatStream));
     const callbacks = makeCallbacks();
     const run = runAgentLoop('hi', [], [], callbacks);
-    await vi.advanceTimersByTimeAsync(10_000);
+    await vi.advanceTimersByTimeAsync(40_000);
     await expect(run).resolves.toBeUndefined();
     expect(callbacks.onDone).toHaveBeenCalled();
   });
@@ -804,7 +804,7 @@ describe('runAgentLoop 补充分支', () => {
     state.set(KEYS.API, makeApi(chatStream));
     const callbacks = makeCallbacks();
     const run = runAgentLoop('hi', [], [], callbacks);
-    await vi.advanceTimersByTimeAsync(10_000);
+    await vi.advanceTimersByTimeAsync(40_000);
     await run;
     expect(callbacks.onDone).toHaveBeenCalledWith('partial answer', undefined, expect.anything());
   });
@@ -842,7 +842,7 @@ describe('runAgentLoop 补充分支', () => {
     state.set(KEYS.API, makeApi(chatStream));
     const callbacks = makeCallbacks();
     const run = runAgentLoop('hi', [], history, callbacks);
-    await vi.advanceTimersByTimeAsync(20_000);
+    await vi.advanceTimersByTimeAsync(40_000);
     await run;
     expect(hoisted.compressWithLLM).toHaveBeenCalled();
     expect(callbacks.onDone).toHaveBeenCalledWith('（模型响应异常，已自动中断）', undefined, expect.anything());

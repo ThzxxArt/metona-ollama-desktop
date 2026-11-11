@@ -477,11 +477,11 @@ describe('子代理 LLM 重试', () => {
     });
     state.set(KEYS.API, makeApi(chatStream));
     const pending = executeSubAgent('task', undefined, baseOptions());
-    await vi.advanceTimersByTimeAsync(5000);
+    await vi.advanceTimersByTimeAsync(40_000);
     const result = await pending;
     expect(result.success).toBe(false);
     expect(result.error).toContain('timeout');
-    expect(chatStream).toHaveBeenCalledTimes(3);
+    expect(chatStream).toHaveBeenCalledTimes(6);
   });
 });
 

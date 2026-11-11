@@ -56,6 +56,8 @@
 > **0.18.2** adds OpenAI / Anthropic compatible APIs and third-party provider settings while keeping the 0.18.x database and settings format.
 >
 > **0.18.3** fixes OpenCode `MissingSessionID`, enables image/reasoning for third-party providers, allows context length above the reported model limit, and adds max output tokens plus Think `max`.
+>
+> **0.18.4** removes hardcoded model names, passes Think `max` through to OpenAI-compatible services, and automatically falls back from `max_tokens` to `max_completion_tokens` when required.
 
 ## Screenshots
 
@@ -79,11 +81,11 @@ Get the latest packages from [Releases](https://github.com/ThzxxArt/metona-ollam
 
 | Platform | Artifact | Notes |
 |---|---|---|
-| Windows x64 | `Metona.Ollama.Setup.v0.18.3.exe` | NSIS; unsigned, SmartScreen may warn |
-| Linux x64 | `Metona.Ollama.v0.18.3-x86_64.AppImage` | Portable; `chmod +x` then run |
-| Linux x64 | `metona-ollama_0.18.3_amd64.deb` | Debian / Ubuntu |
-| macOS x64 | `Metona.Ollama.v0.18.3-mac-x64.zip` | Unsigned, not notarized |
-| macOS arm64 | `Metona.Ollama.v0.18.3-mac-arm64.zip` | Apple Silicon |
+| Windows x64 | `Metona.Ollama.Setup.v0.18.4.exe` | NSIS; unsigned, SmartScreen may warn |
+| Linux x64 | `Metona.Ollama.v0.18.4-x86_64.AppImage` | Portable; `chmod +x` then run |
+| Linux x64 | `metona-ollama_0.18.4_amd64.deb` | Debian / Ubuntu |
+| macOS x64 | `Metona.Ollama.v0.18.4-mac-x64.zip` | Unsigned, not notarized |
+| macOS arm64 | `Metona.Ollama.v0.18.4-mac-arm64.zip` | Apple Silicon |
 
 Each release includes `SHA256SUMS.txt`. On macOS, if Gatekeeper blocks the app:
 
@@ -247,8 +249,8 @@ Stack: Electron 45 · TypeScript 6.0 · Vite 8 · Vitest 5 · `node:sqlite` · z
 ## Release
 
 ```bash
-git tag v0.18.3
-git push origin v0.18.3
+git tag v0.18.4
+git push origin v0.18.4
 ```
 
 GitHub Actions builds Windows / Linux / macOS artifacts, writes `SHA256SUMS.txt`, and creates the release.

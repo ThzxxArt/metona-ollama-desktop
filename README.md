@@ -58,6 +58,8 @@
 > **0.18.2** 新增 OpenAI / Anthropic 兼容接口与第三方提供商设置，仍沿用 0.18.x 数据库与设置格式，可直接覆盖升级。
 >
 > **0.18.3** 修复 OpenCode `MissingSessionID`、放开第三方图片/推理能力、支持上下文长度超过模型标称上限，并新增最大输出 Token 与 Think `max` 档位。
+>
+> **0.18.4** 移除模型名硬编码；Think `max` 原样传给 OpenAI 兼容服务；输出 Token 参数在服务端要求时自动从 `max_tokens` 回退到 `max_completion_tokens`。
 
 ## 界面预览
 
@@ -81,11 +83,11 @@
 
 | 平台 | 产物 | 说明 |
 |---|---|---|
-| Windows x64 | `Metona.Ollama.Setup.v0.18.3.exe` | NSIS 安装包；未签名，SmartScreen 可能提示 |
-| Linux x64 | `Metona.Ollama.v0.18.3-x86_64.AppImage` | 免安装，`chmod +x` 后运行 |
-| Linux x64 | `metona-ollama_0.18.3_amd64.deb` | Debian / Ubuntu 安装包 |
-| macOS x64 | `Metona.Ollama.v0.18.3-mac-x64.zip` | 未签名、未公证 |
-| macOS arm64 | `Metona.Ollama.v0.18.3-mac-arm64.zip` | Apple Silicon |
+| Windows x64 | `Metona.Ollama.Setup.v0.18.4.exe` | NSIS 安装包；未签名，SmartScreen 可能提示 |
+| Linux x64 | `Metona.Ollama.v0.18.4-x86_64.AppImage` | 免安装，`chmod +x` 后运行 |
+| Linux x64 | `metona-ollama_0.18.4_amd64.deb` | Debian / Ubuntu 安装包 |
+| macOS x64 | `Metona.Ollama.v0.18.4-mac-x64.zip` | 未签名、未公证 |
+| macOS arm64 | `Metona.Ollama.v0.18.4-mac-arm64.zip` | Apple Silicon |
 
 每个 Release 附带 `SHA256SUMS.txt`。macOS 首次打开如被拦截，可在“系统设置 → 隐私与安全性”中允许，或执行：
 
@@ -262,8 +264,8 @@ npm start
 ## 发布
 
 ```bash
-git tag v0.18.3
-git push origin v0.18.3
+git tag v0.18.4
+git push origin v0.18.4
 ```
 
 GitHub Actions 会构建 Windows / Linux / macOS 产物，生成 `SHA256SUMS.txt` 并创建 Release。发布流程见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#发布)。
