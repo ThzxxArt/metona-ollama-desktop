@@ -25,7 +25,10 @@ export function sanitize(html: string): string {
       'target', 'rel', 'class', 'id', 'type', 'checked', 'disabled',
       'start', 'value', 'scope', 'rowspan', 'colspan', 'lang',
     ],
-    ALLOWED_URI_REGEXP: /^(?:(?:https?|ftp|ftps|mailto|tel|xmpp):|data:image\/(?:png|jpeg|gif|webp|svg\+xml);)/i,
+    // 允许绝对安全协议、data:image，以及不带危险 scheme 的相对链接
+    // （./a.md、../a.md、/path、#anchor、?q=1）。不能把相对链接全部净化掉。
+    ALLOWED_URI_REGEXP:
+      /^(?:(?:https?|ftp|ftps|mailto|tel|xmpp):|data:image\/(?:png|jpeg|gif|webp|svg\+xml);|(?![a-z][a-z0-9+.-]*:).*$)/i,
     ADD_ATTR: ['target'],
   });
 }

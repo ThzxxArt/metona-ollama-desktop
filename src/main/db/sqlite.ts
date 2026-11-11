@@ -199,38 +199,38 @@ function readDatabaseUserVersion(databasePath: string): number | null {
 
 /** 删除 v0.17.2 旧库文件（不读取、不解析、不转换） */
 function removeLegacyDatabaseIfNeeded(markerPath: string, databasePath: string): void {
-  if (fs.existsSync(markerPath)) return;
-
-  // 根因修复：marker 可能因磁盘/权限/崩溃丢失。不能仅凭 marker 缺失就删除数据库，
-  // 否则会把已经升级到 0.18 的新库误删。先读 user_version：
-  // - 180：确认是 0.18 新库，补写 marker 并保留
+  // marker 只能作为辅助信息，不能作为“跳过校验”的依据。用户可能手动恢复旧库，
+  // 或旧版本留下了同名 marker；只要数据库存在，就必须用 user_version 判断：
+  // - 180：确认是 0.18 新库，marker 缺失时补写并保留
   // - 其他：旧库，删除 db/wal/shm
   // - 无法读取：重命名为 .corrupt-* 备份，避免不可恢复的数据丢失
-  if (fs.existsSync(databasePath)) {
-    const version = readDatabaseUserVersion(databasePath);
-    if (version === 180) {
+  if (!fs.existsSync(databasePath)) return;
+
+  const version = readDatabaseUserVersion(databasePath);
+  if (version === 180) {
+    if (!fs.existsSync(markerPath)) {
       try {
         fs.writeFileSync(markerPath, `schema=180\nrecovered=${new Date().toISOString()}\n`);
       } catch {
         /* marker 写失败不影响本次运行；下次仍会通过 user_version 识别 */
       }
-      return;
     }
+    return;
+  }
 
-    if (version === null) {
-      const backupPath = `${databasePath}.corrupt-${Date.now()}`;
-      try {
-        fs.renameSync(databasePath, backupPath);
-        for (const suffix of ['-wal', '-shm']) {
-          if (fs.existsSync(`${databasePath}${suffix}`)) {
-            fs.renameSync(`${databasePath}${suffix}`, `${backupPath}${suffix}`);
-          }
+  if (version === null) {
+    const backupPath = `${databasePath}.corrupt-${Date.now()}`;
+    try {
+      fs.renameSync(databasePath, backupPath);
+      for (const suffix of ['-wal', '-shm']) {
+        if (fs.existsSync(`${databasePath}${suffix}`)) {
+          fs.renameSync(`${databasePath}${suffix}`, `${backupPath}${suffix}`);
         }
-        console.warn(`[db] 无法识别现有数据库，已备份到 ${backupPath}，0.18.0 将创建全新数据库`);
-        return;
-      } catch (err) {
-        throw new Error(`无法处理旧数据库 ${databasePath}: ${(err as Error).message}`);
       }
+      console.warn(`[db] 无法识别现有数据库，已备份到 ${backupPath}，0.18.0 将创建全新数据库`);
+      return;
+    } catch (err) {
+      throw new Error(`无法处理旧数据库 ${databasePath}: ${(err as Error).message}`);
     }
   }
 
@@ -727,6 +727,8 @@ export function importSessions(data: ExportData): { imported: number; skipped: n
       if (sessionExists) saveMessage(msg);
     }
     for (const s of data.settings) {
+      // 备份导入同样不能写入敏感设置，避免恶意/损坏备份覆盖本机凭据。
+      if (SENSITIVE_SETTING_KEYS.has(s.key)) continue;
       saveSetting(s.key, s.value);
     }
   });

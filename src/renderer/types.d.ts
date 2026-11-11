@@ -57,7 +57,7 @@ export interface OllamaModelInfo {
 
 export interface OllamaModelDetail {
   capabilities?: string[];
-  model_info?: Record<string, any>;
+  model_info?: Record<string, unknown>;
   [key: string]: unknown;
 }
 

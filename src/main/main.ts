@@ -204,33 +204,37 @@ if (!gotTheLock) {
   });
 }
 
-app.whenReady().then(async () => {
-  installSecurityHeaders();
-  ensureWorkspaceDir();
-  await getOllamaSecretStore().init();
-  await setupIPC();
-  createMainWindow();
-  createTray();
-  createMenu();
+// 单实例锁失败的进程只负责退出，绝不能再初始化数据库/IPC/窗口。
+// app.quit() 是异步的，若不显式跳过 whenReady，第二个实例仍可能在退出前完成启动。
+if (gotTheLock) {
+  app.whenReady().then(async () => {
+    installSecurityHeaders();
+    ensureWorkspaceDir();
+    await getOllamaSecretStore().init();
+    await setupIPC();
+    createMainWindow();
+    createTray();
+    createMenu();
 
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createMainWindow();
-    } else if (mainWindow) {
-      mainWindow.show();
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        createMainWindow();
+      } else if (mainWindow) {
+        mainWindow.show();
+      }
+    });
+  }).catch((err) => {
+    logStartupError('app.whenReady', err);
+    // 弹出错误对话框，让用户知道发生了什么
+    try {
+      dialog.showErrorBox('Metona Ollama 启动失败',
+        `应用初始化出错，请检查以下信息：\n\n${err instanceof Error ? err.message : String(err)}\n\n错误日志：${ERROR_LOG}`);
+    } catch {
+      // dialog 也可能失败（app 未完全初始化）
     }
+    app.quit();
   });
-}).catch((err) => {
-  logStartupError('app.whenReady', err);
-  // 弹出错误对话框，让用户知道发生了什么
-  try {
-    dialog.showErrorBox('Metona Ollama 启动失败',
-      `应用初始化出错，请检查以下信息：\n\n${err instanceof Error ? err.message : String(err)}\n\n错误日志：${ERROR_LOG}`);
-  } catch {
-    // dialog 也可能失败（app 未完全初始化）
-  }
-  app.quit();
-});
+}
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {

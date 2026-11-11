@@ -8,6 +8,7 @@
 const MAGIC = new TextEncoder().encode('METONA3\0');
 const VERSION = 3;
 const DEFAULT_ITERATIONS = 210_000;
+const MAX_ITERATIONS = 2_000_000;
 const NO_PASSWORD_PASSPHRASE = 'metona-ollama-v3-no-password';
 
 function toUint32BE(value: number): Uint8Array {
@@ -67,6 +68,10 @@ export async function decryptData(buffer: ArrayBuffer, password = ''): Promise<u
   const salt = data.slice(offset, offset + 16); offset += 16;
   const iv = data.slice(offset, offset + 12); offset += 12;
   const iterations = fromUint32BE(data.slice(offset, offset + 4)); offset += 4;
+  // 迭代次数来自文件头，必须有上限，避免恶意备份用超大 PBKDF2 迭代拖死渲染进程。
+  if (iterations < 1 || iterations > MAX_ITERATIONS) {
+    throw new Error('备份文件参数非法');
+  }
   const payload = data.slice(offset);
 
   if (mode === 1 && !password) {

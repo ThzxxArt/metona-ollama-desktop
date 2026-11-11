@@ -193,16 +193,19 @@ async function handleExecuting(
       }
     }
 
-    const cachedEntry = getToolCache(cacheKey);
-    if (cachedEntry && isCacheValid(call.function.name, cachedEntry.timestamp)) {
-      logInfo(`工具缓存命中: ${call.function.name}`);
-      return [{
-        name: call.function.name, arguments: call.function.arguments,
-        result: cachedEntry.result, status: 'success' as const, timestamp: Date.now()
-      }, null];
-    }
-    if (cachedEntry && !isCacheValid(call.function.name, cachedEntry.timestamp)) {
-      deleteToolCache(cacheKey);
+    // 副作用工具绝不能命中缓存，否则同轮重复 write_file/run_command 会被跳过。
+    if (!SIDE_EFFECT_TOOLS.has(call.function.name)) {
+      const cachedEntry = getToolCache(cacheKey);
+      if (cachedEntry && isCacheValid(call.function.name, cachedEntry.timestamp)) {
+        logInfo(`工具缓存命中: ${call.function.name}`);
+        return [{
+          name: call.function.name, arguments: call.function.arguments,
+          result: cachedEntry.result, status: 'success' as const, timestamp: Date.now()
+        }, null];
+      }
+      if (cachedEntry && !isCacheValid(call.function.name, cachedEntry.timestamp)) {
+        deleteToolCache(cacheKey);
+      }
     }
 
     // 命令安全检查 — 对 run_command 进行风险评估
@@ -342,7 +345,7 @@ async function handleExecuting(
         return [{
           name: call.function.name, arguments: call.function.arguments,
           result, status: result.success ? 'success' as const : 'error' as const, timestamp: Date.now()
-        }, result.success ? cacheKey : null];
+        }, result.success && !SIDE_EFFECT_TOOLS.has(call.function.name) ? cacheKey : null];
       } catch (err) {
         lastError = (err as Error).message;
         // R78: 使用错误分类系统替代原有的 isPermanentError
@@ -444,15 +447,21 @@ async function handleExecuting(
           : record.result?.error || '执行失败';
         const _bridge = window.metonaDesktop;
         if (_bridge?.db) {
-          _bridge.db.saveToolAudit({
-            session_id: ctx.sessionId,
-            tool_name: record.name,
-            args_json: JSON.stringify(record.arguments).slice(0, 5000),
-            result_status: record.status,
-            result_summary: String(_auditSummary).slice(0, 2000),
-            duration_ms: _auditDuration,
-            created_at: Date.now(),
-          }).catch(() => {});
+          try {
+            const auditPromise = _bridge.db.saveToolAudit({
+              session_id: ctx.sessionId,
+              tool_name: record.name,
+              args_json: JSON.stringify(record.arguments).slice(0, 5000),
+              result_status: record.status,
+              result_summary: String(_auditSummary).slice(0, 2000),
+              duration_ms: _auditDuration,
+              created_at: Date.now(),
+            });
+            // 桥接实现可能同步抛错，也可能返回 rejected Promise；两者都不能中断 Agent Loop。
+            void Promise.resolve(auditPromise).catch(() => {});
+          } catch {
+            /* 审计写入失败不影响工具结果 */
+          }
         }
       }
       // ── post_tool Hook ──
@@ -540,9 +549,12 @@ export async function runAgentLoop(
   state.set('_loopState', S.INIT);
   snapshotLoopContext(ctx);
   startSessionMetrics(sessionId, model);
+  // 新一轮开始：取消上一轮尚未执行的记忆提取，避免旧会话污染新会话。
+  clearPendingMemoryTimers();
   // 子代理确认管线：与主 Agent 共用同一确认回调（finally 中清理）
   setSubAgentConfirmHandler(callbacks.onConfirmTool ?? null);
 
+  let loopFailed = false;
   // ── 状态机主循环 ──
   try {
     // Phase 1: INIT
@@ -641,6 +653,7 @@ default:
       snapshotLoopContext(ctx);
     }
   } catch (err) {
+    loopFailed = true;
     if ((err as Error).name === 'AbortError') {
       // 中止是正常的，但仍需通知 UI 清理状态
       callbacks.onDone(ctx.content || '（已中止）', ctx.allToolRecords.length > 0 ? ctx.allToolRecords : undefined, makeStats(ctx));
@@ -665,8 +678,9 @@ default:
       }
     } catch { /* 会话摘要保存失败不影响主流程 */ }
     cleanupAbortController();
-    // 清理未执行的记忆提取 timer，避免新会话启动时旧提取污染
-    clearPendingMemoryTimers();
+    // 正常完成时保留记忆提取 timer，让它真正执行；异常/中止时立即清理。
+    // 下一轮 runAgentLoop 开始时也会统一清理上一轮 timer。
+    if (loopFailed) clearPendingMemoryTimers();
     // P1-E4 修复：await 确保轨迹写入完成，避免应用立即关闭时丢失
     await flushAllTraces().catch(() => {});
   }

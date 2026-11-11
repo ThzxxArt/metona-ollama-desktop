@@ -52,8 +52,10 @@ export async function handleThinking(
   }
 
   let totalTimer: ReturnType<typeof setTimeout> | null = null;
+  let timedOut = false;
   if (STREAM_TIMEOUT_MS > 0) {
     totalTimer = setTimeout(() => {
+      timedOut = true;
       logWarn(`流式总超时 (${STREAM_TIMEOUT_MS / 1000}s)，中止本轮`);
       abortController.abort();
     }, STREAM_TIMEOUT_MS);
@@ -88,7 +90,9 @@ export async function handleThinking(
       totalTimer = null;
     }
     if (STREAM_TIMEOUT_MS > 0) {
+      timedOut = false;
       totalTimer = setTimeout(() => {
+        timedOut = true;
         logWarn(`流式总超时 (${STREAM_TIMEOUT_MS / 1000}s)，中止本轮`);
         retryAC.abort();
       }, STREAM_TIMEOUT_MS);
@@ -203,9 +207,10 @@ export async function handleThinking(
       if (progressTimer) clearInterval(progressTimer as unknown as number);
 
       const isAbort = retryAC.signal.aborted;
-      const hadTimeout = STREAM_TIMEOUT_MS > 0;
 
-      if (isAbort && !hadTimeout) {
+      // 只有计时器真正触发才算超时；配置了 streamTimeout 时用户主动停止
+      // 不能被误判为超时并进入 1s/2s 重试。
+      if (isAbort && !timedOut) {
         logInfo('流式调用已中止（用户操作）');
         if (ctx.allToolRecords.length > 0) state.set('_abortToolRecords', ctx.allToolRecords);
         throw err;

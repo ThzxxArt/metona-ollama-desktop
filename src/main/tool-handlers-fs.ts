@@ -36,8 +36,8 @@ export async function handleReadFile(params: { path: string; encoding?: string; 
       let byteRange: [number, number] = [0, buf.length];
 
       if (params.offset_bytes !== undefined || params.limit_bytes !== undefined) {
-        const offset = params.offset_bytes || 0;
-        const limit = params.limit_bytes || buf.length - offset;
+        const offset = Math.max(0, Math.min(params.offset_bytes || 0, buf.length));
+        const limit = Math.max(0, params.limit_bytes ?? buf.length - offset);
         const end = Math.min(buf.length, offset + limit);
         resultBuf = buf.subarray(offset, end);
         byteRange = [offset, end];
@@ -68,8 +68,8 @@ export async function handleReadFile(params: { path: string; encoding?: string; 
 
     // 字节分页优先
     if (params.offset_bytes !== undefined || params.limit_bytes !== undefined) {
-      const offset = params.offset_bytes || 0;
-      const limit = params.limit_bytes || 50000;
+      const offset = Math.max(0, Math.min(params.offset_bytes || 0, stat.size));
+      const limit = Math.max(0, params.limit_bytes ?? 50000);
       const fd = await fs.open(filePath, 'r');
       try {
         const buf = Buffer.alloc(Math.min(limit, stat.size - offset));
@@ -783,17 +783,21 @@ export async function handleDiff(params: {
         leftLabel = `a/${path.basename(filePath1)} (HEAD)`;
         try {
           const { execFile } = await import('child_process');
-          const gitResult = await new Promise<string>((resolve, reject) => {
-            execFile('git', ['show', `HEAD:${params.path1}`], {
-              cwd: path.dirname(filePath1),
-              maxBuffer: 5 * 1024 * 1024,
-              encoding: 'utf-8',
-            }, (err, stdout) => {
-              if (err) reject(err);
-              else resolve(stdout);
+          const execGit = (args: string[], cwd: string): Promise<string> =>
+            new Promise<string>((resolve, reject) => {
+              execFile('git', args, { cwd, maxBuffer: 5 * 1024 * 1024, encoding: 'utf-8' }, (err, stdout) => {
+                if (err) reject(err);
+                else resolve(stdout);
+              });
             });
-          });
-          leftContent = gitResult;
+          const cwd = path.dirname(filePath1);
+          const repoRoot = (await execGit(['rev-parse', '--show-toplevel'], cwd)).trim();
+          // git show 只接受仓库相对路径；绝对路径必然失败。
+          const repoRelativePath = path.relative(repoRoot, filePath1).replace(/\\/g, '/');
+          if (!repoRelativePath || repoRelativePath.startsWith('..')) {
+            return { success: false, error: '文件不在 git 仓库内' };
+          }
+          leftContent = await execGit(['show', `HEAD:${repoRelativePath}`], repoRoot);
         } catch {
           return { success: false, error: '无法获取 git HEAD 版本（确保文件在 git 仓库中且有提交历史）' };
         }

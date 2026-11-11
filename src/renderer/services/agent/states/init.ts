@@ -46,7 +46,9 @@ export async function handleInit(
   clearCheckpoints();
 
   const modelSupportsTools = state.get<boolean>('modelSupportsTools', false);
-  const tools = getRelevantToolDefinitions(userContent);
+  // 只有模型声明支持 tools 时才注入工具定义。否则部分 Ollama 模型会直接拒绝
+  // 带 tools 的请求，表现为“模型响应异常”，而不是正常文本回答。
+  const tools = modelSupportsTools ? getRelevantToolDefinitions(userContent) : [];
   setFilteredTools(tools);
   const useTools = tools.length > 0;
 
@@ -154,5 +156,4 @@ ${formatted}
     `ReAct Agent Loop 启动: ${model}`,
     `工具: ${useTools ? '开启' : '关闭'}, tokens≈${estimateTokens(ctx.messages.map((m) => m.content || '').join(''))}`,
   );
-  void modelSupportsTools;
 }

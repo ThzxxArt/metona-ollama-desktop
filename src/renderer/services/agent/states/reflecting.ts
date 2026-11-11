@@ -7,7 +7,7 @@ import type { OllamaAPI } from '../../../api/ollama.js';
 import type { ChatSession, LoopContext } from '../../../types.js';
 import { logInfo, logWarn } from '../../log-service.js';
 import { executeHooks } from '../../hooks.js';
-import { isAborted, pendingMemoryTimers } from '../runtime.js';
+import { isAborted, scheduleMemoryExtraction } from '../runtime.js';
 import { S, transition } from '../state.js';
 import { makeStats } from '../stats.js';
 import type { AgentCallbacks } from '../types.js';
@@ -54,15 +54,13 @@ export async function handleReflecting(
     const msgsForMemory = (session?.messages || ctx.messages)
       .filter((m) => m.role === 'user' || m.role === 'assistant')
       .map((m) => ({ role: m.role, content: m.content || '' }));
-    const memTimer = setTimeout(() => {
-      if (memorySignal?.aborted) return;
+    scheduleMemoryExtraction((signal) => {
       import('../../memory-service.js')
         .then(({ extractAndSaveMemories }) => {
-          extractAndSaveMemories(msgsForMemory, api, model, memorySignal).catch(() => {});
+          extractAndSaveMemories(msgsForMemory, api, model, signal).catch(() => {});
         })
         .catch(() => {});
-    }, 500);
-    pendingMemoryTimers.push(memTimer);
+    });
   }
 
   callbacks.onDone(

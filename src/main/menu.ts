@@ -98,7 +98,8 @@ export function createMenu(): void {
         {
           label: '关于 Metona',
           click: () => {
-            dialog.showMessageBox(mainWindow!, {
+            if (!mainWindow || mainWindow.isDestroyed()) return;
+            void dialog.showMessageBox(mainWindow, {
               type: 'info',
               title: '关于 Metona Ollama',
               message: `Metona Ollama Desktop v${app.getVersion()}`,

@@ -3,10 +3,32 @@
  * 路径白名单/黑名单、命令过滤、路径遍历检测
  */
 
+import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
 const HOME = os.homedir();
+
+/**
+ * 解析路径的真实位置，阻止通过符号链接逃逸白名单/黑名单。
+ * 目标文件可能尚不存在，因此向上查找最近存在的父目录，再拼回剩余部分。
+ */
+function canonicalizePath(targetPath: string): string {
+  const resolved = path.resolve(targetPath);
+  let current = resolved;
+  const tail: string[] = [];
+  while (true) {
+    try {
+      const real = fs.realpathSync.native(current);
+      return tail.length > 0 ? path.join(real, ...tail.reverse()) : real;
+    } catch {
+      const parent = path.dirname(current);
+      if (parent === current) return resolved;
+      tail.push(path.basename(current));
+      current = parent;
+    }
+  }
+}
 
 /** 默认允许的目录（可通过设置覆盖） */
 let allowedDirs: string[] = [
@@ -90,7 +112,7 @@ const WRITE_PROTECTED_FILES = new Set(['SOUL.md', 'AGENT.md', 'USER.md']);
 /** 注册路径为安全豁免（不受 BLOCKED_DIRS 限制）。主要用于注册工作空间目录 */
 export function addBlocklistExemptions(dirs: string[]): void {
   for (const d of dirs) {
-    const resolved = path.resolve(d);
+    const resolved = canonicalizePath(d);
     if (!blocklistExemptions.includes(resolved)) {
       blocklistExemptions.push(resolved);
     }
@@ -110,7 +132,7 @@ function isBlocklistExempt(resolved: string): boolean {
 /** 检查文件是否在工作空间下且属于受保护文件（MEMORY.md 等） */
 export function isBlockedFile(targetPath: string): boolean {
   try {
-    const resolved = path.resolve(targetPath);
+    const resolved = canonicalizePath(targetPath);
     const basename = path.basename(resolved);
     if (!BLOCKED_FILES.has(basename)) return false;
     // 只保护工作空间下的 MEMORY.md（其他目录下的同名文件不保护）
@@ -128,7 +150,7 @@ export function isBlockedFile(targetPath: string): boolean {
 /** 检查文件是否在工作空间下且属于写保护文件（SOUL/AGENT/USER.md，可读不可写） */
 function isWriteProtectedFile(targetPath: string): boolean {
   try {
-    const resolved = path.resolve(targetPath);
+    const resolved = canonicalizePath(targetPath);
     const basename = path.basename(resolved);
     if (!WRITE_PROTECTED_FILES.has(basename)) return false;
     for (const exempt of blocklistExemptions) {
@@ -145,7 +167,7 @@ function isWriteProtectedFile(targetPath: string): boolean {
 /** 判断路径是否位于系统目录内（工作空间也不可豁免的硬红线） */
 export function isSystemBlockedPath(targetPath: string): boolean {
   try {
-    const resolved = path.resolve(targetPath);
+    const resolved = canonicalizePath(targetPath);
     for (const blocked of SYSTEM_BLOCKED_DIRS) {
       if (resolved === blocked || resolved.startsWith(blocked + path.sep)) {
         return true;
@@ -158,7 +180,7 @@ export function isSystemBlockedPath(targetPath: string): boolean {
 }
 
 export function checkPathAllowed(targetPath: string, operation: 'read' | 'write'): CheckResult {
-  const resolved = path.resolve(targetPath);
+  const resolved = canonicalizePath(targetPath);
 
   if (targetPath.split(path.sep).filter(s => s === '..').length > 5) {
     return { ok: false, reason: '路径遍历深度过大' };
@@ -226,7 +248,7 @@ export function checkCommandAllowed(command: string): CheckResult {
 export function setAllowedDirs(dirs: string[]): void {
   // 黑名单目录不可通过白名单放行（静默过滤，防止安全边界被配置穿透）
   allowedDirs = dirs
-    .map(d => path.resolve(d))
+    .map(d => canonicalizePath(d))
     .filter(dir => {
       for (const blocked of BLOCKED_DIRS) {
         if (dir === blocked || dir.startsWith(blocked + path.sep)) {

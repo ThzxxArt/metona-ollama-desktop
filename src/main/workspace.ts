@@ -43,6 +43,9 @@ export function setWorkspaceDir(dir: string): void {
   if (isSystemBlockedPath(resolved)) {
     throw new Error(`不能将系统目录设为工作空间: ${resolved}`);
   }
+  if (fs.existsSync(resolved) && !fs.statSync(resolved).isDirectory()) {
+    throw new Error(`工作空间路径不是目录: ${resolved}`);
+  }
   if (!fs.existsSync(resolved)) {
     fs.mkdirSync(resolved, { recursive: true });
   }
@@ -114,6 +117,14 @@ export function startProcess(
 
     activeProcesses.set(id, proc);
 
+    let exited = false;
+    const finishExit = (code: number | null): void => {
+      if (exited) return;
+      exited = true;
+      activeProcesses.delete(id);
+      onExit(code);
+    };
+
     proc.stdout.on('data', (data: Buffer) => {
       onOutput('stdout', data.toString('utf-8'));
     });
@@ -123,16 +134,14 @@ export function startProcess(
     });
 
     proc.on('close', (code) => {
-      activeProcesses.delete(id);
       sendLog(code === 0 ? 'success' : 'warn', `🖥️ 进程退出`, `ID: ${id} | code: ${code}`);
-      onExit(code);
+      finishExit(code);
     });
 
     proc.on('error', (err) => {
-      activeProcesses.delete(id);
       sendLog('error', `🖥️ 进程启动失败`, `ID: ${id} | ${err.message}`);
       onOutput('stderr', `进程启动失败: ${err.message}\n`);
-      onExit(1);
+      finishExit(1);
     });
 
     return { success: true };
@@ -181,16 +190,18 @@ export function killAllProcesses(): void {
 }
 
 /** 列出工作空间目录内容 */
+function isPathInside(root: string, target: string): boolean {
+  const rel = path.relative(root, target);
+  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+}
+
 export function listWorkspaceDir(dirPath?: string): { success: boolean; entries?: Array<{ name: string; type: string; size: number | null; modified: string }>; error?: string } {
   try {
     const targetDir = dirPath ? path.resolve(dirPath) : _workspaceDir;
 
-    // 安全检查：必须在 workspace 范围内（Windows 路径大小写不敏感）
-    const isWin = process.platform === 'win32';
-    const targetCheck = isWin ? targetDir.toLowerCase() : targetDir;
-    const wsCheck = isWin ? _workspaceDir.toLowerCase() : _workspaceDir;
-    const defaultCheck = isWin ? DEFAULT_WORKSPACE_DIR.toLowerCase() : DEFAULT_WORKSPACE_DIR;
-    if (!targetCheck.startsWith(wsCheck) && !targetCheck.startsWith(defaultCheck)) {
+    // 安全检查：必须在 workspace 范围内。不能只用 startsWith，否则
+    // /workspace-evil 会被误判为 /workspace 的子目录。
+    if (!isPathInside(_workspaceDir, targetDir) && !isPathInside(DEFAULT_WORKSPACE_DIR, targetDir)) {
       return { success: false, error: '只能浏览工作空间目录内的文件' };
     }
 

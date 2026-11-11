@@ -55,6 +55,13 @@ function sysInfo() {
   };
 }
 
+function requireMainWindow(): NonNullable<typeof mainWindow> {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    throw new Error('主窗口不可用');
+  }
+  return mainWindow;
+}
+
 export function registerAppIPC(): void {
   handleTrusted('dialog:openFile', async (_, rawOptions?: unknown) => {
     const options = rawOptions === undefined ? undefined : parseArgs(openFileOptionsSchema, rawOptions);
@@ -69,7 +76,7 @@ export function registerAppIPC(): void {
         }
       }
     }
-    const result = await dialog.showOpenDialog(mainWindow!, {
+    const result = await dialog.showOpenDialog(requireMainWindow(), {
       properties: dialogProperties,
       filters: options?.filters || [{ name: '所有文件', extensions: ['*'] }],
     });

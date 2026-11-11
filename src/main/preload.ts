@@ -97,6 +97,9 @@ const ollama: OllamaBridgeAPI = {
     onChunk: (chunk: OllamaStreamChunk) => void,
     signal?: AbortSignal,
   ): Promise<void> => {
+    // 已中止的 signal 不会再触发 abort 事件；必须在启动主进程流之前返回，
+    // 否则会留下一个无人取消的后台流。
+    if (signal?.aborted) return Promise.resolve();
     const streamId = nextStreamId();
     return new Promise<void>((resolve, reject) => {
       let settled = false;

@@ -11,7 +11,14 @@ import { getToolHandler } from '../tool-dispatch.js';
 import { getAllowedDirs, getBlockedDirs, setAllowedDirs } from '../tool-security.js';
 import { setHTTPTimeout } from '../tool-handlers-system.js';
 import { setMCPTimeout } from '../mcp-manager.js';
-import { startProcess, killProcess, getWorkspaceDir, setWorkspaceDir, listWorkspaceDir } from '../workspace.js';
+import {
+  startProcess,
+  killProcess,
+  getWorkspaceDir,
+  setWorkspaceDir,
+  listWorkspaceDir,
+  DEFAULT_WORKSPACE_DIR,
+} from '../workspace.js';
 import { saveSetting } from '../db/sqlite.js';
 
 const toolNameSchema = z.string().min(1).max(128);
@@ -110,7 +117,7 @@ export function registerToolsIPC(): void {
   });
 
   handleTrusted('workspace:getDir', () => {
-    return { dir: getWorkspaceDir(), defaultDir: getWorkspaceDir() };
+    return { dir: getWorkspaceDir(), defaultDir: DEFAULT_WORKSPACE_DIR };
   });
 
   handleTrusted('workspace:setDir', (_, rawDir: unknown) => {

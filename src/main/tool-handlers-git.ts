@@ -20,7 +20,22 @@ function guardGitArg(value: string | undefined, name: string): string | null {
   return null;
 }
 
-export async function handleGit(params: { action: string; path?: string; files?: string[]; message?: string; branch?: string; remote?: string; remote_url?: string; count?: number; all?: boolean; staged?: boolean; new_branch?: boolean; delete_branch?: boolean; force?: boolean; url?: string }): Promise<ToolResult> {
+/**
+ * git clone / remote add 的 URL 必须是常规传输协议。
+ * 特别禁止 ext::（可执行任意命令）、file://（读取本地仓库）等危险 transport。
+ */
+function guardGitUrl(value: string | undefined, name: string): string | null {
+  if (value === undefined || value === null || value === '') return null;
+  const url = String(value);
+  const standard = /^(?:https?|ssh|git):\/\/[^\s]+$/i.test(url);
+  const scpLike = /^[A-Za-z0-9._-]+@[A-Za-z0-9._-]+:[^\s]+$/.test(url);
+  if (!standard && !scpLike) {
+    return `参数 ${name} 只支持 http/https/ssh/git URL 或 user@host:path，收到: ${url.slice(0, 80)}`;
+  }
+  return null;
+}
+
+export async function handleGit(params: { action: string; path?: string; files?: string[]; message?: string; branch?: string; remote?: string; remote_url?: string; count?: number; all?: boolean; staged?: boolean; new_branch?: boolean; delete_branch?: boolean; force?: boolean; url?: string; tag_name?: string; stash_sub?: string }): Promise<ToolResult> {
   try {
     const cwd = params.path ? path.resolve(params.path) : getWorkspaceDir();
 
@@ -34,11 +49,18 @@ export async function handleGit(params: { action: string; path?: string; files?:
       ['remote', params.remote],
       ['url', params.url],
       ['remote_url', params.remote_url],
-      ['tag_name', (params as { tag_name?: string }).tag_name],
-      ['stash_sub', (params as { stash_sub?: string }).stash_sub],
+      ['tag_name', params.tag_name],
+      ['stash_sub', params.stash_sub],
     ];
     for (const [name, value] of argsToGuard) {
       const guardError = guardGitArg(value, name);
+      if (guardError) return { success: false, error: guardError };
+    }
+    for (const [name, value] of [
+      ['url', params.url],
+      ['remote_url', params.remote_url],
+    ] as Array<[string, string | undefined]>) {
+      const guardError = guardGitUrl(value, name);
       if (guardError) return { success: false, error: guardError };
     }
 
@@ -92,7 +114,7 @@ export async function handleGit(params: { action: string; path?: string; files?:
           if (status === '??') untracked.push(file);
           else {
             if (status[0] === 'D') deleted.push(file);
-            else if (status[0] === 'R') renamed.push(file);
+            else if (status[0] === 'R' || status[1] === 'R') renamed.push(file);
             else if (status[0] !== ' ' && status[0] !== '?') staged.push(file);
             if (status[1] === 'M') modified.push(file);
             else if (status[1] === 'D') deleted.push(file);
@@ -201,7 +223,7 @@ export async function handleGit(params: { action: string; path?: string; files?:
       case 'stash': {
         // stash 子命令（push/pop/apply/list/drop）
         // 支持 message 中的 stash 子命令或默认 push
-        const stashSub = (params as any).stash_sub || 'push';
+        const stashSub = params.stash_sub || 'push';
         const stashArgs = ['stash', stashSub];
         if ((stashSub === 'push') && params.message) {
           stashArgs.push('-m', params.message);
@@ -255,7 +277,7 @@ export async function handleGit(params: { action: string; path?: string; files?:
 
       case 'tag': {
         // 支持显式 tag_name 参数，回退兼容旧的 branch 参数
-        const tagName = (params as any).tag_name || params.branch;
+        const tagName = params.tag_name || params.branch;
         if (tagName) {
           const tagArgs = ['tag'];
           if (params.message) tagArgs.push('-a', tagName, '-m', params.message);

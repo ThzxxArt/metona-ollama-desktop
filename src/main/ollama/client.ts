@@ -155,9 +155,10 @@ export async function chatStream(
   onChunk: (chunk: OllamaStreamChunk) => void,
   signal?: AbortSignal,
 ): Promise<void> {
+  if (signal?.aborted) return;
   const response = await request(
     '/api/chat',
-    { method: 'POST', body: JSON.stringify({ ...body, stream: true }) },
+    { method: 'POST', body: JSON.stringify({ ...body, stream: true }), signal },
     { timeoutMs: loadOllamaSettings().requestTimeoutMs },
   );
   const reader = response.body?.getReader();

@@ -7,8 +7,11 @@ import type { LoopContext } from '../../types.js';
 
 export function makeStats(ctx: LoopContext) {
   let ctxTokens: number;
-  if (ctx.loopPromptEvalCount > 0) {
-    ctxTokens = ctx.loopPromptEvalCount;
+  // handleThinking 结束时会把 loopPromptEvalCount 清零，最终统计必须优先读
+  // lastLoopStats，否则仪表盘永远拿到估算值而不是 Ollama 实际值。
+  const actualPromptTokens = ctx.lastLoopStats?.prompt_eval_count || ctx.loopPromptEvalCount;
+  if (actualPromptTokens > 0) {
+    ctxTokens = actualPromptTokens;
   } else {
     ctxTokens = ctx.messages.reduce((sum, m) => {
       let t = estimateTokens(m.content || '');

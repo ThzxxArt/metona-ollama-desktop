@@ -6,6 +6,7 @@
 import { state, KEYS } from '../state/state.js';
 import { logInfo, logWarn, logSuccess, logError } from './log-service.js';
 import type { ToolDefinition, ToolResult } from '../types.js';
+import type { ChatDB } from '../db/chat-db.js';
 
 export interface MCPServerConfig {
   name: string;
@@ -18,7 +19,7 @@ export interface MCPServerConfig {
 // ─── 配置管理 ───
 
 export async function getMCPServers(): Promise<MCPServerConfig[]> {
-  const db = state.get<any>(KEYS.DB);
+  const db = state.get<ChatDB | null>(KEYS.DB);
   if (!db) return [];
   try {
     return await db.getSetting('mcp_servers', []);
@@ -28,7 +29,7 @@ export async function getMCPServers(): Promise<MCPServerConfig[]> {
 }
 
 export async function saveMCPServers(servers: MCPServerConfig[]): Promise<void> {
-  const db = state.get<any>(KEYS.DB);
+  const db = state.get<ChatDB | null>(KEYS.DB);
   if (db) await db.saveSetting('mcp_servers', servers);
 }
 

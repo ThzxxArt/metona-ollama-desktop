@@ -418,7 +418,8 @@ const FORBIDDEN_COMMAND_PATTERNS = [
   { pattern: /\brm\s+-rf\s+\/\s*$/i, reason: '删除根目录' },
   { pattern: /\bmkfs\.\w+\s+\/dev\//i, reason: '格式化系统设备' },
   { pattern: /\bshutdown\b|\breboot\b|\bhalt\b/i, reason: '系统关机/重启' },
-  { pattern: /\b>\s*\/dev\/sda/i, reason: '直接写入磁盘设备' },
+  { pattern: />\s*\/dev\/(?:sd|hd|vd|nvme)/i, reason: '直接写入磁盘设备' },
+  { pattern: /\bdd\s+[^\n]*of=\s*\/dev\//i, reason: '直接写入磁盘设备' },
 ];
 
 /** R113: 检查命令安全性，返回风险评估结果 */

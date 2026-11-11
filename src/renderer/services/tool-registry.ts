@@ -3,7 +3,7 @@
  * 管理所有可用工具的定义，负责执行调度
  */
 
-import type { ToolDefinition, ToolResult, ToolCall } from '../types.js';
+import type { ToolDefinition, ToolResult, ToolCall, MessageRow } from '../types.js';
 import type { SubAgentPermission } from './sub-agent.js';
 import { state, KEYS } from '../state/state.js';
 import { logToolStart, logToolResult, logError, logInfo, logWarn } from './log-service.js';
@@ -322,7 +322,7 @@ const results = await search(query, limit);
         const session = await bridge.db.getSession(sessionId);
         if (!session) return { success: false, error: `会话 ${sessionId} 不存在` };
         const messages = await bridge.db.getMessages(sessionId);
-        const msgs = messages.slice(0, maxMessages).map((m: any) => ({
+        const msgs = messages.slice(0, maxMessages).map((m: MessageRow) => ({
           role: m.role,
           content: m.content || '',
           timestamp: m.created_at
@@ -363,7 +363,7 @@ const results = await search(query, limit);
         needsConfirmation,
         executeTool,
       });
-      logToolResult('spawn_task', result.success, result.success ? `完成, ${(result as any).loops} 轮` : result.error);
+      logToolResult('spawn_task', result.success, result.success ? `完成, ${Number(result.loops) || 0} 轮` : result.error);
       return result;
     }
 

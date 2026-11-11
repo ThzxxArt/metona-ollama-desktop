@@ -9,6 +9,7 @@ import { checkPublicHttpUrl } from '../net-guard.js';
 import { getHTTPTimeout } from './web.js';
 
 export async function handleDownloadFile(params: { url: string; destination: string }): Promise<ToolResult> {
+  const timeoutMs = getHTTPTimeout() > 0 ? getHTTPTimeout() : 60_000;
   try {
     const destPath = resolvePath(params.destination);
     const allowed = checkPathAllowed(destPath, 'write');
@@ -29,7 +30,6 @@ export async function handleDownloadFile(params: { url: string; destination: str
     const MAX_RETRIES = 3;
     const UA =
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-    const timeoutMs = getHTTPTimeout() > 0 ? getHTTPTimeout() : 60_000;
     let resp: Response | null = null;
     let lastError = '';
 
@@ -75,7 +75,10 @@ export async function handleDownloadFile(params: { url: string; destination: str
     };
   } catch (err) {
     const errMsg = (err as Error).message;
-    return { success: false, error: errMsg.includes('abort') ? '下载超时 (60s)' : errMsg };
+    return {
+      success: false,
+      error: errMsg.includes('abort') ? `下载超时 (${Math.round(timeoutMs / 1000)}s)` : errMsg,
+    };
   }
 }
 

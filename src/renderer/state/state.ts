@@ -47,8 +47,8 @@ class AppState {
     }
   }
 
-  update(key: string, updater: (old: any) => any): void {
-    const old = this._state[key];
+  update<T = unknown>(key: string, updater: (old: T) => T): void {
+    const old = this._state[key] as T;
     const value = updater(old);
     this._state[key] = value;
     if (!shallowEqual(old, value)) {

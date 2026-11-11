@@ -967,6 +967,7 @@ function extractTags(text: string): string[] {
  * M5: 中文文本无法用空格分词，使用字符级 bigram 相似度
  */
 export function simpleSimilarity(a: string, b: string): number {
+  if (!a || !b) return 0;
   // 判断是否包含中文
   const hasChinese = /[一-鿿]/.test(a) || /[一-鿿]/.test(b);
   
@@ -1223,7 +1224,7 @@ export function isMemoryAvailable(): boolean {
  */
 export async function extractAndSaveMemories(
   messages: Array<{ role: string; content: string }>,
-  api: any,
+  api: OllamaAPI,
   model: string,
   abortSignal?: AbortSignal
 ): Promise<number> {

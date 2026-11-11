@@ -55,6 +55,8 @@ interface MCPServerInstance {
 const servers = new Map<string, MCPServerInstance>();
 /** MCP 请求超时（毫秒），默认 60s，可通过 IPC 设置 */
 let MCP_TIMEOUT = 60_000;
+/** 单条未分帧 JSON-RPC 消息上限，防止异常服务器输出无换行数据耗尽内存 */
+const MAX_MCP_BUFFER = 10 * 1024 * 1024;
 
 /** 设置 MCP 请求超时（毫秒），0=禁用超时 */
 export function setMCPTimeout(ms: number): void {
@@ -102,6 +104,11 @@ function handleResponse(server: MCPServerInstance, response: JSONRPCResponse): v
 
 function processData(server: MCPServerInstance, data: Buffer): void {
   server.buffer += data.toString('utf-8');
+  if (server.buffer.length > MAX_MCP_BUFFER) {
+    sendLog('error', `🔌 MCP [${server.config.name}] 输出超过 ${MAX_MCP_BUFFER} 字符`, '已丢弃未分帧数据');
+    server.buffer = '';
+    return;
+  }
   const lines = server.buffer.split('\n');
   server.buffer = lines.pop() || '';
 
@@ -159,13 +166,15 @@ export async function startServer(config: { name: string; command: string; args:
     proc.on('close', (code) => {
       sendLog(code === 0 ? 'info' : 'warn', `🔌 MCP 关闭: ${config.name}`, `exit code: ${code}`);
       cleanupServer(server);
-      servers.delete(config.name);
+      // 重启同名服务器时，旧进程的 close 事件可能晚于新进程注册；
+      // 只有当前 Map 仍指向旧实例时才删除，避免误删新实例。
+      if (servers.get(config.name) === server) servers.delete(config.name);
     });
 
     proc.on('error', (err) => {
       sendLog('error', `🔌 MCP 启动失败: ${config.name}`, err.message);
       cleanupServer(server);
-      servers.delete(config.name);
+      if (servers.get(config.name) === server) servers.delete(config.name);
     });
 
     // MCP initialize 握手

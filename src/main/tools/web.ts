@@ -17,6 +17,23 @@ import { decodeHTMLEntities, htmlToText, htmlToMarkdown, isBlockedPage, computeR
 
 // run_command / killToolProcess 已迁移至 tools/command.ts
 
+interface SearchResult {
+  title: string;
+  url: string;
+  snippet: string;
+  engine: string;
+  weight?: number;
+  reachable?: boolean;
+  _score?: number;
+  _enhanced?: boolean;
+}
+type SearchToolResult = ToolResult & {
+  results?: SearchResult[];
+  query?: string;
+  _fetched?: Array<{ url: string; title: string; content: string }>;
+  _fetched_count?: number;
+};
+
 /** HTTP 请求超时（毫秒），默认 900s，可通过 IPC 设置 */
 let HTTP_TIMEOUT = 900_000;
 
@@ -306,18 +323,20 @@ export async function handleWebFetch(params: {
         };
       }
 
+      const MAX_BODY_SIZE = 10 * 1024 * 1024; // 10MB
       const contentLength = resp.headers.get('content-length');
-      if (contentLength && parseInt(contentLength, 10) > 10 * 1024 * 1024) {
+      const declaredLength = contentLength ? Number.parseInt(contentLength, 10) : NaN;
+      if (Number.isFinite(declaredLength) && declaredLength > MAX_BODY_SIZE) {
         return {
           success: false,
-          error: `页面过大 (${(parseInt(contentLength, 10) / 1024 / 1024).toFixed(1)}MB)，超过 10MB 限制`,
+          error: `页面过大 (${(declaredLength / 1024 / 1024).toFixed(1)}MB)，超过 10MB 限制`,
         };
       }
 
-      // 无 content-length 头时，流式读取并限制最大体积（防 OOM）
-      const MAX_BODY_SIZE = 10 * 1024 * 1024; // 10MB
+      // 始终优先流式读取并限制实际体积。不能信任 Content-Length：
+      // 恶意/错误服务器可以声明一个很小的长度却返回超大响应。
       let text: string;
-      if (!contentLength && resp.body) {
+      if (resp.body) {
         const reader = resp.body.getReader();
         const chunks: Uint8Array[] = [];
         let totalSize = 0;
@@ -326,21 +345,18 @@ export async function handleWebFetch(params: {
           if (done) break;
           totalSize += value.length;
           if (totalSize > MAX_BODY_SIZE) {
-            reader.cancel();
+            await reader.cancel().catch(() => {});
             return { success: false, error: `页面过大 (超过 10MB)，已中止下载` };
           }
           chunks.push(value);
         }
         const decoder = new TextDecoder();
         text = decoder.decode(Buffer.concat(chunks));
-      } else if (!contentLength) {
-        // 无 body stream 回退，但仍需限制
+      } else {
         text = await resp.text();
         if (text.length > MAX_BODY_SIZE) {
           return { success: false, error: `页面过大 (${(text.length / 1024 / 1024).toFixed(1)}MB)，超过 10MB 限制` };
         }
-      } else {
-        text = await resp.text();
       }
       const isHTML = contentType.includes('html');
       if (isHTML) {
@@ -813,6 +829,7 @@ export async function handleWebSearch(params: {
           engine: string;
           weight: number;
           reachable?: boolean;
+          _enhanced?: boolean;
         }> = [];
         const seenUrls = new Set<string>();
         const engineStats: Record<string, string> = {};
@@ -908,7 +925,7 @@ export async function handleWebSearch(params: {
                   if (fetchResult.success && fetchResult.content) {
                     const text = String(fetchResult.content).replace(/\s+/g, ' ').trim();
                     r.snippet = text.length > 200 ? text.slice(0, 200) + '…' : text;
-                    (r as any)._enhanced = true;
+                    r._enhanced = true;
                   }
                 } catch {
                   /* enhancement is optional */
@@ -933,7 +950,7 @@ export async function handleWebSearch(params: {
     }
 
     // ── 自动抓取前 N 条完整内容 ──
-    if (fetchTop > 0 && result.success && (result as any).results) {
+    if (fetchTop > 0 && result.success && (result as SearchToolResult).results) {
       result = await applyAutoFetch(result, fetchTop, fetchMode);
     }
 
@@ -952,14 +969,15 @@ async function applyAutoFetch(
   fetchTop: number,
   fetchMode: 'sequential' | 'random' = 'sequential',
 ): Promise<ToolResult> {
-  const results = (result as any).results as Array<{ url: string; title: string; snippet: string }> | undefined;
+  const searchResult = result as SearchToolResult;
+  const results = searchResult.results;
   if (!results || results.length === 0) return result;
 
   const count = Math.min(fetchTop, results.length, MAX_AUTO_FETCH);
 
   // ── 相关性过滤：只抓取标题与搜索词至少有部分匹配的结果 ──
   // 从搜索结果中反向获取原始 query（若有）作为过滤依据
-  const searchQuery = ((result as any).query as string) || '';
+  const searchQuery = searchResult.query || '';
   const scoredResults = results.map((r, idx) => {
     const relevance = computeRelevance(searchQuery, r.title, r.snippet);
     return { ...r, _idx: idx, _relevance: relevance };
@@ -1016,7 +1034,8 @@ async function applyAutoFetch(
 
   /** 尝试抓取单条 URL，成功则加入 fetched */
   const tryFetchOne = async (url: string, title: string): Promise<boolean> => {
-    if (fetchedUrls.has(url)) return false;
+    // 已成功抓取过就视为成功，不能计入失败数。
+    if (fetchedUrls.has(url)) return true;
     try {
       const fetchResult = await handleWebFetch({ url, retry: false, max_chars: AUTO_FETCH_MAX_CHARS });
       if (fetchResult.success && fetchResult.content) {
@@ -1034,6 +1053,7 @@ async function applyAutoFetch(
   };
 
   for (const item of fetchList) {
+    if (fetchedUrls.has(item.url)) continue;
     const ok = await tryFetchOne(item.url, item.title);
     if (!ok) {
       failedUrls.add(item.url);
@@ -1051,8 +1071,8 @@ async function applyAutoFetch(
   }
 
   sendLog('success', `⬇️ 自动抓取完成`, `${fetched.length} 条成功 / ${failedUrls.size} 条失败`);
-  (result as any)._fetched = fetched;
-  (result as any)._fetched_count = fetched.length;
+  searchResult._fetched = fetched;
+  searchResult._fetched_count = fetched.length;
   return result;
 }
 

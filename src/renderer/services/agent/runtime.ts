@@ -36,11 +36,33 @@ export function cleanupAbortController(): void {
 }
 
 export const pendingMemoryTimers: ReturnType<typeof setTimeout>[] = [];
+const pendingMemoryControllers: AbortController[] = [];
+
+/**
+ * 安排一次延迟记忆提取。
+ *
+ * 不能直接复用主 Agent 的 AbortController：主循环结束时 cleanupAbortController()
+ * 会中止它，导致正常完成后的记忆提取永远被取消。这里使用独立 controller，
+ * 在新一轮 runAgentLoop 开始时由 clearPendingMemoryTimers() 统一中止，避免旧会话
+ * 的提取污染新会话。
+ */
+export function scheduleMemoryExtraction(callback: (signal: AbortSignal) => void, delayMs = 500): void {
+  const controller = new AbortController();
+  pendingMemoryControllers.push(controller);
+  const timer = setTimeout(() => {
+    if (controller.signal.aborted) return;
+    callback(controller.signal);
+  }, delayMs);
+  pendingMemoryTimers.push(timer);
+}
 
 export function clearPendingMemoryTimers(): void {
   while (pendingMemoryTimers.length > 0) {
     const timer = pendingMemoryTimers.pop();
     if (timer) clearTimeout(timer);
+  }
+  while (pendingMemoryControllers.length > 0) {
+    pendingMemoryControllers.pop()?.abort();
   }
 }
 
