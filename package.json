@@ -1,6 +1,6 @@
 {
   "name": "metona-ollama-desktop",
-  "version": "0.18.2",
+  "version": "0.18.3",
   "description": "Metona Ollama - 本地优先的桌面 AI Agent，支持本地/远程 Ollama 与 Ollama Cloud",
   "main": "dist/main/main.js",
   "desktopName": "metona-ollama",
