@@ -214,8 +214,10 @@ npm start
 | `npm run lint` | ESLint |
 | `npm run format:check` | Prettier |
 | `npm run check:no-temperature` | Guard against sampler regression |
-| `npm run test:coverage` | Coverage |
+| `npm run test:coverage` | Full-repo coverage (all four ≥85%) |
 | `npm run test:e2e` | Playwright Electron E2E |
+| `npm run test:e2e:coverage` | Collect E2E V8 coverage |
+| `npm run coverage:merge` | Merge unit + E2E coverage and re-check thresholds |
 | `npm run dist:win` / `dist:linux` / `dist:mac` | Local packaging |
 
 Stack: Electron 45 · TypeScript 6.0 · Vite 8 · Vitest 5 · `node:sqlite` · zod 4.

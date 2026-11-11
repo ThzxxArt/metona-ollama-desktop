@@ -7,6 +7,7 @@ const hoisted = vi.hoisted(() => ({
   handlers: new Map<string, (...args: unknown[]) => unknown>(),
   exec: vi.fn(),
   send: vi.fn(),
+  ffmpegPath: '/usr/bin/ffmpeg',
 }));
 
 vi.mock('electron', () => ({
@@ -15,7 +16,11 @@ vi.mock('electron', () => ({
 vi.mock('../src/main/window-state.js', () => ({
   mainWindow: { webContents: { id: 1, send: hoisted.send }, isDestroyed: () => false },
 }));
-vi.mock('ffmpeg-static', () => ({ default: '/usr/bin/ffmpeg' }));
+vi.mock('ffmpeg-static', () => ({
+  get default() {
+    return hoisted.ffmpegPath;
+  },
+}));
 vi.mock('child_process', () => ({ execFile: hoisted.exec }));
 
 import { registerMediaIPC } from '../src/main/ipc/media.js';
@@ -40,6 +45,7 @@ beforeEach(() => {
   hoisted.handlers.clear();
   hoisted.exec.mockReset();
   hoisted.send.mockReset();
+  hoisted.ffmpegPath = '/usr/bin/ffmpeg';
   registerMediaIPC();
 });
 
@@ -87,6 +93,40 @@ describe('IPC media', () => {
     expect(result.success).toBe(true);
     expect(result.frames).toHaveLength(2);
     expect(result.videoInfo).toMatchObject({ width: 640, height: 480 });
+  });
+
+  it('ffmpeg 路径兼容 app.asar.unpacked 与空值回退', async () => {
+    hoisted.ffmpegPath = '/app/resources/app.asar/node_modules/ffmpeg-static/ffmpeg';
+    hoisted.exec.mockImplementation((_bin, args, _opts, cb) => {
+      const outPattern = args[args.length - 1] as string;
+      fs.writeFileSync(path.join(path.dirname(outPattern), 'frame_0001.jpg'), Buffer.alloc(300, 1));
+      cb(null, '', '');
+      return { stderr: { on: vi.fn() } };
+    });
+    await invoke('video:extractFrames', video);
+    expect(hoisted.exec.mock.calls[0][0] as string).toContain('app.asar.unpacked');
+
+    hoisted.exec.mockClear();
+    hoisted.ffmpegPath = '';
+    await invoke('video:extractFrames', video);
+    expect(hoisted.exec.mock.calls[0][0]).toBe('ffmpeg');
+  });
+
+  it('无 Duration 时用帧数补时长，并跳过过小帧', async () => {
+    hoisted.exec.mockImplementation((_bin, args, _opts, cb) => {
+      const outPattern = args[args.length - 1] as string;
+      const dir = path.dirname(outPattern);
+      fs.writeFileSync(path.join(dir, 'frame_0001.jpg'), Buffer.alloc(100, 1));
+      fs.writeFileSync(path.join(dir, 'frame_0002.jpg'), Buffer.alloc(300, 1));
+      cb(null, '', '');
+      return { stderr: { on: vi.fn() } };
+    });
+    const result = (await invoke('video:extractFrames', video)) as {
+      frames: unknown[];
+      videoInfo: { duration: number };
+    };
+    expect(result.frames).toHaveLength(1);
+    expect(result.videoInfo.duration).toBe(2);
   });
 
   it('没有帧时返回错误', async () => {

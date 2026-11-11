@@ -229,8 +229,10 @@ npm start
 | `npm run lint` | ESLint（TypeScript + tests） |
 | `npm run format:check` | Prettier 检查 |
 | `npm run check:no-temperature` | 防止 temperature 回归 |
-| `npm run test:coverage` | 覆盖率测试 |
+| `npm run test:coverage` | 全仓单测覆盖率（四项 ≥85%） |
 | `npm run test:e2e` | Playwright Electron E2E（Linux 需 xvfb） |
+| `npm run test:e2e:coverage` | E2E V8 覆盖率采集 |
+| `npm run coverage:merge` | 合并单元 + E2E 覆盖率并复核门槛 |
 | `npm run dist:win` / `dist:linux` / `dist:mac` | 本地打包 |
 
 技术栈：Electron 45 · TypeScript 6.0 · Vite 8 · Vitest 5 · `node:sqlite` · zod 4。详见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) 与 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。

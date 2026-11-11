@@ -1,19 +1,33 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+const coverageEnabled = process.env.METONA_E2E_COVERAGE === '1';
 
 let app: ElectronApplication;
 let page: Page;
 
 test.beforeAll(async () => {
-  app = await electron.launch({ args: ['.'], env: { ...process.env, METONA_E2E: '1' } });
+  const env = { ...process.env, METONA_E2E: '1' };
+  if (coverageEnabled) env.NODE_V8_COVERAGE = resolve('coverage-e2e/main');
+  app = await electron.launch({ args: ['.'], env });
   page = await app.firstWindow();
   page.on('pageerror', (err) => console.error('[pageerror]', err.message));
   page.on('console', (msg) => {
     if (msg.type() === 'error') console.error('[console.error]', msg.text());
   });
   await page.waitForLoadState('domcontentloaded');
+  if (coverageEnabled) {
+    await page.coverage.startJSCoverage({ resetOnNavigation: false, reportAnonymousScripts: true });
+  }
 });
 
 test.afterAll(async () => {
+  if (coverageEnabled) {
+    const entries = await page.coverage.stopJSCoverage();
+    mkdirSync('coverage-e2e', { recursive: true });
+    writeFileSync('coverage-e2e/renderer.json', JSON.stringify(entries));
+  }
   await app.close();
 });
 

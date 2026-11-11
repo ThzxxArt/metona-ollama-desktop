@@ -33,39 +33,30 @@ xvfb-run -a npm run test:e2e
 
 ## 3. 当前基线
 
-- 测试文件：26
-- 通过：345+（2 skipped）
+- 测试文件：75
+- 通过：1615（2 skipped）
 - 跳过：2
-- 覆盖率目标：核心模块 70% 行覆盖
+- 单元覆盖率（全仓 `src/**/*.ts`）：statements 95.03% / branches 85.31% / functions 95.28% / lines 95.89%
+- E2E 合并后覆盖率：statements 98.90% / branches 86.32% / functions 95.90% / lines 99.18%
 
 ## 4. 覆盖率门槛
 
-CI 对**核心逻辑层**强制执行 v8 覆盖率门槛：
+CI 对**整个 `src/**/*.ts`** 强制执行 v8 覆盖率门槛，不排除 UI、Electron 入口或工具层：
 
 ```text
 statements ≥ 85%
 lines      ≥ 85%
 functions  ≥ 85%
-branches   ≥ 80%
+branches   ≥ 85%
 ```
 
-核心逻辑层范围（`vitest.config.ts`）：
+`vitest.config.ts` 的 include 只有 `src/**/*.ts`，exclude 只有 `**/*.d.ts`。任何文件都不能靠排除来抬高覆盖率。
 
-```text
-src/shared/**
-src/main/ollama/**
-src/main/db/**
-src/main/ipc/**
-src/renderer/api/**
-src/renderer/db/**
-src/renderer/services/context/**
-src/renderer/services/tools/**
-src/renderer/features/settings/**
-```
+E2E 覆盖率通过 Playwright `page.coverage` 采集 renderer V8 数据，通过 `NODE_V8_COVERAGE` 采集 Electron main 进程数据；`npm run test:e2e:coverage` 负责采集，`npm run coverage:merge` 负责：
 
-`src/renderer/components/**`、`src/renderer/main.ts`、`src/main/main.ts`、`src/main/preload.ts`、`src/main/browser.ts` 属于 DOM/Electron 入口，由 Playwright E2E 与打包 smoke 覆盖，不进入 v8 单测分母。
-
-当前基线：49 个测试文件，633 passed / 2 skipped；核心逻辑 statements 93.69%、lines 95.49%、functions 98.12%、branches 81.49%。
+1. 用 source map 把 bundle 覆盖率映射回 `src/**/*.ts`；
+2. 以 Vitest 的 statement/branch/function map 为唯一分母，把 E2E 覆盖到的相同源码位置标记为已覆盖（避免 bundle source map 与源码 statement id 不同导致分母翻倍）；
+3. 重新执行四项 85% 门槛并生成 `coverage/merged/`。
 
 ## 5. 新增测试约定
 
@@ -74,6 +65,7 @@ src/renderer/features/settings/**
 - Ollama 集成测试使用本地 mock HTTP server，覆盖 NDJSON、401/404/429、abort、卸载。
 - 工具测试必须断言 `TOOL_DEFINITIONS.length === 18`。
 - 任何新工具合并都要补 schema/action 分支测试。
+- 不允许用 `.skip`、排除文件、降低阈值、`v8 ignore` 或删除测试来达标。
 
 ## 6. CI
 
@@ -85,6 +77,7 @@ src/renderer/features/settings/**
 4. `npm run format:check`
 5. `npm run check:no-temperature`
 6. `npm run typecheck`
-7. `npm run test:coverage`
+7. `npm run test:coverage`（全仓单测门槛）
 8. `npm run build`
-9. E2E（xvfb）
+9. E2E + V8 覆盖率（xvfb）
+10. `npm run coverage:merge`（单元 + E2E 合并门槛）

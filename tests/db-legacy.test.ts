@@ -38,6 +38,22 @@ describe('数据库破坏性升级边界', () => {
     db.close();
   });
 
+  it('marker 存在但旧库 user_version=0 时仍删除，不绕过版本校验', async () => {
+    const dbPath = path.join(tmpDir, 'metona.db');
+    fs.writeFileSync(path.join(tmpDir, 'metona-0.18.schema'), 'schema=180\n');
+    const old = new DatabaseSync(dbPath);
+    old.exec('CREATE TABLE old_stuff(id INTEGER); PRAGMA user_version = 0;');
+    old.close();
+
+    const mod = await import('../src/main/db/sqlite.js');
+    await mod.initDatabase();
+
+    const db = new DatabaseSync(dbPath, { readOnly: true });
+    expect((db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version).toBe(180);
+    expect(db.prepare("SELECT name FROM sqlite_master WHERE name='old_stuff'").all()).toHaveLength(0);
+    db.close();
+  });
+
   it('marker 丢失但 user_version=180 时保留数据库并补 marker', async () => {
     const dbPath = path.join(tmpDir, 'metona.db');
     const existing = new DatabaseSync(dbPath);

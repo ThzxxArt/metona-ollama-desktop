@@ -270,6 +270,19 @@ describe('会话摘要与检查点', () => {
     expect(formatSessionSummariesForContext([])).toBe('');
   });
 
+  it('摘要最多保留 10 条，非数组恢复安全返回，无 assistant 时摘要为空', () => {
+    localStorage.removeItem('metona_session_summaries');
+    for (let i = 0; i < 12; i++) {
+      saveSessionSummary(generateSessionSummary(`goal${i}`, [msg('assistant', `done${i}`)], [], i));
+    }
+    expect(loadSessionSummaries()).toHaveLength(10);
+    restoreSessionSummariesBackup(null as never);
+    expect(loadSessionSummaries()).toHaveLength(10);
+    const empty = generateSessionSummary('goal', [msg('user', 'q')], [], 1);
+    expect(empty.summary).toBe('');
+    expect(formatSessionSummariesForContext([empty])).toContain('goal');
+  });
+
   it('创建检查点并限制数量', () => {
     for (let i = 0; i < 7; i++) createCheckpoint(i, 'THINKING', [msg('user', 'x')], 0, 'goal');
     expect(() => clearCheckpoints()).not.toThrow();

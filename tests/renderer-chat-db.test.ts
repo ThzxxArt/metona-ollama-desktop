@@ -226,4 +226,98 @@ describe('ChatDB 桌面端仓储', () => {
     repo.resetSavedMsgTracking();
     expect(() => repo.resetSavedMsgTracking()).not.toThrow();
   });
+
+  it('无桌面桥时 init 抛错', async () => {
+    delete (window as unknown as { metonaDesktop?: unknown }).metonaDesktop;
+    await expect(new ChatDB().init()).rejects.toThrow('DB bridge 不可用');
+  });
+
+  it('最小消息行与损坏 attachments 安全解析', async () => {
+    db.getSession.mockResolvedValueOnce({
+      id: 's1',
+      title: 't',
+      model: 'm',
+      created_at: 1,
+      updated_at: 2,
+    });
+    db.getMessages.mockResolvedValueOnce([
+      {
+        id: 'm1',
+        session_id: 's1',
+        role: 'user',
+        content: null,
+        thinking: null,
+        images: null,
+        tool_calls: null,
+        tool_name: null,
+        attachments: '{bad',
+        eval_count: null,
+        prompt_eval_count: null,
+        total_duration: null,
+        created_at: 1,
+      },
+    ]);
+    const message = (await new ChatDB().getSession('s1'))!.messages[0];
+    expect(message).toMatchObject({ role: 'user', content: '', images: undefined, toolCalls: undefined });
+  });
+
+  it('importSessions 最小消息不产生可选附件字段', async () => {
+    const repo = new ChatDB();
+    await repo.importSessions([session({ messages: [{ role: 'user', content: 'hi', timestamp: 1 }] })]);
+    const data = db.importSessions.mock.calls.at(-1)?.[0] as {
+      messages: Array<Record<string, unknown>>;
+    };
+    expect(data.messages[0].attachments).toBe('{}');
+  });
+
+  it('同一会话多条消息只建立一次索引', async () => {
+    db.getAllSessionsData.mockResolvedValueOnce({
+      sessions: [
+        {
+          id: 'a',
+          title: 'A',
+          model: 'm',
+          system_prompt: null,
+          parent_id: null,
+          status: 'active',
+          created_at: 1,
+          updated_at: 1,
+        },
+      ],
+      messages: [
+        {
+          id: 'm1',
+          session_id: 'a',
+          role: 'user',
+          content: 'x',
+          thinking: null,
+          images: null,
+          tool_calls: null,
+          tool_name: null,
+          attachments: null,
+          eval_count: null,
+          prompt_eval_count: null,
+          total_duration: null,
+          created_at: 1,
+        },
+        {
+          id: 'm2',
+          session_id: 'a',
+          role: 'assistant',
+          content: 'y',
+          thinking: null,
+          images: null,
+          tool_calls: null,
+          tool_name: null,
+          attachments: null,
+          eval_count: null,
+          prompt_eval_count: null,
+          total_duration: null,
+          created_at: 2,
+        },
+      ],
+    });
+    const sessions = await new ChatDB().getAllSessions();
+    expect(sessions[0].messages).toHaveLength(2);
+  });
 });

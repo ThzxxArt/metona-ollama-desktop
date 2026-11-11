@@ -13,6 +13,7 @@ const hoisted = vi.hoisted(() => ({
   notify: vi.fn(),
   checkPath: vi.fn(() => ({ ok: true })),
   maximized: false,
+  send: vi.fn(),
 }));
 
 vi.mock('electron', () => ({
@@ -35,7 +36,7 @@ vi.mock('electron', () => ({
 
 vi.mock('../src/main/window-state.js', () => ({
   mainWindow: {
-    webContents: { id: 1 },
+    webContents: { id: 1, send: hoisted.send },
     isDestroyed: () => false,
     minimize: vi.fn(),
     maximize: vi.fn(),
@@ -49,6 +50,7 @@ vi.mock('../src/main/utils.js', () => ({ showNotification: hoisted.notify }));
 vi.mock('../src/main/tool-security.js', () => ({ checkPathAllowed: hoisted.checkPath }));
 
 import { registerAppIPC } from '../src/main/ipc/app.js';
+import { sendLog } from '../src/main/ipc/shared.js';
 
 const event = {
   sender: { id: 1, send: vi.fn(), isDestroyed: () => false, getURL: () => 'file:///index.html' },
@@ -164,6 +166,22 @@ describe('IPC app / dialog / fs', () => {
     await expect(invoke('fs:writeFile', path.join(tmpDir, 'a.txt'), 'x')).resolves.toEqual({
       success: false,
       error: 'blocked',
+    });
+  });
+
+  it('sendLog 脱敏并处理 detail 有无', () => {
+    hoisted.send.mockClear();
+    sendLog('info', 'Bearer sk-secret');
+    expect(hoisted.send).toHaveBeenCalledWith('main:log', {
+      level: 'info',
+      message: 'Bearer ***',
+      detail: undefined,
+    });
+    sendLog('warn', 'x', '?token=secret');
+    expect(hoisted.send).toHaveBeenLastCalledWith('main:log', {
+      level: 'warn',
+      message: 'x',
+      detail: '?token=***',
     });
   });
 

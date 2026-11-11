@@ -59,6 +59,13 @@ describe('IPC memory', () => {
     expect(fs.existsSync(p)).toBe(false);
   });
 
+  it('write 无 reason、清空空文件与自动创建工作空间', async () => {
+    await expect(invoke('memory:write', '')).resolves.toEqual({ success: true });
+    hoisted.ws = path.join(tmpDir, 'nested', 'ws');
+    await expect(invoke('memory:write', '# METONA MEMORY\n')).resolves.toEqual({ success: true });
+    expect(fs.existsSync(path.join(hoisted.ws, 'MEMORY.md'))).toBe(true);
+  });
+
   it('write 内容校验失败', async () => {
     await expect(invoke('memory:write', 123)).rejects.toThrow('参数校验失败');
     await expect(invoke('memory:write', 'x'.repeat(6 * 1024 * 1024))).rejects.toThrow('参数校验失败');
@@ -87,6 +94,14 @@ describe('IPC memory', () => {
     expect(result).toMatchObject({ success: true, action: 'recreated' });
     expect(result.backedUp && fs.existsSync(result.backedUp)).toBe(true);
     expect(fs.readFileSync(p, 'utf-8')).toContain('# METONA MEMORY');
+  });
+
+  it('init 空文件与非法 importance 均重建', async () => {
+    const p = path.join(tmpDir, 'MEMORY.md');
+    fs.writeFileSync(p, '');
+    await expect(invoke('memory:init')).resolves.toMatchObject({ success: true, action: 'recreated' });
+    fs.writeFileSync(p, '# METONA MEMORY\n\n## fact | id: mem_20260101_001 | importance: 99 | tags: a\n内容\n');
+    await expect(invoke('memory:init')).resolves.toMatchObject({ success: true, action: 'recreated' });
   });
 
   it('init 工作空间目录不存在时自动创建', async () => {

@@ -13,6 +13,7 @@ const hoisted = vi.hoisted(() => ({
     requestTimeoutMs: 900000,
   },
   hasKey: false,
+  persisted: true,
   client: {
     testConnection: vi.fn(async () => ({ ok: true })),
     listModels: vi.fn(async () => ({ models: [] })),
@@ -43,7 +44,7 @@ vi.mock('../src/main/ollama/secret-store.js', () => ({
   getOllamaSecretStore: () => ({
     set: async (key: string) => {
       hoisted.hasKey = Boolean(key);
-      return { success: true, persisted: true };
+      return { success: true, persisted: hoisted.persisted };
     },
     clear: () => {
       hoisted.hasKey = false;
@@ -69,6 +70,17 @@ function invoke(channel: string, ...args: unknown[]): Promise<unknown> {
 beforeEach(() => {
   hoisted.handlers.clear();
   hoisted.send.mockReset();
+  hoisted.persisted = true;
+  hoisted.hasKey = false;
+  hoisted.settings = {
+    mode: 'local',
+    localUrl: 'http://127.0.0.1:11434',
+    remoteUrl: 'https://ollama.com',
+    remoteKind: 'cloud',
+    contextLength: 131072,
+    remoteAutoUnload: true,
+    requestTimeoutMs: 900000,
+  };
   vi.clearAllMocks();
   registerOllamaIPC();
 });
@@ -86,6 +98,99 @@ describe('IPC ollama', () => {
     await expect(invoke('ollama:key:set', 'sk-test')).resolves.toMatchObject({ success: true, hasApiKey: true });
     await expect(invoke('ollama:key:clear')).resolves.toEqual({ success: true, hasApiKey: false });
     await expect(invoke('ollama:key:set', 123)).rejects.toThrow('参数校验失败');
+  });
+
+  it('key 仅内存保存时仍返回 hasApiKey 与错误提示', async () => {
+    hoisted.persisted = false;
+    const result = (await invoke('ollama:key:set', 'sk-memory')) as {
+      success: boolean;
+      hasApiKey: boolean;
+      error?: string;
+    };
+    expect(result.success).toBe(true);
+    expect(result.hasApiKey).toBe(true);
+    expect(result.error).toBeUndefined();
+  });
+
+  it('流式 start 未传 streamId 时自动生成，sender 销毁后不发送', async () => {
+    hoisted.client.chatStream.mockResolvedValueOnce(undefined);
+    const generated = (await invoke('ollama:chat:start', { model: 'qwen3', messages: [] })) as {
+      streamId: string;
+    };
+    expect(generated.streamId).toMatch(/^[0-9a-f-]{36}$/);
+
+    const destroyedEvent = {
+      sender: { id: 1, send: hoisted.send, isDestroyed: () => true, getURL: () => 'file:///index.html' },
+      senderFrame: { url: 'file:///index.html' },
+    };
+    const fn = hoisted.handlers.get('ollama:chat:start')!;
+    hoisted.send.mockClear();
+    await Promise.resolve(fn(destroyedEvent, { model: 'qwen3', messages: [] }, 'destroyed'));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(hoisted.send).not.toHaveBeenCalled();
+  });
+
+  it('远程模式启动日志与 config set 后视图', async () => {
+    hoisted.settings = {
+      ...hoisted.settings,
+      mode: 'remote',
+      remoteUrl: 'https://remote.test',
+      remoteKind: 'self-hosted',
+    } as typeof hoisted.settings;
+    registerOllamaIPC();
+    await expect(invoke('ollama:config:get')).resolves.toMatchObject({ mode: 'remote' });
+    await expect(invoke('ollama:config:set', { remoteKind: 'cloud' })).resolves.toMatchObject({
+      remoteKind: 'cloud',
+    });
+  });
+
+  it('config:set 空参数、embed 两种向量回退与空向量', async () => {
+    await expect(invoke('ollama:config:set')).resolves.toMatchObject({ mode: 'local' });
+    hoisted.client.embed.mockResolvedValueOnce({ embeddings: [[3, 4]] });
+    await expect(invoke('ollama:embed', { model: 'nomic', input: 'hi' })).resolves.toEqual({ embedding: [3, 4] });
+    hoisted.client.embed.mockResolvedValueOnce({});
+    await expect(invoke('ollama:embed', { model: 'nomic', input: 'hi' })).resolves.toEqual({ embedding: [] });
+  });
+
+  it('非流式 requestId 正常完成时清理 activeRequests', async () => {
+    hoisted.client.chat.mockResolvedValueOnce({ message: { content: 'ok' } });
+    await expect(invoke('ollama:chat', { model: 'qwen3', messages: [] }, 'normal-request')).resolves.toEqual({
+      message: { content: 'ok' },
+    });
+    await expect(invoke('ollama:chat:abortRequest', 'normal-request')).resolves.toEqual({ success: false });
+  });
+
+  it('销毁的 sender 不会收到流式 chunk，abort 后排队 chunk 被丢弃', async () => {
+    let onChunk: ((chunk: unknown) => void) | null = null;
+    hoisted.client.chatStream.mockImplementationOnce(
+      (_body: unknown, cb: (chunk: unknown) => void) =>
+        new Promise<void>((resolve) => {
+          onChunk = cb;
+          resolve();
+        }),
+    );
+    const destroyedEvent = {
+      sender: { id: 1, send: hoisted.send, isDestroyed: () => true, getURL: () => 'file:///index.html' },
+      senderFrame: { url: 'file:///index.html' },
+    };
+    const fn = hoisted.handlers.get('ollama:chat:start')!;
+    hoisted.send.mockClear();
+    await Promise.resolve(fn(destroyedEvent, { model: 'qwen3', messages: [] }, 'destroyed-chunk'));
+    onChunk?.({ message: { content: 'x' } });
+    await new Promise((r) => setTimeout(r, 30));
+    expect(hoisted.send).not.toHaveBeenCalled();
+
+    hoisted.client.chatStream.mockImplementationOnce(
+      (_body: unknown, cb: (chunk: unknown) => void, signal: AbortSignal) =>
+        new Promise<void>((resolve) => {
+          cb({ message: { content: 'queued' } });
+          signal.addEventListener('abort', () => resolve(), { once: true });
+        }),
+    );
+    await invoke('ollama:chat:start', { model: 'qwen3', messages: [] }, 'abort-flush');
+    await invoke('ollama:chat:abort', 'abort-flush');
+    await new Promise((r) => setTimeout(r, 30));
+    expect(hoisted.send.mock.calls.some((c) => c[0] === 'ollama:chat:chunk')).toBe(false);
   });
 
   it('test/models/ps/show/embed', async () => {

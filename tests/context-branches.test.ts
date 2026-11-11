@@ -26,6 +26,10 @@ import {
   recordCompressionMetrics,
   predictContextOverflow,
   getCompressionHistory,
+  isAlreadyCompressed,
+  markAsCompressed,
+  recordActualTokens,
+  getAverageCompressionRatio,
 } from '../src/renderer/services/context/tokenizer.js';
 import type { OllamaMessage } from '../src/renderer/types.js';
 
@@ -36,6 +40,32 @@ function msg(role: OllamaMessage['role'], content: string, extra: Partial<Ollama
 beforeEach(() => {
   resetTokenUsageTrend();
   resetTokenBudget();
+});
+
+describe('tokenizer 边界', () => {
+  it('压缩哈希空数组、标记与 LRU 淘汰', () => {
+    expect(isAlreadyCompressed([])).toBe(true);
+    for (let i = 0; i < 101; i++) {
+      markAsCompressed([{ role: 'user', content: `hash-${i}` }]);
+    }
+    expect(isAlreadyCompressed([{ role: 'user', content: 'hash-100' }])).toBe(true);
+  });
+
+  it('趋势超过上限时滚动，并在已溢出时把轮次钳制为 0', () => {
+    for (let i = 0; i < 105; i++) recordTokenUsage(i, 1000);
+    recordTokenUsage(2000, 1000);
+    recordTokenUsage(2100, 1000);
+    recordTokenUsage(2200, 1000);
+    const prediction = predictContextOverflow(1000);
+    expect(prediction.turnsToOverflow).toBe(0);
+    expect(prediction.level).toBe('critical');
+  });
+
+  it('实际 token 校准参数非法时直接返回，空压缩历史平均值为 1', () => {
+    expect(() => recordActualTokens(0, 0, 0, 'm')).not.toThrow();
+    expect(() => recordActualTokens(10, 0, 0, 'm')).not.toThrow();
+    expect(getAverageCompressionRatio()).toBe(1);
+  });
 });
 
 describe('builder 分支', () => {

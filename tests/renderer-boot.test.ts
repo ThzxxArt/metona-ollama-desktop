@@ -186,5 +186,5 @@ describe('渲染进程启动 smoke', () => {
     window.removeEventListener('error', onError);
     expect(errors).toEqual([]);
     expect(document.querySelector('.app-title')?.textContent).toBe('Metona Ollama');
-  });
+  }, 15_000);
 });

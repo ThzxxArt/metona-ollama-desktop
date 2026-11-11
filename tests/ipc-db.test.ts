@@ -146,6 +146,8 @@ describe('IPC db', () => {
     await expect(invoke('db:saveSetting', 'k', 1)).resolves.toEqual({ success: true });
     await expect(invoke('db:saveSettingsBatch', [{ key: 'k', value: 1 }])).resolves.toEqual({ success: true });
     await expect(invoke('db:getSetting', 'k', 'd')).resolves.toBe('d');
+    await expect(invoke('db:getSetting', 'k')).resolves.toBeNull();
+    await expect(invoke('db:getSetting', '', 'fallback')).resolves.toBe('fallback');
     await expect(invoke('db:saveSetting', '', 1)).resolves.toMatchObject({ success: false });
   });
 
@@ -178,6 +180,7 @@ describe('IPC db', () => {
     ).resolves.toEqual({ success: true, id: 'a1' });
     await expect(invoke('db:getToolAudits', 's1')).resolves.toEqual({ success: true, audits: [] });
     await expect(invoke('db:getAllToolAudits', 10)).resolves.toEqual({ success: true, audits: [] });
+    await expect(invoke('db:getAllToolAudits')).resolves.toEqual({ success: true, audits: [] });
     await expect(invoke('db:getMemoryEmbeddings', 'nomic')).resolves.toEqual([]);
     await expect(invoke('db:saveMemoryEmbedding', 'e1', 'nomic', [1, 2])).resolves.toEqual({ success: true });
     await expect(invoke('db:clearMemoryEmbeddings')).resolves.toEqual({ success: true });

@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import {
@@ -37,6 +38,18 @@ describe('tool-security — 路径安全检查', () => {
     expect(checkPathAllowed('/etc/passwd', 'read').ok).toBe(false);
     expect(checkPathAllowed('/usr/bin/node', 'read').ok).toBe(false);
     expect(isSystemBlockedPath('/etc/hosts')).toBe(true);
+  });
+
+  it('符号链接不能逃逸到系统目录', { skip: IS_WIN }, () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'metona-symlink-'));
+    try {
+      const link = path.join(dir, 'escape');
+      fs.symlinkSync('/etc', link);
+      expect(checkPathAllowed(path.join(link, 'passwd'), 'read').ok).toBe(false);
+      expect(checkPathAllowed(path.join(link, 'new-file'), 'write').ok).toBe(false);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('常规路径不在系统黑名单内', () => {

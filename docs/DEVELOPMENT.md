@@ -165,13 +165,20 @@ npm test
 npm run test:coverage
 ```
 
-当前基线：26 个测试文件，345+ 通过，2 跳过。
+当前基线：75 个测试文件，1615 通过，2 跳过；全仓单测覆盖率 statements 95.03% / branches 85.31% / functions 95.28% / lines 95.89%。
 
 E2E：
 
 ```bash
-npm run build
+METONA_COVERAGE=1 npm run build
 xvfb-run -a npm run test:e2e
+```
+
+E2E + 覆盖率合并：
+
+```bash
+xvfb-run -a npm run test:e2e:coverage
+npm run coverage:merge
 ```
 
 ## 10. 打包

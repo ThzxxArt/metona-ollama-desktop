@@ -63,8 +63,54 @@ jobs:
       - name: 安装依赖
         run: npm ci
 
-      - name: 构建
+      - name: 构建（带 source map，供 E2E 覆盖率映射）
         run: npm run build
+        env:
+          METONA_COVERAGE: '1'
 
-      - name: E2E（xvfb）
-        run: xvfb-run -a npm run test:e2e
+      - name: E2E + V8 覆盖率（xvfb）
+        run: xvfb-run -a npm run test:e2e:coverage
+
+      - name: 上传 E2E 覆盖率
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-coverage
+          path: coverage-e2e/
+          retention-days: 7
+
+  coverage-merge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [verify, e2e]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 下载单元覆盖率
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage
+          path: coverage
+
+      - name: 下载 E2E 覆盖率
+        uses: actions/download-artifact@v4
+        with:
+          name: e2e-coverage
+          path: coverage-e2e
+
+      - name: 合并并强制 85% 门槛
+        run: npm run coverage:merge
+
+      - name: 上传合并覆盖率
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-merged
+          path: coverage/merged/
+          retention-days: 7

@@ -4,6 +4,7 @@ dist/
 out/
 build-resources/
 coverage/
+coverage-e2e/
 test-results/
 playwright-report/
 .DS_Store

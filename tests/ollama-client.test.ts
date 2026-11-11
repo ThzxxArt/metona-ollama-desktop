@@ -115,6 +115,23 @@ describe('Ollama 客户端请求与认证', () => {
     await expect(getVersion()).rejects.toMatchObject({ kind: 'server' });
   });
 
+  it('chatStream 在响应头返回前 abort 会中止底层 fetch', async () => {
+    const ac = new AbortController();
+    let requestSignal: AbortSignal | undefined;
+    fetchMock.mockImplementationOnce(
+      (_url: string, init: RequestInit) =>
+        new Promise((_resolve, reject) => {
+          requestSignal = init.signal ?? undefined;
+          init.signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+        }),
+    );
+    const promise = chatStream({ model: 'qwen3', messages: [] }, () => {}, ac.signal);
+    await new Promise((r) => setTimeout(r, 0));
+    ac.abort();
+    await expect(promise).rejects.toMatchObject({ kind: 'aborted' });
+    expect(requestSignal?.aborted).toBe(true);
+  });
+
   it('网络错误映射为 network', async () => {
     fetchMock.mockRejectedValueOnce(new Error('ECONNREFUSED'));
     await expect(getVersion()).rejects.toMatchObject({ kind: 'network' });

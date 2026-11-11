@@ -13,6 +13,7 @@ const hoisted = vi.hoisted(() => ({
   killProcess: vi.fn(),
   setWorkspace: vi.fn(),
   saveSetting: vi.fn(),
+  handlerAvailable: true,
 }));
 
 vi.mock('electron', () => ({
@@ -28,7 +29,9 @@ vi.mock('../src/main/tool-handlers.js', () => ({
   handleRunCommand: hoisted.runCommand,
   killToolProcess: hoisted.killTool,
 }));
-vi.mock('../src/main/tool-dispatch.js', () => ({ getToolHandler: () => hoisted.handler }));
+vi.mock('../src/main/tool-dispatch.js', () => ({
+  getToolHandler: () => (hoisted.handlerAvailable ? hoisted.handler : undefined),
+}));
 vi.mock('../src/main/tool-security.js', () => ({
   getAllowedDirs: () => ['/a'],
   getBlockedDirs: () => ['/b'],
@@ -37,6 +40,7 @@ vi.mock('../src/main/tool-security.js', () => ({
 vi.mock('../src/main/tool-handlers-system.js', () => ({ setHTTPTimeout: hoisted.setHttp }));
 vi.mock('../src/main/mcp-manager.js', () => ({ setMCPTimeout: hoisted.setMcp }));
 vi.mock('../src/main/workspace.js', () => ({
+  DEFAULT_WORKSPACE_DIR: '/default-ws',
   getWorkspaceDir: () => '/ws',
   setWorkspaceDir: hoisted.setWorkspace,
   listWorkspaceDir: () => [{ name: 'a' }],
@@ -66,6 +70,7 @@ function fire(channel: string, ...args: unknown[]): void {
 beforeEach(() => {
   hoisted.handlers.clear();
   hoisted.ons.clear();
+  hoisted.handlerAvailable = true;
   vi.clearAllMocks();
   registerToolsIPC();
 });
@@ -81,7 +86,9 @@ describe('IPC tools / workspace', () => {
     ['read_file', { total: 2 }],
     ['read_file', { path: '/a', lines: 1, truncated: true }],
     ['write_file', { path: '/a', bytesWritten: 3, created: true }],
+    ['write_file', { path: '/a', bytesWritten: 3 }],
     ['list_directory', { path: '/a', total: 2, truncated: true }],
+    ['list_directory', { path: '/a', fileCount: 3 }],
     ['search_files', { query: 'q', total_matches: 2, total_files: 1 }],
     ['delete_file', { batch: true, successCount: 1, totalPaths: 2 }],
     ['delete_file', { path: '/a' }],
@@ -101,6 +108,18 @@ describe('IPC tools / workspace', () => {
   ])('summarizeResult 覆盖 %s', async (name, result) => {
     hoisted.handler.mockResolvedValueOnce({ success: true, ...result });
     await expect(invoke('tool:execute', name, {})).resolves.toMatchObject({ success: true });
+  });
+
+  it('未知工具与 workspace 读取处理器缺失返回明确错误', async () => {
+    hoisted.handlerAvailable = false;
+    await expect(invoke('tool:execute', 'unknown_tool', {})).resolves.toEqual({
+      success: false,
+      error: '未知工具: unknown_tool',
+    });
+    await expect(invoke('workspace:readFile', '/tmp/a')).resolves.toEqual({
+      success: false,
+      error: 'read_file 处理器不可用',
+    });
   });
 
   it('tool:execute 处理器失败/异常', async () => {
@@ -128,7 +147,7 @@ describe('IPC tools / workspace', () => {
   });
 
   it('workspace 目录读写', async () => {
-    await expect(invoke('workspace:getDir')).resolves.toEqual({ dir: '/ws', defaultDir: '/ws' });
+    await expect(invoke('workspace:getDir')).resolves.toEqual({ dir: '/ws', defaultDir: '/default-ws' });
     await expect(invoke('workspace:setDir', '/new')).resolves.toEqual({ success: true, dir: '/ws' });
     expect(hoisted.setWorkspace).toHaveBeenCalledWith('/new');
     expect(hoisted.saveSetting).toHaveBeenCalledWith('workspaceDir', '/ws');
@@ -137,10 +156,14 @@ describe('IPC tools / workspace', () => {
     await expect(invoke('workspace:readFile', '/tmp/a')).resolves.toMatchObject({ success: true });
   });
 
-  it('workspace 参数校验', async () => {
+  it('workspace 参数校验与设置失败', async () => {
     await expect(invoke('workspace:setDir', '')).rejects.toThrow('参数校验失败');
     await expect(invoke('workspace:listDir', 1)).rejects.toThrow('参数校验失败');
     await expect(invoke('workspace:readFile', '')).rejects.toThrow('参数校验失败');
+    hoisted.setWorkspace.mockImplementationOnce(() => {
+      throw new Error('系统目录');
+    });
+    await expect(invoke('workspace:setDir', '/etc')).resolves.toEqual({ success: false, error: '系统目录' });
   });
 
   it('workspace:exec 转发输出与退出', async () => {
@@ -170,5 +193,7 @@ describe('IPC tools / workspace', () => {
     expect(hoisted.killProcess).toHaveBeenCalledWith('1');
     await expect(invoke('cmd:kill')).resolves.toEqual({ killed: true });
     expect(hoisted.killTool).toHaveBeenCalled();
+    hoisted.killTool.mockReturnValueOnce(false);
+    await expect(invoke('cmd:kill')).resolves.toEqual({ killed: false });
   });
 });
