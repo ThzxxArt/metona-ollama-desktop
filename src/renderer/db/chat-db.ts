@@ -53,6 +53,7 @@ export class ChatDB {
       }),
       eval_count: msg.eval_count || null,
       prompt_eval_count: msg.prompt_eval_count || null,
+      prompt_eval_cached_count: msg.prompt_eval_cached_count || null,
       total_duration: msg.total_duration || null,
       created_at: msg.timestamp
     };
@@ -78,6 +79,7 @@ export class ChatDB {
       images: r.images ? JSON.parse(r.images as string) : undefined,
       eval_count: (r.eval_count as number) || undefined,
       prompt_eval_count: (r.prompt_eval_count as number) || undefined,
+      prompt_eval_cached_count: (r.prompt_eval_cached_count as number) || undefined,
       total_duration: (r.total_duration as number) || undefined,
       toolCalls: r.tool_calls ? JSON.parse(r.tool_calls as string) : undefined,
       ...(att.compressed && { compressed: true as const }),
@@ -213,6 +215,7 @@ export class ChatDB {
         }),
         eval_count: m.eval_count || null,
         prompt_eval_count: m.prompt_eval_count || null,
+        prompt_eval_cached_count: m.prompt_eval_cached_count || null,
         total_duration: m.total_duration || null, created_at: m.timestamp
       }))),
       memories: [],

@@ -515,6 +515,7 @@ export interface MessageRow {
   attachments: string | null;
   eval_count: number | null;
   prompt_eval_count: number | null;
+  prompt_eval_cached_count: number | null;
   total_duration: number | null;
   created_at: number;
 }

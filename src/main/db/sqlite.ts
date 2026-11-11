@@ -53,6 +53,12 @@ function queryAll(
   return rows as Record<string, unknown>[];
 }
 
+function ensureColumn(database: DatabaseSync, table: string, column: string, definition: string): void {
+  const columns = queryAll(database, `PRAGMA table_info(${table})`);
+  if (columns.some((c) => String(c.name) === column)) return;
+  database.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+}
+
 function runTransaction(database: DatabaseSync, fn: () => void): void {
   const isOuter = _transactionDepth === 0;
   const savepoint = `metona_sp_${_transactionDepth}`;
@@ -113,6 +119,7 @@ const SCHEMA_SQL = `
     attachments TEXT,
     eval_count INTEGER,
     prompt_eval_count INTEGER,
+    prompt_eval_cached_count INTEGER,
     total_duration INTEGER,
     created_at INTEGER NOT NULL,
     FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
@@ -261,6 +268,8 @@ export async function initDatabase(): Promise<DatabaseSync> {
   db.exec('PRAGMA foreign_keys = ON');
   db.exec('PRAGMA busy_timeout = 5000');
   db.exec(SCHEMA_SQL);
+  // 0.18.0 开发期新增列：旧 0.18 库没有该列时补齐（不是 0.17 迁移）。
+  ensureColumn(db, 'messages', 'prompt_eval_cached_count', 'INTEGER');
   db.exec('PRAGMA user_version = 180');
 
   try {
@@ -317,6 +326,7 @@ export interface MessageRow {
   attachments: string | null;
   eval_count: number | null;
   prompt_eval_count: number | null;
+  prompt_eval_cached_count: number | null;
   total_duration: number | null;
   created_at: number;
 }
@@ -446,8 +456,8 @@ export function saveMessagesBatch(msgs: MessageRow[]): number {
   const d = getDb();
   const stmt = prepared(
     d,
-    `INSERT INTO messages (id, session_id, role, content, thinking, images, tool_calls, tool_name, attachments, eval_count, prompt_eval_count, total_duration, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO messages (id, session_id, role, content, thinking, images, tool_calls, tool_name, attachments, eval_count, prompt_eval_count, prompt_eval_cached_count, total_duration, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       session_id = excluded.session_id,
       role = excluded.role,
@@ -459,6 +469,7 @@ export function saveMessagesBatch(msgs: MessageRow[]): number {
       attachments = excluded.attachments,
       eval_count = excluded.eval_count,
       prompt_eval_count = excluded.prompt_eval_count,
+      prompt_eval_cached_count = excluded.prompt_eval_cached_count,
       total_duration = excluded.total_duration,
       created_at = excluded.created_at`,
   );
@@ -476,6 +487,7 @@ export function saveMessagesBatch(msgs: MessageRow[]): number {
         msg.attachments,
         msg.eval_count,
         msg.prompt_eval_count,
+        msg.prompt_eval_cached_count,
         msg.total_duration,
         msg.created_at,
       );

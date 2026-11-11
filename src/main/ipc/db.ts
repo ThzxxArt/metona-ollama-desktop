@@ -67,6 +67,7 @@ const messageRowSchema: z.ZodType<MessageRow> = z
     attachments: z.string().nullable(),
     eval_count: z.number().int().nullable(),
     prompt_eval_count: z.number().int().nullable(),
+    prompt_eval_cached_count: z.number().int().nullable(),
     total_duration: z.number().int().nullable(),
     created_at: z.number().int(),
   })
