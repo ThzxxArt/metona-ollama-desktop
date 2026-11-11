@@ -167,10 +167,8 @@ export function initConnectionSettings(): void {
   });
   remoteUnloadToggle.addEventListener('change', saveConnection);
 
-  const commitApiKey = async (): Promise<void> => {
+  const persistApiKey = async (key: string): Promise<void> => {
     if (!bridge?.ollama) return;
-    const key = apiKeyInput.value.trim();
-    if (!key) return;
     const result = await bridge.ollama.setApiKey(key);
     apiKeyInput.value = '';
     if (result.success) {
@@ -181,6 +179,12 @@ export function initConnectionSettings(): void {
     }
     const view = await bridge.ollama.getConfig();
     applyConnectionView(view);
+  };
+
+  const commitApiKey = async (): Promise<void> => {
+    const key = apiKeyInput.value.trim();
+    if (!key) return;
+    await persistApiKey(key);
   };
   apiKeyInput.addEventListener('blur', () => void commitApiKey());
   apiKeyInput.addEventListener('keydown', (e) => {
@@ -194,6 +198,10 @@ export function initConnectionSettings(): void {
     apiKeyInput.type = show ? 'text' : 'password';
     (document.querySelector('#btnToggleApiKey') as HTMLButtonElement).textContent = show ? '隐藏' : '显示';
   });
+  document.querySelector('#btnClearApiKey')?.addEventListener('mousedown', () => {
+    // 点击“清除”时先清空输入框，避免 blur 先触发 commitApiKey 把 Key 又写回去
+    apiKeyInput.value = '';
+  });
   document.querySelector('#btnClearApiKey')?.addEventListener('click', async () => {
     if (!bridge?.ollama) return;
     await bridge.ollama.clearApiKey();
@@ -204,12 +212,22 @@ export function initConnectionSettings(): void {
     applyConnectionView(view);
   });
 
-  document.querySelector('#btnTestConnection')?.addEventListener('click', async () => {
+  const testConnectionBtn = document.querySelector('#btnTestConnection') as HTMLButtonElement | null;
+  let pendingTestKey = '';
+  testConnectionBtn?.addEventListener('mousedown', () => {
+    // 点击测试会先触发 Key 输入框 blur；在 blur 清空输入框前捕获用户刚输入的 Key
+    pendingTestKey = apiKeyInput.value.trim();
+  });
+  testConnectionBtn?.addEventListener('click', async () => {
     if (!bridge?.ollama) return;
     const resultEl = document.querySelector('#connectionTestResult') as HTMLElement;
     resultEl.textContent = '测试中…';
-    // 必须先落盘再测试：saveConnection 是 500ms 防抖，直接 await 不会等待真正保存
+    // 先保存当前连接（URL/模式），再提交输入框中的新 Key，最后测试。
+    // 顺序不能反：applyConnectionView 会用已保存地址覆盖输入框。
+    const pendingKey = pendingTestKey || apiKeyInput.value.trim();
+    pendingTestKey = '';
     await saveConnectionNow();
+    if (pendingKey) await persistApiKey(pendingKey);
     const result = await bridge.ollama.test();
     if (result.ok) {
       resultEl.textContent = `✓ Ollama ${result.version || ''} · ${result.modelCount ?? 0} 个模型 · ${result.latencyMs ?? 0}ms`;
