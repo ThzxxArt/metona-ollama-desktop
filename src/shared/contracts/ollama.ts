@@ -1,13 +1,22 @@
 /**
- * Ollama 连接契约（主进程 / preload / 渲染进程共享）
- * 0.18.0 起使用全新设置键，不读取任何旧设置。
+ * LLM 连接契约（主进程 / preload / 渲染进程共享）
+ * 支持 Ollama、OpenAI Chat Completions 兼容、Anthropic Messages 兼容。
  */
 
 export type OllamaMode = 'local' | 'remote';
 export type RemoteKind = 'cloud' | 'self-hosted';
+export type LlmProvider = 'ollama' | 'openai' | 'anthropic';
 
 export const LOCAL_DEFAULT_URL = 'http://127.0.0.1:11434';
 export const REMOTE_CLOUD_URL = 'https://ollama.com';
+export const OPENAI_DEFAULT_URL = 'https://api.openai.com';
+export const ANTHROPIC_DEFAULT_URL = 'https://api.anthropic.com';
+
+export const LLM_PROVIDER_LABELS: Record<LlmProvider, string> = {
+  ollama: 'Ollama',
+  openai: 'OpenAI 兼容',
+  anthropic: 'Anthropic 兼容',
+};
 export const DEFAULT_CONTEXT_LENGTH = 131072;
 export const MIN_CONTEXT_LENGTH = 1024;
 export const MAX_CONTEXT_LENGTH = 4194304;
@@ -15,9 +24,12 @@ export const DEFAULT_REQUEST_TIMEOUT_MS = 900_000;
 export const DEFAULT_UNLOAD_TIMEOUT_MS = 5_000;
 
 export interface OllamaConnectionSettings {
+  provider: LlmProvider;
   mode: OllamaMode;
   localUrl: string;
   remoteUrl: string;
+  openaiUrl: string;
+  anthropicUrl: string;
   remoteKind: RemoteKind;
   contextLength: number;
   remoteAutoUnload: boolean;
@@ -31,9 +43,12 @@ export interface OllamaConnectionView extends OllamaConnectionSettings {
 }
 
 export const DEFAULT_OLLAMA_CONNECTION: OllamaConnectionSettings = {
+  provider: 'ollama',
   mode: 'local',
   localUrl: LOCAL_DEFAULT_URL,
   remoteUrl: REMOTE_CLOUD_URL,
+  openaiUrl: OPENAI_DEFAULT_URL,
+  anthropicUrl: ANTHROPIC_DEFAULT_URL,
   remoteKind: 'cloud',
   contextLength: DEFAULT_CONTEXT_LENGTH,
   remoteAutoUnload: true,
@@ -54,6 +69,7 @@ export interface OllamaChatRequestBody {
 
 export interface OllamaTestResult {
   ok: boolean;
+  provider?: LlmProvider;
   version?: string;
   modelCount?: number;
   latencyMs?: number;
@@ -114,6 +130,7 @@ export interface OllamaPsResponse {
 
 export interface OllamaVersionResponse {
   version: string;
+  provider?: LlmProvider;
 }
 
 export interface OllamaEmbedResponse {
@@ -141,8 +158,8 @@ export interface OllamaStreamDoneEvent {
 export interface OllamaBridgeAPI {
   getConfig: () => Promise<OllamaConnectionView>;
   setConfig: (patch: Partial<OllamaConnectionSettings>) => Promise<OllamaConnectionView>;
-  setApiKey: (key: string) => Promise<{ success: boolean; hasApiKey: boolean; error?: string }>;
-  clearApiKey: () => Promise<{ success: boolean; hasApiKey: boolean }>;
+  setApiKey: (key: string, provider?: LlmProvider) => Promise<{ success: boolean; hasApiKey: boolean; error?: string }>;
+  clearApiKey: (provider?: LlmProvider) => Promise<{ success: boolean; hasApiKey: boolean }>;
   test: () => Promise<OllamaTestResult>;
   models: () => Promise<OllamaModelsResponse>;
   show: (model: string) => Promise<OllamaShowResponse>;

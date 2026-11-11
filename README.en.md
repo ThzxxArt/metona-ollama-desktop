@@ -8,7 +8,7 @@
 
 # Metona Ollama Desktop
 
-**A local-first desktop AI agent: local, self-hosted remote, or Ollama Cloud — with 18 built-in tools and your data kept on your machine.**
+**A local-first desktop AI agent: local/remote/Cloud Ollama plus OpenAI and Anthropic compatible APIs — with 18 built-in tools and your data kept on your machine.**
 
 [English](README.en.md) · [简体中文](README.md)
 
@@ -33,9 +33,10 @@
 
 ## Highlights
 
-- **Three connection modes**: local Ollama, self-hosted remote, and Ollama Cloud.
-- **Optional API key**: every Ollama endpoint sends `Authorization: Bearer` only when a key is configured.
-- **Main-process proxy**: the renderer no longer calls Ollama directly; CORS is gone, `sandbox: true` and CSP are enabled.
+- **Five connection modes**: local Ollama, self-hosted remote, Ollama Cloud, OpenAI Chat Completions compatible, and Anthropic Messages compatible.
+- **Third-party LLM providers**: custom Base URL, model name, and API key; streaming, tool calling, image input, and usage metrics are translated in the main process.
+- **Isolated encrypted keys**: Ollama, OpenAI, and Anthropic keys are stored separately with `safeStorage`; the renderer only sees whether a key is configured.
+- **Main-process proxy**: the renderer no longer calls any LLM directly; CORS is gone, `sandbox: true` and CSP are enabled.
 - **18 built-in tools**: duplicate capabilities merged to reduce model noise and schema tokens.
 - **Plan Mode removed**: no `plan_track`, no plan dialog, no `Ctrl+P`, no hidden branch. The 8-state Agent Loop remains.
 - **Manual context length**: default 128K, range 1K–4M, effective value is `min(setting, model limit)`.
@@ -94,7 +95,7 @@ ollama serve
 ollama pull qwen3:8b
 ```
 
-Open Metona → **Settings → Ollama connection → Local → `http://127.0.0.1:11434`**. No API key is needed.
+Open Metona → **Settings → LLM connection → Ollama → Local → `http://127.0.0.1:11434`**. No API key is needed.
 
 ### Self-hosted remote
 
@@ -102,7 +103,7 @@ Open Metona → **Settings → Ollama connection → Local → `http://127.0.0.1
 OLLAMA_HOST=0.0.0.0:11434 ollama serve
 ```
 
-1. **Settings → Ollama connection**.
+1. **Settings → LLM connection**, provider **Ollama**.
 2. Select **Remote**, enter `https://ollama.example.com`.
 3. Add an API key if the server requires authentication; leave it empty to send no `Authorization` header.
 4. Choose **Self-hosted** and keep “release remote models on new session / exit” if desired.
@@ -117,12 +118,26 @@ OLLAMA_HOST=0.0.0.0:11434 ollama serve
 
 Cloud models are managed by the server: automatic and manual unloading are both disabled.
 
+### OpenAI / Anthropic compatible APIs
+
+1. Open **Settings → LLM connection**.
+2. Choose **OpenAI compatible** or **Anthropic compatible**.
+3. Enter a Base URL such as `https://api.openai.com`, `https://api.deepseek.com`, `https://openrouter.ai/api/v1`, or `https://api.anthropic.com`.
+4. Enter the API key and click **Test connection**.
+5. If the provider does not implement `/v1/models`, enter the model under **Model name (third-party provider)** and click **Use**.
+
+Compatibility:
+
+- OpenAI: `/v1/chat/completions`, `/v1/models`, `/v1/embeddings`; SSE, tools, images, and usage are supported.
+- Anthropic: `/v1/messages`, `/v1/models`; SSE, `tool_use`, thinking, and usage are supported. Embeddings are not available, so semantic memory falls back to keywords.
+- All third-party requests go through the main process; the renderer and Agent Loop only consume normalized chunks.
+
 ## API keys
 
-- Keys live in the main process and are encrypted with Electron `safeStorage`.
+- Ollama, OpenAI, and Anthropic keys live in the main process and are encrypted separately with Electron `safeStorage`.
 - The renderer, DevTools, logs, SQLite, and `.metona` backups never contain the plaintext key.
-- No key → no `Authorization` header. With a key, `/api/tags`, `/api/version`, `/api/ps`, `/api/show`, `/api/chat`, `/api/embed`, and `/api/generate` all send `Bearer`.
-- When a key is already saved, leaving the field empty keeps it; only **Clear** deletes it.
+- No key → no auth header. Ollama and OpenAI use `Authorization: Bearer`; Anthropic uses `x-api-key` (and also accepts Bearer gateways).
+- When a key is already saved, leaving the field empty keeps it; only **Clear** deletes the current provider's key.
 - If secure storage is unavailable, the key is session-only and the UI says so.
 
 ## 18 built-in tools
@@ -248,7 +263,7 @@ GitHub Actions builds Windows / Linux / macOS artifacts, writes `SHA256SUMS.txt`
 <details>
 <summary><strong>Do I still need OLLAMA_ORIGINS?</strong></summary>
 
-No. All Ollama requests go through the main process; the CORS allowlist was removed.
+No. All LLM requests go through the main process; the CORS allowlist was removed.
 </details>
 
 <details>

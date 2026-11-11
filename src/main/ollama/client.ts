@@ -1,7 +1,8 @@
 /**
- * 主进程 Ollama 客户端：所有 Ollama HTTP 请求的唯一出口。
- * - API Key 只在主进程读取，按需注入 Authorization: Bearer
- * - 统一超时、重定向、错误分类、NDJSON 流解析
+ * 主进程 LLM 客户端：Ollama / OpenAI 兼容 / Anthropic 兼容请求的统一出口。
+ * - API Key 只在主进程读取
+ * - Ollama 使用 NDJSON；第三方协议由 src/main/llm/ 适配为统一 chunk
+ * - 统一超时、重定向、错误分类与卸载策略
  */
 
 import {
@@ -15,6 +16,8 @@ import { shouldUnloadModels } from '../../shared/unload-policy.js';
 import { buildOllamaHeaders } from '../../shared/ollama-auth.js';
 import { getOllamaSecretStore } from './secret-store.js';
 import { classifyHttpError, classifyNetworkError, OllamaRequestError } from './errors.js';
+import * as openai from '../llm/openai.js';
+import * as anthropic from '../llm/anthropic.js';
 import type {
   OllamaChatRequestBody,
   OllamaEmbedResponse,
@@ -92,26 +95,49 @@ async function requestJson<T>(
 }
 
 export async function getVersion(): Promise<OllamaVersionResponse> {
-  return requestJson<OllamaVersionResponse>('/api/version');
+  const provider = loadOllamaSettings().provider;
+  if (provider && provider !== 'ollama') {
+    const result = provider === 'openai' ? await openai.testConnection() : await anthropic.testConnection();
+    if (!result.ok) {
+      throw new OllamaRequestError(result.error || `${provider} 连接失败`, result.errorKind || 'unknown');
+    }
+    return { version: result.version || 'compatible', provider };
+  }
+  const version = await requestJson<OllamaVersionResponse>('/api/version');
+  return { ...version, provider: 'ollama' };
 }
 
 export async function listModels(): Promise<OllamaModelsResponse> {
+  const provider = loadOllamaSettings().provider;
+  if (provider === 'openai') return openai.listModels();
+  if (provider === 'anthropic') return anthropic.listModels();
   return requestJson<OllamaModelsResponse>('/api/tags');
 }
 
 export async function psModels(): Promise<OllamaPsResponse> {
+  const provider = loadOllamaSettings().provider;
+  if (provider && provider !== 'ollama') return { models: [] };
   return requestJson<OllamaPsResponse>('/api/ps');
 }
 
 export async function showModel(model: string): Promise<OllamaShowResponse> {
+  const provider = loadOllamaSettings().provider;
+  if (provider === 'openai') return openai.showModel(model);
+  if (provider === 'anthropic') return anthropic.showModel(model);
   return requestJson<OllamaShowResponse>('/api/show', { model });
 }
 
 export async function embed(model: string, input: string): Promise<OllamaEmbedResponse> {
+  const provider = loadOllamaSettings().provider;
+  if (provider === 'openai') return openai.embed(model, input);
+  if (provider === 'anthropic') return anthropic.embed(model, input);
   return requestJson<OllamaEmbedResponse>('/api/embed', { model, input });
 }
 
 export async function chat(body: OllamaChatRequestBody, signal?: AbortSignal): Promise<unknown> {
+  const provider = loadOllamaSettings().provider;
+  if (provider === 'openai') return openai.chat(body, signal);
+  if (provider === 'anthropic') return anthropic.chat(body, signal);
   return requestJson(
     '/api/chat',
     { ...body, stream: false },
@@ -128,21 +154,26 @@ export async function generate(
 }
 
 export async function testConnection(): Promise<OllamaTestResult> {
+  const provider = loadOllamaSettings().provider;
+  if (provider === 'openai') return openai.testConnection();
+  if (provider === 'anthropic') return anthropic.testConnection();
+
   const started = Date.now();
   try {
     const version = await getVersion();
     const tags = await listModels();
     return {
       ok: true,
+      provider: 'ollama',
       version: version.version,
       modelCount: Array.isArray(tags.models) ? tags.models.length : 0,
       latencyMs: Date.now() - started,
     };
   } catch (err) {
     if (err instanceof OllamaRequestError) {
-      return { ok: false, error: err.message, errorKind: err.kind };
+      return { ok: false, provider: 'ollama', error: err.message, errorKind: err.kind };
     }
-    return { ok: false, error: (err as Error).message, errorKind: 'unknown' };
+    return { ok: false, provider: 'ollama', error: (err as Error).message, errorKind: 'unknown' };
   }
 }
 
@@ -155,6 +186,9 @@ export async function chatStream(
   onChunk: (chunk: OllamaStreamChunk) => void,
   signal?: AbortSignal,
 ): Promise<void> {
+  const provider = loadOllamaSettings().provider;
+  if (provider === 'openai') return openai.chatStream(body, onChunk, signal);
+  if (provider === 'anthropic') return anthropic.chatStream(body, onChunk, signal);
   if (signal?.aborted) return;
   const response = await request(
     '/api/chat',
@@ -229,6 +263,7 @@ export async function unloadModels(
   options: { manual?: boolean } = {},
 ): Promise<{ success: boolean; unloaded: number; error?: string }> {
   const settings = loadOllamaSettings();
+  if (settings.provider && settings.provider !== 'ollama') return { success: true, unloaded: 0 };
   const effective = { ...settings, remoteKind: getEffectiveRemoteKind(settings) };
   if (!shouldUnloadModels(effective, Boolean(options.manual))) {
     // 自动路径（新建会话 / 退出）对 Cloud 静默跳过；只有用户手动释放才返回错误提示。
@@ -256,6 +291,7 @@ export async function unloadModels(
 /** 退出时卸载：带超时，绝不阻塞退出 */
 export async function unloadModelsOnExit(timeoutMs = 5_000): Promise<void> {
   const settings = loadOllamaSettings();
+  if (settings.provider && settings.provider !== 'ollama') return;
   if (!shouldUnloadModels(settings, false)) return;
   await Promise.race([
     unloadModels().catch(() => undefined),

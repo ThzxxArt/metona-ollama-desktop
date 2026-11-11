@@ -59,10 +59,16 @@ src/
       media.ts          # 视频帧
       shared.ts         # 日志桥
     ollama/
-      config.ts         # 模式 / URL / 上下文 / 持久化
-      secret-store.ts   # safeStorage
-      client.ts         # 请求 / NDJSON / 错误 / 卸载
+      config.ts         # 提供商 / URL / 上下文 / 持久化
+      secret-store.ts   # Ollama / OpenAI / Anthropic Key 分槽 safeStorage
+      client.ts         # 请求 / NDJSON / 第三方适配分发 / 错误 / 卸载
       errors.ts
+    llm/
+      openai.ts         # OpenAI Chat Completions / SSE / tools / embeddings
+      anthropic.ts      # Anthropic Messages / SSE / tool_use / thinking
+      shared.ts         # 消息 / 工具 / 图片 / 认证头转换
+      sse.ts            # SSE 解析
+      transport.ts      # 超时 / 取消 / 错误分类
     db/
       sqlite.ts         # node:sqlite + WAL + 破坏性重建
     tools/
@@ -165,7 +171,7 @@ npm test
 npm run test:coverage
 ```
 
-当前基线：75 个测试文件，1615 通过，2 跳过；全仓单测覆盖率 statements 94.95% / branches 85.19% / functions 95.17% / lines 95.83%。
+当前基线：79 个测试文件，1661 通过，2 跳过；全仓单测覆盖率 statements 94.90% / branches 85.38% / functions 95.01% / lines 95.78%。
 
 E2E：
 

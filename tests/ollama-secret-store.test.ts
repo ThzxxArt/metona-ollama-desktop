@@ -127,4 +127,27 @@ describe('Ollama SecretStore', () => {
     s.clear();
     expect(s.has()).toBe(false);
   });
+
+  it('第三方 provider Key 独立保存、读取与清除', async () => {
+    const s1 = await store();
+    await s1.init();
+    await s1.set('sk-openai', 'openai');
+    await s1.set('sk-anthropic', 'anthropic');
+    expect(fs.existsSync(path.join(tmpDir, 'llm-openai-secret.bin'))).toBe(true);
+    expect(fs.existsSync(path.join(tmpDir, 'llm-anthropic-secret.bin'))).toBe(true);
+    expect(s1.get('openai')).toBe('sk-openai');
+    expect(s1.get('anthropic')).toBe('sk-anthropic');
+    expect(s1.has('ollama')).toBe(false);
+
+    vi.resetModules();
+    const s2 = await store();
+    await s2.init();
+    expect(s2.get('openai')).toBe('sk-openai');
+    expect(s2.get('anthropic')).toBe('sk-anthropic');
+
+    s2.clear('openai');
+    expect(s2.has('openai')).toBe(false);
+    expect(s2.has('anthropic')).toBe(true);
+    expect(fs.existsSync(path.join(tmpDir, 'llm-openai-secret.bin'))).toBe(false);
+  });
 });

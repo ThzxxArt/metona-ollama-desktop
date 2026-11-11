@@ -16,7 +16,7 @@ export class OllamaRequestError extends Error {
   }
 }
 
-export function classifyHttpError(status: number, body: string): OllamaRequestError {
+export function classifyHttpError(status: number, body: string, service = 'Ollama'): OllamaRequestError {
   const detail = body.trim().slice(0, 500);
   switch (true) {
     case status === 401 || status === 403:
@@ -27,20 +27,20 @@ export function classifyHttpError(status: number, body: string): OllamaRequestEr
       return new OllamaRequestError('请求频率过高，请稍后重试', 'rate-limit', status);
     case status >= 500:
       return new OllamaRequestError(
-        `Ollama 服务异常（HTTP ${status}）${detail ? `：${detail}` : ''}`,
+        `${service} 服务异常（HTTP ${status}）${detail ? `：${detail}` : ''}`,
         'server',
         status,
       );
     default:
       return new OllamaRequestError(
-        `Ollama 请求失败（HTTP ${status}）${detail ? `：${detail}` : ''}`,
+        `${service} 请求失败（HTTP ${status}）${detail ? `：${detail}` : ''}`,
         'unknown',
         status,
       );
   }
 }
 
-export function classifyNetworkError(err: unknown, aborted = false): OllamaRequestError {
+export function classifyNetworkError(err: unknown, aborted = false, service = 'Ollama'): OllamaRequestError {
   if (aborted || (err as { name?: string })?.name === 'AbortError') {
     return new OllamaRequestError('请求已取消', 'aborted');
   }
@@ -50,9 +50,9 @@ export function classifyNetworkError(err: unknown, aborted = false): OllamaReque
     return new OllamaRequestError('TLS 证书校验失败，请检查 HTTPS 地址或证书配置', 'tls');
   }
   if (causes.some((c) => /ECONNREFUSED|ENOTFOUND|ENETUNREACH|EHOSTUNREACH|ECONNRESET|ETIMEDOUT/i.test(c))) {
-    return new OllamaRequestError('无法连接 Ollama，请检查地址、网络或代理设置', 'network');
+    return new OllamaRequestError(`无法连接 ${service}，请检查地址、网络或代理设置`, 'network');
   }
-  return new OllamaRequestError(`无法连接 Ollama：${message}`, 'network');
+  return new OllamaRequestError(`无法连接 ${service}：${message}`, 'network');
 }
 
 function collectErrorCodes(err: unknown, depth = 0): string[] {

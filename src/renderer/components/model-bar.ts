@@ -68,12 +68,24 @@ export async function loadModels(): Promise<void> {
     modelSelectEl.innerHTML = '';
 
     if (!data.models || data.models.length === 0) {
-      modelSelectEl.innerHTML = '<option value="">未安装任何模型</option>';
+      const savedModel = state.get<string>('_defaultModel', '');
+      const provider = state.get<{ provider?: string } | null>('connection', null)?.provider;
+      if (savedModel && provider && provider !== 'ollama') {
+        modelSelectEl.innerHTML = '';
+        const option = document.createElement('option');
+        option.value = savedModel;
+        option.textContent = `${savedModel}（自定义）`;
+        modelSelectEl.appendChild(option);
+        modelSelectEl.value = savedModel;
+        await checkModelCapability(savedModel);
+        return;
+      }
+      modelSelectEl.innerHTML = '<option value="">未获取到模型（可在设置中手动填写）</option>';
       badgeThinkEl.style.display = 'none';
       badgeVisionEl.style.display = 'none';
       setThinkAvailable(false);
       setVisionAvailable(false);
-      logWarn('未检测到已安装模型');
+      logWarn('未获取到模型列表');
       return;
     }
 

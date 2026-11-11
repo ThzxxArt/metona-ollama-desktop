@@ -5,9 +5,12 @@ import * as path from 'path';
 
 const hoisted = vi.hoisted(() => ({
   config: {
+    provider: 'ollama' as 'ollama' | 'openai' | 'anthropic',
     mode: 'local' as 'local' | 'remote',
     localUrl: 'http://127.0.0.1:11434',
     remoteUrl: 'https://ollama.com',
+    openaiUrl: 'https://api.openai.com',
+    anthropicUrl: 'https://api.anthropic.com',
     remoteKind: 'cloud' as 'cloud' | 'self-hosted',
     contextLength: 131072,
     remoteAutoUnload: true,
@@ -108,9 +111,12 @@ let initialized = false;
 
 beforeEach(() => {
   hoisted.config = {
+    provider: 'ollama',
     mode: 'local',
     localUrl: 'http://127.0.0.1:11434',
     remoteUrl: 'https://ollama.com',
+    openaiUrl: 'https://api.openai.com',
+    anthropicUrl: 'https://api.anthropic.com',
     remoteKind: 'cloud',
     contextLength: 131072,
     remoteAutoUnload: true,
@@ -165,7 +171,7 @@ describe('设置连接面板', () => {
     el<HTMLInputElement>('inputServerUrl').dispatchEvent(new Event('input'));
     await new Promise((r) => setTimeout(r, 600));
     const patch = bridge.ollama.setConfig.mock.calls.at(-1)?.[0] as Record<string, unknown>;
-    expect(patch).toEqual({ mode: 'local', localUrl: 'http://localhost:1234' });
+    expect(patch).toEqual({ provider: 'ollama', mode: 'local', localUrl: 'http://localhost:1234' });
   });
 
   it('保存 Key、显示/隐藏、清除', async () => {
@@ -324,6 +330,60 @@ describe('设置连接面板', () => {
     el<HTMLInputElement>('inputServerUrl').value = 'http://x';
     el<HTMLInputElement>('inputServerUrl').dispatchEvent(new Event('input'));
     await new Promise((r) => setTimeout(r, 20));
+  });
+});
+
+describe('第三方 LLM 设置', () => {
+  it('切换 OpenAI 兼容保存独立地址并显示第三方字段', async () => {
+    await refreshConnectionSettingsUI();
+    const provider = el<HTMLSelectElement>('selectLlmProvider');
+    provider.value = 'openai';
+    provider.dispatchEvent(new Event('change'));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(el<HTMLInputElement>('inputServerUrl').value).toBe('https://api.openai.com');
+    expect(el<HTMLElement>('remoteKindRow').style.display).toBe('none');
+    expect(el<HTMLElement>('providerModelRow').style.display).toBe('');
+
+    el<HTMLInputElement>('inputServerUrl').value = 'https://api.deepseek.com';
+    el<HTMLInputElement>('inputServerUrl').dispatchEvent(new Event('input'));
+    await new Promise((r) => setTimeout(r, 600));
+    expect(bridge.ollama.setConfig).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: 'openai', openaiUrl: 'https://api.deepseek.com' }),
+    );
+  });
+
+  it('第三方 Key 与清除操作携带 provider', async () => {
+    await refreshConnectionSettingsUI();
+    const provider = el<HTMLSelectElement>('selectLlmProvider');
+    provider.value = 'openai';
+    provider.dispatchEvent(new Event('change'));
+    await new Promise((r) => setTimeout(r, 20));
+
+    const key = el<HTMLInputElement>('inputApiKey');
+    key.value = 'sk-openai';
+    key.dispatchEvent(new Event('blur'));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(bridge.ollama.setApiKey).toHaveBeenCalledWith('sk-openai', 'openai');
+
+    el<HTMLButtonElement>('btnClearApiKey').dispatchEvent(new Event('mousedown'));
+    el<HTMLButtonElement>('btnClearApiKey').click();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(bridge.ollama.clearApiKey).toHaveBeenCalledWith('openai');
+  });
+
+  it('手动模型名会加入下拉框并选中', async () => {
+    await refreshConnectionSettingsUI();
+    const provider = el<HTMLSelectElement>('selectLlmProvider');
+    provider.value = 'anthropic';
+    provider.dispatchEvent(new Event('change'));
+    await new Promise((r) => setTimeout(r, 20));
+
+    const input = el<HTMLInputElement>('inputProviderModel');
+    input.value = 'claude-sonnet-4-5';
+    el<HTMLButtonElement>('btnApplyProviderModel').click();
+    const select = el<HTMLSelectElement>('modelSelect');
+    expect(select.value).toBe('claude-sonnet-4-5');
+    expect(Array.from(select.options).some((option) => option.value === 'claude-sonnet-4-5')).toBe(true);
   });
 });
 

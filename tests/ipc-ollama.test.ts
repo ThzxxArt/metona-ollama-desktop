@@ -100,6 +100,19 @@ describe('IPC ollama', () => {
     await expect(invoke('ollama:key:set', 123)).rejects.toThrow('参数校验失败');
   });
 
+  it('key 支持 provider 参数并拒绝未知 provider', async () => {
+    await expect(invoke('ollama:key:set', 'sk-openai', 'openai')).resolves.toMatchObject({
+      success: true,
+      hasApiKey: true,
+    });
+    await expect(invoke('ollama:key:clear', 'anthropic')).resolves.toEqual({
+      success: true,
+      hasApiKey: false,
+    });
+    await expect(invoke('ollama:key:set', 'sk-bad', 'gemini')).rejects.toThrow('参数校验失败');
+    await expect(invoke('ollama:key:clear', 'gemini')).rejects.toThrow('参数校验失败');
+  });
+
   it('key 仅内存保存时仍返回 hasApiKey 与错误提示', async () => {
     hoisted.persisted = false;
     const result = (await invoke('ollama:key:set', 'sk-memory')) as {

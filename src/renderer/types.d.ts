@@ -71,6 +71,7 @@ export interface ModelCaps {
 
 export interface OllamaVersionResponse {
   version: string;
+  provider?: 'ollama' | 'openai' | 'anthropic';
 }
 
 export interface OllamaModelsResponse {
@@ -167,7 +168,7 @@ export interface MetonaDesktopAPI {
   checkUpdate: () => Promise<{ hasUpdate: boolean; current?: string; latest?: string; url?: string; error?: string }>;
   /** 读取应用内置资源（SOUL.md），basename 防路径穿越 */
   readAppResource: (name: string) => Promise<{ success: boolean; content?: string; error?: string }>;
-  /** Ollama 主进程代理（连接 / 认证 / 流式 / 卸载） */
+  /** LLM 主进程代理（Ollama / OpenAI 兼容 / Anthropic 兼容） */
   ollama: OllamaBridgeAPI;
   sys: {
     homeDir: string;

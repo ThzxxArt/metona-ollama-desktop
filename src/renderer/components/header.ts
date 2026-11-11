@@ -5,9 +5,14 @@
 import { state, KEYS } from '../state/state.js';
 import { formatSize } from '../utils/utils.js';
 import { OllamaAPI } from '../api/ollama.js';
+import { LLM_PROVIDER_LABELS, type LlmProvider } from '../../shared/contracts/ollama.js';
 import { logConnection, logError, logDebug, logInfo } from '../services/log-service.js';
 
 let connStatusEl: HTMLElement;
+
+function versionProvider(provider?: LlmProvider): LlmProvider {
+  return provider ?? 'ollama';
+}
 
 export function initHeader(): void {
   connStatusEl = document.querySelector('#connStatus')!;
@@ -22,10 +27,13 @@ export async function checkConnection(): Promise<{ ok: boolean; version?: { vers
 
   try {
     const version = await api.getVersion();
+    const connection = state.get<{ provider?: LlmProvider } | null>('connection', null);
+    const provider = version.provider ?? connection?.provider ?? 'ollama';
+    const label = provider === 'ollama' ? `Ollama v${version.version}` : LLM_PROVIDER_LABELS[provider];
     connStatusEl.className = 'conn-status connected';
-    connStatusEl.title = `已连接 (v${version.version})`;
+    connStatusEl.title = `已连接 (${label})`;
     connStatusEl.querySelector('.status-label')!.textContent = '已连接';
-    logConnection('connected', `Ollama v${version.version}`);
+    logConnection('connected', label);
     return { ok: true, version };
   } catch (err) {
     connStatusEl.className = 'conn-status disconnected';
@@ -42,10 +50,19 @@ export async function updateConnectionInfo(): Promise<void> {
 
   const badge = document.querySelector('#connBadge')!;
   const verEl = document.querySelector('#serverVersion')!;
-  const connection = state.get<{ mode?: string; remoteKind?: string } | null>('connection', null);
-  const modeLabel = connection?.mode === 'remote'
-    ? (connection.remoteKind === 'cloud' ? '云端' : '远程')
-    : '本地';
+  const connection = state.get<{ provider?: LlmProvider; mode?: string; remoteKind?: string } | null>(
+    'connection',
+    null,
+  );
+  const provider = versionProvider(connection?.provider);
+  const modeLabel =
+    provider !== 'ollama'
+      ? LLM_PROVIDER_LABELS[provider]
+      : connection?.mode === 'remote'
+        ? connection.remoteKind === 'cloud'
+          ? '云端'
+          : '远程'
+        : '本地';
 
   badge.textContent = '检测中...';
   badge.className = 'status-badge warning';
@@ -55,8 +72,8 @@ export async function updateConnectionInfo(): Promise<void> {
     const version = await api.getVersion();
     badge.textContent = `✓ 已连接 · ${modeLabel}`;
     badge.className = 'status-badge success';
-    verEl.textContent = `v${version.version}`;
-    logInfo(`Ollama 服务器版本: v${version.version}（${modeLabel}）`);
+    verEl.textContent = provider === 'ollama' ? `v${version.version}` : LLM_PROVIDER_LABELS[provider];
+    logInfo(`LLM 服务版本: ${version.version}（${modeLabel}）`);
   } catch (err) {
     badge.textContent = '✗ 未连接';
     badge.className = 'status-badge error';
@@ -77,13 +94,17 @@ export async function updateRunningModels(): Promise<void> {
       logDebug('运行中模型: 0');
       return;
     }
-    container.innerHTML = data.models.map(m => `
+    container.innerHTML = data.models
+      .map(
+        (m) => `
       <div class="running-model">
         <span class="model-name">${m.name}</span>
         <span class="model-vram">${formatSize(m.size_vram || 0)} VRAM${m.context_length ? ` · ${Math.round(m.context_length / 1024)}K ctx` : ''}</span>
       </div>
-    `).join('');
-    logDebug(`运行中模型: ${data.models.length}`, data.models.map(m => m.name).join(', '));
+    `,
+      )
+      .join('');
+    logDebug(`运行中模型: ${data.models.length}`, data.models.map((m) => m.name).join(', '));
   } catch {
     container.innerHTML = '<p class="text-muted">无法获取运行信息</p>';
   }

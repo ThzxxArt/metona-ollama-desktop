@@ -193,8 +193,15 @@ export function initSettingsModal(): void {
       return;
     }
     const connection =
-      state.get<{ mode: 'local' | 'remote'; remoteKind: 'cloud' | 'self-hosted' } | null>('connection', null) ??
-      (await window.metonaDesktop?.ollama?.getConfig());
+      state.get<{
+        provider?: 'ollama' | 'openai' | 'anthropic';
+        mode: 'local' | 'remote';
+        remoteKind: 'cloud' | 'self-hosted';
+      } | null>('connection', null) ?? (await window.metonaDesktop?.ollama?.getConfig());
+    if (connection?.provider && connection.provider !== 'ollama') {
+      showToast('第三方 LLM 提供商不支持本地显存卸载', 'warning');
+      return;
+    }
     if (connection?.mode === 'remote' && connection.remoteKind === 'cloud') {
       showToast('Ollama Cloud 模型由服务端管理，不支持本地卸载', 'warning');
       return;

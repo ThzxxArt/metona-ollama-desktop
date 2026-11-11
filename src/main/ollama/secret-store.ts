@@ -1,22 +1,33 @@
 /**
- * SecretStore：Ollama API Key 使用 Electron safeStorage 加密落盘。
- * 渲染进程永远拿不到明文，只能拿到 hasApiKey。
+ * SecretStore：Ollama / OpenAI / Anthropic API Key 使用 Electron safeStorage 加密落盘。
+ * 每个提供商独立文件，渲染进程永远拿不到明文，只能拿到 hasApiKey。
  * 0.18.0 使用 Electron 45 的异步 safeStorage API。
  */
 
 import { app, safeStorage } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
+import type { LlmProvider } from '../../shared/contracts/ollama.js';
 
 const SECRET_FILE = 'ollama-secret.bin';
+type ThirdPartyProvider = Exclude<LlmProvider, 'ollama'>;
+const PROVIDER_SECRET_FILES: Record<ThirdPartyProvider, string> = {
+  openai: 'llm-openai-secret.bin',
+  anthropic: 'llm-anthropic-secret.bin',
+};
 
 class OllamaSecretStore {
   private _key: string | null = null;
+  private _providerKeys: Partial<Record<ThirdPartyProvider, string>> = {};
   private _loaded = false;
   private _available = false;
 
   private get filePath(): string {
     return path.join(app.getPath('userData'), SECRET_FILE);
+  }
+
+  private providerFilePath(provider: ThirdPartyProvider): string {
+    return path.join(app.getPath('userData'), PROVIDER_SECRET_FILES[provider]);
   }
 
   /** 必须在 app ready 之后调用一次 */
@@ -29,16 +40,25 @@ class OllamaSecretStore {
       this._available = false;
     }
     if (!this._available) return;
+    this._key = await this.loadFrom(this.filePath, true);
+    for (const provider of Object.keys(PROVIDER_SECRET_FILES) as ThirdPartyProvider[]) {
+      const value = await this.loadFrom(this.providerFilePath(provider), true);
+      if (value) this._providerKeys[provider] = value;
+    }
+  }
+
+  private async loadFrom(filePath: string, reEncrypt: boolean): Promise<string | null> {
     try {
-      if (!fs.existsSync(this.filePath)) return;
-      const encrypted = fs.readFileSync(this.filePath);
+      if (!fs.existsSync(filePath)) return null;
+      const encrypted = fs.readFileSync(filePath);
       const decrypted = await safeStorage.decryptStringAsync(encrypted);
-      this._key = decrypted.result || null;
-      if (decrypted.shouldReEncrypt && this._key) {
-        await this.persist(this._key);
+      const value = decrypted.result || null;
+      if (reEncrypt && decrypted.shouldReEncrypt && value) {
+        await this.persistTo(filePath, value);
       }
+      return value;
     } catch {
-      this._key = null;
+      return null;
     }
   }
 
@@ -46,27 +66,34 @@ class OllamaSecretStore {
     return this._available;
   }
 
-  has(): boolean {
-    return Boolean(this._key);
+  has(provider: LlmProvider = 'ollama'): boolean {
+    return Boolean(this.get(provider));
   }
 
-  get(): string | null {
-    return this._key;
+  get(provider: LlmProvider = 'ollama'): string | null {
+    if (provider === 'ollama') return this._key;
+    return this._providerKeys[provider] ?? null;
   }
 
   /** 返回是否真正落盘（safeStorage 不可用时仅内存有效） */
-  async set(key: string): Promise<{ success: boolean; persisted: boolean; error?: string }> {
+  async set(
+    key: string,
+    provider: LlmProvider = 'ollama',
+  ): Promise<{ success: boolean; persisted: boolean; error?: string }> {
     const value = key.trim();
     if (!value) {
-      this.clear();
+      this.clear(provider);
       return { success: true, persisted: false };
     }
-    this._key = value;
+
+    if (provider === 'ollama') this._key = value;
+    else this._providerKeys[provider] = value;
+
     if (!this._available) {
       return { success: true, persisted: false, error: '系统安全存储不可用，Key 仅在本次运行期间有效' };
     }
     try {
-      await this.persist(value);
+      await this.persistTo(provider === 'ollama' ? this.filePath : this.providerFilePath(provider), value);
       return { success: true, persisted: true };
     } catch (err) {
       // Key 已载入内存，本次运行仍可用；只是无法安全落盘。
@@ -78,17 +105,20 @@ class OllamaSecretStore {
     }
   }
 
-  private async persist(value: string): Promise<void> {
+  private async persistTo(filePath: string, value: string): Promise<void> {
     const encrypted = await safeStorage.encryptStringAsync(value);
-    const tmp = `${this.filePath}.tmp`;
+    const tmp = `${filePath}.tmp`;
     fs.writeFileSync(tmp, encrypted, { mode: 0o600 });
-    fs.renameSync(tmp, this.filePath);
+    fs.renameSync(tmp, filePath);
   }
 
-  clear(): void {
-    this._key = null;
+  clear(provider: LlmProvider = 'ollama'): void {
+    if (provider === 'ollama') this._key = null;
+    else delete this._providerKeys[provider];
+
+    const filePath = provider === 'ollama' ? this.filePath : this.providerFilePath(provider);
     try {
-      if (fs.existsSync(this.filePath)) fs.unlinkSync(this.filePath);
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
     } catch {
       // 删除失败不阻塞
     }

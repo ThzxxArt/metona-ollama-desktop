@@ -1,6 +1,6 @@
 /**
- * Ollama API 客户端（渲染进程薄封装）
- * 0.18.0 起所有请求统一走主进程代理，API Key 不进入渲染进程。
+ * LLM API 客户端（渲染进程薄封装）
+ * Ollama / OpenAI 兼容 / Anthropic 兼容请求统一走主进程代理，API Key 不进入渲染进程。
  */
 
 import type {
@@ -41,7 +41,14 @@ export class OllamaAPI {
   async refreshConfig(): Promise<void> {
     try {
       const cfg = await bridge().getConfig();
-      this.baseUrl = cfg.mode === 'local' ? cfg.localUrl : cfg.remoteUrl;
+      this.baseUrl =
+        cfg.provider === 'openai'
+          ? cfg.openaiUrl
+          : cfg.provider === 'anthropic'
+            ? cfg.anthropicUrl
+            : cfg.mode === 'local'
+              ? cfg.localUrl
+              : cfg.remoteUrl;
       this._configLoaded = true;
     } catch {
       // 保持构造时的地址，UI 会显示未连接
@@ -79,13 +86,14 @@ export class OllamaAPI {
   async getVersion(): Promise<OllamaVersionResponse> {
     const result = await this.testConnection();
     if (!result.ok || !result.version) {
-      throw new Error(result.error || '无法连接 Ollama');
+      throw new Error(result.error || '无法连接 LLM 服务');
     }
-    return { version: result.version };
+    return { version: result.version, ...(result.provider && { provider: result.provider }) };
   }
 
   async testConnection(): Promise<{
     ok: boolean;
+    provider?: 'ollama' | 'openai' | 'anthropic';
     version?: string;
     modelCount?: number;
     latencyMs?: number;

@@ -9,15 +9,19 @@ import {
 describe('IPC zod 契约', () => {
   it('连接 patch 接受合法字段', () => {
     const result = connectionPatchSchema.safeParse({
+      provider: 'openai',
       mode: 'remote',
       remoteUrl: 'https://ollama.com',
+      openaiUrl: 'https://api.openai.com',
+      anthropicUrl: 'https://api.anthropic.com',
       contextLength: 131072,
       remoteAutoUnload: true,
     });
     expect(result.success).toBe(true);
   });
 
-  it('连接 patch 拒绝未知字段与越界上下文', () => {
+  it('连接 patch 拒绝未知 provider、未知字段与越界上下文', () => {
+    expect(connectionPatchSchema.safeParse({ provider: 'gemini' }).success).toBe(false);
     expect(connectionPatchSchema.safeParse({ unknown: 1 }).success).toBe(false);
     expect(connectionPatchSchema.safeParse({ contextLength: 1 }).success).toBe(false);
     expect(connectionPatchSchema.safeParse({ contextLength: 99_999_999 }).success).toBe(false);

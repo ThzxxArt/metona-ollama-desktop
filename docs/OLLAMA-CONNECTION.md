@@ -1,30 +1,37 @@
-# Ollama 连接指南（0.18.1）
+# LLM 连接指南（0.18.1）
 
-Metona 支持三种连接：
+Metona 支持五种连接：
 
-| 模式 | 默认地址 | API Key | 自动卸载 |
+| 提供商 / 模式 | 默认地址 | API Key | 自动卸载 |
 |---|---|---|---|
-| 本地 | `http://127.0.0.1:11434` | 不需要 | 新建会话 / 退出时 |
-| 自建远程 | 用户填写 | 可选 | 默认开启，可关闭 |
+| Ollama 本地 | `http://127.0.0.1:11434` | 不需要 | 新建会话 / 退出时 |
+| Ollama 自建远程 | 用户填写 | 可选 | 默认开启，可关闭 |
 | Ollama Cloud | `https://ollama.com` | 必填（通常） | 禁止 |
+| OpenAI 兼容 | `https://api.openai.com` | 按服务要求 | 不适用 |
+| Anthropic 兼容 | `https://api.anthropic.com` | 按服务要求 | 不适用 |
 
 ## 1. 设置面板
 
 ```text
+[ Ollama ▼ ]                    ← 提供商：Ollama / OpenAI 兼容 / Anthropic 兼容
 [ 本地 ▼ ]  [ http://127.0.0.1:11434................ ]
 
-远程模式展开：
+远程 / 第三方模式展开：
 [ API Key（可选）·························· ] [显示] [清除]
 ✓ Ollama Cloud   ○ 自建远程
 ☑ 新建会话 / 退出时释放远程模型（仅自建远程）
 
+第三方提供商额外显示：
+[ 模型名称（第三方提供商）··············· ] [使用]
+
 [ 测试连接 ]  ✓ Ollama 0.40.16 · 42 个模型 · 42ms
 ```
 
-- 下拉框位于地址输入框左侧。
-- 本地模式隐藏 Key 与卸载开关。
+- 提供商下拉框在地址输入框上方；切换后立即保存。
+- Ollama 本地模式隐藏 Key 与卸载开关。
+- OpenAI / Anthropic 兼容模式隐藏 Ollama Cloud / 自建远程选项，只保留 Base URL、API Key 与模型名。
 - Ollama Cloud 禁用自动卸载，并显示“云端模型由服务端管理”提示。
-- 测试连接同时请求 `/api/version` 与 `/api/tags`。
+- 测试连接：Ollama 请求 `/api/version` + `/api/tags`；OpenAI / Anthropic 请求 `/v1/models`。
 
 ## 2. 本地
 
@@ -67,15 +74,39 @@ OLLAMA_HOST=0.0.0.0:11434 ollama serve
 - 手动释放显存会提示“不支持”。
 - `/api/tags` 中带 `remote_model` / `remote_host` 的模型显示 ☁️。
 
-## 5. API Key 规则
+## 5. OpenAI / Anthropic 兼容接口
 
-- 未设置：不发送 `Authorization`。
-- 已设置：所有 Ollama 请求发送 `Bearer`。
+### OpenAI 兼容
+
+- Base URL 示例：`https://api.openai.com`、`https://api.deepseek.com`、`https://openrouter.ai/api/v1`。
+- 实际请求：`POST {base}/v1/chat/completions`；如果 Base URL 已以 `/v1` 结尾，不会重复拼接。
+- 模型列表：`GET {base}/v1/models`。
+- Embeddings：`POST {base}/v1/embeddings`，用于混合记忆检索。
+- 认证：`Authorization: Bearer <API Key>`。
+- 流式输出、`tool_calls`、图片输入、`usage` 用量均会转换为 Metona 内部格式。
+
+### Anthropic 兼容
+
+- Base URL 示例：`https://api.anthropic.com`，或兼容网关地址。
+- 实际请求：`POST {base}/v1/messages`。
+- 模型列表：`GET {base}/v1/models`。
+- 认证：`x-api-key` + `anthropic-version: 2023-06-01`，同时兼容接受 `Authorization: Bearer` 的网关。
+- Anthropic 不提供 embeddings 接口；开启语义记忆时会自动回退关键词检索。
+
+### 手动模型名
+
+如果第三方服务不实现 `/v1/models`，在设置页“模型名称（第三方提供商）”填入模型名并点“使用”，模型会加入顶部下拉框。
+
+## 6. API Key 规则
+
+- Ollama、OpenAI、Anthropic 的 Key 分别加密保存，互不覆盖。
+- 未设置：不发送认证头。
+- 已设置：Ollama / OpenAI 使用 `Bearer`；Anthropic 使用 `x-api-key`（并兼容 `Bearer`）。
 - 已保存时输入框留空 = 保持原值；点“清除”才删除。
 - `safeStorage` 不可用时仅当前会话有效。
 - Key 不进入渲染进程、日志、SQLite、`.metona` 备份。
 
-## 6. 错误排查
+## 7. 错误排查
 
 | 现象 | 排查 |
 |---|---|
@@ -86,7 +117,7 @@ OLLAMA_HOST=0.0.0.0:11434 ollama serve
 | 连接被拒绝 | 服务是否启动、端口、防火墙、代理 |
 | 云模型无法卸载 | 预期行为，云服务由服务端管理 |
 
-## 7. 从 0.17.2 升级
+## 8. 从 0.17.2 升级
 
 0.18.0 不读取旧 `serverUrl`、`temperature`、`numCtx`，也不读取旧数据库。升级后请：
 

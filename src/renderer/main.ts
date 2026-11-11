@@ -10,6 +10,7 @@ import { ChatDB } from './db/chat-db.js';
 import { OllamaAPI } from './api/ollama.js';
 import { state, KEYS } from './state/state.js';
 import { generateId } from './utils/utils.js';
+import { LLM_PROVIDER_LABELS } from '../shared/contracts/ollama.js';
 
 // 组件
 import { initToast, showToast } from './components/toast.js';
@@ -307,16 +308,25 @@ async function init(): Promise<void> {
     // 恢复历史度量数据（localStorage 持久化的 R84 度量历史）
     loadMetricsHistory();
 
-    // ── Ollama 连接：0.18.0 由主进程统一管理（不读取旧 serverUrl）──
+    // ── LLM 连接：由主进程统一管理（Ollama / OpenAI 兼容 / Anthropic 兼容）──
     const connection = await _bridge?.ollama?.getConfig();
     if (connection) {
       state.set('connection', connection);
       state.set(KEYS.NUM_CTX, connection.contextLength);
     }
-    api = new OllamaAPI(connection ? (connection.mode === 'local' ? connection.localUrl : connection.remoteUrl) : '');
+    const initialBaseUrl = connection
+      ? connection.provider === 'openai'
+        ? connection.openaiUrl
+        : connection.provider === 'anthropic'
+          ? connection.anthropicUrl
+          : connection.mode === 'local'
+            ? connection.localUrl
+            : connection.remoteUrl
+      : '';
+    api = new OllamaAPI(initialBaseUrl);
     state.set(KEYS.API, api);
     await api.refreshConfig();
-    logInit(`Ollama 连接: ${connection?.mode === 'remote' ? '远程' : '本地'} · ${api.baseUrl}`);
+    logInit(`LLM 连接: ${connection?.provider ? LLM_PROVIDER_LABELS[connection.provider] : 'Ollama'} · ${api.baseUrl}`);
 
     await checkConnection();
     await loadModels();

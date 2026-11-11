@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeBaseUrl, buildApiUrl, isCloudHost } from '../src/shared/ollama-url.js';
+import {
+  normalizeBaseUrl,
+  buildApiUrl,
+  buildProviderApiUrl,
+  normalizeProviderBaseUrl,
+  isCloudHost,
+} from '../src/shared/ollama-url.js';
 
 describe('normalizeBaseUrl', () => {
   it('去掉尾部斜杠', () => {
@@ -35,6 +41,25 @@ describe('buildApiUrl', () => {
   it('基础地址 + API 路径', () => {
     expect(buildApiUrl('http://127.0.0.1:11434', '/api/chat')).toBe('http://127.0.0.1:11434/api/chat');
     expect(buildApiUrl('https://ollama.com/api', '/api/tags')).toBe('https://ollama.com/api/tags');
+  });
+});
+
+describe('第三方 LLM URL', () => {
+  it('保留 /api 路径并避免重复 /v1', () => {
+    expect(normalizeProviderBaseUrl('https://openrouter.ai/api/v1/')).toBe('https://openrouter.ai/api/v1');
+    expect(normalizeProviderBaseUrl('https://api.openai.com/v1/chat/completions')).toBe('https://api.openai.com/v1');
+    expect(buildProviderApiUrl('https://api.openai.com', '/chat/completions')).toBe(
+      'https://api.openai.com/v1/chat/completions',
+    );
+    expect(buildProviderApiUrl('https://openrouter.ai/api/v1', '/chat/completions')).toBe(
+      'https://openrouter.ai/api/v1/chat/completions',
+    );
+  });
+
+  it('拒绝非法地址', () => {
+    expect(() => normalizeProviderBaseUrl('ftp://example.com')).toThrow('http/https');
+    expect(() => normalizeProviderBaseUrl('https://user:pass@example.com')).toThrow('用户名或密码');
+    expect(() => normalizeProviderBaseUrl('')).toThrow('不能为空');
   });
 });
 

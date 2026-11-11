@@ -42,14 +42,19 @@ test('preload 领域桥可用（IPC 发送方校验未误伤正常调用）', as
   expect(info?.platform).toBeTruthy();
   const config = await page.evaluate(() =>
     (
-      window as unknown as { metonaDesktop?: { ollama?: { getConfig: () => Promise<{ mode: string }> } } }
+      window as unknown as {
+        metonaDesktop?: { ollama?: { getConfig: () => Promise<{ mode: string; provider: string }> } };
+      }
     ).metonaDesktop?.ollama?.getConfig(),
   );
   expect(config?.mode).toMatch(/^(local|remote)$/);
+  expect(config?.provider).toMatch(/^(ollama|openai|anthropic)$/);
 });
 
-test('设置面板包含本地/远程与上下文数字输入', async () => {
+test('设置面板包含提供商、本地/远程与上下文数字输入', async () => {
   await page.click('#btnSettings');
+  await expect(page.locator('#selectLlmProvider')).toBeVisible();
+  await expect(page.locator('#selectLlmProvider option')).toHaveCount(3);
   await expect(page.locator('#selectOllamaMode')).toBeVisible();
   await expect(page.locator('#inputServerUrl')).toBeVisible();
   await expect(page.locator('#inputContextLength')).toHaveAttribute('type', 'number');

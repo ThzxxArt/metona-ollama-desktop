@@ -5,6 +5,7 @@
 
 import { contextBridge, ipcRenderer } from 'electron';
 import type {
+  LlmProvider,
   OllamaBridgeAPI,
   OllamaChatRequestBody,
   OllamaConnectionSettings,
@@ -58,8 +59,14 @@ const ollama: OllamaBridgeAPI = {
   getConfig: (): Promise<OllamaConnectionView> => ipcRenderer.invoke('ollama:config:get'),
   setConfig: (patch: Partial<OllamaConnectionSettings>): Promise<OllamaConnectionView> =>
     ipcRenderer.invoke('ollama:config:set', patch),
-  setApiKey: (key: string) => ipcRenderer.invoke('ollama:key:set', key),
-  clearApiKey: () => ipcRenderer.invoke('ollama:key:clear'),
+  setApiKey: (key: string, provider?: LlmProvider) =>
+    provider
+      ? ipcRenderer.invoke('ollama:key:set', key, provider)
+      : ipcRenderer.invoke('ollama:key:set', key),
+  clearApiKey: (provider?: LlmProvider) =>
+    provider
+      ? ipcRenderer.invoke('ollama:key:clear', provider)
+      : ipcRenderer.invoke('ollama:key:clear'),
   test: (): Promise<OllamaTestResult> => ipcRenderer.invoke('ollama:test'),
   models: (): Promise<OllamaModelsResponse> => ipcRenderer.invoke('ollama:models'),
   show: (model: string): Promise<OllamaShowResponse> => ipcRenderer.invoke('ollama:show', model),

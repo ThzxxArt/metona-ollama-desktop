@@ -1,5 +1,5 @@
 /**
- * Ollama IPC：所有 Ollama 请求的唯一入口。
+ * LLM IPC：Ollama / OpenAI 兼容 / Anthropic 兼容请求的统一入口。
  * 流式响应通过 webContents.send 推送给渲染进程，主进程持有 AbortController。
  */
 
@@ -16,6 +16,7 @@ import {
   chatBodySchema,
   connectionPatchSchema,
   embedInputSchema,
+  llmProviderSchema,
   modelNameSchema,
   streamIdSchema,
 } from '../../shared/schemas/ollama.schema.js';
@@ -48,16 +49,22 @@ export function registerOllamaIPC(): void {
     return getOllamaConnectionView();
   });
 
-  handleTrusted('ollama:key:set', async (_event, key: unknown) => {
+  handleTrusted('ollama:key:set', async (_event, key: unknown, provider?: unknown) => {
     const parsed = parseArgs(apiKeySchema, key);
-    const result = await getOllamaSecretStore().set(parsed);
+    const parsedProvider = provider === undefined ? 'ollama' : parseArgs(llmProviderSchema, provider);
+    const result = await getOllamaSecretStore().set(parsed, parsedProvider);
     // 不允许明文进入日志
-    console.log(`[ollama] API Key 已${result.persisted ? '加密保存' : '载入内存'}`);
-    return { success: result.success, hasApiKey: getOllamaSecretStore().has(), error: result.error };
+    console.log(`[llm] ${parsedProvider} API Key 已${result.persisted ? '加密保存' : '载入内存'}`);
+    return {
+      success: result.success,
+      hasApiKey: getOllamaSecretStore().has(parsedProvider),
+      error: result.error,
+    };
   });
 
-  handleTrusted('ollama:key:clear', () => {
-    getOllamaSecretStore().clear();
+  handleTrusted('ollama:key:clear', (_event, provider?: unknown) => {
+    const parsedProvider = provider === undefined ? 'ollama' : parseArgs(llmProviderSchema, provider);
+    getOllamaSecretStore().clear(parsedProvider);
     return { success: true, hasApiKey: false };
   });
 
@@ -192,8 +199,16 @@ export function registerOllamaIPC(): void {
   // 启动时打印连接摘要（不包含 Key）
   const view = getOllamaConnectionView();
   const settings = loadOllamaSettings();
+  const address =
+    settings.provider === 'openai'
+      ? settings.openaiUrl
+      : settings.provider === 'anthropic'
+        ? settings.anthropicUrl
+        : settings.mode === 'local'
+          ? settings.localUrl
+          : settings.remoteUrl;
   console.log(
-    `[ollama] 模式=${settings.mode} 地址=${settings.mode === 'local' ? settings.localUrl : settings.remoteUrl} 类型=${settings.remoteKind} Key=${view.hasApiKey ? '已配置' : '未配置'}`,
+    `[llm] 提供商=${settings.provider} 模式=${settings.mode} 地址=${address} 类型=${settings.remoteKind} Key=${view.hasApiKey ? '已配置' : '未配置'}`,
   );
 }
 

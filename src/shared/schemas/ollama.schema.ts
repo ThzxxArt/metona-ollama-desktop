@@ -8,12 +8,16 @@ import { MAX_CONTEXT_LENGTH, MIN_CONTEXT_LENGTH } from '../contracts/ollama.js';
 
 export const ollamaModeSchema = z.enum(['local', 'remote']);
 export const remoteKindSchema = z.enum(['cloud', 'self-hosted']);
+export const llmProviderSchema = z.enum(['ollama', 'openai', 'anthropic']);
 
 export const connectionPatchSchema = z
   .object({
+    provider: llmProviderSchema.optional(),
     mode: ollamaModeSchema.optional(),
     localUrl: z.string().max(2048).optional(),
     remoteUrl: z.string().max(2048).optional(),
+    openaiUrl: z.string().max(2048).optional(),
+    anthropicUrl: z.string().max(2048).optional(),
     remoteKind: remoteKindSchema.optional(),
     contextLength: z.number().int().min(MIN_CONTEXT_LENGTH).max(MAX_CONTEXT_LENGTH).optional(),
     remoteAutoUnload: z.boolean().optional(),

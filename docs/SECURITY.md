@@ -17,11 +17,14 @@ Metona 是本地桌面应用。主要威胁：
 
 ## 2. API Key
 
-- 存储：`userData/ollama-secret.bin`，`safeStorage.encryptString`。
+- 存储：Ollama / OpenAI / Anthropic 分别使用独立文件，`safeStorage` 加密。
+  - `userData/ollama-secret.bin`
+  - `userData/llm-openai-secret.bin`
+  - `userData/llm-anthropic-secret.bin`
 - 读取：仅 `src/main/ollama/secret-store.ts`。
-- 使用：`src/main/ollama/client.ts` 统一注入 `Authorization`。
+- 使用：`src/main/ollama/client.ts` 与 `src/main/llm/` 按提供商注入认证头。
 - 不写入：日志、SQLite、`.metona`、导出文件、DevTools。
-- `safeStorage.isEncryptionAvailable() === false`：仅内存有效，UI 提示。
+- `safeStorage` 不可用：仅内存有效，UI 提示。
 
 ## 3. CSP
 

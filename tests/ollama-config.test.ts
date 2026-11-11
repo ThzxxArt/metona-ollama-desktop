@@ -43,12 +43,38 @@ beforeEach(() => {
 describe('Ollama 连接配置', () => {
   it('空设置返回默认值', () => {
     const settings = loadOllamaSettings();
+    expect(settings.provider).toBe('ollama');
     expect(settings.mode).toBe('local');
     expect(settings.localUrl).toBe(LOCAL_DEFAULT_URL);
     expect(settings.remoteUrl).toBe(REMOTE_CLOUD_URL);
+    expect(settings.openaiUrl).toBe('https://api.openai.com');
+    expect(settings.anthropicUrl).toBe('https://api.anthropic.com');
     expect(settings.remoteKind).toBe('cloud');
     expect(settings.contextLength).toBe(DEFAULT_OLLAMA_CONNECTION.contextLength);
     expect(settings.remoteAutoUnload).toBe(true);
+  });
+
+  it('第三方 provider 使用独立地址且不判定为 Cloud', () => {
+    const openai = saveOllamaSettings({
+      provider: 'openai',
+      openaiUrl: 'https://openrouter.ai/api/v1',
+    });
+    expect(openai.provider).toBe('openai');
+    expect(getEffectiveBaseUrl(openai)).toBe('https://openrouter.ai/api/v1');
+    expect(getEffectiveRemoteKind(openai)).toBe('self-hosted');
+    expect(isCloudConnection(openai)).toBe(false);
+
+    const anthropic = saveOllamaSettings({
+      provider: 'anthropic',
+      anthropicUrl: 'https://api.anthropic.com',
+    });
+    expect(anthropic.provider).toBe('anthropic');
+    expect(getEffectiveBaseUrl(anthropic)).toBe('https://api.anthropic.com');
+  });
+
+  it('第三方地址非法时保存抛错', () => {
+    expect(() => saveOllamaSettings({ openaiUrl: 'not a url' })).toThrow('格式无效');
+    expect(() => saveOllamaSettings({ anthropicUrl: 'ftp://example.com' })).toThrow('http/https');
   });
 
   it('自建远程 URL 默认 self-hosted，不误判为 Cloud', () => {

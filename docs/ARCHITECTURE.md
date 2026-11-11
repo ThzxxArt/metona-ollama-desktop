@@ -16,19 +16,25 @@ Main Process
   SecurityService（path / command / net / secrets / sender）
 ```
 
-- **Renderer** 不直接访问 Ollama、Node、文件系统。
+- **Renderer** 不直接访问 LLM、Node、文件系统。
 - **Preload** 只暴露领域 API（`ollama`、`db`、`workspace`、`tool`、`mcp`、`media`），不暴露通用 `ipcRenderer`。
 - **Main** 统一处理网络、数据库、密钥、工具执行与安全校验。
 - **Shared** 存放 contracts 与 zod schemas，主进程与渲染进程共享类型。
 
-## 2. Ollama 连接层
+## 2. LLM 连接层
 
 ```text
 src/main/ollama/
-  config.ts        # 模式 / URL 归一化 / 上下文 / 持久化
-  secret-store.ts  # safeStorage 加密 Key
-  client.ts        # fetch / NDJSON 流 / 错误分类 / 卸载
+  config.ts        # 提供商 / URL 归一化 / 上下文 / 持久化
+  secret-store.ts  # Ollama / OpenAI / Anthropic Key 分槽加密
+  client.ts        # 统一出口：Ollama NDJSON 或第三方适配器
   errors.ts        # 401/403/404/429/5xx/TLS/网络
+src/main/llm/
+  openai.ts        # OpenAI Chat Completions / SSE / tools / embeddings
+  anthropic.ts     # Anthropic Messages / SSE / tool_use / thinking
+  shared.ts        # 消息、工具、图片、认证头转换
+  sse.ts           # SSE 解析
+  transport.ts     # 超时、取消、错误分类
 src/main/ipc/ollama.ts
 ```
 
@@ -67,8 +73,16 @@ Renderer OllamaAPI
   → preload.metonaDesktop.ollama
   → ipcMain 'ollama:*'
   → main/ollama/client.ts
-  → 本地 / 自建 / Cloud
+  → Ollama 本地 / 自建 / Cloud
+     或 main/llm/openai.ts / anthropic.ts
+  → 统一转换为 OllamaStreamChunk 返回渲染层
 ```
+
+第三方协议适配原则：
+
+- 渲染层与 Agent Loop 不感知 OpenAI / Anthropic 差异，只消费统一 chunk。
+- 工具调用、工具结果、图片、thinking、usage 在 `src/main/llm/shared.ts` 中转换。
+- 第三方 API Key 只在主进程读取；渲染进程只拿 `hasApiKey`。
 
 流式：
 

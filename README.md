@@ -8,7 +8,7 @@
 
 # Metona Ollama Desktop
 
-**本地优先的桌面 AI Agent：本地 / 远程 / Ollama Cloud 三种连接，18 个内置工具，数据留在自己手里。**
+**本地优先的桌面 AI Agent：Ollama 本地 / 远程 / Cloud + OpenAI / Anthropic 兼容接口，18 个内置工具，数据留在自己手里。**
 
 [简体中文](README.md) · [English](README.en.md)
 
@@ -35,9 +35,10 @@
 
 ## 功能亮点
 
-- **三种连接模式**：本地 Ollama、自建远程 Ollama、Ollama Cloud，一个下拉框切换。
-- **可选 API Key**：远程模式可填，留空表示保持已保存的 Key；所有 Ollama 接口按需携带 `Authorization: Bearer`。
-- **主进程代理**：渲染进程不再直接 `fetch` Ollama，CORS 白名单已删除，`sandbox: true` + CSP 生效。
+- **五种连接方式**：Ollama 本地、自建远程、Ollama Cloud、OpenAI Chat Completions 兼容、Anthropic Messages 兼容，设置页一个下拉框切换。
+- **第三方 LLM 提供商**：自定义 Base URL、模型名与 API Key；支持流式输出、工具调用、图片输入与用量统计，主进程自动完成 OpenAI / Anthropic 协议转换。
+- **独立加密 Key**：Ollama、OpenAI、Anthropic 的 API Key 分别用 `safeStorage` 加密保存，渲染进程只能看到“是否已配置”。
+- **主进程代理**：渲染进程不再直接 `fetch` 任何 LLM，CORS 白名单已删除，`sandbox: true` + CSP 生效。
 - **18 个内置工具**：合并重复能力，减少模型选择噪声与 schema token。
 - **Plan Mode 已移除**：不再有 `plan_track`、计划确认弹窗、`Ctrl+P` 或隐藏分支；Agent Loop 保持 8 状态机。
 - **上下文长度手动输入**：默认 128K，范围 1K–4M，实际发送 `min(设置值, 模型上限)`。
@@ -97,7 +98,7 @@ ollama serve
 ollama pull qwen3:8b
 
 # 启动 Metona
-# 设置 → Ollama 连接 → 本地 → http://127.0.0.1:11434
+# 设置 → LLM 连接 → Ollama → 本地 → http://127.0.0.1:11434
 ```
 
 本地模式不需要 API Key。Metona 默认连接 `http://127.0.0.1:11434`。
@@ -111,7 +112,7 @@ OLLAMA_HOST=0.0.0.0:11434 ollama serve
 
 在 Metona 中：
 
-1. 打开 **设置 → Ollama 连接**。
+1. 打开 **设置 → LLM 连接**，提供商选择 **Ollama**。
 2. 模式选择 **远程**，地址填写 `https://ollama.example.com`。
 3. 如服务端启用了认证，填写 API Key；留空表示不发送 `Authorization`。
 4. 选择 **自建远程**，按需保留“新建会话 / 退出时释放远程模型”。
@@ -126,12 +127,26 @@ OLLAMA_HOST=0.0.0.0:11434 ollama serve
 
 云模型由服务端管理，**不会执行自动卸载**，也无法手动释放显存。
 
+### 4. OpenAI / Anthropic 兼容接口
+
+1. 打开 **设置 → LLM 连接**。
+2. 提供商选择 **OpenAI 兼容** 或 **Anthropic 兼容**。
+3. 填写 Base URL，例如 `https://api.openai.com`、`https://api.deepseek.com`、`https://openrouter.ai/api/v1` 或 `https://api.anthropic.com`。
+4. 填写 API Key，点击“测试连接”。
+5. 模型列表不可用时，在“模型名称（第三方提供商）”手动填写并点“使用”。
+
+兼容范围：
+
+- OpenAI：`/v1/chat/completions`、`/v1/models`、`/v1/embeddings`，支持 SSE、tools、图片与 usage。
+- Anthropic：`/v1/messages`、`/v1/models`，支持 SSE、tool_use、thinking 与 usage；不提供 embeddings，语义记忆自动回退关键词。
+- 所有第三方请求由主进程代理，渲染进程与 Agent Loop 只消费统一 chunk。
+
 ## 远程连接与 API Key
 
-- API Key 只存在于主进程，使用 Electron `safeStorage` 加密后写入 `userData`。
+- Ollama、OpenAI、Anthropic 的 API Key 分别使用 Electron `safeStorage` 加密后写入 `userData`。
 - 渲染进程、DevTools、日志、SQLite、`.metona` 备份均不包含明文 Key。
-- 未设置 Key 时绝不发送 `Authorization` 头；设置后 `/api/tags`、`/api/version`、`/api/ps`、`/api/show`、`/api/chat`、`/api/embed`、`/api/generate` 全部携带 `Bearer`。
-- 已保存 Key 时，输入框留空表示保持原值；只有点击“清除”才会删除。
+- 未设置 Key 时不发送认证头；Ollama / OpenAI 使用 `Authorization: Bearer`，Anthropic 使用 `x-api-key`（并兼容 `Bearer`）。
+- 已保存 Key 时，输入框留空表示保持原值；只有点击“清除”才会删除当前提供商的 Key。
 - 系统安全存储不可用时，Key 仅当前会话有效，界面会明确提示。
 
 ## 18 个内置工具
@@ -193,7 +208,7 @@ flowchart LR
   Ollama --- Secret
 ```
 
-- **渲染进程**：不直接访问 Ollama、不读 Node 模块；所有网络与文件能力经 preload 白名单。
+- **渲染进程**：不直接访问 LLM、不读 Node 模块；所有网络与文件能力经 preload 白名单。
 - **主进程**：统一 Ollama 代理、`node:sqlite`（WAL）、工具执行、路径/命令/网络/密钥安全。
 - **契约层**：`src/shared/contracts` + `src/shared/schemas`，IPC 入参用 zod 校验，并校验发送方。
 
@@ -250,7 +265,7 @@ GitHub Actions 会构建 Windows / Linux / macOS 产物，生成 `SHA256SUMS.txt
 
 ## Roadmap
 
-- **0.19**：Provider 抽象（OpenAI / Anthropic 兼容协议）、TS 7.1 评估、更多 Ollama speech 能力。
+- **0.19**：TS 7.1 评估、更多 Ollama speech 能力、Provider 配置导入/导出。
 - **后续**：可选签名/公证、增量更新、跨设备同步（需单独隐私设计）。
 
 > 0.18.0 已移除 Plan Mode；后续如需“先规划后执行”，将以普通 Agent 提示词策略实现，不再引入并行状态机。
@@ -270,7 +285,7 @@ GitHub Actions 会构建 Windows / Linux / macOS 产物，生成 `SHA256SUMS.txt
 <details>
 <summary><strong>还需要设置 OLLAMA_ORIGINS 吗？</strong></summary>
 
-不需要。0.18.0 起所有 Ollama 请求由主进程代理，CORS 白名单已删除。
+不需要。0.18.0 起所有 LLM 请求由主进程代理，CORS 白名单已删除。
 </details>
 
 <details>

@@ -424,7 +424,7 @@ describe('model-bar', () => {
   it('loadModels 空列表与加载失败显示占位', async () => {
     state.set(KEYS.API, makeApi({ listModels: vi.fn(async () => ({ models: [] })) }) as never);
     await loadModels();
-    expect(el('#modelSelect').textContent).toContain('未安装任何模型');
+    expect(el('#modelSelect').textContent).toContain('未获取到模型');
     expect(el('#badgeThink').style.display).toBe('none');
     expect(el('#badgeVision').style.display).toBe('none');
 

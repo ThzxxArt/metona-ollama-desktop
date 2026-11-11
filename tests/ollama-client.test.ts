@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 const hoisted = vi.hoisted(() => ({
   key: null as string | null,
   settings: {
+    provider: undefined as 'ollama' | 'openai' | 'anthropic' | undefined,
     mode: 'local' as 'local' | 'remote',
     remoteKind: 'self-hosted' as 'cloud' | 'self-hosted',
     remoteAutoUnload: true,
@@ -22,7 +23,25 @@ vi.mock('../src/main/ollama/config.js', () => ({
 vi.mock('../src/main/ollama/secret-store.js', () => ({
   getOllamaSecretStore: () => ({ get: () => hoisted.key }),
 }));
+vi.mock('../src/main/llm/openai.js', () => ({
+  listModels: vi.fn(async () => ({ models: [{ name: 'gpt-4o' }] })),
+  showModel: vi.fn(async () => ({ capabilities: ['completion', 'tools'] })),
+  chat: vi.fn(async () => ({ message: { content: 'openai' } })),
+  chatStream: vi.fn(async () => undefined),
+  embed: vi.fn(async () => ({ embedding: [9] })),
+  testConnection: vi.fn(async () => ({ ok: true, provider: 'openai' })),
+}));
+vi.mock('../src/main/llm/anthropic.js', () => ({
+  listModels: vi.fn(async () => ({ models: [{ name: 'claude' }] })),
+  showModel: vi.fn(async () => ({ capabilities: ['completion', 'tools'] })),
+  chat: vi.fn(async () => ({ message: { content: 'anthropic' } })),
+  chatStream: vi.fn(async () => undefined),
+  embed: vi.fn(async () => ({ embedding: [] })),
+  testConnection: vi.fn(async () => ({ ok: true, provider: 'anthropic' })),
+}));
 
+import * as openai from '../src/main/llm/openai.js';
+import * as anthropic from '../src/main/llm/anthropic.js';
 import {
   getVersion,
   listModels,
@@ -62,7 +81,7 @@ beforeEach(() => {
 describe('Ollama 客户端请求与认证', () => {
   it('无 Key 时不发送 Authorization', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ version: '0.40.16' }));
-    await expect(getVersion()).resolves.toEqual({ version: '0.40.16' });
+    await expect(getVersion()).resolves.toEqual({ version: '0.40.16', provider: 'ollama' });
     const init = fetchMock.mock.calls[0][1] as RequestInit;
     expect((init.headers as Record<string, string>).Authorization).toBeUndefined();
     expect(fetchMock.mock.calls[0][0]).toBe('http://127.0.0.1:11434/api/version');
@@ -352,5 +371,44 @@ describe('Ollama 模型卸载', () => {
   it('退出卸载失败被吞掉，不影响退出', async () => {
     fetchMock.mockRejectedValueOnce(new Error('ECONNREFUSED'));
     await expect(unloadModelsOnExit(50)).resolves.toBeUndefined();
+  });
+});
+
+describe('第三方 provider 路由', () => {
+  it('OpenAI 兼容请求全部走适配器', async () => {
+    hoisted.settings.provider = 'openai';
+    await expect(listModels()).resolves.toEqual({ models: [{ name: 'gpt-4o' }] });
+    await expect(showModel('gpt-4o')).resolves.toEqual({ capabilities: ['completion', 'tools'] });
+    await expect(chat({ model: 'gpt-4o', messages: [] })).resolves.toEqual({ message: { content: 'openai' } });
+    await chatStream({ model: 'gpt-4o', messages: [] }, () => {});
+    await expect(embed('m', 'x')).resolves.toEqual({ embedding: [9] });
+    await expect(testConnection()).resolves.toMatchObject({ ok: true, provider: 'openai' });
+    await expect(psModels()).resolves.toEqual({ models: [] });
+    await expect(unloadModels()).resolves.toEqual({ success: true, unloaded: 0 });
+    await expect(unloadModelsOnExit(10)).resolves.toBeUndefined();
+    expect(openai.listModels).toHaveBeenCalled();
+    expect(openai.showModel).toHaveBeenCalledWith('gpt-4o');
+    expect(openai.chat).toHaveBeenCalled();
+    expect(openai.chatStream).toHaveBeenCalled();
+    expect(openai.embed).toHaveBeenCalledWith('m', 'x');
+    expect(openai.testConnection).toHaveBeenCalled();
+  });
+
+  it('Anthropic 兼容请求全部走适配器', async () => {
+    hoisted.settings.provider = 'anthropic';
+    await expect(listModels()).resolves.toEqual({ models: [{ name: 'claude' }] });
+    await expect(showModel('claude')).resolves.toEqual({ capabilities: ['completion', 'tools'] });
+    await expect(chat({ model: 'claude', messages: [] })).resolves.toEqual({
+      message: { content: 'anthropic' },
+    });
+    await chatStream({ model: 'claude', messages: [] }, () => {});
+    await expect(embed('m', 'x')).resolves.toEqual({ embedding: [] });
+    await expect(testConnection()).resolves.toMatchObject({ ok: true, provider: 'anthropic' });
+    expect(anthropic.listModels).toHaveBeenCalled();
+    expect(anthropic.showModel).toHaveBeenCalledWith('claude');
+    expect(anthropic.chat).toHaveBeenCalled();
+    expect(anthropic.chatStream).toHaveBeenCalled();
+    expect(anthropic.embed).toHaveBeenCalledWith('m', 'x');
+    expect(anthropic.testConnection).toHaveBeenCalled();
   });
 });
