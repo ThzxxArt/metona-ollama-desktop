@@ -32,8 +32,8 @@
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
     "lint": "eslint src tests --max-warnings 0",
-    "format": "prettier --write \"src/shared/**/*.ts\" \"src/main/ollama/**/*.ts\" \"src/main/ipc/**/*.ts\" \"src/main/db/**/*.ts\" \"src/renderer/api/**/*.ts\" \"src/renderer/components/settings-modal.ts\" \"src/renderer/components/tools-modal.ts\" \"src/renderer/components/model-bar.ts\" \"src/renderer/main.ts\" \"tests/**/*.ts\"",
-    "format:check": "prettier --check \"src/shared/**/*.ts\" \"src/main/ollama/**/*.ts\" \"src/main/ipc/**/*.ts\" \"src/main/db/**/*.ts\" \"src/renderer/api/**/*.ts\" \"src/renderer/components/settings-modal.ts\" \"src/renderer/components/tools-modal.ts\" \"src/renderer/components/model-bar.ts\" \"src/renderer/main.ts\" \"tests/**/*.ts\"",
+    "format": "prettier --write \"src/shared/**/*.ts\" \"src/main/ollama/**/*.ts\" \"src/main/ipc/**/*.ts\" \"src/main/db/**/*.ts\" \"src/main/tools/**/*.ts\" \"src/renderer/api/**/*.ts\" \"src/renderer/services/agent/**/*.ts\" \"src/renderer/services/context/**/*.ts\" \"src/renderer/services/tools/**/*.ts\" \"src/renderer/features/**/*.ts\" \"src/renderer/components/settings-modal.ts\" \"src/renderer/components/tools-modal.ts\" \"src/renderer/components/model-bar.ts\" \"src/renderer/main.ts\" \"tests/**/*.ts\"",
+    "format:check": "prettier --check \"src/shared/**/*.ts\" \"src/main/ollama/**/*.ts\" \"src/main/ipc/**/*.ts\" \"src/main/db/**/*.ts\" \"src/main/tools/**/*.ts\" \"src/renderer/api/**/*.ts\" \"src/renderer/services/agent/**/*.ts\" \"src/renderer/services/context/**/*.ts\" \"src/renderer/services/tools/**/*.ts\" \"src/renderer/features/**/*.ts\" \"src/renderer/components/settings-modal.ts\" \"src/renderer/components/tools-modal.ts\" \"src/renderer/components/model-bar.ts\" \"src/renderer/main.ts\" \"tests/**/*.ts\"",
     "check:no-temperature": "node scripts/check-no-temperature.mjs"
   },
   "build": {

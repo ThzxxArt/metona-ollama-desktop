@@ -51,7 +51,7 @@ frame-ancestors 'none';
 
 ## 5. IPC
 
-- `handleTrusted` 包装所有 Ollama IPC。
+- `handleTrusted` / `onTrusted` 包装所有 IPC 通道（不只 Ollama），统一校验发送方。
 - 发送方必须是主窗口的 `webContents`，URL 必须是 `file://` 或本地开发地址。
 - 入参使用 zod schema；错误归一化；日志脱敏。
 - preload 不暴露通用 `ipcRenderer`。

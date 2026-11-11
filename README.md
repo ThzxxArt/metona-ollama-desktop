@@ -31,14 +31,14 @@
 | 🏠 本地优先 | 🔐 Key 不出主进程 | 🧰 18 个内置工具 | 🧠 长期记忆 |
 |---|---|---|---|
 | 默认连接 `127.0.0.1:11434`，不登录、不上传会话 | 远程 API Key 由 `safeStorage` 加密，渲染进程只能看到“是否已配置” | 文件、命令、Git、搜索、浏览器、子代理，覆盖日常开发任务 | 工作空间 `MEMORY.md` + 可选 embedding 语义检索 |
-| 离线也能用，模型和聊天记录都在本机 | 日志、SQLite、`.metona` 备份均不写入 Key | 工具面板与实际注册表同源，不再出现“面板 33 个、实际 18 个” | 关键词 / IDF + `/api/embed` 余弦相似度混合排序 |
+| 离线也能用，模型和聊天记录都在本机 | Ollama API Key 不写入日志、SQLite、`.metona` 备份 | 工具面板与实际注册表同源，不再出现“面板数量与实际不一致” | 关键词 / IDF + `/api/embed` 余弦相似度混合排序 |
 
 ## 功能亮点
 
 - **三种连接模式**：本地 Ollama、自建远程 Ollama、Ollama Cloud，一个下拉框切换。
 - **可选 API Key**：远程模式可填，留空表示保持已保存的 Key；所有 Ollama 接口按需携带 `Authorization: Bearer`。
 - **主进程代理**：渲染进程不再直接 `fetch` Ollama，CORS 白名单已删除，`sandbox: true` + CSP 生效。
-- **18 个内置工具**：33 → 18，合并重复能力，减少模型选择噪声与 schema token。
+- **18 个内置工具**：合并重复能力，减少模型选择噪声与 schema token。
 - **Plan Mode 已移除**：不再有 `plan_track`、计划确认弹窗、`Ctrl+P` 或隐藏分支；Agent Loop 保持 8 状态机。
 - **上下文长度手动输入**：默认 128K，范围 1K–4M，实际发送 `min(设置值, 模型上限)`。
 - **远程模型卸载**：自建远程默认在新建会话/退出时释放；Ollama Cloud 自动跳过；支持手动“释放显存”。
@@ -153,7 +153,7 @@ OLLAMA_HOST=0.0.0.0:11434 ollama serve
 | 12 | `web_search` | SearXNG / 四引擎搜索 |
 | 13 | `web_fetch` | 网页正文提取，必要时回退浏览器 |
 | 14 | `browser` | `action: open/extract/screenshot/click/type/scroll/wait/evaluate/close` |
-| 15 | `git` | status/log/diff/add/commit/push 等 17 个子命令 |
+| 15 | `git` | status/log/diff/add/commit/push 等 16 个子命令 |
 | 16 | `memory` | search/add/replace/remove/remove_batch/read_all |
 | 17 | `session` | `action: list \| read` |
 | 18 | `spawn_task` | 子代理委派 |

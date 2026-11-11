@@ -29,14 +29,14 @@
 | 🏠 Local-first | 🔐 Keys stay in main | 🧰 18 built-in tools | 🧠 Long-term memory |
 |---|---|---|---|
 | Defaults to `127.0.0.1:11434`; no account, no chat upload | Remote API keys are encrypted with `safeStorage`; the renderer only sees `hasApiKey` | Files, commands, Git, search, browser, sub-agents | Workspace `MEMORY.md` + optional embedding retrieval |
-| Works offline; models and history stay local | Keys never appear in logs, SQLite, or `.metona` backups | Tool panel is generated from the real registry | Keyword/IDF + `/api/embed` cosine similarity |
+| Works offline; models and history stay local | Ollama API keys never appear in logs, SQLite, or `.metona` backups | Tool panel is generated from the real registry | Keyword/IDF + `/api/embed` cosine similarity |
 
 ## Highlights
 
 - **Three connection modes**: local Ollama, self-hosted remote, and Ollama Cloud.
 - **Optional API key**: every Ollama endpoint sends `Authorization: Bearer` only when a key is configured.
 - **Main-process proxy**: the renderer no longer calls Ollama directly; CORS is gone, `sandbox: true` and CSP are enabled.
-- **18 built-in tools**: reduced from 33 by merging duplicate capabilities.
+- **18 built-in tools**: duplicate capabilities merged to reduce model noise and schema tokens.
 - **Plan Mode removed**: no `plan_track`, no plan dialog, no `Ctrl+P`, no hidden branch. The 8-state Agent Loop remains.
 - **Manual context length**: default 128K, range 1K–4M, effective value is `min(setting, model limit)`.
 - **Remote model unloading**: self-hosted remote unloads on new session/exit by default; Ollama Cloud is skipped; manual unload is available.

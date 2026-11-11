@@ -8,6 +8,8 @@
 | 工具 | `browser` 9 action、`file_transfer`、`read_file.paths`、`list_directory.format=tree`、`session.action`、工具总数 === 18 | `tests/tools-consolidated.test.ts` |
 | 契约 | zod IPC schema | `tests/ipc-contract.test.ts` |
 | 回归 | Plan Mode 完全移除、temperature 不存在 | `tests/plan-mode-removed.test.ts`、`check:no-temperature` |
+| 回归 | IPC 发送方校验覆盖全部通道 | `tests/ipc-trust.test.ts` |
+| 回归 | SQLite upsert 不级联删除子表 | `tests/db-safety.test.ts` |
 | E2E | Playwright Electron：设置、连接、工具面板 | `tests/e2e/*.spec.ts` |
 
 ## 2. 常用命令
@@ -31,8 +33,8 @@ xvfb-run -a npm run test:e2e
 
 ## 3. 当前基线
 
-- 测试文件：24+
-- 通过：340+
+- 测试文件：26
+- 通过：345+（2 skipped）
 - 跳过：2
 - 覆盖率目标：核心模块 70% 行覆盖
 

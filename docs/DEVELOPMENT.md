@@ -46,6 +46,7 @@ src/
     schemas/            # zod IPC 校验
   main/
     main.ts             # 主进程入口、CSP、窗口、退出卸载
+    window-state.ts     # 主窗口 / 退出状态（打破 main ↔ ipc / menu / tray 循环）
     ipc.ts              # IPC 注册入口（49 行）
     ipc/
       register.ts       # 发送方校验 / zod / 日志脱敏
@@ -86,6 +87,7 @@ src/
       agent/states/     # init/parsing/executing/observing/reflecting/compressing
       context/          # tokenizer/builder/compressor/metrics/session-summary/checkpoint
       tools/            # catalog/validate/format/analytics
+      workspace-state.ts# 工作空间路径（无 UI 依赖）
       tool-registry.ts  # 18 工具调度（400 行）
       context-manager.ts# 公共导出 barrel
       memory-service.ts # MEMORY.md + 混合检索
@@ -163,7 +165,7 @@ npm test
 npm run test:coverage
 ```
 
-当前基线：24+ 测试文件，340+ 通过，2 跳过。
+当前基线：26 个测试文件，345+ 通过，2 跳过。
 
 E2E：
 

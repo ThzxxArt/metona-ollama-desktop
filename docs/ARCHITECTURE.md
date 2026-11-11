@@ -38,6 +38,7 @@ src/main/ipc/ollama.ts
 src/main/ipc/
   register.ts  app.ts  ollama.ts  tools.ts  db.ts
   memory.ts    mcp.ts  media.ts   shared.ts
+src/main/window-state.ts   # 主窗口 / 退出状态（打破 main ↔ ipc / menu / tray 循环）
 src/main/tools/
   command.ts   # run_command
   web.ts       # web_fetch / web_search
@@ -53,6 +54,7 @@ src/renderer/services/context/
   session-summary.ts  checkpoint.ts  types.ts
 src/renderer/services/tools/
   catalog.ts  validate.ts  format.ts  analytics.ts
+src/renderer/services/workspace-state.ts  # 无 UI 依赖的工作空间路径
 src/renderer/features/settings/
   connection.ts  data.ts
 ```
