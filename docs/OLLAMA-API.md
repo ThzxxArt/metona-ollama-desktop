@@ -1,6 +1,6 @@
-# Ollama API 参考（0.18.1 / Ollama 0.40.16）
+# Ollama API 参考（0.18.2 / Ollama 0.40.16）
 
-> 适用版本：Metona Ollama Desktop 0.18.1  
+> 适用版本：Metona Ollama Desktop 0.18.2  
 > Ollama 基线：**v0.40.16（2026-11-09）**  
 > 官方文档：<https://docs.ollama.com/api>  
 > 认证文档：<https://docs.ollama.com/api/authentication>
