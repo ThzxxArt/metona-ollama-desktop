@@ -2,15 +2,15 @@
 
 ## 1. 分层
 
-| 层级 | 内容 | 位置 |
-|---|---|---|
-| 单元 | URL 归一化、认证头、上下文钳制、卸载策略、备份加解密、18 工具 schema | `tests/*.test.ts` |
-| 工具 | `browser` 9 action、`file_transfer`、`read_file.paths`、`list_directory.format=tree`、`session.action`、工具总数 === 18 | `tests/tools-consolidated.test.ts` |
-| 契约 | zod IPC schema | `tests/ipc-contract.test.ts` |
-| 回归 | Plan Mode 完全移除、temperature 不存在 | `tests/plan-mode-removed.test.ts`、`check:no-temperature` |
-| 回归 | IPC 发送方校验覆盖全部通道 | `tests/ipc-trust.test.ts` |
-| 回归 | SQLite upsert 不级联删除子表 | `tests/db-safety.test.ts` |
-| E2E | Playwright Electron：设置、连接、工具面板 | `tests/e2e/*.spec.ts` |
+| 层级 | 内容                                                                                                                    | 位置                                                      |
+| ---- | ----------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| 单元 | URL 归一化、认证头、上下文钳制、卸载策略、备份加解密、18 工具 schema                                                    | `tests/*.test.ts`                                         |
+| 工具 | `browser` 9 action、`file_transfer`、`read_file.paths`、`list_directory.format=tree`、`session.action`、工具总数 === 18 | `tests/tools-consolidated.test.ts`                        |
+| 契约 | zod IPC schema                                                                                                          | `tests/ipc-contract.test.ts`                              |
+| 回归 | Plan Mode 完全移除、temperature 不存在                                                                                  | `tests/plan-mode-removed.test.ts`、`check:no-temperature` |
+| 回归 | IPC 发送方校验覆盖全部通道                                                                                              | `tests/ipc-trust.test.ts`                                 |
+| 回归 | SQLite upsert 不级联删除子表                                                                                            | `tests/db-safety.test.ts`                                 |
+| E2E  | Playwright Electron：设置、连接、工具面板                                                                               | `tests/e2e/*.spec.ts`                                     |
 
 ## 2. 常用命令
 
@@ -34,10 +34,10 @@ xvfb-run -a npm run test:e2e
 ## 3. 当前基线
 
 - 测试文件：75
-- 通过：1615（2 skipped）
+- 通过：1613（2 skipped）
 - 跳过：2
-- 单元覆盖率（全仓 `src/**/*.ts`）：statements 95.03% / branches 85.31% / functions 95.28% / lines 95.89%
-- E2E 合并后覆盖率：statements 98.90% / branches 86.32% / functions 95.90% / lines 99.18%
+- 单元覆盖率（全仓 `src/**/*.ts`）：statements 95.01% / branches 85.30% / functions 95.22% / lines 95.87%
+- E2E 合并后覆盖率：statements 98.89% / branches 86.30% / functions 95.84% / lines 99.16%
 
 ## 4. 覆盖率门槛
 

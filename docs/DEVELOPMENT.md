@@ -2,15 +2,15 @@
 
 ## 1. 环境
 
-| 工具 | 版本 |
-|---|---|
-| Node.js | 24+ |
-| npm | 12+ |
-| Electron | 45.2.3 |
-| TypeScript | 6.0.3 |
-| Vite | 8.3.7 |
-| Vitest | 5.1.0 |
-| Ollama | 0.40+ |
+| 工具       | 版本   |
+| ---------- | ------ |
+| Node.js    | 24+    |
+| npm        | 12+    |
+| Electron   | 45.2.3 |
+| TypeScript | 6.0.3  |
+| Vite       | 8.3.7  |
+| Vitest     | 5.1.0  |
+| Ollama     | 0.40+  |
 
 ```bash
 git clone https://github.com/ThzxxArt/metona-ollama-desktop.git
@@ -165,7 +165,7 @@ npm test
 npm run test:coverage
 ```
 
-当前基线：75 个测试文件，1615 通过，2 跳过；全仓单测覆盖率 statements 95.03% / branches 85.31% / functions 95.28% / lines 95.89%。
+当前基线：75 个测试文件，1613 通过，2 跳过；全仓单测覆盖率 statements 95.01% / branches 85.30% / functions 95.22% / lines 95.87%。
 
 E2E：
 
