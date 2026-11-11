@@ -86,7 +86,9 @@ function makeResponse(
 const fetchMock = vi.fn();
 let tmpDir: string;
 
-async function advanceUntilSettled<T>(p: Promise<T>, step = 1000, maxSteps = 40): Promise<T> {
+const realSetImmediate = setImmediate;
+
+async function advanceUntilSettled<T>(p: Promise<T>, step = 1000, maxSteps = 80): Promise<T> {
   let result: T | undefined;
   let error: unknown;
   let settled = false;
@@ -102,6 +104,10 @@ async function advanceUntilSettled<T>(p: Promise<T>, step = 1000, maxSteps = 40)
   );
   for (let i = 0; i < maxSteps && !settled; i++) {
     await vi.advanceTimersByTimeAsync(step);
+    // fs.promises 使用线程池，必须让真实 event loop 转一圈，
+    // 否则 fake timers 下 I/O 回调没有机会把 promise settle。
+    await new Promise<void>((resolve) => realSetImmediate(resolve));
+    await Promise.resolve();
   }
   if (!settled) throw new Error('promise did not settle with fake timers');
   if (error) throw error;

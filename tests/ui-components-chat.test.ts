@@ -148,6 +148,7 @@ import { initInputArea, sendMessage } from '../src/renderer/components/input-are
 import { initHistoryModal, openHistoryModal, closeHistoryModal } from '../src/renderer/components/history-modal.js';
 import { initKeybindManager, getKeybindsByCategory } from '../src/renderer/components/keybind-manager.js';
 import { initToast, showToast } from '../src/renderer/components/toast.js';
+import { formatTime } from '../src/renderer/utils/utils.js';
 import { state, KEYS } from '../src/renderer/state/state.js';
 import type { ChatSession, ChatMessage, ToolCall } from '../src/renderer/types.js';
 
@@ -599,7 +600,7 @@ describe('chat-area 流式更新', () => {
     expect(node.querySelectorAll('.think-block').length).toBe(1);
     expect(node.querySelectorAll('.tool-calls-history').length).toBe(1);
     expect(node.querySelector('.model-tag')?.textContent).toBe('qwen2');
-    expect(node.querySelector('.msg-stats')?.textContent).toContain('2023-11-15');
+    expect(node.querySelector('.msg-stats')?.textContent).toContain(formatTime(1700000003000));
   });
 
   it('updateLastAssistantMessage 无占位符时安全返回', () => {
