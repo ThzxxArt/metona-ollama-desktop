@@ -188,8 +188,12 @@ function createMainWindow(): BrowserWindow {
 }
 
 // ── 单实例锁 ──
+let quitCleanupStarted = false;
+let quitReady = false;
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
+  // 第二个实例直接退出，不执行主实例的退出清理（否则会误卸载模型/刷盘）
+  quitReady = true;
   app.quit();
 } else {
   app.on('second-instance', () => {
@@ -234,36 +238,52 @@ app.on('window-all-closed', () => {
   }
 });
 
-let quitCleanupStarted = false;
-
 app.on('before-quit', (event) => {
-  if (quitCleanupStarted) return;
+  if (quitReady) return;
   // before-quit 的 async handler 不会被 Electron 等待；必须 preventDefault，
   // 完成刷盘 / 中止流 / 5s 超时卸载后再主动 quit，否则退出卸载会被进程直接截断。
+  // 清理期间用户再次退出也必须继续拦截，避免第二次 before-quit 直接放行。
   event.preventDefault();
+  if (quitCleanupStarted) return;
   quitCleanupStarted = true;
   setQuitting();
 
   void (async () => {
     try {
-      flushDatabase();
-    } catch {
-      /* 刷盘失败不阻塞退出 */
+      try {
+        flushDatabase();
+      } catch {
+        /* 刷盘失败不阻塞退出 */
+      }
+      try {
+        abortAllOllamaStreams();
+      } catch {
+        /* ignore */
+      }
+      browserClose().catch(() => {});
+      try {
+        stopAllServers();
+      } catch {
+        /* ignore */
+      }
+      try {
+        killAllProcesses();
+      } catch {
+        /* ignore */
+      }
+      try {
+        mainWindow?.webContents.send('app-quit');
+      } catch {
+        /* 窗口已销毁 */
+      }
+      try {
+        await unloadModelsOnExit(5_000);
+      } catch {
+        /* 释放显存失败不影响退出 */
+      }
+    } finally {
+      quitReady = true;
+      app.quit();
     }
-    try {
-      abortAllOllamaStreams();
-    } catch {
-      /* ignore */
-    }
-    browserClose().catch(() => {});
-    stopAllServers();
-    killAllProcesses();
-    mainWindow?.webContents.send('app-quit');
-    try {
-      await unloadModelsOnExit(5_000);
-    } catch {
-      /* 释放显存失败不影响退出 */
-    }
-    app.quit();
   })();
 });
