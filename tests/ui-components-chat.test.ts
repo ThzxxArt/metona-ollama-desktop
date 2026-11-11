@@ -412,13 +412,34 @@ describe('chat-area 渲染', () => {
     const lastAssistant = container.querySelectorAll('.message.assistant')[1] as HTMLElement;
     expect(lastAssistant.querySelector('.msg-video-indicator')?.textContent).toContain('2 帧');
 
-    // 系统提示词卡片点击可折叠
+    // CSP 下不能依赖内联 onclick，折叠全部由事件委托处理
     const header = assistantMsg.querySelector('.system-prompt-header') as HTMLElement;
     const body = assistantMsg.querySelector('.system-prompt-body') as HTMLElement;
+    expect(header.getAttribute('onclick')).toBeNull();
     header.click();
     expect(body.style.display).toBe('');
+    expect(header.getAttribute('aria-expanded')).toBe('true');
     header.click();
     expect(body.style.display).toBe('none');
+    expect(header.getAttribute('aria-expanded')).toBe('false');
+
+    const compressedHeader = compressed.querySelector('.compressed-header') as HTMLElement;
+    compressedHeader.click();
+    expect(compressed.classList.contains('expanded')).toBe(true);
+    compressedHeader.click();
+    expect(compressed.classList.contains('expanded')).toBe(false);
+
+    const thinkHeader = assistantMsg.querySelector('.think-header') as HTMLElement;
+    const thinkContent = thinkHeader.nextElementSibling as HTMLElement;
+    thinkHeader.click();
+    expect(thinkContent.style.display).toBe('none');
+    thinkHeader.click();
+    expect(thinkContent.style.display).toBe('');
+
+    const toolToggle = assistantMsg.querySelector('.tool-calls-toggle') as HTMLElement;
+    const toolHistory = toolToggle.closest('.tool-calls-history') as HTMLElement;
+    toolToggle.click();
+    expect(toolHistory.classList.contains('expanded')).toBe(true);
   });
 
   it('增量渲染只追加新消息，清空后全量重建', () => {

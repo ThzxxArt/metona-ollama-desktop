@@ -39,12 +39,7 @@ function renderSystemPromptCard(sysPrompt: string): string {
   const tokenEstimate = estimateTokens(sysPrompt);
   const preview = sysPrompt.length > 120 ? sysPrompt.slice(0, 120).replace(/\n/g, ' ') + '…' : sysPrompt.replace(/\n/g, ' ');
   return `<div class="system-prompt-card">
-    <div class="system-prompt-header" onclick="
-      var el=document.getElementById('${id}');
-      var chev=this.querySelector('.sp-chevron');
-      el.style.display=el.style.display==='none'?'':'none';
-      chev.classList.toggle('sp-expanded');
-    ">
+    <div class="system-prompt-header" role="button" tabindex="0" aria-expanded="false">
       <span class="sp-icon">📋</span>
       <span class="sp-title">系统提示词</span>
       <span class="sp-tokens">~${tokenEstimate} tokens</span>
@@ -78,6 +73,62 @@ export function initChatArea(): void {
     autoScroll = true;
     scrollBtnEl.style.display = 'none';
     chatAreaEl.scrollTo({ top: chatAreaEl.scrollHeight, behavior: 'smooth' });
+  });
+
+  // CSP 禁止内联 onclick；所有折叠卡片统一走事件委托。
+  messagesContainerEl.addEventListener('click', (event) => {
+    const target = event.target as Element | null;
+    if (!target?.closest) return;
+
+    const systemHeader = target.closest('.system-prompt-header');
+    if (systemHeader) {
+      const body = systemHeader.closest('.system-prompt-card')?.querySelector('.system-prompt-body') as
+        | HTMLElement
+        | null;
+      if (body) {
+        const open = body.style.display === 'none';
+        body.style.display = open ? '' : 'none';
+        systemHeader.setAttribute('aria-expanded', String(open));
+        systemHeader.querySelector('.sp-chevron')?.classList.toggle('sp-expanded', open);
+      }
+      return;
+    }
+
+    const compressedHeader = target.closest('.compressed-header');
+    if (compressedHeader) {
+      compressedHeader.closest('.msg-compressed-card')?.classList.toggle('expanded');
+      return;
+    }
+
+    const thinkHeader = target.closest('.think-header');
+    if (thinkHeader) {
+      const content = thinkHeader.nextElementSibling as HTMLElement | null;
+      if (content) {
+        const open = content.style.display === 'none';
+        content.style.display = open ? '' : 'none';
+        thinkHeader.querySelector('.chevron')?.classList.toggle('expanded', open);
+      }
+      return;
+    }
+
+    const toolToggle = target.closest('.tool-calls-toggle');
+    if (toolToggle) {
+      toolToggle.closest('.tool-calls-history')?.classList.toggle('expanded');
+    }
+  });
+
+  messagesContainerEl.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    const target = event.target as Element | null;
+    if (!target?.matches) return;
+    if (
+      target.matches(
+        '.system-prompt-header, .compressed-header, .think-header, .tool-calls-toggle',
+      )
+    ) {
+      event.preventDefault();
+      (target as HTMLElement).click();
+    }
   });
 }
 
@@ -203,7 +254,7 @@ export function appendMessageDOM(msg: ChatMessage, index: number): void {
     // ── 上下文压缩摘要卡片：可见、可折叠；role:user 保证进入后续模型上下文 ──
     contentHtml += `
       <div class="msg-compressed-card">
-        <div class="compressed-header" onclick="this.parentElement.classList.toggle('expanded')">
+        <div class="compressed-header" role="button" tabindex="0">
           <span class="compressed-icon">📋</span>
           <span>已压缩的历史对话摘要（仍会作为上下文提供给模型）</span>
           <svg class="compressed-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
@@ -223,7 +274,7 @@ export function appendMessageDOM(msg: ChatMessage, index: number): void {
     if (msg.think) {
       contentHtml += `
         <div class="think-block">
-          <div class="think-header" onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display === 'none' ? '' : 'none'; this.querySelector('.chevron').classList.toggle('expanded');">
+          <div class="think-header" role="button" tabindex="0">
             <span>🤔 思考过程</span>
             <svg class="chevron expanded" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
           </div>
@@ -286,7 +337,7 @@ export function appendMessageDOM(msg: ChatMessage, index: number): void {
     }).slice(0, 5).join(', ') + (tcCount > 5 ? ` +${tcCount - 5}` : '');
 
     contentHtml += `<div class="tool-calls-history">
-      <div class="tool-calls-toggle" onclick="this.parentElement.classList.toggle('expanded')">
+      <div class="tool-calls-toggle" role="button" tabindex="0">
         <span class="tool-calls-chevron">▸</span>
         <span class="tool-calls-summary">🔧 ${tcCount} 个工具调用（✅${successCount} ❌${errorCount}）${summary ? ` · ${summary}` : ''}</span>
       </div>
@@ -513,7 +564,7 @@ export function updateLastAssistantMessage(
       thinkBlock = document.createElement('div');
       thinkBlock.className = 'think-block';
       thinkBlock.innerHTML = `
-        <div class="think-header" onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display === 'none' ? '' : 'none'; this.querySelector('.chevron').classList.toggle('expanded');">
+        <div class="think-header" role="button" tabindex="0">
           <span>🤔 思考过程</span>
           <svg class="chevron expanded" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
         </div>
@@ -536,7 +587,7 @@ export function updateLastAssistantMessage(
     const historyDiv = document.createElement('div');
     historyDiv.className = 'tool-calls-history';
     historyDiv.innerHTML = `
-      <div class="tool-calls-toggle" onclick="this.parentElement.classList.toggle('expanded')">
+      <div class="tool-calls-toggle" role="button" tabindex="0">
         <span class="tool-calls-chevron">▸</span>
         <span class="tool-calls-summary">🔧 ${tcCount} 个工具调用（✅${successCount} ❌${errorCount}）</span>
       </div>
