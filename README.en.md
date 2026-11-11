@@ -48,6 +48,8 @@
 
 > [!WARNING]
 > **0.18.0 is a breaking release.** It does not read the v0.17.2 `metona.db`, does not import old `.metona` backups, and does not accept old settings keys or old tool names. Back up your original database and sessions before upgrading; you will need to reconfigure the connection.
+>
+> **0.18.1** keeps the 0.18.0 database and settings format, so it can be installed over 0.18.0. Behavior files now load as a single file: workspace `SOUL.md` first, then `AGENTS.md`, then the built-in `SOUL.md`. The old `AGENT.md` is no longer read; rename it to `AGENTS.md` or `SOUL.md`.
 
 ## Screenshots
 
@@ -71,11 +73,11 @@ Get the latest packages from [Releases](https://github.com/ThzxxArt/metona-ollam
 
 | Platform | Artifact | Notes |
 |---|---|---|
-| Windows x64 | `Metona.Ollama.Setup.v0.18.0.exe` | NSIS; unsigned, SmartScreen may warn |
-| Linux x64 | `Metona.Ollama.v0.18.0-x86_64.AppImage` | Portable; `chmod +x` then run |
-| Linux x64 | `metona-ollama_0.18.0_amd64.deb` | Debian / Ubuntu |
-| macOS x64 | `Metona.Ollama.v0.18.0-mac-x64.zip` | Unsigned, not notarized |
-| macOS arm64 | `Metona.Ollama.v0.18.0-mac-arm64.zip` | Apple Silicon |
+| Windows x64 | `Metona.Ollama.Setup.v0.18.1.exe` | NSIS; unsigned, SmartScreen may warn |
+| Linux x64 | `Metona.Ollama.v0.18.1-x86_64.AppImage` | Portable; `chmod +x` then run |
+| Linux x64 | `metona-ollama_0.18.1_amd64.deb` | Debian / Ubuntu |
+| macOS x64 | `Metona.Ollama.v0.18.1-mac-x64.zip` | Unsigned, not notarized |
+| macOS arm64 | `Metona.Ollama.v0.18.1-mac-arm64.zip` | Apple Silicon |
 
 Each release includes `SHA256SUMS.txt`. On macOS, if Gatekeeper blocks the app:
 
@@ -225,8 +227,8 @@ Stack: Electron 45 · TypeScript 6.0 · Vite 8 · Vitest 5 · `node:sqlite` · z
 ## Release
 
 ```bash
-git tag v0.18.0
-git push origin v0.18.0
+git tag v0.18.1
+git push origin v0.18.1
 ```
 
 GitHub Actions builds Windows / Linux / macOS artifacts, writes `SHA256SUMS.txt`, and creates the release.

@@ -37,7 +37,7 @@
 
   <rect x="500" y="190" width="340" height="70" rx="14" class="user"/>
   <text x="518" y="216" font-size="12" fill="#FFF4EC">你</text>
-  <text x="518" y="242" font-size="14" fill="#FFFFFF">帮我检查 0.18.0 的工具注册表</text>
+  <text x="518" y="242" font-size="14" fill="#FFFFFF">帮我检查 0.18.1 的工具注册表</text>
 
   <rect x="248" y="278" width="620" height="150" rx="14" class="card"/>
   <text x="266" y="304" font-size="13" class="text" font-weight="700">🔧 工具调用</text>

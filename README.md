@@ -50,6 +50,8 @@
 
 > [!WARNING]
 > **0.18.0 是破坏性版本**：不读取 v0.17.2 的 `metona.db`，不导入旧 `.metona` 备份，不兼容旧设置键与旧工具名。升级前请自行备份原始数据库与会话；升级后需要重新配置连接。
+>
+> **0.18.1** 沿用 0.18.0 的数据库与设置格式，可直接覆盖升级。行为文件改为单文件加载：工作空间 `SOUL.md` 优先，其次是 `AGENTS.md`，都没有时使用内置 `SOUL.md`；旧的 `AGENT.md` 不再读取，请重命名为 `AGENTS.md` 或 `SOUL.md`。
 
 ## 界面预览
 
@@ -73,11 +75,11 @@
 
 | 平台 | 产物 | 说明 |
 |---|---|---|
-| Windows x64 | `Metona.Ollama.Setup.v0.18.0.exe` | NSIS 安装包；未签名，SmartScreen 可能提示 |
-| Linux x64 | `Metona.Ollama.v0.18.0-x86_64.AppImage` | 免安装，`chmod +x` 后运行 |
-| Linux x64 | `metona-ollama_0.18.0_amd64.deb` | Debian / Ubuntu 安装包 |
-| macOS x64 | `Metona.Ollama.v0.18.0-mac-x64.zip` | 未签名、未公证 |
-| macOS arm64 | `Metona.Ollama.v0.18.0-mac-arm64.zip` | Apple Silicon |
+| Windows x64 | `Metona.Ollama.Setup.v0.18.1.exe` | NSIS 安装包；未签名，SmartScreen 可能提示 |
+| Linux x64 | `Metona.Ollama.v0.18.1-x86_64.AppImage` | 免安装，`chmod +x` 后运行 |
+| Linux x64 | `metona-ollama_0.18.1_amd64.deb` | Debian / Ubuntu 安装包 |
+| macOS x64 | `Metona.Ollama.v0.18.1-mac-x64.zip` | 未签名、未公证 |
+| macOS arm64 | `Metona.Ollama.v0.18.1-mac-arm64.zip` | Apple Silicon |
 
 每个 Release 附带 `SHA256SUMS.txt`。macOS 首次打开如被拦截，可在“系统设置 → 隐私与安全性”中允许，或执行：
 
@@ -240,8 +242,8 @@ npm start
 ## 发布
 
 ```bash
-git tag v0.18.0
-git push origin v0.18.0
+git tag v0.18.1
+git push origin v0.18.1
 ```
 
 GitHub Actions 会构建 Windows / Linux / macOS 产物，生成 `SHA256SUMS.txt` 并创建 Release。发布流程见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#发布)。
