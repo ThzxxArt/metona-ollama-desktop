@@ -65,15 +65,32 @@ const ollama: OllamaBridgeAPI = {
   show: (model: string): Promise<OllamaShowResponse> => ipcRenderer.invoke('ollama:show', model),
   ps: (): Promise<OllamaPsResponse> => ipcRenderer.invoke('ollama:ps'),
   chat: (body: OllamaChatRequestBody, signal?: AbortSignal) => {
-    // 非流式请求也支持取消：主进程超时 + 渲染端 signal
     if (!signal) return ipcRenderer.invoke('ollama:chat', body);
-    return Promise.race([
-      ipcRenderer.invoke('ollama:chat', body),
-      new Promise((_, reject) => {
-        if (signal.aborted) reject(new Error('请求已取消'));
-        signal.addEventListener('abort', () => reject(new Error('请求已取消')), { once: true });
-      }),
-    ]);
+    const requestId = nextStreamId();
+    return new Promise<unknown>((resolve, reject) => {
+      let settled = false;
+      const cleanup = (): void => signal.removeEventListener('abort', onAbort);
+      const finish = (err?: Error, value?: unknown): void => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        if (err) reject(err);
+        else resolve(value);
+      };
+      const onAbort = (): void => {
+        void ipcRenderer.invoke('ollama:chat:abortRequest', requestId);
+        finish(new Error('请求已取消'));
+      };
+      if (signal.aborted) {
+        onAbort();
+        return;
+      }
+      signal.addEventListener('abort', onAbort, { once: true });
+      ipcRenderer
+        .invoke('ollama:chat', body, requestId)
+        .then((value) => finish(undefined, value))
+        .catch((err) => finish(err as Error));
+    });
   },
   chatStream: (
     body: OllamaChatRequestBody,
@@ -92,8 +109,13 @@ const ollama: OllamaBridgeAPI = {
         if (settled) return;
         settled = true;
         cleanup();
-        if (err) reject(err);
-        else resolve();
+        if (err) {
+          // 本地回调抛错时，主进程的流仍在继续；主动 abort，避免后台空跑。
+          void ipcRenderer.invoke('ollama:chat:abort', streamId);
+          reject(err);
+        } else {
+          resolve();
+        }
       };
       const onChunkEvent = (_e: unknown, data: { streamId: string; chunk: OllamaStreamChunk }): void => {
         if (data.streamId !== streamId) return;

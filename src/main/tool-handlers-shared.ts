@@ -3,7 +3,7 @@
  */
 
 import * as path from 'path';
-import { mainWindow } from './main.js';
+import { mainWindow } from './window-state.js';
 import { getWorkspaceDir } from './workspace.js';
 
 /** 发送日志到渲染进程日志面板 */

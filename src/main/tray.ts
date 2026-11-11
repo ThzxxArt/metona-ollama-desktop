@@ -3,7 +3,7 @@
  */
 
 import { Tray, Menu, nativeImage, app } from 'electron';
-import { mainWindow, setQuitting, getIconPath } from './main.js';
+import { mainWindow, setQuitting, getIconPath } from './window-state.js';
 
 let tray: Tray | null = null;
 

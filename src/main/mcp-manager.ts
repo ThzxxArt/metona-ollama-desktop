@@ -7,7 +7,7 @@ import { spawn, ChildProcess } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
 import { app } from 'electron';
-import { mainWindow } from './main.js';
+import { mainWindow } from './window-state.js';
 
 function sendLog(level: 'info' | 'success' | 'warn' | 'error', message: string, detail?: string): void {
   mainWindow?.webContents.send('main:log', { level, message, detail });

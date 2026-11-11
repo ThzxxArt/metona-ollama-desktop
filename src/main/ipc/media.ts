@@ -1,14 +1,15 @@
-/** 视频帧提取 IPC（ffmpeg）。 */
+/** 视频帧提取 IPC（ffmpeg）。所有通道均经过发送方校验与入参校验。 */
 
-import { ipcMain } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import * as crypto from 'crypto';
 import { execFile } from 'child_process';
 import ffmpegStatic from 'ffmpeg-static';
-import { mainWindow } from '../main.js';
+import { z } from 'zod';
+import { mainWindow } from '../window-state.js';
 import { sendLog } from './shared.js';
+import { handleTrusted, parseArgs } from './register.js';
 
 interface ExtractedFrame {
   name: string;
@@ -22,9 +23,24 @@ interface VideoInfo {
   height: number;
 }
 
+const extractFramesSchema = z
+  .object({
+    maxFrames: z.number().int().min(1).max(2000).optional(),
+    maxWidth: z.number().int().min(64).max(4096).optional(),
+    maxSize: z
+      .number()
+      .int()
+      .min(1)
+      .max(1024 * 1024 * 1024)
+      .optional(),
+  })
+  .strict();
+
 function getFFmpegPath(): string {
-  if (ffmpegStatic) return ffmpegStatic;
-  return 'ffmpeg';
+  const raw = ffmpegStatic || 'ffmpeg';
+  // electron-builder 将 ffmpeg-static 解包到 app.asar.unpacked；
+  // 直接把 app.asar 内的路径交给 execFile 会失败。
+  return raw.includes('app.asar') ? raw.replace('app.asar', 'app.asar.unpacked') : raw;
 }
 
 function parseVideoInfo(stderr: string): VideoInfo | null {
@@ -129,24 +145,23 @@ async function extractVideoFrames(
 }
 
 export function registerMediaIPC(): void {
-  ipcMain.handle(
-    'video:extractFrames',
-    async (_, filePath: string, options?: { maxFrames?: number; maxWidth?: number; maxSize?: number }) => {
-      const maxFrames = options?.maxFrames || 600;
-      const maxWidth = options?.maxWidth || 512;
-      const maxSize = options?.maxSize || 10 * 1024 * 1024;
-      try {
-        const stat = await fs.promises.stat(filePath);
-        if (stat.size > maxSize) {
-          return {
-            success: false,
-            error: `视频文件过大: ${(stat.size / 1024 / 1024).toFixed(1)}MB，限制 ${maxSize / 1024 / 1024}MB`,
-          };
-        }
-      } catch {
-        return { success: false, error: '无法读取视频文件' };
+  handleTrusted('video:extractFrames', async (_, rawPath: unknown, rawOptions?: unknown) => {
+    const filePath = parseArgs(z.string().min(1).max(4096), rawPath);
+    const options = rawOptions === undefined ? {} : parseArgs(extractFramesSchema, rawOptions);
+    const maxFrames = options.maxFrames || 600;
+    const maxWidth = options.maxWidth || 512;
+    const maxSize = options.maxSize || 10 * 1024 * 1024;
+    try {
+      const stat = await fs.promises.stat(filePath);
+      if (stat.size > maxSize) {
+        return {
+          success: false,
+          error: `视频文件过大: ${(stat.size / 1024 / 1024).toFixed(1)}MB，限制 ${maxSize / 1024 / 1024}MB`,
+        };
       }
-      return extractVideoFrames(filePath, maxFrames, maxWidth);
-    },
-  );
+    } catch {
+      return { success: false, error: '无法读取视频文件' };
+    }
+    return extractVideoFrames(filePath, maxFrames, maxWidth);
+  });
 }

@@ -3,7 +3,7 @@
 import * as path from 'path';
 import { spawn } from 'child_process';
 import { checkPathAllowed, checkCommandAllowed } from '../tool-security.js';
-import { mainWindow } from '../main.js';
+import { mainWindow } from '../window-state.js';
 import { sendLog, type ToolResult } from '../tool-handlers-shared.js';
 import { getWorkspaceDir } from '../workspace.js';
 

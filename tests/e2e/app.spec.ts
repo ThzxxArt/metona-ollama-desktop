@@ -21,6 +21,19 @@ test('主窗口可启动并显示品牌', async () => {
   await expect(page.locator('.app-title')).toHaveText('Metona Ollama');
 });
 
+test('preload 领域桥可用（IPC 发送方校验未误伤正常调用）', async () => {
+  const info = await page.evaluate(
+    () => (window as unknown as { metonaDesktop?: { sys?: { platform?: string } } }).metonaDesktop?.sys,
+  );
+  expect(info?.platform).toBeTruthy();
+  const config = await page.evaluate(() =>
+    (
+      window as unknown as { metonaDesktop?: { ollama?: { getConfig: () => Promise<{ mode: string }> } } }
+    ).metonaDesktop?.ollama?.getConfig(),
+  );
+  expect(config?.mode).toMatch(/^(local|remote)$/);
+});
+
 test('设置面板包含本地/远程与上下文数字输入', async () => {
   await page.click('#btnSettings');
   await expect(page.locator('#selectOllamaMode')).toBeVisible();

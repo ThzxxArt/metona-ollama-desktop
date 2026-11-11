@@ -7,7 +7,7 @@ import { spawn, ChildProcess } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { app } from 'electron';
-import { mainWindow } from './main.js';
+import { mainWindow } from './window-state.js';
 import { checkPathAllowed, checkCommandAllowed, addBlocklistExemptions, isSystemBlockedPath } from './tool-security.js';
 
 /** 发送日志到渲染进程日志面板 */

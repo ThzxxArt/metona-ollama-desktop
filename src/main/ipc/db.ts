@@ -1,9 +1,11 @@
 /**
  * SQLite / 会话 / 设置 / 轨迹 / 统计 IPC。
+ * 所有通道均经过发送方校验与入参校验。
  */
 
-import { ipcMain } from 'electron';
+import { z } from 'zod';
 import { sendLog } from './shared.js';
+import { handleTrusted, parseArgs } from './register.js';
 import {
   saveSession,
   getSession,
@@ -34,39 +36,142 @@ import {
   saveMemoryEmbedding,
   clearMemoryEmbeddings,
 } from '../db/sqlite.js';
-import type { ExportData, MessageRow } from '../db/sqlite.js';
+import type { ExportData, MessageRow, SessionRow, TraceRow } from '../db/sqlite.js';
+
+const idSchema = z.string().min(1).max(512);
+const keySchema = z.string().min(1).max(256);
+
+const sessionRowSchema: z.ZodType<SessionRow> = z
+  .object({
+    id: idSchema,
+    title: z.string().max(2000),
+    model: z.string().max(512),
+    system_prompt: z.string().nullable(),
+    parent_id: z.string().max(512).nullable(),
+    status: z.string().max(64),
+    created_at: z.number().int(),
+    updated_at: z.number().int(),
+  })
+  .strict();
+
+const messageRowSchema: z.ZodType<MessageRow> = z
+  .object({
+    id: idSchema,
+    session_id: idSchema,
+    role: z.string().min(1).max(32),
+    content: z.string().nullable(),
+    thinking: z.string().nullable(),
+    images: z.string().nullable(),
+    tool_calls: z.string().nullable(),
+    tool_name: z.string().nullable(),
+    attachments: z.string().nullable(),
+    eval_count: z.number().int().nullable(),
+    prompt_eval_count: z.number().int().nullable(),
+    total_duration: z.number().int().nullable(),
+    created_at: z.number().int(),
+  })
+  .strict();
+
+const traceRowSchema: z.ZodType<TraceRow> = z
+  .object({
+    id: idSchema,
+    session_id: idSchema,
+    step_index: z
+      .number()
+      .int()
+      .nullable()
+      .optional()
+      .transform((v) => v ?? null),
+    thought: z
+      .string()
+      .nullable()
+      .optional()
+      .transform((v) => v ?? null),
+    action: z
+      .string()
+      .nullable()
+      .optional()
+      .transform((v) => v ?? null),
+    action_input: z
+      .string()
+      .nullable()
+      .optional()
+      .transform((v) => v ?? null),
+    observation: z
+      .string()
+      .nullable()
+      .optional()
+      .transform((v) => v ?? null),
+    loop_count: z
+      .number()
+      .int()
+      .nullable()
+      .optional()
+      .transform((v) => v ?? null),
+    error_pattern: z
+      .string()
+      .nullable()
+      .optional()
+      .transform((v) => v ?? null),
+    created_at: z.number().int(),
+  })
+  .strict();
+
+const settingEntrySchema = z.object({ key: keySchema, value: z.unknown() }).strict();
+
+const exportDataSchema: z.ZodType<ExportData> = z.object({
+  sessions: z.array(sessionRowSchema).max(100_000),
+  messages: z.array(messageRowSchema).max(1_000_000),
+  settings: z.array(settingEntrySchema).max(10_000),
+  exportedAt: z.number().int(),
+});
+
+const toolAuditSchema = z
+  .object({
+    id: idSchema.optional(),
+    session_id: idSchema,
+    tool_name: z.string().min(1).max(128),
+    args_json: z.string().nullable(),
+    result_status: z.string().nullable(),
+    result_summary: z.string().nullable(),
+    duration_ms: z.number().int().nullable(),
+    created_at: z.number().int(),
+  })
+  .strict();
+
+const memoryVectorSchema = z.array(z.number().finite()).min(1).max(16_384);
 
 export function registerDbIPC(): void {
-  ipcMain.handle('db:saveSession', (_, session) => {
+  handleTrusted('db:saveSession', (_, rawSession: unknown) => {
     try {
-      return { success: true, id: saveSession(session) };
+      return { success: true, id: saveSession(parseArgs(sessionRowSchema, rawSession)) };
     } catch (err) {
       return { success: false, error: (err as Error).message };
     }
   });
-  ipcMain.handle('db:getSession', (_, id) => {
+  handleTrusted('db:getSession', (_, rawId: unknown) => {
     try {
-      return getSession(id);
+      return getSession(parseArgs(idSchema, rawId));
     } catch {
       return null;
     }
   });
-  ipcMain.handle('db:getAllSessions', () => {
+  handleTrusted('db:getAllSessions', () => {
     try {
       return getAllSessions();
     } catch {
       return [];
     }
   });
-  ipcMain.handle('db:deleteSession', (_, id) => {
+  handleTrusted('db:deleteSession', (_, rawId: unknown) => {
     try {
-      deleteSession(id);
+      deleteSession(parseArgs(idSchema, rawId));
       return { success: true };
     } catch (err) {
       return { success: false, error: (err as Error).message };
     }
   });
-  ipcMain.handle('db:clearAllSessions', () => {
+  handleTrusted('db:clearAllSessions', () => {
     try {
       clearAllSessions();
       return { success: true };
@@ -75,47 +180,47 @@ export function registerDbIPC(): void {
     }
   });
 
-  ipcMain.handle('db:saveMessage', (_, msg) => {
+  handleTrusted('db:saveMessage', (_, rawMsg: unknown) => {
     try {
-      return { success: true, id: saveMessage(msg) };
+      return { success: true, id: saveMessage(parseArgs(messageRowSchema, rawMsg)) };
     } catch (err) {
       return { success: false, error: (err as Error).message };
     }
   });
-  ipcMain.handle('db:saveMessagesBatch', (_, msgs: MessageRow[]) => {
+  handleTrusted('db:saveMessagesBatch', (_, rawMsgs: unknown) => {
     try {
+      const msgs = parseArgs(z.array(messageRowSchema).max(100_000), rawMsgs);
       return { success: true, count: saveMessagesBatch(msgs) };
     } catch (err) {
       return { success: false, error: (err as Error).message };
     }
   });
-  ipcMain.handle('db:getMessages', (_, sessionId) => {
+  handleTrusted('db:getMessages', (_, rawSessionId: unknown) => {
     try {
-      return getMessagesBySession(sessionId);
+      return getMessagesBySession(parseArgs(idSchema, rawSessionId));
     } catch {
       return [];
     }
   });
 
-  ipcMain.handle('db:getMessageIds', (_, sessionId: string) => {
+  handleTrusted('db:getMessageIds', (_, rawSessionId: unknown) => {
     try {
-      return getMessageIds(String(sessionId || ''));
+      return getMessageIds(parseArgs(idSchema, rawSessionId));
     } catch {
       return [];
     }
   });
-  ipcMain.handle('db:deleteMessages', (_, sessionId: string, ids: string[]) => {
+  handleTrusted('db:deleteMessages', (_, rawSessionId: unknown, rawIds: unknown) => {
     try {
-      return {
-        success: true,
-        deleted: deleteMessages(String(sessionId || ''), Array.isArray(ids) ? ids.map(String) : []),
-      };
+      const sessionId = parseArgs(idSchema, rawSessionId);
+      const ids = parseArgs(z.array(idSchema).max(100_000), rawIds);
+      return { success: true, deleted: deleteMessages(sessionId, ids) };
     } catch (err) {
       return { success: false, error: (err as Error).message };
     }
   });
 
-  ipcMain.handle('db:getSessionSummaries', () => {
+  handleTrusted('db:getSessionSummaries', () => {
     try {
       return getSessionSummaries();
     } catch (err) {
@@ -123,15 +228,15 @@ export function registerDbIPC(): void {
       return [];
     }
   });
-  ipcMain.handle('db:searchSessions', (_, query: string) => {
+  handleTrusted('db:searchSessions', (_, rawQuery: unknown) => {
     try {
-      return searchSessions(String(query || ''));
+      return searchSessions(parseArgs(z.string().max(2000), rawQuery));
     } catch (err) {
       sendLog('error', '搜索会话失败', (err as Error).message);
       return [];
     }
   });
-  ipcMain.handle('db:getAllSessionsData', () => {
+  handleTrusted('db:getAllSessionsData', () => {
     try {
       return getAllSessionsData();
     } catch (err) {
@@ -140,53 +245,54 @@ export function registerDbIPC(): void {
     }
   });
 
-  ipcMain.handle('db:saveSetting', (_, key: string, value: unknown) => {
+  handleTrusted('db:saveSetting', (_, rawKey: unknown, value: unknown) => {
     try {
-      saveSetting(key, value);
+      saveSetting(parseArgs(keySchema, rawKey), value);
       return { success: true };
     } catch (err) {
       return { success: false, error: (err as Error).message };
     }
   });
-  ipcMain.handle('db:saveSettingsBatch', (_, entries: Array<{ key: string; value: unknown }>) => {
+  handleTrusted('db:saveSettingsBatch', (_, rawEntries: unknown) => {
     try {
-      saveSettingsBatch(entries);
+      saveSettingsBatch(parseArgs(z.array(settingEntrySchema).max(10_000), rawEntries));
       return { success: true };
     } catch (err) {
       return { success: false, error: (err as Error).message };
     }
   });
-  ipcMain.handle('db:getSetting', (_, key: string, defaultValue?: unknown) => {
+  handleTrusted('db:getSetting', (_, rawKey: unknown, defaultValue?: unknown) => {
     try {
-      return getSetting(key, defaultValue ?? null);
+      return getSetting(parseArgs(keySchema, rawKey), defaultValue ?? null);
     } catch {
       return defaultValue ?? null;
     }
   });
 
-  ipcMain.handle('db:saveTrace', (_, trace) => {
+  handleTrusted('db:saveTrace', (_, rawTrace: unknown) => {
     try {
-      return { success: true, id: saveTrace(trace) };
+      return { success: true, id: saveTrace(parseArgs(traceRowSchema, rawTrace)) };
     } catch (err) {
       return { success: false, error: (err as Error).message };
     }
   });
-  ipcMain.handle('db:saveTracesBatch', (_, traces) => {
+  handleTrusted('db:saveTracesBatch', (_, rawTraces: unknown) => {
     try {
+      const traces = parseArgs(z.array(traceRowSchema).max(100_000), rawTraces);
       return { success: true, count: saveTracesBatch(traces) };
     } catch (err) {
       return { success: false, error: (err as Error).message };
     }
   });
-  ipcMain.handle('db:getTraces', (_, sessionId) => {
+  handleTrusted('db:getTraces', (_, rawSessionId: unknown) => {
     try {
-      return getTracesBySession(sessionId);
+      return getTracesBySession(parseArgs(idSchema, rawSessionId));
     } catch {
       return [];
     }
   });
 
-  ipcMain.handle('db:exportSessions', () => {
+  handleTrusted('db:exportSessions', () => {
     try {
       return exportAllSessions();
     } catch (err) {
@@ -194,31 +300,35 @@ export function registerDbIPC(): void {
       return null;
     }
   });
-  ipcMain.handle('db:importSessions', (_, data: ExportData) => {
+  handleTrusted('db:importSessions', (_, rawData: unknown) => {
     try {
-      return importSessions(data);
+      return importSessions(parseArgs(exportDataSchema, rawData));
     } catch (err) {
       sendLog('error', '导入失败', (err as Error).message);
-      return { imported: 0, skipped: 0 };
+      // 让渲染进程收到 reject，避免把校验失败当成“导入 0 个会话”的成功
+      throw err;
     }
   });
 
-  ipcMain.handle('db:getMemoryEmbeddings', (_: unknown, model: string) => {
+  handleTrusted('db:getMemoryEmbeddings', (_, rawModel: unknown) => {
     try {
-      return getAllMemoryEmbeddings(String(model || ''));
+      return getAllMemoryEmbeddings(parseArgs(z.string().min(1).max(512), rawModel));
     } catch {
       return [];
     }
   });
-  ipcMain.handle('db:saveMemoryEmbedding', (_: unknown, entryId: string, model: string, vector: number[]) => {
+  handleTrusted('db:saveMemoryEmbedding', (_, rawEntryId: unknown, rawModel: unknown, rawVector: unknown) => {
     try {
-      saveMemoryEmbedding(String(entryId || ''), String(model || ''), Array.isArray(vector) ? vector : []);
+      const entryId = parseArgs(idSchema, rawEntryId);
+      const model = parseArgs(z.string().min(1).max(512), rawModel);
+      const vector = parseArgs(memoryVectorSchema, rawVector);
+      saveMemoryEmbedding(entryId, model, vector);
       return { success: true };
     } catch (err) {
       return { success: false, error: (err as Error).message };
     }
   });
-  ipcMain.handle('db:clearMemoryEmbeddings', () => {
+  handleTrusted('db:clearMemoryEmbeddings', () => {
     try {
       clearMemoryEmbeddings();
       return { success: true };
@@ -227,7 +337,7 @@ export function registerDbIPC(): void {
     }
   });
 
-  ipcMain.handle('db:getAllTokenStats', () => {
+  handleTrusted('db:getAllTokenStats', () => {
     try {
       return getAllSessionsTokenStats();
     } catch (err) {
@@ -236,23 +346,25 @@ export function registerDbIPC(): void {
     }
   });
 
-  ipcMain.handle('db:saveToolAudit', (_: unknown, audit: unknown) => {
+  handleTrusted('db:saveToolAudit', (_, rawAudit: unknown) => {
     try {
-      return { success: true, id: saveToolAudit(audit as Parameters<typeof saveToolAudit>[0]) };
+      const audit = parseArgs(toolAuditSchema, rawAudit);
+      return { success: true, id: saveToolAudit(audit) };
     } catch (err) {
       return { success: false, error: (err as Error).message };
     }
   });
-  ipcMain.handle('db:getToolAudits', (_: unknown, sessionId: string) => {
+  handleTrusted('db:getToolAudits', (_, rawSessionId: unknown) => {
     try {
-      return { success: true, audits: getToolAuditsBySession(sessionId) };
+      return { success: true, audits: getToolAuditsBySession(parseArgs(idSchema, rawSessionId)) };
     } catch (err) {
       return { success: false, error: (err as Error).message };
     }
   });
-  ipcMain.handle('db:getAllToolAudits', (_: unknown, limit?: number) => {
+  handleTrusted('db:getAllToolAudits', (_, rawLimit?: unknown) => {
     try {
-      return { success: true, audits: getAllToolAudits(limit || 200) };
+      const limit = rawLimit === undefined ? 200 : parseArgs(z.number().int().min(1).max(10_000), rawLimit);
+      return { success: true, audits: getAllToolAudits(limit) };
     } catch (err) {
       return { success: false, error: (err as Error).message };
     }

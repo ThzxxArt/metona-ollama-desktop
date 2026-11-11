@@ -111,11 +111,7 @@ export async function handleCompress(params: {
             const safeDest = destPath.replace(/'/g, "''");
             child = spawn(
               'powershell',
-              [
-                '-NoProfile',
-                '-Command',
-                `Compress-Archive -Path '${safeSrc}' -DestinationPath '${safeDest}' -Force`,
-              ],
+              ['-NoProfile', '-Command', `Compress-Archive -Path '${safeSrc}' -DestinationPath '${safeDest}' -Force`],
               { cwd, stdio: ['pipe', 'pipe', 'pipe'] },
             );
           } else {
@@ -162,11 +158,7 @@ export async function handleCompress(params: {
           const safeDest = destDir.replace(/'/g, "''");
           child = spawn(
             'powershell',
-            [
-              '-NoProfile',
-              '-Command',
-              `Expand-Archive -Path '${safeArchive}' -DestinationPath '${safeDest}' -Force`,
-            ],
+            ['-NoProfile', '-Command', `Expand-Archive -Path '${safeArchive}' -DestinationPath '${safeDest}' -Force`],
             { stdio: ['pipe', 'pipe', 'pipe'] },
           );
         } else {

@@ -4,7 +4,13 @@
  * - 统一超时、重定向、错误分类、NDJSON 流解析
  */
 
-import { buildApiUrl, getEffectiveBaseUrl, loadOllamaSettings } from './config.js';
+import {
+  buildApiUrl,
+  getEffectiveBaseUrl,
+  getEffectiveRemoteKind,
+  isCloudConnection,
+  loadOllamaSettings,
+} from './config.js';
 import { shouldUnloadModels } from '../../shared/unload-policy.js';
 import { buildOllamaHeaders } from '../../shared/ollama-auth.js';
 import { getOllamaSecretStore } from './secret-store.js';
@@ -71,10 +77,15 @@ async function request(path: string, init: RequestInit = {}, options: OllamaClie
   }
 }
 
-async function requestJson<T>(path: string, body?: unknown, options: OllamaClientOptions = {}): Promise<T> {
+async function requestJson<T>(
+  path: string,
+  body?: unknown,
+  options: OllamaClientOptions = {},
+  signal?: AbortSignal,
+): Promise<T> {
   const response = await request(
     path,
-    body === undefined ? { method: 'GET' } : { method: 'POST', body: JSON.stringify(body) },
+    body === undefined ? { method: 'GET', signal } : { method: 'POST', body: JSON.stringify(body), signal },
     options,
   );
   return (await response.json()) as T;
@@ -101,11 +112,19 @@ export async function embed(model: string, input: string): Promise<OllamaEmbedRe
 }
 
 export async function chat(body: OllamaChatRequestBody, signal?: AbortSignal): Promise<unknown> {
-  return requestJson('/api/chat', { ...body, stream: false }, { timeoutMs: loadOllamaSettings().requestTimeoutMs });
+  return requestJson(
+    '/api/chat',
+    { ...body, stream: false },
+    { timeoutMs: loadOllamaSettings().requestTimeoutMs },
+    signal,
+  );
 }
 
-export async function generate(body: { model: string; keep_alive?: number | string }): Promise<unknown> {
-  return requestJson('/api/generate', body);
+export async function generate(
+  body: { model: string; keep_alive?: number | string },
+  options: OllamaClientOptions = {},
+): Promise<unknown> {
+  return requestJson('/api/generate', body, options);
 }
 
 export async function testConnection(): Promise<OllamaTestResult> {
@@ -205,8 +224,10 @@ export async function unloadModels(
   options: { manual?: boolean } = {},
 ): Promise<{ success: boolean; unloaded: number; error?: string }> {
   const settings = loadOllamaSettings();
-  if (!shouldUnloadModels(settings, Boolean(options.manual))) {
-    if (settings.mode === 'remote' && settings.remoteKind === 'cloud') {
+  const effective = { ...settings, remoteKind: getEffectiveRemoteKind(settings) };
+  if (!shouldUnloadModels(effective, Boolean(options.manual))) {
+    // 自动路径（新建会话 / 退出）对 Cloud 静默跳过；只有用户手动释放才返回错误提示。
+    if (isCloudConnection(settings) && options.manual) {
       return { success: false, unloaded: 0, error: 'Ollama Cloud 模型由服务端管理，不支持本地卸载' };
     }
     return { success: true, unloaded: 0 };
@@ -215,13 +236,12 @@ export async function unloadModels(
   try {
     const ps = await psModels();
     const models = ps.models ?? [];
-    let unloaded = 0;
-    await Promise.allSettled(
+    const results = await Promise.allSettled(
       models.map(async (m) => {
-        await generate({ model: m.name, keep_alive: 0 });
-        unloaded++;
+        await generate({ model: m.name, keep_alive: 0 }, { timeoutMs: 10_000 });
       }),
     );
+    const unloaded = results.filter((r) => r.status === 'fulfilled').length;
     return { success: true, unloaded };
   } catch (err) {
     return { success: false, unloaded: 0, error: (err as Error).message };

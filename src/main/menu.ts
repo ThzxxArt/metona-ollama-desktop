@@ -3,7 +3,7 @@
  */
 
 import { Menu, dialog, shell, app } from 'electron';
-import { mainWindow, setQuitting, getIconPath } from './main.js';
+import { mainWindow, setQuitting, getIconPath } from './window-state.js';
 
 export function createMenu(): void {
   const template: Electron.MenuItemConstructorOptions[] = [

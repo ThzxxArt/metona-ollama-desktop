@@ -43,11 +43,22 @@ function clampContextLengthLocal(value: unknown, fallback: number): number {
 function normalizeSettings(raw: Partial<OllamaConnectionSettings> | null | undefined): OllamaConnectionSettings {
   const source = raw ?? {};
   const mode: OllamaMode = source.mode === 'remote' ? 'remote' : 'local';
+  const localUrl = safeNormalize(source.localUrl, LOCAL_DEFAULT_URL);
+  const remoteUrl = safeNormalize(source.remoteUrl, REMOTE_CLOUD_URL);
+  // 根因修复：remoteKind 缺失时不能默认 cloud。
+  // - 地址是 ollama.com：强制 cloud
+  // - 地址是自建：默认 self-hosted（否则自建远程会被误判为云，自动/手动卸载全部失效）
+  // - 用户显式选择 cloud：保留 cloud（允许通过反代访问云端）
+  const remoteKind: RemoteKind = isCloudHost(remoteUrl)
+    ? 'cloud'
+    : source.remoteKind === 'cloud'
+      ? 'cloud'
+      : 'self-hosted';
   return {
     mode,
-    localUrl: safeNormalize(source.localUrl, LOCAL_DEFAULT_URL),
-    remoteUrl: safeNormalize(source.remoteUrl, REMOTE_CLOUD_URL),
-    remoteKind: source.remoteKind === 'self-hosted' ? 'self-hosted' : 'cloud',
+    localUrl,
+    remoteUrl,
+    remoteKind,
     contextLength: clampContextLengthLocal(source.contextLength, DEFAULT_OLLAMA_CONNECTION.contextLength),
     remoteAutoUnload: source.remoteAutoUnload !== false,
     requestTimeoutMs:
@@ -78,7 +89,11 @@ export function loadOllamaSettings(): OllamaConnectionSettings {
 
 export function saveOllamaSettings(patch: Partial<OllamaConnectionSettings>): OllamaConnectionSettings {
   const current = loadOllamaSettings();
-  const next = normalizeSettings({ ...current, ...patch });
+  const merged = { ...current, ...patch };
+  // 用户主动保存时，非法 URL 必须报错，不能静默回退到默认地址。
+  if (patch.localUrl !== undefined) merged.localUrl = normalizeBaseUrl(patch.localUrl);
+  if (patch.remoteUrl !== undefined) merged.remoteUrl = normalizeBaseUrl(patch.remoteUrl);
+  const next = normalizeSettings(merged);
   // 远程地址若指向 ollama.com，强制标记为 cloud
   if (next.mode === 'remote' && isCloudHost(next.remoteUrl)) {
     next.remoteKind = 'cloud';

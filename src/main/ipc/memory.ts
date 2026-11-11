@@ -1,11 +1,13 @@
 /**
  * MEMORY.md 专用 IPC（绕过路径白名单，仅限工作空间 MEMORY.md）。
+ * 所有通道均经过发送方校验与入参校验。
  */
 
-import { ipcMain } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
+import { z } from 'zod';
 import { sendLog } from './shared.js';
+import { handleTrusted, parseArgs } from './register.js';
 import { getWorkspaceDir } from '../workspace.js';
 
 const MEMORY_TEMPLATE = `# METONA MEMORY
@@ -14,6 +16,9 @@ const MEMORY_TEMPLATE = `# METONA MEMORY
 > 条目内容紧跟元数据行，直到下一个 ## 或文件末尾
 
 `;
+
+const memoryContentSchema = z.string().max(5 * 1024 * 1024);
+const reasonSchema = z.string().max(200).optional();
 
 function validateMemoryContent(content: string): boolean {
   if (!content || !content.trim()) return false;
@@ -36,7 +41,7 @@ function validateMemoryContent(content: string): boolean {
 }
 
 export function registerMemoryIPC(): void {
-  ipcMain.handle('memory:read', async () => {
+  handleTrusted('memory:read', async () => {
     const memoryPath = path.join(getWorkspaceDir(), 'MEMORY.md');
     try {
       if (!fs.existsSync(memoryPath)) return { success: true, content: '' };
@@ -47,7 +52,9 @@ export function registerMemoryIPC(): void {
     }
   });
 
-  ipcMain.handle('memory:write', async (_, content: string, reason?: string) => {
+  handleTrusted('memory:write', async (_, rawContent: unknown, rawReason?: unknown) => {
+    const content = parseArgs(memoryContentSchema, rawContent);
+    const reason = rawReason === undefined ? undefined : parseArgs(reasonSchema, rawReason);
     const wsDir = getWorkspaceDir();
     const memoryPath = path.join(wsDir, 'MEMORY.md');
     const reasonTag = reason ? `（${reason}）` : '';
@@ -67,7 +74,7 @@ export function registerMemoryIPC(): void {
     }
   });
 
-  ipcMain.handle('memory:init', async () => {
+  handleTrusted('memory:init', async () => {
     const wsDir = getWorkspaceDir();
     const memoryPath = path.join(wsDir, 'MEMORY.md');
     const result: { action: string; existed: boolean; valid: boolean; backedUp?: string } = {

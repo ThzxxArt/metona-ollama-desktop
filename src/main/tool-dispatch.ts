@@ -7,7 +7,7 @@
  * - file_transfer 处理 copy / move
  * - browser 用 action 分发到 9 个浏览器操作
  *
- * run_command 因需要独立管理日志与实时输出流，仍由 ipc.ts 特殊处理。
+ * run_command 因需要独立管理日志与实时输出流，仍由 ipc/tools.ts 特殊处理。
  */
 
 import {

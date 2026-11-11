@@ -6,7 +6,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { spawn } from 'child_process';
 import { checkPathAllowed, checkCommandAllowed } from '../tool-security.js';
-import { mainWindow } from '../main.js';
+import { mainWindow } from '../window-state.js';
 import { sendLog, resolvePath, type ToolResult } from '../tool-handlers-shared.js';
 import { getWorkspaceDir } from '../workspace.js';
 import { getSetting } from '../db/sqlite.js';
@@ -16,8 +16,6 @@ import { checkPublicHttpUrl } from '../net-guard.js';
 import { decodeHTMLEntities, htmlToText, htmlToMarkdown, isBlockedPage, computeRelevance } from '../html-utils.js';
 
 // run_command / killToolProcess 已迁移至 tools/command.ts
-
-
 
 /** HTTP 请求超时（毫秒），默认 900s，可通过 IPC 设置 */
 let HTTP_TIMEOUT = 900_000;
@@ -32,7 +30,10 @@ export function getHTTPTimeout(): number {
 }
 
 // ── LRU 搜索缓存 ──────────────────────────────────
-interface CacheEntry { results: Array<{ title: string; url: string; snippet: string; engine: string; reachable?: boolean }>; time: number; }
+interface CacheEntry {
+  results: Array<{ title: string; url: string; snippet: string; engine: string; reachable?: boolean }>;
+  time: number;
+}
 const _searchCache = new Map<string, CacheEntry>();
 const CACHE_MAX = 200;
 const CACHE_TTL = 5 * 60 * 1000; // 5 分钟
@@ -40,7 +41,10 @@ const CACHE_TTL = 5 * 60 * 1000; // 5 分钟
 function cacheGet(query: string): CacheEntry | null {
   const entry = _searchCache.get(query);
   if (!entry) return null;
-  if (Date.now() - entry.time > CACHE_TTL) { _searchCache.delete(query); return null; }
+  if (Date.now() - entry.time > CACHE_TTL) {
+    _searchCache.delete(query);
+    return null;
+  }
   return entry;
 }
 function cacheSet(query: string, entry: CacheEntry): void {
@@ -53,7 +57,10 @@ function cacheSet(query: string, entry: CacheEntry): void {
 
 // ── 浏览器回退结果缓存 ─────────────────────────────
 // 浏览器渲染耗时数秒，同一 URL 在多次搜索中可能被重复抓取
-interface BrowserCacheEntry { text: string; time: number; }
+interface BrowserCacheEntry {
+  text: string;
+  time: number;
+}
 const _browserFetchCache = new Map<string, BrowserCacheEntry>();
 const BROWSER_CACHE_MAX = 100;
 const BROWSER_CACHE_TTL = 10 * 60 * 1000; // 10 分钟
@@ -61,7 +68,10 @@ const BROWSER_CACHE_TTL = 10 * 60 * 1000; // 10 分钟
 function browserCacheGet(url: string): string | null {
   const entry = _browserFetchCache.get(url);
   if (!entry) return null;
-  if (Date.now() - entry.time > BROWSER_CACHE_TTL) { _browserFetchCache.delete(url); return null; }
+  if (Date.now() - entry.time > BROWSER_CACHE_TTL) {
+    _browserFetchCache.delete(url);
+    return null;
+  }
   return entry.text;
 }
 function browserCacheSet(url: string, text: string): void {
@@ -82,7 +92,9 @@ const UA_POOL = [
 ];
 const LANG_POOL = ['zh-CN,zh;q=0.9,en;q=0.8', 'zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7', 'en-US,en;q=0.9,zh-CN;q=0.8'];
 
-function jitter(ms: number): number { return ms + Math.floor(Math.random() * ms * 0.6); }
+function jitter(ms: number): number {
+  return ms + Math.floor(Math.random() * ms * 0.6);
+}
 
 /** 构建 fetch 请求头，根据尝试次数轮换 UA 和语言 */
 function buildFetchHeaders(url: string, attemptIndex: number, useMobileUA: boolean = false): Record<string, string> {
@@ -94,48 +106,61 @@ function buildFetchHeaders(url: string, attemptIndex: number, useMobileUA: boole
   try {
     const u = new URL(url);
     referer = `${u.protocol}//${u.hostname}/`;
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
   return {
     'User-Agent': ua,
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+    Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
     'Accept-Language': lang,
     'Accept-Encoding': 'gzip, deflate, br',
     'Cache-Control': 'no-cache',
-    'DNT': '1',
-    'Connection': 'keep-alive',
+    DNT: '1',
+    Connection: 'keep-alive',
     'Upgrade-Insecure-Requests': '1',
     'Sec-Fetch-Dest': 'document',
     'Sec-Fetch-Mode': 'navigate',
     'Sec-Fetch-Site': 'none',
     'Sec-Fetch-User': '?1',
-    'Pragma': 'no-cache',
-    'Referer': referer,
+    Pragma: 'no-cache',
+    Referer: referer,
   };
 }
 
 /** 带超时的 fetch 封装，timeout=0 表示不超时 */
-async function fetchWithTimeout(url: string, timeout = HTTP_TIMEOUT, headers?: Record<string,string>, attemptIndex = 0): Promise<Response | null> {
+async function fetchWithTimeout(
+  url: string,
+  timeout = HTTP_TIMEOUT,
+  headers?: Record<string, string>,
+  attemptIndex = 0,
+): Promise<Response | null> {
   const _headers = headers || buildFetchHeaders(url, attemptIndex);
 
   if (timeout <= 0) {
     // 0 = 禁用超时
     try {
       return await fetch(url, { headers: _headers, redirect: 'follow' });
-    } catch { return null; }
+    } catch {
+      return null;
+    }
   }
 
   const controller = new AbortController();
   const tid = setTimeout(() => controller.abort(), timeout);
   try {
     const resp = await fetch(url, { headers: _headers, signal: controller.signal, redirect: 'follow' });
-    clearTimeout(tid); return resp;
-  } catch { clearTimeout(tid); return null; }
+    clearTimeout(tid);
+    return resp;
+  } catch {
+    clearTimeout(tid);
+    return null;
+  }
 }
 
 // ──────────────────────────────────────────────────
 // web_fetch 重试配置
 // ──────────────────────────────────────────────────
-const FETCH_MAX_RETRIES = 3;          // fetch 阶段最多重试 3 次
+const FETCH_MAX_RETRIES = 3; // fetch 阶段最多重试 3 次
 const FETCH_RETRY_DELAYS = [2000, 4000, 6000]; // 指数退避 (ms)，由 jitter() 随机化
 /** 自动抓取最大条数硬上限 — 防止上下文爆炸 */
 const MAX_AUTO_FETCH = 8;
@@ -163,7 +188,7 @@ async function browserFallback(url: string, maxChars: number): Promise<{ text: s
   try {
     const openResult = await browserOpen(url);
     if (!openResult.success) return null;
-    await new Promise(r => setTimeout(r, 2500)); // 等待 JS 渲染
+    await new Promise((r) => setTimeout(r, 2500)); // 等待 JS 渲染
     const extractResult = await browserExtract();
     await browserClose();
     if (extractResult.success && extractResult.text && extractResult.text.length > 0) {
@@ -177,12 +202,22 @@ async function browserFallback(url: string, maxChars: number): Promise<{ text: s
     }
     return null;
   } catch {
-    try { await browserClose(); } catch { /* */ }
+    try {
+      await browserClose();
+    } catch {
+      /* */
+    }
     return null;
   }
 }
 
-export async function handleWebFetch(params: { url: string; max_chars?: number; extract_mode?: string; mobile_ua?: boolean; retry?: boolean }): Promise<ToolResult> {
+export async function handleWebFetch(params: {
+  url: string;
+  max_chars?: number;
+  extract_mode?: string;
+  mobile_ua?: boolean;
+  retry?: boolean;
+}): Promise<ToolResult> {
   const url = params.url;
   if (!url.startsWith('http://') && !url.startsWith('https://')) {
     return { success: false, error: '仅支持 http/https 协议' };
@@ -192,14 +227,21 @@ export async function handleWebFetch(params: { url: string; max_chars?: number; 
   const netCheck = await checkPublicHttpUrl(url);
   if (!netCheck.ok) {
     sendLog('warn', `🌐 web_fetch 安全拦截`, netCheck.reason || '');
-    return { success: false, error: `安全拦截: ${netCheck.reason}（内网/本机地址访问已被禁用，防止提示注入探测本地服务）` };
+    return {
+      success: false,
+      error: `安全拦截: ${netCheck.reason}（内网/本机地址访问已被禁用，防止提示注入探测本地服务）`,
+    };
   }
 
   const maxChars = params.max_chars || 0; // 0 = 不截断
   const useMobileUA = params.mobile_ua === true;
   const shouldRetry = params.retry !== false; // 默认开启重试
 
-  sendLog('info', `🌐 web_fetch`, `${url} (${maxChars > 0 ? maxChars + ' chars' : '完整内容'}${useMobileUA ? ', 移动端UA' : ''})`);
+  sendLog(
+    'info',
+    `🌐 web_fetch`,
+    `${url} (${maxChars > 0 ? maxChars + ' chars' : '完整内容'}${useMobileUA ? ', 移动端UA' : ''})`,
+  );
 
   // ── Phase 1 & 2: HTTP fetch with UA rotation + 反爬增强 ──
   let lastError = '';
@@ -209,8 +251,12 @@ export async function handleWebFetch(params: { url: string; max_chars?: number; 
     if (attempt > 0) {
       const baseDelay = FETCH_RETRY_DELAYS[attempt - 1] || 5000;
       const delay = jitter(baseDelay);
-      sendLog('warn', `🌐 web_fetch 重试`, `第 ${attempt + 1}/${maxAttempts} 次, 等待 ${delay}ms, UA#${attempt % UA_POOL.length}`);
-      await new Promise(r => setTimeout(r, delay));
+      sendLog(
+        'warn',
+        `🌐 web_fetch 重试`,
+        `第 ${attempt + 1}/${maxAttempts} 次, 等待 ${delay}ms, UA#${attempt % UA_POOL.length}`,
+      );
+      await new Promise((r) => setTimeout(r, delay));
     }
 
     const headers = buildFetchHeaders(url, attempt, useMobileUA);
@@ -241,17 +287,31 @@ export async function handleWebFetch(params: { url: string; max_chars?: number; 
           lastError = `HTTP ${resp.status}: ${resp.statusText}（将重试）`;
           continue;
         }
-        return { success: false, error: `HTTP ${resp.status}: ${resp.statusText}。可尝试用 browser action="open" 直接打开页面。` };
+        return {
+          success: false,
+          error: `HTTP ${resp.status}: ${resp.statusText}。可尝试用 browser action="open" 直接打开页面。`,
+        };
       }
 
       const contentType = resp.headers.get('content-type') || '';
-      if (!contentType.includes('text') && !contentType.includes('html') && !contentType.includes('json') && !contentType.includes('xml')) {
-        return { success: false, error: `不支持的内容类型: ${contentType}。如果是二进制文件，请用 download_file 工具。` };
+      if (
+        !contentType.includes('text') &&
+        !contentType.includes('html') &&
+        !contentType.includes('json') &&
+        !contentType.includes('xml')
+      ) {
+        return {
+          success: false,
+          error: `不支持的内容类型: ${contentType}。如果是二进制文件，请用 download_file 工具。`,
+        };
       }
 
       const contentLength = resp.headers.get('content-length');
       if (contentLength && parseInt(contentLength, 10) > 10 * 1024 * 1024) {
-        return { success: false, error: `页面过大 (${(parseInt(contentLength, 10) / 1024 / 1024).toFixed(1)}MB)，超过 10MB 限制` };
+        return {
+          success: false,
+          error: `页面过大 (${(parseInt(contentLength, 10) / 1024 / 1024).toFixed(1)}MB)，超过 10MB 限制`,
+        };
       }
 
       // 无 content-length 头时，流式读取并限制最大体积（防 OOM）
@@ -297,10 +357,15 @@ export async function handleWebFetch(params: { url: string; max_chars?: number; 
           const browserResult = await browserFallback(url, maxChars);
           if (browserResult) {
             return {
-              success: true, url, content: browserResult.text,
-              content_type: 'text/html (browser)', status: resp.status,
+              success: true,
+              url,
+              content: browserResult.text,
+              content_type: 'text/html (browser)',
+              status: resp.status,
               truncated: maxChars > 0 && browserResult.text.length >= maxChars,
-              length: browserResult.text.length, retries: attempt, method: 'browser(blocked)',
+              length: browserResult.text.length,
+              retries: attempt,
+              method: 'browser(blocked)',
             };
           }
         }
@@ -313,7 +378,8 @@ export async function handleWebFetch(params: { url: string; max_chars?: number; 
         if (browserResult) {
           sendLog('success', `🌐 web_fetch 浏览器渲染完成`, `${browserResult.text.length} 字符`);
           return {
-            success: true, url,
+            success: true,
+            url,
             content: browserResult.text,
             content_type: 'text/html (browser)',
             status: resp.status,
@@ -329,9 +395,14 @@ export async function handleWebFetch(params: { url: string; max_chars?: number; 
       const truncated = maxChars > 0 && text.length > maxChars;
       if (truncated) text = text.slice(0, maxChars);
 
-      sendLog('success', `🌐 web_fetch 完成`, `HTTP ${resp.status} | ${text.length} chars${truncated ? ' (已截断)' : ''}${attempt > 0 ? ` | 重试${attempt}次后成功` : ''}`);
+      sendLog(
+        'success',
+        `🌐 web_fetch 完成`,
+        `HTTP ${resp.status} | ${text.length} chars${truncated ? ' (已截断)' : ''}${attempt > 0 ? ` | 重试${attempt}次后成功` : ''}`,
+      );
       return {
-        success: true, url,
+        success: true,
+        url,
         content: text,
         content_type: contentType,
         status: resp.status,
@@ -372,7 +443,8 @@ export async function handleWebFetch(params: { url: string; max_chars?: number; 
     if (browserResult) {
       sendLog('success', `🌐 web_fetch 浏览器渲染完成`, `${browserResult.text.length} 字符`);
       return {
-        success: true, url,
+        success: true,
+        url,
         content: browserResult.text,
         content_type: 'text/html (browser)',
         status: 200,
@@ -382,7 +454,10 @@ export async function handleWebFetch(params: { url: string; max_chars?: number; 
         method: 'browser(fallback)',
       };
     }
-    return { success: false, error: `fetch 和浏览器渲染均失败。${lastError ? '最后错误: ' + lastError : '请检查 URL 是否可访问。'}` };
+    return {
+      success: false,
+      error: `fetch 和浏览器渲染均失败。${lastError ? '最后错误: ' + lastError : '请检查 URL 是否可访问。'}`,
+    };
   }
 
   return { success: false, error: lastError || '所有重试均失败' };
@@ -397,7 +472,7 @@ async function handleWebSearchSearxng(
   query: string,
   maxResults: number,
   timeRange: string,
-  _enhanceSnippets: boolean
+  _enhanceSnippets: boolean,
 ): Promise<ToolResult> {
   const url = getSetting<string>('searxng_url', '');
   if (!url) {
@@ -455,7 +530,7 @@ async function handleWebSearchSearxng(
         return {
           success: false,
           error: `SearXNG 搜索失败 (HTTP ${resp?.status || 'timeout'})。请检查 SearXNG 实例是否运行正常：${url}。`,
-          _searxng_url: apiUrl
+          _searxng_url: apiUrl,
         };
       }
       const html = await resp.text();
@@ -470,7 +545,7 @@ async function handleWebSearchSearxng(
         length: text.length,
         truncated: false,
         format: 'html',
-        _hint: '这是 SearXNG 搜索结果页面的纯文本提取。请从中提取有用的搜索结果信息来回答用户问题。'
+        _hint: '这是 SearXNG 搜索结果页面的纯文本提取。请从中提取有用的搜索结果信息来回答用户问题。',
       };
     }
 
@@ -494,18 +569,29 @@ async function handleWebSearchSearxng(
           return {
             success: false,
             error: `SearXNG 搜索失败 (HTTP ${resp?.status || 'timeout'})。请检查 SearXNG 实例是否运行正常：${url}。`,
-            _searxng_url: apiUrl
+            _searxng_url: apiUrl,
           };
         }
         // 后续页失败，用已有结果
-        sendLog('warn', `🔍 SearXNG 翻页失败`, `pageno=${pageno} HTTP ${resp?.status || 'timeout'}, 使用已有 ${allResults.length} 条结果`);
+        sendLog(
+          'warn',
+          `🔍 SearXNG 翻页失败`,
+          `pageno=${pageno} HTTP ${resp?.status || 'timeout'}, 使用已有 ${allResults.length} 条结果`,
+        );
         break;
       }
 
-      const data = await resp.json() as {
+      const data = (await resp.json()) as {
         query: string;
         number_of_results?: number;
-        results?: Array<{ title: string; url: string; content: string; engine: string; score?: number; category?: string }>;
+        results?: Array<{
+          title: string;
+          url: string;
+          content: string;
+          engine: string;
+          score?: number;
+          category?: string;
+        }>;
         unresponsive_engines?: Array<[string, string]>;
       };
 
@@ -523,14 +609,21 @@ async function handleWebSearchSearxng(
         allResults.push({
           title: (r.title || '').replace(/<[^>]+>/g, '').trim(),
           url: r.url,
-          content: (r.content || '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim(),
+          content: (r.content || '')
+            .replace(/<[^>]+>/g, '')
+            .replace(/\s+/g, ' ')
+            .trim(),
           engine: r.engine || 'searxng',
         });
         newCount++;
         if (allResults.length >= effectiveMax) break;
       }
 
-      sendLog('info', `🔍 SearXNG 翻页`, `pageno=${pageno} → ${pageResults.length}条, 去重后${newCount}条新 (累计${allResults.length})`);
+      sendLog(
+        'info',
+        `🔍 SearXNG 翻页`,
+        `pageno=${pageno} → ${pageResults.length}条, 去重后${newCount}条新 (累计${allResults.length})`,
+      );
 
       // 本页没有新结果 → 没有更多了，早退
       if (newCount === 0) {
@@ -554,16 +647,20 @@ async function handleWebSearchSearxng(
     // 构建引擎统计
     const engineStats: Record<string, string> = {};
     for (const engine of allEngineNames) {
-      engineStats[engine] = `${finalResults.filter(r => r.engine === engine).length} 条`;
+      engineStats[engine] = `${finalResults.filter((r) => r.engine === engine).length} 条`;
     }
     for (const [eng, reason] of allUnresponsive) {
       engineStats[eng] = `⚠️ ${reason}`;
     }
 
-    sendLog('success', `🔍 SearXNG 完成`, `${finalResults.length} 条结果 (${pagesFetched}页), 引擎: ${[...allEngineNames].join(', ')}`);
+    sendLog(
+      'success',
+      `🔍 SearXNG 完成`,
+      `${finalResults.length} 条结果 (${pagesFetched}页), 引擎: ${[...allEngineNames].join(', ')}`,
+    );
 
     const result = buildSearchResponse(
-      finalResults.map(r => ({
+      finalResults.map((r) => ({
         title: r.title,
         url: r.url,
         snippet: r.content,
@@ -589,7 +686,13 @@ async function handleWebSearchSearxng(
  * 同时请求 Bing / 百度 / 搜狗 / 360搜索，智能排序后返回
  * 如果启用了 SearXNG，则使用 SearXNG JSON API 替代
  */
-export async function handleWebSearch(params: { query: string; max_results?: number; time_range?: string; enhance_snippets?: boolean; fetch_top?: number }): Promise<ToolResult> {
+export async function handleWebSearch(params: {
+  query: string;
+  max_results?: number;
+  time_range?: string;
+  enhance_snippets?: boolean;
+  fetch_top?: number;
+}): Promise<ToolResult> {
   try {
     const query = params.query;
     if (!query || query.trim().length === 0) {
@@ -614,183 +717,219 @@ export async function handleWebSearch(params: { query: string; max_results?: num
       const userFetchCount = getSetting<number>('fetch_count', 0);
       fetchMode = (getSetting<string>('fetch_mode', 'sequential') || 'sequential') as 'sequential' | 'random';
       fetchTop = Math.min(userFetchCount > 0 ? Math.max(3, userFetchCount) : aiFetchTop, MAX_AUTO_FETCH);
-      sendLog('info', `🔍 web_search → SearXNG 模式`, `"${query}" | 抓取=${fetchTop}条 ${fetchMode === 'random' ? '随机' : '顺序'}`);
+      sendLog(
+        'info',
+        `🔍 web_search → SearXNG 模式`,
+        `"${query}" | 抓取=${fetchTop}条 ${fetchMode === 'random' ? '随机' : '顺序'}`,
+      );
       result = await handleWebSearchSearxng(query, maxResults, timeRange, enhanceSnippets);
     } else {
       sendLog('info', `🔍 web_search → 内置引擎`, `"${query}" | 抓取=${fetchTop}条 顺序`);
       result = await (async () => {
-    const cacheKey = `${query}|${maxResults}|${timeRange}`;
+        const cacheKey = `${query}|${maxResults}|${timeRange}`;
 
-    // ── 时间范围 → URL 参数映射 ──
-    let bingFreshness = '';
-    if (timeRange) {
-      const tr = timeRange.toLowerCase();
-      if (tr === 'day' || tr === '1d' || tr === '一天') { bingFreshness = 'Day'; }
-      else if (tr === 'week' || tr === '1w' || tr === '一周') { bingFreshness = 'Week'; }
-      else if (tr === 'month' || tr === '1m' || tr === '一月') { bingFreshness = 'Month'; }
-    }
-
-    // ── 1. 检查缓存 ──
-    const cached = cacheGet(cacheKey);
-    if (cached) {
-      sendLog('success', `🔍 web_search 缓存命中`, `"${query}" → ${cached.results.length} 条`);
-    const cachedResult = buildSearchResponse(cached.results, maxResults, true, undefined, query);
-    cachedResult._mode = 'builtin';
-    return cachedResult;
-  }
-
-    sendLog('info', `🔍 web_search`, `"${query}" (${maxResults} 条) [并行]`);
-
-    // ── 2. 并行请求所有搜索引擎 ──
-    const engines: Array<{ name: string; weight: number; fetcher: () => Promise<Array<{title:string;url:string;snippet:string}>> }> = [
-      {
-        name: 'bing', weight: 90,
-        fetcher: async () => {
-          const bingUrl = `https://www.bing.com/search?q=${encodeURIComponent(query)}&count=${maxResults}${bingFreshness ? '&freshness=' + bingFreshness : ''}`;
-          const resp = await fetchWithTimeout(bingUrl, HTTP_TIMEOUT, undefined, 0);
-          if (!resp?.ok) throw new Error(`Bing ${resp?.status}`);
-          return parseBingResults(await resp.text(), maxResults);
-        }
-      },
-      {
-        name: 'baidu', weight: 80,
-        fetcher: async () => {
-          const resp = await fetchWithTimeout(
-            `https://www.baidu.com/s?wd=${encodeURIComponent(query)}&rn=${maxResults}`
-          );
-          if (!resp?.ok) throw new Error(`百度 ${resp?.status}`);
-          return parseBaiduResults(await resp.text(), maxResults);
-        }
-      },
-      {
-        name: 'sogou', weight: 75,
-        fetcher: async () => {
-          const resp = await fetchWithTimeout(
-            `https://www.sogou.com/web?query=${encodeURIComponent(query)}`
-          );
-          if (!resp?.ok) throw new Error(`搜狗 ${resp?.status}`);
-          return parseSogouResults(await resp.text(), maxResults);
-        }
-      },
-      {
-        name: '360搜索', weight: 75,
-        fetcher: async () => {
-          const resp = await fetchWithTimeout(
-            `https://www.so.com/s?q=${encodeURIComponent(query)}`
-          );
-          if (!resp?.ok) throw new Error(`360 ${resp?.status}`);
-          return parse360Results(await resp.text(), maxResults);
-        }
-      },
-    ];
-
-    // 所有引擎并行执行，收集结果
-    const settled = await Promise.allSettled(engines.map(e =>
-      e.fetcher().then(results => ({ engine: e.name, results }))
-    ));
-
-    // 汇总各引擎结果，合并去重（保留引擎和权重信息）
-    const engineWeights = new Map(engines.map(e => [e.name, e.weight]));
-    const allResults: Array<{ title: string; url: string; snippet: string; engine: string; weight: number; reachable?: boolean }> = [];
-    const seenUrls = new Set<string>();
-    const engineStats: Record<string, string> = {};
-
-    for (let i = 0; i < settled.length; i++) {
-      const s = settled[i];
-      const engineName = engines[i].name;
-      if (s.status === 'fulfilled') {
-        const r = s.value;
-        engineStats[engineName] = `${r.results.length} 条`;
-        for (const item of r.results) {
-          const normalized = item.url.replace(/\/+$/, '').toLowerCase();
-          if (!seenUrls.has(normalized)) {
-            seenUrls.add(normalized);
-            allResults.push({ ...item, engine: engineName, weight: engineWeights.get(engineName) || 50 });
+        // ── 时间范围 → URL 参数映射 ──
+        let bingFreshness = '';
+        if (timeRange) {
+          const tr = timeRange.toLowerCase();
+          if (tr === 'day' || tr === '1d' || tr === '一天') {
+            bingFreshness = 'Day';
+          } else if (tr === 'week' || tr === '1w' || tr === '一周') {
+            bingFreshness = 'Week';
+          } else if (tr === 'month' || tr === '1m' || tr === '一月') {
+            bingFreshness = 'Month';
           }
         }
-      } else {
-        engineStats[engineName] = `失败: ${(s.reason as Error)?.message || 'timeout'}`;
-        sendLog('warn', `🔍 ${engineName} 搜索失败`, (s.reason as Error)?.message || '未知');
-      }
-    }
 
-    if (allResults.length === 0) {
-      return { success: false, error: '所有搜索引擎均未返回结果，请尝试其他关键词' };
-    }
-
-    // ── 3. 清理摘要 ──
-    for (const r of allResults) {
-      r.title = r.title.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
-      r.snippet = r.snippet.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
-    }
-
-    // ── 4. URL 可达性预检（只取响应头，立即取消 body 下载）+ 质量评分 ──
-    const topResults = allResults.slice(0, Math.min(maxResults * 2, allResults.length)); // 多检查一些用于排序
-    const CONCURRENCY = 5;
-    for (let i = 0; i < topResults.length; i += CONCURRENCY) {
-      const batch = topResults.slice(i, i + CONCURRENCY);
-      const checks = batch.map(async r => {
-        try {
-          const resp = await fetchWithTimeout(r.url, 3000, {
-            'User-Agent': UA_POOL[0],
-            'Accept': 'text/html,*/*',
-            'Range': 'bytes=0-0',
-          });
-          r.reachable = resp?.ok === true;
-          // 立即取消 body 下载，避免为可达性检查传输完整页面
-          if (resp?.body) {
-            try { await resp.body.cancel(); } catch { /* 已完成 */ }
-          }
-        } catch {
-          r.reachable = false;
+        // ── 1. 检查缓存 ──
+        const cached = cacheGet(cacheKey);
+        if (cached) {
+          sendLog('success', `🔍 web_search 缓存命中`, `"${query}" → ${cached.results.length} 条`);
+          const cachedResult = buildSearchResponse(cached.results, maxResults, true, undefined, query);
+          cachedResult._mode = 'builtin';
+          return cachedResult;
         }
-      });
-      await Promise.allSettled(checks);
-    }
 
-    // ── 5. 智能排序：可达优先 + 引擎权重 + 摘要质量 ──
-    const scored = topResults.map(r => {
-      let score = (r.weight / 100) * 50; // 引擎权重贡献 50%
-      if (r.reachable === true) score += 30; // 可达 +30
-      else if (r.reachable === false) score -= 20; // 不可达 -20
-      // 摘要质量：越长越好（上限100字符），有内容的加分
-      const snippetLen = Math.min(r.snippet.length, 100);
-      score += (snippetLen / 100) * 20; // 摘要质量贡献 20%
-      return { ...r, _score: Math.round(score * 10) / 10 };
-    });
+        sendLog('info', `🔍 web_search`, `"${query}" (${maxResults} 条) [并行]`);
 
-    scored.sort((a, b) => b._score - a._score);
+        // ── 2. 并行请求所有搜索引擎 ──
+        const engines: Array<{
+          name: string;
+          weight: number;
+          fetcher: () => Promise<Array<{ title: string; url: string; snippet: string }>>;
+        }> = [
+          {
+            name: 'bing',
+            weight: 90,
+            fetcher: async () => {
+              const bingUrl = `https://www.bing.com/search?q=${encodeURIComponent(query)}&count=${maxResults}${bingFreshness ? '&freshness=' + bingFreshness : ''}`;
+              const resp = await fetchWithTimeout(bingUrl, HTTP_TIMEOUT, undefined, 0);
+              if (!resp?.ok) throw new Error(`Bing ${resp?.status}`);
+              return parseBingResults(await resp.text(), maxResults);
+            },
+          },
+          {
+            name: 'baidu',
+            weight: 80,
+            fetcher: async () => {
+              const resp = await fetchWithTimeout(
+                `https://www.baidu.com/s?wd=${encodeURIComponent(query)}&rn=${maxResults}`,
+              );
+              if (!resp?.ok) throw new Error(`百度 ${resp?.status}`);
+              return parseBaiduResults(await resp.text(), maxResults);
+            },
+          },
+          {
+            name: 'sogou',
+            weight: 75,
+            fetcher: async () => {
+              const resp = await fetchWithTimeout(`https://www.sogou.com/web?query=${encodeURIComponent(query)}`);
+              if (!resp?.ok) throw new Error(`搜狗 ${resp?.status}`);
+              return parseSogouResults(await resp.text(), maxResults);
+            },
+          },
+          {
+            name: '360搜索',
+            weight: 75,
+            fetcher: async () => {
+              const resp = await fetchWithTimeout(`https://www.so.com/s?q=${encodeURIComponent(query)}`);
+              if (!resp?.ok) throw new Error(`360 ${resp?.status}`);
+              return parse360Results(await resp.text(), maxResults);
+            },
+          },
+        ];
 
-    // ── 5.5 摘要自动增强：snippet 太短/为空时，用 web_fetch 补充 top 3 ──
-    if (enhanceSnippets) {
-      const needEnhance = scored.slice(0, Math.min(5, maxResults)).filter(r => r.snippet.length < 30 && r.reachable !== false);
-      if (needEnhance.length > 0) {
-        sendLog('info', `🔍 自动补充摘要`, `${needEnhance.length} 个结果摘要过短，尝试 web_fetch`);
-        const enhanced = await Promise.allSettled(needEnhance.slice(0, 3).map(async (r) => {
-          try {
-            const fetchResult = await handleWebFetch({ url: r.url, max_chars: 500, retry: false });
-            if (fetchResult.success && fetchResult.content) {
-              const text = String(fetchResult.content).replace(/\s+/g, ' ').trim();
-              r.snippet = text.length > 200 ? text.slice(0, 200) + '…' : text;
-              (r as any)._enhanced = true;
+        // 所有引擎并行执行，收集结果
+        const settled = await Promise.allSettled(
+          engines.map((e) => e.fetcher().then((results) => ({ engine: e.name, results }))),
+        );
+
+        // 汇总各引擎结果，合并去重（保留引擎和权重信息）
+        const engineWeights = new Map(engines.map((e) => [e.name, e.weight]));
+        const allResults: Array<{
+          title: string;
+          url: string;
+          snippet: string;
+          engine: string;
+          weight: number;
+          reachable?: boolean;
+        }> = [];
+        const seenUrls = new Set<string>();
+        const engineStats: Record<string, string> = {};
+
+        for (let i = 0; i < settled.length; i++) {
+          const s = settled[i];
+          const engineName = engines[i].name;
+          if (s.status === 'fulfilled') {
+            const r = s.value;
+            engineStats[engineName] = `${r.results.length} 条`;
+            for (const item of r.results) {
+              const normalized = item.url.replace(/\/+$/, '').toLowerCase();
+              if (!seenUrls.has(normalized)) {
+                seenUrls.add(normalized);
+                allResults.push({ ...item, engine: engineName, weight: engineWeights.get(engineName) || 50 });
+              }
             }
-          } catch { /* enhancement is optional */ }
-        }));
-        const enhancedCount = enhanced.filter(e => e.status === 'fulfilled').length;
-        if (enhancedCount > 0) sendLog('success', `🔍 摘要增强完成`, `${enhancedCount} 个`);
-      }
-    }
+          } else {
+            engineStats[engineName] = `失败: ${(s.reason as Error)?.message || 'timeout'}`;
+            sendLog('warn', `🔍 ${engineName} 搜索失败`, (s.reason as Error)?.message || '未知');
+          }
+        }
 
-    // 截取最终结果
-    const finalResults = scored.slice(0, maxResults);
+        if (allResults.length === 0) {
+          return { success: false, error: '所有搜索引擎均未返回结果，请尝试其他关键词' };
+        }
 
-    // ── 6. 缓存结果 ──
-    cacheSet(cacheKey, { results: finalResults, time: Date.now() });
+        // ── 3. 清理摘要 ──
+        for (const r of allResults) {
+          r.title = r.title
+            .replace(/<[^>]+>/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+          r.snippet = r.snippet
+            .replace(/<[^>]+>/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+        }
 
-    const finalResult = buildSearchResponse(finalResults, maxResults, false, engineStats, query);
-    finalResult._mode = 'builtin';
-    return finalResult;
-  })();
+        // ── 4. URL 可达性预检（只取响应头，立即取消 body 下载）+ 质量评分 ──
+        const topResults = allResults.slice(0, Math.min(maxResults * 2, allResults.length)); // 多检查一些用于排序
+        const CONCURRENCY = 5;
+        for (let i = 0; i < topResults.length; i += CONCURRENCY) {
+          const batch = topResults.slice(i, i + CONCURRENCY);
+          const checks = batch.map(async (r) => {
+            try {
+              const resp = await fetchWithTimeout(r.url, 3000, {
+                'User-Agent': UA_POOL[0],
+                Accept: 'text/html,*/*',
+                Range: 'bytes=0-0',
+              });
+              r.reachable = resp?.ok === true;
+              // 立即取消 body 下载，避免为可达性检查传输完整页面
+              if (resp?.body) {
+                try {
+                  await resp.body.cancel();
+                } catch {
+                  /* 已完成 */
+                }
+              }
+            } catch {
+              r.reachable = false;
+            }
+          });
+          await Promise.allSettled(checks);
+        }
+
+        // ── 5. 智能排序：可达优先 + 引擎权重 + 摘要质量 ──
+        const scored = topResults.map((r) => {
+          let score = (r.weight / 100) * 50; // 引擎权重贡献 50%
+          if (r.reachable === true)
+            score += 30; // 可达 +30
+          else if (r.reachable === false) score -= 20; // 不可达 -20
+          // 摘要质量：越长越好（上限100字符），有内容的加分
+          const snippetLen = Math.min(r.snippet.length, 100);
+          score += (snippetLen / 100) * 20; // 摘要质量贡献 20%
+          return { ...r, _score: Math.round(score * 10) / 10 };
+        });
+
+        scored.sort((a, b) => b._score - a._score);
+
+        // ── 5.5 摘要自动增强：snippet 太短/为空时，用 web_fetch 补充 top 3 ──
+        if (enhanceSnippets) {
+          const needEnhance = scored
+            .slice(0, Math.min(5, maxResults))
+            .filter((r) => r.snippet.length < 30 && r.reachable !== false);
+          if (needEnhance.length > 0) {
+            sendLog('info', `🔍 自动补充摘要`, `${needEnhance.length} 个结果摘要过短，尝试 web_fetch`);
+            const enhanced = await Promise.allSettled(
+              needEnhance.slice(0, 3).map(async (r) => {
+                try {
+                  const fetchResult = await handleWebFetch({ url: r.url, max_chars: 500, retry: false });
+                  if (fetchResult.success && fetchResult.content) {
+                    const text = String(fetchResult.content).replace(/\s+/g, ' ').trim();
+                    r.snippet = text.length > 200 ? text.slice(0, 200) + '…' : text;
+                    (r as any)._enhanced = true;
+                  }
+                } catch {
+                  /* enhancement is optional */
+                }
+              }),
+            );
+            const enhancedCount = enhanced.filter((e) => e.status === 'fulfilled').length;
+            if (enhancedCount > 0) sendLog('success', `🔍 摘要增强完成`, `${enhancedCount} 个`);
+          }
+        }
+
+        // 截取最终结果
+        const finalResults = scored.slice(0, maxResults);
+
+        // ── 6. 缓存结果 ──
+        cacheSet(cacheKey, { results: finalResults, time: Date.now() });
+
+        const finalResult = buildSearchResponse(finalResults, maxResults, false, engineStats, query);
+        finalResult._mode = 'builtin';
+        return finalResult;
+      })();
     }
 
     // ── 自动抓取前 N 条完整内容 ──
@@ -808,7 +947,11 @@ export async function handleWebSearch(params: { query: string; max_results?: num
  *  @param fetchMode 'sequential'=顺序抓取前N条 | 'random'=从结果中随机选取N条
  *  抓取失败时：先依赖 handleWebFetch 内置的浏览器回退，全部失败后随机选 1 条未抓取的补充抓取 */
 
-async function applyAutoFetch(result: ToolResult, fetchTop: number, fetchMode: 'sequential' | 'random' = 'sequential'): Promise<ToolResult> {
+async function applyAutoFetch(
+  result: ToolResult,
+  fetchTop: number,
+  fetchMode: 'sequential' | 'random' = 'sequential',
+): Promise<ToolResult> {
   const results = (result as any).results as Array<{ url: string; title: string; snippet: string }> | undefined;
   if (!results || results.length === 0) return result;
 
@@ -816,7 +959,7 @@ async function applyAutoFetch(result: ToolResult, fetchTop: number, fetchMode: '
 
   // ── 相关性过滤：只抓取标题与搜索词至少有部分匹配的结果 ──
   // 从搜索结果中反向获取原始 query（若有）作为过滤依据
-  const searchQuery = (result as any).query as string || '';
+  const searchQuery = ((result as any).query as string) || '';
   const scoredResults = results.map((r, idx) => {
     const relevance = computeRelevance(searchQuery, r.title, r.snippet);
     return { ...r, _idx: idx, _relevance: relevance };
@@ -824,11 +967,17 @@ async function applyAutoFetch(result: ToolResult, fetchTop: number, fetchMode: '
   // 按相关性降序排列（相关性高的优先抓取）
   scoredResults.sort((a, b) => b._relevance - a._relevance);
   // 过滤掉明显无关的结果（相关性为 0）
-  const relevantResults = scoredResults.filter(r => r._relevance > 0);
+  const relevantResults = scoredResults.filter((r) => r._relevance > 0);
   const skippedCount = results.length - relevantResults.length;
   if (skippedCount > 0) {
-    sendLog('info', `🔍 相关性过滤: ${skippedCount} 条无关结果已跳过`, 
-      results.filter((_, i) => !relevantResults.some(rr => rr._idx === i)).map(r => r.title.slice(0, 30)).join(', '));
+    sendLog(
+      'info',
+      `🔍 相关性过滤: ${skippedCount} 条无关结果已跳过`,
+      results
+        .filter((_, i) => !relevantResults.some((rr) => rr._idx === i))
+        .map((r) => r.title.slice(0, 30))
+        .join(', '),
+    );
   }
   const effectiveResults = relevantResults.length > 0 ? relevantResults : scoredResults; // fallback: 全部无关时仍抓取
 
@@ -841,7 +990,7 @@ async function applyAutoFetch(result: ToolResult, fetchTop: number, fetchMode: '
       const j = Math.floor(Math.random() * (i + 1));
       [indices[i], indices[j]] = [indices[j], indices[i]];
     }
-    fetchList = indices.slice(0, count).map(idx => ({
+    fetchList = indices.slice(0, count).map((idx) => ({
       url: effectiveResults[idx].url,
       title: effectiveResults[idx].title,
       originalIndex: effectiveResults[idx]._idx,
@@ -855,7 +1004,11 @@ async function applyAutoFetch(result: ToolResult, fetchTop: number, fetchMode: '
   }
 
   const modeLabel = fetchMode === 'random' ? '随机' : '顺序';
-  sendLog('info', `⬇️ 自动抓取 ${fetchList.length} 条网页 (${modeLabel})`, fetchList.map(r => r.title.slice(0, 30)).join(', '));
+  sendLog(
+    'info',
+    `⬇️ 自动抓取 ${fetchList.length} 条网页 (${modeLabel})`,
+    fetchList.map((r) => r.title.slice(0, 30)).join(', '),
+  );
 
   const fetched: Array<{ url: string; title: string; content: string }> = [];
   const fetchedUrls = new Set<string>();
@@ -885,9 +1038,7 @@ async function applyAutoFetch(result: ToolResult, fetchTop: number, fetchMode: '
     if (!ok) {
       failedUrls.add(item.url);
       // ── 失败重试：从剩余未抓取结果中随机选 1 条 ──
-      const unfetched = results.filter((r, idx) =>
-        !fetchedUrls.has(r.url) && !failedUrls.has(r.url)
-      );
+      const unfetched = results.filter((r, idx) => !fetchedUrls.has(r.url) && !failedUrls.has(r.url));
       if (unfetched.length > 0) {
         const pick = unfetched[Math.floor(Math.random() * unfetched.length)];
         sendLog('info', `🔄 ${item.title.slice(0, 30)} 抓取失败，随机重试: ${pick.title.slice(0, 40)}`);
@@ -907,7 +1058,16 @@ async function applyAutoFetch(result: ToolResult, fetchTop: number, fetchMode: '
 
 /** 构建搜索响应（格式化文本 + 结构化 JSON） */
 function buildSearchResponse(
-  results: Array<{ title: string; url: string; snippet: string; engine: string; weight?: number; reachable?: boolean; _score?: number; _enhanced?: boolean }>,
+  results: Array<{
+    title: string;
+    url: string;
+    snippet: string;
+    engine: string;
+    weight?: number;
+    reachable?: boolean;
+    _score?: number;
+    _enhanced?: boolean;
+  }>,
   maxResults: number,
   fromCache: boolean,
   engineStats?: Record<string, string>,
@@ -923,18 +1083,22 @@ function buildSearchResponse(
   formatted += `\n\n`;
 
   if (engineStats) {
-    const statsStr = Object.entries(engineStats).map(([k, v]) => `${k}: ${v}`).join(' | ');
+    const statsStr = Object.entries(engineStats)
+      .map(([k, v]) => `${k}: ${v}`)
+      .join(' | ');
     formatted += `[引擎状态: ${statsStr}]\n\n`;
   }
 
-  formatted += sliced.map((r, i) => {
-    const marks: string[] = [];
-    if (r.reachable === false) marks.push('⚠️可能不可达');
-    if (r._score !== undefined) marks.push(`${r._score}分`);
-    if (r._enhanced) marks.push('📝增强摘要');
-    const markStr = marks.length > 0 ? ` [${marks.join(' ')}]` : '';
-    return `[${i + 1}] ${r.title}${markStr}\n    URL: ${r.url}\n    ${r.snippet}`;
-  }).join('\n\n');
+  formatted += sliced
+    .map((r, i) => {
+      const marks: string[] = [];
+      if (r.reachable === false) marks.push('⚠️可能不可达');
+      if (r._score !== undefined) marks.push(`${r._score}分`);
+      if (r._enhanced) marks.push('📝增强摘要');
+      const markStr = marks.length > 0 ? ` [${marks.join(' ')}]` : '';
+      return `[${i + 1}] ${r.title}${markStr}\n    URL: ${r.url}\n    ${r.snippet}`;
+    })
+    .join('\n\n');
 
   // 结构化 JSON（新增）
   const structured = sliced.map((r, i) => ({
@@ -974,7 +1138,9 @@ function parseBaiduResults(html: string, maxResults: number): Array<{ title: str
     const block = blockMatch[1];
 
     // 提取标题和 URL
-    const titleMatch = block.match(/<h3[^>]*class="[^"]*t[^"]*"[^>]*>[\s\S]*?<a[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/);
+    const titleMatch = block.match(
+      /<h3[^>]*class="[^"]*t[^"]*"[^>]*>[\s\S]*?<a[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/,
+    );
     if (!titleMatch) continue;
 
     let url = titleMatch[1].trim();
@@ -987,7 +1153,8 @@ function parseBaiduResults(html: string, maxResults: number): Array<{ title: str
     }
 
     // 提取摘要
-    const snippetMatch = block.match(/<div class="c-abstract"[^>]*>([\s\S]*?)<\/div>/) ||
+    const snippetMatch =
+      block.match(/<div class="c-abstract"[^>]*>([\s\S]*?)<\/div>/) ||
       block.match(/<span class="content-right_[^"]*"[^>]*>([\s\S]*?)<\/span>/);
     const snippet = snippetMatch ? decodeHTML(snippetMatch[1].replace(/<[^>]+>/g, '').trim()) : '';
 
@@ -1004,7 +1171,8 @@ function parseSogouResults(html: string, maxResults: number): Array<{ title: str
   const results: Array<{ title: string; url: string; snippet: string }> = [];
 
   // 搜狗结果块：<div class="vrwrap"> 或 <div class="rb">
-  const blockRegex = /<div[^>]*class="[^"]*(?:vrwrap|rb)[^"]*"[^>]*>([\s\S]*?)(?=<div[^>]*class="[^"]*(?:vrwrap|rb)[^"]*"|<div[^>]*id="pagebar)/gi;
+  const blockRegex =
+    /<div[^>]*class="[^"]*(?:vrwrap|rb)[^"]*"[^>]*>([\s\S]*?)(?=<div[^>]*class="[^"]*(?:vrwrap|rb)[^"]*"|<div[^>]*id="pagebar)/gi;
   let blockMatch;
 
   while ((blockMatch = blockRegex.exec(html)) !== null && results.length < maxResults) {
@@ -1040,7 +1208,8 @@ function parse360Results(html: string, maxResults: number): Array<{ title: strin
   const results: Array<{ title: string; url: string; snippet: string }> = [];
 
   // 360 结果块：<li class="res-list"> 或 <div class="result">
-  const blockRegex = /<(?:li[^>]*class="[^"]*res-list[^"]*"|div[^>]*class="[^"]*result[^"]*")[^>]*>([\s\S]*?)(?=<(?:li[^>]*class="[^"]*res-list|div[^>]*class="[^"]*result)|<\/ul>|<\/div>\s*<\/div>\s*$)/gi;
+  const blockRegex =
+    /<(?:li[^>]*class="[^"]*res-list[^"]*"|div[^>]*class="[^"]*result[^"]*")[^>]*>([\s\S]*?)(?=<(?:li[^>]*class="[^"]*res-list|div[^>]*class="[^"]*result)|<\/ul>|<\/div>\s*<\/div>\s*$)/gi;
   let blockMatch;
 
   while ((blockMatch = blockRegex.exec(html)) !== null && results.length < maxResults) {
@@ -1084,7 +1253,8 @@ function parseBingResults(html: string, maxResults: number): Array<{ title: stri
     const block = blockMatch[1];
 
     const titleMatch = block.match(/<a[^>]*href="(https?:\/\/[^"]*)"[^>]*>([\s\S]*?)<\/a>/);
-    const snippetMatch = block.match(/<p[^>]*>([\s\S]*?)<\/p>/) || block.match(/<div class="b_caption"[^>]*>([\s\S]*?)<\/div>/);
+    const snippetMatch =
+      block.match(/<p[^>]*>([\s\S]*?)<\/p>/) || block.match(/<div class="b_caption"[^>]*>([\s\S]*?)<\/div>/);
 
     if (titleMatch) {
       const url = titleMatch[1].trim();

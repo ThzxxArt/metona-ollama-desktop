@@ -4,7 +4,7 @@
  */
 
 import { BrowserWindow, session } from 'electron';
-import { mainWindow } from './main.js';
+import { mainWindow } from './window-state.js';
 import { checkPublicHttpUrl } from './net-guard.js';
 
 function sendLog(level: 'info' | 'success' | 'warn' | 'error', message: string, detail?: string): void {

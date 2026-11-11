@@ -3,8 +3,9 @@
  * 流式响应通过 webContents.send 推送给渲染进程，主进程持有 AbortController。
  */
 
-import { ipcMain, type WebContents } from 'electron';
 import { randomUUID } from 'crypto';
+import type { WebContents } from 'electron';
+import { z } from 'zod';
 import { getOllamaConnectionView, loadOllamaSettings, saveOllamaSettings } from '../ollama/config.js';
 import { getOllamaSecretStore } from '../ollama/secret-store.js';
 import * as client from '../ollama/client.js';
@@ -26,6 +27,7 @@ interface ActiveStream {
 }
 
 const activeStreams = new Map<string, ActiveStream>();
+const activeRequests = new Map<string, AbortController>();
 
 function sendChunk(sender: WebContents, streamId: string, chunk: OllamaStreamChunk): void {
   if (sender.isDestroyed()) return;
@@ -72,9 +74,27 @@ export function registerOllamaIPC(): void {
     return { embedding: vector };
   });
 
-  handleTrusted('ollama:chat', async (_event, body: unknown) => {
+  handleTrusted('ollama:chat', async (_event, body: unknown, requestedId?: unknown) => {
     const parsed = parseArgs(chatBodySchema, body) as OllamaChatRequestBody;
-    return client.chat(parsed);
+    if (requestedId === undefined) return client.chat(parsed);
+    const requestId = parseArgs(streamIdSchema, requestedId);
+    if (activeRequests.has(requestId)) throw new Error('requestId 已存在');
+    const controller = new AbortController();
+    activeRequests.set(requestId, controller);
+    try {
+      return await client.chat(parsed, controller.signal);
+    } finally {
+      if (activeRequests.get(requestId) === controller) activeRequests.delete(requestId);
+    }
+  });
+
+  handleTrusted('ollama:chat:abortRequest', (_event, requestedId: unknown) => {
+    const requestId = parseArgs(streamIdSchema, requestedId);
+    const controller = activeRequests.get(requestId);
+    if (!controller) return { success: false };
+    controller.abort();
+    activeRequests.delete(requestId);
+    return { success: true };
   });
 
   handleTrusted('ollama:chat:start', (event, body: unknown, requestedId?: unknown) => {
@@ -91,10 +111,18 @@ export function registerOllamaIPC(): void {
       const queue: OllamaStreamChunk[] = [];
       let flushTimer: ReturnType<typeof setTimeout> | null = null;
 
-      const flush = (): void => {
+      const clearFlushTimer = (): void => {
         if (flushTimer) {
           clearTimeout(flushTimer);
           flushTimer = null;
+        }
+      };
+
+      const flush = (): void => {
+        clearFlushTimer();
+        if (controller.signal.aborted) {
+          queue.length = 0;
+          return;
         }
         if (queue.length === 0) return;
         const batch = queue.splice(0, queue.length);
@@ -102,6 +130,7 @@ export function registerOllamaIPC(): void {
       };
 
       const onChunk = (chunk: OllamaStreamChunk): void => {
+        if (controller.signal.aborted) return;
         queue.push(chunk);
         // 16ms 合并，降低 IPC 频率
         if (!flushTimer) flushTimer = setTimeout(flush, 16);
@@ -109,15 +138,24 @@ export function registerOllamaIPC(): void {
 
       try {
         await client.chatStream(parsed, onChunk, controller.signal);
-        flush();
-        sendDone(sender, streamId);
+        // 中止路径已由 abort handler 发送 done；这里只负责正常完成
+        if (!controller.signal.aborted) {
+          flush();
+          sendDone(sender, streamId);
+        }
       } catch (err) {
-        flush();
-        const proxyError = toProxyError(err);
-        console.warn(`[ollama] 流式请求失败: ${redactLog(proxyError.message)}`);
-        sendDone(sender, streamId, proxyError);
+        if (!controller.signal.aborted) {
+          flush();
+          const proxyError = toProxyError(err);
+          console.warn(`[ollama] 流式请求失败: ${redactLog(proxyError.message)}`);
+          sendDone(sender, streamId, proxyError);
+        }
       } finally {
-        activeStreams.delete(streamId);
+        clearFlushTimer();
+        queue.length = 0;
+        if (activeStreams.get(streamId)?.controller === controller) {
+          activeStreams.delete(streamId);
+        }
       }
     })();
 
@@ -135,18 +173,21 @@ export function registerOllamaIPC(): void {
   });
 
   handleTrusted('ollama:unload', async (_event, options: unknown) => {
-    const manual = Boolean((options as { manual?: boolean } | undefined)?.manual);
-    return client.unloadModels({ manual });
+    const parsed =
+      options === undefined
+        ? {}
+        : parseArgs(
+            z
+              .object({
+                manual: z.boolean().optional(),
+              })
+              .strict(),
+            options,
+          );
+    return client.unloadModels({ manual: Boolean(parsed.manual) });
   });
 
-  // 退出时取消所有流
-  ipcMain.on('ollama:abort-all', () => {
-    for (const [id, active] of activeStreams) {
-      active.controller.abort();
-      sendDone(active.sender, id, { kind: 'aborted', message: '应用正在退出' });
-    }
-    activeStreams.clear();
-  });
+  // 退出时取消所有流（主进程内部调用 abortAllOllamaStreams，不暴露 IPC 通道）
 
   // 启动时打印连接摘要（不包含 Key）
   const view = getOllamaConnectionView();
@@ -162,4 +203,8 @@ export function abortAllOllamaStreams(): void {
     sendDone(active.sender, id, { kind: 'aborted', message: '应用正在退出' });
   }
   activeStreams.clear();
+  for (const controller of activeRequests.values()) {
+    controller.abort();
+  }
+  activeRequests.clear();
 }

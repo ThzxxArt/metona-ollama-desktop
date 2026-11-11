@@ -69,7 +69,12 @@ class OllamaSecretStore {
       await this.persist(value);
       return { success: true, persisted: true };
     } catch (err) {
-      return { success: false, persisted: false, error: (err as Error).message };
+      // Key 已载入内存，本次运行仍可用；只是无法安全落盘。
+      return {
+        success: true,
+        persisted: false,
+        error: `API Key 已载入内存，但加密保存失败：${(err as Error).message}`,
+      };
     }
   }
 

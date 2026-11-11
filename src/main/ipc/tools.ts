@@ -1,9 +1,11 @@
 /**
  * 工具执行与工作空间 IPC。
+ * 所有通道均经过发送方校验与入参校验。
  */
 
-import { ipcMain } from 'electron';
+import { z } from 'zod';
 import { sendLog } from './shared.js';
+import { handleTrusted, onTrusted, parseArgs } from './register.js';
 import { handleRunCommand, killToolProcess } from '../tool-handlers.js';
 import { getToolHandler } from '../tool-dispatch.js';
 import { getAllowedDirs, getBlockedDirs, setAllowedDirs } from '../tool-security.js';
@@ -11,6 +13,24 @@ import { setHTTPTimeout } from '../tool-handlers-system.js';
 import { setMCPTimeout } from '../mcp-manager.js';
 import { startProcess, killProcess, getWorkspaceDir, setWorkspaceDir, listWorkspaceDir } from '../workspace.js';
 import { saveSetting } from '../db/sqlite.js';
+
+const toolNameSchema = z.string().min(1).max(128);
+const toolArgsSchema = z.record(z.string(), z.unknown());
+const dirSchema = z.string().min(1).max(4096);
+const dirListSchema = z.array(dirSchema).max(256);
+const timeoutsSchema = z
+  .object({
+    http: z.number().int().min(0).max(86_400_000).optional(),
+    mcp: z.number().int().min(0).max(86_400_000).optional(),
+  })
+  .strict();
+const workspaceExecSchema = z
+  .object({
+    id: z.string().min(1).max(128),
+    command: z.string().min(1).max(200_000),
+    cwd: z.string().max(4096).optional(),
+  })
+  .strict();
 
 function summarizeResult(toolName: string, result: Record<string, unknown>): string {
   switch (toolName) {
@@ -50,7 +70,9 @@ function summarizeResult(toolName: string, result: Record<string, unknown>): str
 }
 
 export function registerToolsIPC(): void {
-  ipcMain.handle('tool:execute', async (_, toolName: string, args: Record<string, unknown>) => {
+  handleTrusted('tool:execute', async (_, rawName: unknown, rawArgs: unknown) => {
+    const toolName = parseArgs(toolNameSchema, rawName);
+    const args = parseArgs(toolArgsSchema, rawArgs);
     try {
       sendLog('debug', `🔧 tool:execute ${toolName}`, JSON.stringify(args || {}).slice(0, 200));
       if (toolName === 'run_command') {
@@ -71,26 +93,28 @@ export function registerToolsIPC(): void {
     }
   });
 
-  ipcMain.handle('tool:getConfig', () => ({
+  handleTrusted('tool:getConfig', () => ({
     allowedDirs: getAllowedDirs(),
     blockedDirs: getBlockedDirs(),
   }));
 
-  ipcMain.handle('tool:setAllowedDirs', (_, dirs: string[]) => {
-    setAllowedDirs(dirs);
+  handleTrusted('tool:setAllowedDirs', (_, rawDirs: unknown) => {
+    setAllowedDirs(parseArgs(dirListSchema, rawDirs));
   });
 
-  ipcMain.handle('tool:setTimeouts', (_, timeouts: { http?: number; mcp?: number }) => {
-    if (typeof timeouts.http === 'number' && timeouts.http >= 0) setHTTPTimeout(timeouts.http);
-    if (typeof timeouts.mcp === 'number' && timeouts.mcp >= 0) setMCPTimeout(timeouts.mcp);
+  handleTrusted('tool:setTimeouts', (_, rawTimeouts: unknown) => {
+    const timeouts = parseArgs(timeoutsSchema, rawTimeouts);
+    if (typeof timeouts.http === 'number') setHTTPTimeout(timeouts.http);
+    if (typeof timeouts.mcp === 'number') setMCPTimeout(timeouts.mcp);
     return { success: true };
   });
 
-  ipcMain.handle('workspace:getDir', () => {
+  handleTrusted('workspace:getDir', () => {
     return { dir: getWorkspaceDir(), defaultDir: getWorkspaceDir() };
   });
 
-  ipcMain.handle('workspace:setDir', (_, dir: string) => {
+  handleTrusted('workspace:setDir', (_, rawDir: unknown) => {
+    const dir = parseArgs(dirSchema, rawDir);
     try {
       setWorkspaceDir(dir);
       saveSetting('workspaceDir', getWorkspaceDir());
@@ -100,17 +124,20 @@ export function registerToolsIPC(): void {
     }
   });
 
-  ipcMain.handle('workspace:listDir', (_, dirPath?: string) => {
+  handleTrusted('workspace:listDir', (_, rawDirPath?: unknown) => {
+    const dirPath = rawDirPath === undefined ? undefined : parseArgs(dirSchema, rawDirPath);
     return listWorkspaceDir(dirPath);
   });
 
-  ipcMain.handle('workspace:readFile', async (_, filePath: string) => {
+  handleTrusted('workspace:readFile', async (_, rawPath: unknown) => {
+    const filePath = parseArgs(dirSchema, rawPath);
     const handler = getToolHandler('read_file');
     if (!handler) return { success: false, error: 'read_file 处理器不可用' };
     return handler({ path: filePath });
   });
 
-  ipcMain.on('workspace:exec', (event, { id, command, cwd }: { id: string; command: string; cwd?: string }) => {
+  onTrusted('workspace:exec', (event, rawParams: unknown) => {
+    const { id, command, cwd } = parseArgs(workspaceExecSchema, rawParams);
     sendLog('info', `🖥️ workspace:exec`, `ID: ${id} | ${command.slice(0, 200)}`);
     const result = startProcess(
       id,
@@ -129,12 +156,13 @@ export function registerToolsIPC(): void {
     }
   });
 
-  ipcMain.on('workspace:kill', (_, id: string) => {
+  onTrusted('workspace:kill', (_, rawId: unknown) => {
+    const id = parseArgs(z.string().min(1).max(128), rawId);
     sendLog('info', `🖥️ workspace:kill`, `ID: ${id}`);
     killProcess(id);
   });
 
-  ipcMain.handle('cmd:kill', async () => {
+  handleTrusted('cmd:kill', async () => {
     const killed = killToolProcess();
     sendLog('info', `🔧 cmd:kill`, killed ? '已终止' : '无正在运行的工具命令');
     return { killed };
