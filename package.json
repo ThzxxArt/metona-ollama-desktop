@@ -125,6 +125,7 @@
     "electron": "^45.2.3",
     "electron-builder": "^26.18.0",
     "eslint": "^10.14.0",
+    "jsdom": "^27.4.0",
     "prettier": "^3.9.10",
     "typescript": "6.0.3",
     "typescript-eslint": "^8.72.2",

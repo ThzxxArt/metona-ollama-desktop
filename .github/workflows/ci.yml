@@ -39,6 +39,13 @@ jobs:
       - name: 单元测试 + 覆盖率
         run: npm run test:coverage
 
+      - name: 上传覆盖率报告
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage/
+          retention-days: 7
+
       - name: 构建
         run: npm run build
 

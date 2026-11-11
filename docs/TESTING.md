@@ -38,7 +38,36 @@ xvfb-run -a npm run test:e2e
 - 跳过：2
 - 覆盖率目标：核心模块 70% 行覆盖
 
-## 4. 新增测试约定
+## 4. 覆盖率门槛
+
+CI 对**核心逻辑层**强制执行 v8 覆盖率门槛：
+
+```text
+statements ≥ 85%
+lines      ≥ 85%
+functions  ≥ 85%
+branches   ≥ 80%
+```
+
+核心逻辑层范围（`vitest.config.ts`）：
+
+```text
+src/shared/**
+src/main/ollama/**
+src/main/db/**
+src/main/ipc/**
+src/renderer/api/**
+src/renderer/db/**
+src/renderer/services/context/**
+src/renderer/services/tools/**
+src/renderer/features/settings/**
+```
+
+`src/renderer/components/**`、`src/renderer/main.ts`、`src/main/main.ts`、`src/main/preload.ts`、`src/main/browser.ts` 属于 DOM/Electron 入口，由 Playwright E2E 与打包 smoke 覆盖，不进入 v8 单测分母。
+
+当前基线：49 个测试文件，633 passed / 2 skipped；核心逻辑 statements 93.69%、lines 95.49%、functions 98.12%、branches 81.49%。
+
+## 5. 新增测试约定
 
 - 纯函数放 `src/shared/*`，便于在 Node 环境直接测试。
 - 不依赖 Electron 的模块优先抽成纯函数。
@@ -46,7 +75,7 @@ xvfb-run -a npm run test:e2e
 - 工具测试必须断言 `TOOL_DEFINITIONS.length === 18`。
 - 任何新工具合并都要补 schema/action 分支测试。
 
-## 5. CI
+## 6. CI
 
 `.github/workflows/ci.yml`：
 
