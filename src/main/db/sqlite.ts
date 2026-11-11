@@ -441,7 +441,7 @@ export function deleteSession(id: string): void {
 }
 
 export function clearAllSessions(): void {
-  getDb().exec('DELETE FROM sessions');
+  runExec(getDb(), 'DELETE FROM sessions');
 }
 
 // ─── Messages CRUD ───
