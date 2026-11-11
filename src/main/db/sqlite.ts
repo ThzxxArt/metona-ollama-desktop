@@ -54,17 +54,30 @@ function queryAll(
 }
 
 function runTransaction(database: DatabaseSync, fn: () => void): void {
-  database.exec('BEGIN TRANSACTION');
+  const isOuter = _transactionDepth === 0;
+  const savepoint = `metona_sp_${_transactionDepth}`;
+  if (isOuter) database.exec('BEGIN IMMEDIATE');
+  else database.exec(`SAVEPOINT ${savepoint}`);
+  _transactionDepth++;
   try {
     fn();
-    database.exec('COMMIT');
+    if (isOuter) database.exec('COMMIT');
+    else database.exec(`RELEASE ${savepoint}`);
   } catch (err) {
-    database.exec('ROLLBACK');
+    try {
+      if (isOuter) database.exec('ROLLBACK');
+      else database.exec(`ROLLBACK TO ${savepoint}; RELEASE ${savepoint}`);
+    } catch {
+      /* 回滚失败时保留原始错误 */
+    }
     throw err;
+  } finally {
+    _transactionDepth--;
   }
 }
 
 let _cachedStatements = new Map<string, StatementSync>();
+let _transactionDepth = 0;
 
 function prepared(database: DatabaseSync, sql: string): StatementSync {
   const cached = _cachedStatements.get(sql);
@@ -159,9 +172,61 @@ const SCHEMA_SQL = `
   CREATE INDEX IF NOT EXISTS idx_memory_embeddings_model ON memory_embeddings(model);
 `;
 
+/** 读取已有数据库的 user_version；无法读取时返回 null */
+function readDatabaseUserVersion(databasePath: string): number | null {
+  let probe: DatabaseSync | null = null;
+  try {
+    probe = new DatabaseSync(databasePath, { readOnly: true });
+    const row = probe.prepare('PRAGMA user_version').get() as { user_version?: number } | undefined;
+    return Number(row?.user_version ?? 0);
+  } catch {
+    return null;
+  } finally {
+    try {
+      probe?.close();
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
 /** 删除 v0.17.2 旧库文件（不读取、不解析、不转换） */
 function removeLegacyDatabaseIfNeeded(markerPath: string, databasePath: string): void {
   if (fs.existsSync(markerPath)) return;
+
+  // 根因修复：marker 可能因磁盘/权限/崩溃丢失。不能仅凭 marker 缺失就删除数据库，
+  // 否则会把已经升级到 0.18 的新库误删。先读 user_version：
+  // - 180：确认是 0.18 新库，补写 marker 并保留
+  // - 其他：旧库，删除 db/wal/shm
+  // - 无法读取：重命名为 .corrupt-* 备份，避免不可恢复的数据丢失
+  if (fs.existsSync(databasePath)) {
+    const version = readDatabaseUserVersion(databasePath);
+    if (version === 180) {
+      try {
+        fs.writeFileSync(markerPath, `schema=180\nrecovered=${new Date().toISOString()}\n`);
+      } catch {
+        /* marker 写失败不影响本次运行；下次仍会通过 user_version 识别 */
+      }
+      return;
+    }
+
+    if (version === null) {
+      const backupPath = `${databasePath}.corrupt-${Date.now()}`;
+      try {
+        fs.renameSync(databasePath, backupPath);
+        for (const suffix of ['-wal', '-shm']) {
+          if (fs.existsSync(`${databasePath}${suffix}`)) {
+            fs.renameSync(`${databasePath}${suffix}`, `${backupPath}${suffix}`);
+          }
+        }
+        console.warn(`[db] 无法识别现有数据库，已备份到 ${backupPath}，0.18.0 将创建全新数据库`);
+        return;
+      } catch (err) {
+        throw new Error(`无法处理旧数据库 ${databasePath}: ${(err as Error).message}`);
+      }
+    }
+  }
+
   const candidates = [databasePath, `${databasePath}-wal`, `${databasePath}-shm`];
   let removed = false;
   for (const file of candidates) {
@@ -292,8 +357,16 @@ export interface TraceRow {
 export function saveSession(session: SessionRow): string {
   prepared(
     getDb(),
-    `INSERT OR REPLACE INTO sessions (id, title, model, system_prompt, parent_id, status, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO sessions (id, title, model, system_prompt, parent_id, status, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      title = excluded.title,
+      model = excluded.model,
+      system_prompt = excluded.system_prompt,
+      parent_id = excluded.parent_id,
+      status = excluded.status,
+      created_at = excluded.created_at,
+      updated_at = excluded.updated_at`,
   ).run(
     session.id,
     session.title,
@@ -373,8 +446,21 @@ export function saveMessagesBatch(msgs: MessageRow[]): number {
   const d = getDb();
   const stmt = prepared(
     d,
-    `INSERT OR REPLACE INTO messages (id, session_id, role, content, thinking, images, tool_calls, tool_name, attachments, eval_count, prompt_eval_count, total_duration, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO messages (id, session_id, role, content, thinking, images, tool_calls, tool_name, attachments, eval_count, prompt_eval_count, total_duration, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      session_id = excluded.session_id,
+      role = excluded.role,
+      content = excluded.content,
+      thinking = excluded.thinking,
+      images = excluded.images,
+      tool_calls = excluded.tool_calls,
+      tool_name = excluded.tool_name,
+      attachments = excluded.attachments,
+      eval_count = excluded.eval_count,
+      prompt_eval_count = excluded.prompt_eval_count,
+      total_duration = excluded.total_duration,
+      created_at = excluded.created_at`,
   );
   runTransaction(d, () => {
     for (const msg of msgs) {
@@ -426,17 +512,21 @@ export function deleteMessages(sessionId: string, ids: string[]): number {
 // ─── Settings CRUD ───
 
 export function saveSetting(key: string, value: unknown): void {
-  prepared(getDb(), 'INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)').run(
-    key,
-    JSON.stringify(value),
-    Date.now(),
-  );
+  prepared(
+    getDb(),
+    `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+  ).run(key, JSON.stringify(value), Date.now());
 }
 
 export function saveSettingsBatch(entries: Array<{ key: string; value: unknown }>): void {
   if (!entries.length) return;
   const d = getDb();
-  const stmt = prepared(d, 'INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)');
+  const stmt = prepared(
+    d,
+    `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+  );
   runTransaction(d, () => {
     for (const { key, value } of entries) {
       stmt.run(key, JSON.stringify(value), Date.now());
@@ -457,22 +547,7 @@ export function getSetting<T = unknown>(key: string, defaultValue: T | null = nu
 // ─── Traces CRUD ───
 
 export function saveTrace(trace: TraceRow): string {
-  prepared(
-    getDb(),
-    `INSERT OR REPLACE INTO traces (id, session_id, step_index, thought, action, action_input, observation, loop_count, error_pattern, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(
-    trace.id,
-    trace.session_id,
-    trace.step_index,
-    trace.thought,
-    trace.action,
-    trace.action_input,
-    trace.observation,
-    trace.loop_count,
-    trace.error_pattern,
-    trace.created_at,
-  );
+  saveTracesBatch([trace]);
   return trace.id;
 }
 
@@ -481,8 +556,18 @@ export function saveTracesBatch(traces: TraceRow[]): number {
   const d = getDb();
   const stmt = prepared(
     d,
-    `INSERT OR REPLACE INTO traces (id, session_id, step_index, thought, action, action_input, observation, loop_count, error_pattern, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO traces (id, session_id, step_index, thought, action, action_input, observation, loop_count, error_pattern, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      session_id = excluded.session_id,
+      step_index = excluded.step_index,
+      thought = excluded.thought,
+      action = excluded.action,
+      action_input = excluded.action_input,
+      observation = excluded.observation,
+      loop_count = excluded.loop_count,
+      error_pattern = excluded.error_pattern,
+      created_at = excluded.created_at`,
   );
   runTransaction(d, () => {
     for (const trace of traces) {
@@ -588,21 +673,25 @@ export interface ExportData {
   exportedAt: number;
 }
 
+const SENSITIVE_SETTING_KEYS = new Set(['searxng_auth_key']);
+
 export function exportAllSessions(): ExportData {
   const d = getDb();
   const sessions = queryAll(d, 'SELECT * FROM sessions') as unknown as SessionRow[];
   const messages = queryAll(d, 'SELECT * FROM messages') as unknown as MessageRow[];
   const settingsRows = queryAll(d, 'SELECT * FROM settings') as unknown as SettingRow[];
-  const settings = settingsRows.map((r) => ({
-    key: r.key,
-    value: (() => {
-      try {
-        return JSON.parse(r.value);
-      } catch {
-        return r.value;
-      }
-    })(),
-  }));
+  const settings = settingsRows
+    .filter((r) => !SENSITIVE_SETTING_KEYS.has(r.key))
+    .map((r) => ({
+      key: r.key,
+      value: (() => {
+        try {
+          return JSON.parse(r.value);
+        } catch {
+          return r.value;
+        }
+      })(),
+    }));
   return { sessions, messages, settings, exportedAt: Date.now() };
 }
 
