@@ -128,24 +128,27 @@ async function loadHistory(): Promise<void> {
   const start = (historyPage - 1) * HISTORY_PAGE_SIZE;
   const pageSessions = summaries.slice(start, start + HISTORY_PAGE_SIZE);
 
-  historyListEl.innerHTML = pageSessions.map(s => `
-    <div class="history-item" data-id="${s.id}">
-      <div class="history-info" data-id="${s.id}">
+  historyListEl.innerHTML = pageSessions.map(s => {
+    const id = escapeHtml(s.id);
+    return `
+    <div class="history-item" data-id="${id}">
+      <div class="history-info" data-id="${id}">
         <div class="history-title">${escapeHtml(s.title)}</div>
         <div class="history-meta">
           <span>${formatTime(s.updated_at)}</span>
-          <span>${s.message_count} 条消息</span>
-          <span>${s.model || '无模型'}</span>
+          <span>${Number(s.message_count) || 0} 条消息</span>
+          <span>${escapeHtml(s.model || '无模型')}</span>
         </div>
       </div>
       <div class="history-actions">
-        <button class="icon-btn sm btn-export-md" data-id="${s.id}" title="导出为 Markdown">📄</button>
-        <button class="icon-btn sm btn-export-html" data-id="${s.id}" title="导出为 HTML">🌐</button>
-        <button class="icon-btn sm btn-export-txt" data-id="${s.id}" title="导出为 TXT">📝</button>
-        <button class="icon-btn sm danger btn-delete-session" data-id="${s.id}" title="删除">🗑️</button>
+        <button class="icon-btn sm btn-export-md" data-id="${id}" title="导出为 Markdown">📄</button>
+        <button class="icon-btn sm btn-export-html" data-id="${id}" title="导出为 HTML">🌐</button>
+        <button class="icon-btn sm btn-export-txt" data-id="${id}" title="导出为 TXT">📝</button>
+        <button class="icon-btn sm danger btn-delete-session" data-id="${id}" title="删除">🗑️</button>
       </div>
     </div>
-  `).join('');
+  `;
+  }).join('');
 
   if (totalPages <= 1) {
     historyPaginationEl.innerHTML = `<span class="page-info">共 ${summaries.length} 条</span>`;

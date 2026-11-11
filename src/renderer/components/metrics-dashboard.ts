@@ -5,6 +5,7 @@
 
 import { getMetricsHistory, aggregateMetrics, generateImprovementSuggestions, exportMetricsJSON, exportMetricsPrometheus } from '../services/agent-metrics.js';
 import { logInfo, logError, logSuccess } from '../services/log-service.js';
+import { escapeHtml } from '../utils/utils.js';
 import { showToast } from './toast.js';
 
 let metricsModalEl: HTMLElement | null = null;
@@ -128,7 +129,7 @@ function renderMetricsDashboard(): void {
         const cancelPct = (stat.cancelled / maxTotal * 100).toFixed(1);
         return `
           <div class="md-bar-row">
-            <span class="md-bar-label">${name}</span>
+            <span class="md-bar-label">${escapeHtml(name)}</span>
             <div class="md-bar">
               <div class="md-bar-success" style="width:${successPct}%"></div>
               <div class="md-bar-error" style="width:${errorPct}%"></div>
@@ -172,7 +173,7 @@ function renderMetricsDashboard(): void {
       suggestionsEl.innerHTML = suggestions.map(s => `
         <div class="md-suggestion">
           <span class="md-suggestion-severity md-severity-${s.severity}">${s.severity}</span>
-          <span class="md-suggestion-msg">${s.suggestion}</span>
+          <span class="md-suggestion-msg">${escapeHtml(s.suggestion)}</span>
         </div>
       `).join('');
     }

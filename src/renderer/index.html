@@ -408,6 +408,13 @@
                 <select class="setting-input" id="selectSubAgentModel">
                     <option value="">跟随当前模型</option>
                 </select>
+                <label class="setting-label" style="margin-top:12px;">🔐 子代理权限上限</label>
+                <p class="text-muted" style="font-size:11px;margin-bottom:8px;">AI 只能请求等于或低于此级别的权限，不能自授更高权限。</p>
+                <select class="setting-input" id="selectSubAgentPermission">
+                    <option value="readonly">只读（默认）</option>
+                    <option value="limited_write">有限写（不可删除/执行命令）</option>
+                    <option value="full_write">完整写（受安全规则约束）</option>
+                </select>
             </div>
             <div class="setting-group">
                 <label class="setting-label">🤖 子代理 & 看门狗参数</label>
@@ -590,11 +597,15 @@
     <div class="modal" style="max-width:760px;width:760px;">
         <div class="modal-header">
             <h3>📊 Agent Metrics 仪表盘</h3>
-            <button class="icon-btn" id="btnCloseMetrics">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-                </svg>
-            </button>
+            <div style="display:flex;gap:8px;align-items:center;">
+                <button class="btn btn-sm btn-outline" id="btnExportMetricsJson" title="导出 JSON">导出 JSON</button>
+                <button class="btn btn-sm btn-outline" id="btnExportMetricsPrometheus" title="导出 Prometheus">导出 Prometheus</button>
+                <button class="icon-btn" id="btnCloseMetrics">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>
+            </div>
         </div>
         <div class="modal-body" style="max-height:75vh;overflow-y:auto;">
             <div class="md-overview" id="mdOverview"></div>

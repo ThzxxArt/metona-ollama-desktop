@@ -118,12 +118,12 @@ async function renderList(): Promise<void> {
       html += `<div class="memory-entry-simple" style="padding:10px 14px;margin:4px 0;background:var(--bg-card);border-radius:var(--radius-control);border:1px solid var(--border-subtle);">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
           <div style="flex:1;font-size:13px;line-height:1.5;color:var(--text-primary);">${escapeHtml(entry.content)}</div>
-          <button class="memory-item-delete" data-id="${entry.id}" style="flex-shrink:0;background:none;border:none;color:var(--text-tertiary);cursor:pointer;font-size:16px;padding:0 4px;line-height:1;" title="删除">✕</button>
+          <button class="memory-item-delete" data-id="${escapeHtml(entry.id)}" style="flex-shrink:0;background:none;border:none;color:var(--text-tertiary);cursor:pointer;font-size:16px;padding:0 4px;line-height:1;" title="删除">✕</button>
         </div>
         <div style="display:flex;gap:8px;align-items:center;margin-top:6px;font-size:11px;color:var(--text-tertiary);">
           <span style="color:var(--accent);">${stars}</span>
-          <span>${entry.id}</span>
-          ${entry.tags.length > 0 ? `<span>🏷 ${entry.tags.join(', ')}</span>` : ''}
+          <span>${escapeHtml(entry.id)}</span>
+          ${entry.tags.length > 0 ? `<span>🏷 ${escapeHtml(entry.tags.join(', '))}</span>` : ''}
         </div>
       </div>`;
     }

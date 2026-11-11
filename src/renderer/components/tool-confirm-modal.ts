@@ -66,7 +66,8 @@ function showNext(): void {
 
   const { call, resolve } = confirmQueue.shift()!;
   const icon = getToolIcon(call.function.name);
-  const name = formatToolName(call.function.name);
+  const rawName = formatToolName(call.function.name);
+  const name = escapeHtml(rawName);
   logInfo(`等待确认: ${call.function.name}`, JSON.stringify(call.function.arguments));
 
   const titleEl = modalEl!.querySelector('#toolConfirmTitle')!;
@@ -74,7 +75,7 @@ function showNext(): void {
   confirmBtn = modalEl!.querySelector('#toolConfirmBtn') as HTMLButtonElement;
   cancelBtn = modalEl!.querySelector('#toolCancelBtn') as HTMLButtonElement;
 
-  titleEl.textContent = `${icon} 确认操作：${name}`;
+  titleEl.textContent = `${icon} 确认操作：${rawName}`;
 
   let bodyHtml = `<div class="tool-confirm-info">`;
   bodyHtml += `<div class="tool-confirm-row"><span class="tool-confirm-label">操作：</span><span>${name}</span></div>`;

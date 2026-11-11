@@ -247,12 +247,12 @@ export function appendMessageDOM(msg: ChatMessage, index: number): void {
     contentHtml += '</div>';
   }
 
-  if ((msg as any)._videos && (msg as any)._videos.length > 0) {
-    for (const v of (msg as any)._videos) {
-      contentHtml += `<div class="msg-video-indicator">🎬 ${v.fileName} · ${v.frameCount} 帧 · 1fps</div>`;
+  if (msg._videos && msg._videos.length > 0) {
+    for (const v of msg._videos) {
+      contentHtml += `<div class="msg-video-indicator">🎬 ${escapeHtml(v.fileName)} · ${Number(v.frameCount) || 0} 帧 · 1fps</div>`;
     }
-  } else if ((msg as any)._videoFrames && (msg as any)._videoFrames.length > 0) {
-    const n = (msg as any)._videoFrames.length;
+  } else if (msg._videoFrames && msg._videoFrames.length > 0) {
+    const n = msg._videoFrames.length;
     contentHtml += `<div class="msg-video-indicator">🎬 ${n} 帧 · 1fps</div>`;
   }
 
@@ -282,13 +282,13 @@ export function appendMessageDOM(msg: ChatMessage, index: number): void {
         memory: 'memory', session: 'session', spawn_task: 'spawn_task',
         file_transfer: 'file_transfer', diff: 'diff', compress: 'compress',
       };
-      return names[t.name] || t.name;
+      return escapeHtml(names[t.name] || t.name);
     }).slice(0, 5).join(', ') + (tcCount > 5 ? ` +${tcCount - 5}` : '');
 
     contentHtml += `<div class="tool-calls-history">
       <div class="tool-calls-toggle" onclick="this.parentElement.classList.toggle('expanded')">
         <span class="tool-calls-chevron">▸</span>
-        <span class="tool-calls-summary">🔧 ${tcCount} 个工具调用（✅${successCount} ❌${errorCount}）</span>
+        <span class="tool-calls-summary">🔧 ${tcCount} 个工具调用（✅${successCount} ❌${errorCount}）${summary ? ` · ${summary}` : ''}</span>
       </div>
       <div class="tool-calls-list">
         ${msg.toolCalls.map(tc => renderToolCallCard(tc)).join('')}
@@ -317,7 +317,7 @@ function renderToolCallCard(tc: ToolCallRecord): string {
   };
 
   const icon = getToolIcon(tc.name);
-  const name = formatToolName(tc.name);
+  const name = escapeHtml(formatToolName(tc.name));
   const status = statusLabels[tc.status] || tc.status;
   const args = tc.arguments || {};
 
@@ -1003,12 +1003,8 @@ export function initSearchBar(): void {
 
   searchInputEl.addEventListener('input', performSearch);
 
-  // Ctrl+F 快捷键
+  // Ctrl+F 由 keybind-manager 统一处理，避免两个监听器互相抵消。
   document.addEventListener('keydown', (e) => {
-    if (e.ctrlKey && e.key === 'f') {
-      e.preventDefault();
-      toggleSearchBar();
-    }
     if (e.key === 'Escape' && searchBarEl.style.display !== 'none') {
       closeSearchBar();
     }

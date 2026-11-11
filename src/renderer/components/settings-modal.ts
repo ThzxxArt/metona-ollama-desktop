@@ -3,7 +3,7 @@
  */
 
 import { state, KEYS } from '../state/state.js';
-import { debounce } from '../utils/utils.js';
+import { debounce, escapeHtml } from '../utils/utils.js';
 import { logSetting, logInfo, logWarn, logError, logSuccess } from '../services/log-service.js';
 import { checkConnection, updateConnectionInfo, updateRunningModels } from './header.js';
 import { initConnectionSettings, refreshConnectionSettingsUI } from '../features/settings/connection.js';
@@ -128,12 +128,14 @@ export function initSettingsModal(): void {
         const status = statuses.find((st) => st.name === s.name);
         const running = status?.running || false;
         const toolCount = status?.toolCount || 0;
+        const name = escapeHtml(s.name);
+        const command = escapeHtml(`${s.command} ${s.args.join(' ')}`);
         return `<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid var(--border-subtle);">
         <span style="width:8px;height:8px;border-radius:50%;background:${running ? 'var(--success)' : 'var(--text-muted)'};" title="${running ? '已连接' : '未连接'}"></span>
-        <span style="flex:1;font-weight:500;">${s.name}</span>
-        <span class="text-muted" style="font-size:11px;">${s.command} ${s.args.join(' ')}${running ? ` (${toolCount} 工具)` : ''}</span>
-        <button class="btn btn-sm btn-outline mcp-toggle" data-name="${s.name}" style="padding:2px 8px;font-size:11px;">${s.enabled ? '禁用' : '启用'}</button>
-        <button class="btn btn-sm btn-outline mcp-delete" data-name="${s.name}" style="padding:2px 8px;font-size:11px;color:var(--critical);">删除</button>
+        <span style="flex:1;font-weight:500;">${name}</span>
+        <span class="text-muted" style="font-size:11px;">${command}${running ? ` (${toolCount} 工具)` : ''}</span>
+        <button class="btn btn-sm btn-outline mcp-toggle" data-name="${name}" style="padding:2px 8px;font-size:11px;">${s.enabled ? '禁用' : '启用'}</button>
+        <button class="btn btn-sm btn-outline mcp-delete" data-name="${name}" style="padding:2px 8px;font-size:11px;color:var(--critical);">删除</button>
       </div>`;
       })
       .join('');

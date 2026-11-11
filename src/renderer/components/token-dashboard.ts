@@ -236,7 +236,8 @@ function renderGlobalView(): void {
   const myFetchId = ++globalFetchId;
   lastCachedInfo = null;
   fetchGlobalStats().then(stats => {
-    if (myFetchId !== globalFetchId) return; // P9: 过期响应，丢弃
+    // 过期响应或用户已切到会话视图时，不能再覆盖当前视图。
+    if (myFetchId !== globalFetchId || viewMode !== 'global') return;
     if (!stats) {
       // P1 #3/#9: 刷新失败时保留旧数据，仅在从未加载成功时显示错误
       if (hasEverLoaded && lastSuccessfulStats) {

@@ -442,6 +442,10 @@ function clearTerminal(): void {
   const session = getActiveSession();
   if (!session) return;
   session.lines = [];
+  // 命令仍在运行时保留状态，并给用户明确提示，避免终端变成空白。
+  if (session.running || currentAiCommand) {
+    session.lines.push({ type: 'system', text: '■ 终端已清空，命令仍在运行…' });
+  }
   _termRenderedCount = 0; // P0-2: 重置增量计数器
   if (_termContainer) _termContainer.innerHTML = '';
   renderTerminal();
@@ -587,8 +591,8 @@ function renderTerminal(): void {
   }
 
   // 监听滚动事件（只绑定一次）
-  if (!(container as any)._scrollBound) {
-    (container as any)._scrollBound = true;
+  if (!container.dataset.scrollBound) {
+    container.dataset.scrollBound = '1';
     container.addEventListener('scroll', () => {
       const atBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 50;
       session.autoScroll = atBottom;
@@ -811,6 +815,7 @@ export function addToolCard(tc: ToolCallRecord): void {
     // pending 卡片不切换 tab（准备中不应打断当前视图）
     switchToTab('tools');
   }
+  updateToolsHint();
 }
 
 /** 工具开始执行：将 pending 卡片升级为 running，或新增 running 卡片 */
@@ -1024,6 +1029,8 @@ function renderToolCard(tc: ToolCallRecord): string {
   const statusClass = tc.status === 'running' ? 'tool-call-running'
     : tc.status === 'pending' ? 'tool-call-pending'
     : tc.status === 'error' ? 'tool-call-error'
+    : tc.status === 'success' ? 'tool-call-success'
+    : tc.status === 'cancelled' ? 'tool-call-cancelled'
     : '';
   const statusLabels: Record<string, string> = {
     pending: '📝 准备中…', running: '🔄 执行中', success: '✅ 完成', error: '❌ 失败', cancelled: '🚫 已取消'

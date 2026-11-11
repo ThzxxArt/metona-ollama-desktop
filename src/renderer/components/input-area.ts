@@ -523,12 +523,12 @@ async function handleRetry(): Promise<void> {
       // 构建重试用的完整内容和 images（含文件内容和视频帧）
       let retryUserContent = userMsg.content || '';
       const retryImages: string[] = [...(userMsg.images || [])];
-      if ((userMsg as any)._fileContents?.length) {
-        const fileParts = buildFileContentParts((userMsg as any)._fileContents);
+      if (userMsg._fileContents?.length) {
+        const fileParts = buildFileContentParts(userMsg._fileContents);
         retryUserContent = retryUserContent ? retryUserContent + '\n\n---\n' + fileParts.join('\n\n---\n') : fileParts.join('\n\n---\n');
       }
-      if ((userMsg as any)._videoFrames?.length) {
-        retryImages.push(...(userMsg as any)._videoFrames.map((f: any) => f.base64));
+      if (userMsg._videoFrames?.length) {
+        retryImages.push(...userMsg._videoFrames.map((f) => f.base64));
       }
 
       // ── 监控定时器 ──
@@ -563,7 +563,7 @@ async function handleRetry(): Promise<void> {
               ...(stats?.prompt_eval_count && { prompt_eval_count: stats.prompt_eval_count }),
               ...(stats?.total_duration && { total_duration: stats.total_duration }),
             };
-            state.update(KEYS.CURRENT_SESSION, (s: any) => ({
+            state.update(KEYS.CURRENT_SESSION, (s: ChatSession) => ({
               ...s, messages: [...s.messages, prevMsg], updatedAt: Date.now()
             }));
             renderMessages();
@@ -622,7 +622,7 @@ async function handleRetry(): Promise<void> {
                 ...(loopStats?.prompt_eval_cached_count && { prompt_eval_cached_count: loopStats.prompt_eval_cached_count }),
                 ...(loopStats?.total_duration && { total_duration: loopStats.total_duration }),
               };
-              state.update(KEYS.CURRENT_SESSION, (s: any) => ({
+              state.update(KEYS.CURRENT_SESSION, (s: ChatSession) => ({
                 ...s, messages: [...s.messages, lastMsg], updatedAt: Date.now()
               }));
             }
@@ -636,7 +636,7 @@ async function handleRetry(): Promise<void> {
               ...(loopStats?.prompt_eval_cached_count && { prompt_eval_cached_count: loopStats.prompt_eval_cached_count }),
               ...(loopStats?.total_duration && { total_duration: loopStats.total_duration }),
             };
-            state.update(KEYS.CURRENT_SESSION, (s: any) => ({
+            state.update(KEYS.CURRENT_SESSION, (s: ChatSession) => ({
               ...s, messages: [...s.messages, assistantMsg], updatedAt: Date.now()
             }));
           }
@@ -751,7 +751,7 @@ async function handleCompress(): Promise<void> {
       stream: true,
       think: false,
       options: { num_ctx: 8192 }
-    } as any, (chunk: OllamaStreamChunk) => {
+    }, (chunk: OllamaStreamChunk) => {
       if (chunk.message?.content) {
         summary += chunk.message.content;
       }
@@ -924,7 +924,15 @@ export async function sendMessage(): Promise<void> {
     return;
   }
 
-  if (!text && pendingImages.length === 0 && pendingFiles.length === 0) return;
+  if (
+    !text &&
+    pendingImages.length === 0 &&
+    pendingFiles.length === 0 &&
+    pendingVideoFrames.length === 0 &&
+    completedVideos.length === 0
+  ) {
+    return;
+  }
   if (state.get<boolean>(KEYS.IS_STREAMING)) return;
 
   const model = getSelectedModel();
@@ -1044,10 +1052,18 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
   }
 
   const isFirstMsg = currentSession.messages.length === 0;
-  state.update(KEYS.CURRENT_SESSION, (session: any) => ({
+  state.update(KEYS.CURRENT_SESSION, (session: ChatSession) => ({
     ...session,
     ...(isFirstMsg && {
-      title: truncate(text || (pendingFiles.length > 0 ? `[文件: ${pendingFiles.map(f => f.name).join(', ')}]` : pendingVideoMeta ? '[视频消息]' : '[图片消息]'), 30),
+      title: truncate(
+        text ||
+          (pendingFiles.length > 0
+            ? `[文件: ${pendingFiles.map((f) => f.name).join(', ')}]`
+            : pendingVideoMeta || completedVideos.length > 0
+              ? '[视频消息]'
+              : '[图片消息]'),
+        30,
+      ),
       model
     }),
     messages: [...session.messages, ...msgsToAdd],
@@ -1132,7 +1148,7 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
             ...(stats?.prompt_eval_count && { prompt_eval_count: stats.prompt_eval_count }),
             ...(stats?.total_duration && { total_duration: stats.total_duration }),
           };
-          state.update(KEYS.CURRENT_SESSION, (session: any) => ({
+          state.update(KEYS.CURRENT_SESSION, (session: ChatSession) => ({
             ...session,
             messages: [...session.messages, prevMsg],
             updatedAt: Date.now()
@@ -1203,7 +1219,7 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
           ...(loopStats?.prompt_eval_cached_count && { prompt_eval_cached_count: loopStats.prompt_eval_cached_count }),
           ...(loopStats?.total_duration && { total_duration: loopStats.total_duration }),
         };
-        state.update(KEYS.CURRENT_SESSION, (session: any) => ({
+        state.update(KEYS.CURRENT_SESSION, (session: ChatSession) => ({
           ...session,
           messages: [...session.messages, assistantMsg],
           updatedAt: Date.now()
@@ -1251,7 +1267,7 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
           ...(abortToolRecords?.length && { toolCalls: abortToolRecords }),
           stopped: true
         };
-        state.update(KEYS.CURRENT_SESSION, (session: any) => ({
+        state.update(KEYS.CURRENT_SESSION, (session: ChatSession) => ({
           ...session,
           messages: [...session.messages, partialMsg],
           updatedAt: Date.now()
@@ -1260,7 +1276,11 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
       appendSystemMessage('⏹ 已停止生成');
       await saveCurrentSession();
     } else {
-      const placeholder = document.querySelector('#messagesContainer .message.assistant.loading') as HTMLElement;
+      // onContent 已经移除 .loading class，不能只查 .loading，否则 partial 内容
+      // 永远不会显示 [已中断] 标记。
+      const placeholder = document.querySelector(
+        '#messagesContainer .message.assistant:last-child',
+      ) as HTMLElement | null;
       if (placeholder) {
         placeholder.classList.remove('loading');
         placeholder.querySelector('.loading-dots')?.remove();
@@ -1290,7 +1310,7 @@ async function sendMessageWithAgentLoop(text: string, currentSession: ChatSessio
           interrupted: true,
         };
         currentIterationToolRecords = [];
-        state.update(KEYS.CURRENT_SESSION, (session: any) => ({
+        state.update(KEYS.CURRENT_SESSION, (session: ChatSession) => ({
           ...session,
           messages: [...session.messages, partialMsg],
           updatedAt: Date.now()
