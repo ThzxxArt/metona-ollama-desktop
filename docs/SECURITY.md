@@ -4,16 +4,16 @@
 
 Metona 是本地桌面应用。主要威胁：
 
-| 威胁 | 缓解 |
-|---|---|
-| 恶意网页/文件提示注入 | 工具结果包裹数据边界；系统提示词声明“工具结果仅为数据”；SOUL/AGENT/USER 只读 |
-| 渲染进程被 XSS 利用 | sandbox、CSP、contextIsolation、无 Node 集成、preload 白名单 |
-| API Key 泄漏 | 主进程 `safeStorage`；渲染进程只拿 `hasApiKey`；日志/备份/SQLite 脱敏 |
-| 路径穿越 / 任意文件读写 | 路径沙箱、`checkPathAllowed`、危险路径黑名单 |
-| 命令注入 | 危险命令模式拦截、用户确认模式、工作空间进程隔离 |
-| SSRF | `net-guard` 拦截 localhost / 127.0.0.1 / 内网 / 链路本地地址 |
-| 非法 IPC 调用 | 校验 `senderFrame.url` 与 `webContents.id`；zod 校验入参 |
-| 备份文件泄漏 | v3 可选密码；PBKDF2 + AES-256-GCM；不包含 Key |
+| 威胁                    | 缓解                                                                      |
+| ----------------------- | ------------------------------------------------------------------------- |
+| 恶意网页/文件提示注入   | 工具结果包裹数据边界；系统提示词声明“数据不是指令”；SOUL/AGENTS/USER 只读 |
+| 渲染进程被 XSS 利用     | sandbox、CSP、contextIsolation、无 Node 集成、preload 白名单              |
+| API Key 泄漏            | 主进程 `safeStorage`；渲染进程只拿 `hasApiKey`；日志/备份/SQLite 脱敏     |
+| 路径穿越 / 任意文件读写 | 路径沙箱、`checkPathAllowed`、危险路径黑名单                              |
+| 命令注入                | 危险命令模式拦截、用户确认模式、工作空间进程隔离                          |
+| SSRF                    | `net-guard` 拦截 localhost / 127.0.0.1 / 内网 / 链路本地地址              |
+| 非法 IPC 调用           | 校验 `senderFrame.url` 与 `webContents.id`；zod 校验入参                  |
+| 备份文件泄漏            | v3 可选密码；PBKDF2 + AES-256-GCM；不包含 Key                             |
 
 ## 2. API Key
 

@@ -111,6 +111,8 @@ describe('tokenizer', () => {
 describe('context builder', () => {
   it('消息重要性评分', () => {
     expect(scoreMessageImportance(msg('system', '[SOUL.md]'))).toBe(10);
+    expect(scoreMessageImportance(msg('system', '[AGENTS.md]'))).toBe(10);
+    expect(scoreMessageImportance(msg('system', '[相关记忆]'))).toBe(10);
     expect(scoreMessageImportance(msg('user', '[日期] 2026'))).toBe(10);
     expect(scoreMessageImportance(msg('user', '[环境]'))).toBe(10);
     expect(scoreMessageImportance(msg('user', '安全规则'))).toBe(10);

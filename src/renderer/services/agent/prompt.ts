@@ -1,5 +1,5 @@
 /**
- * Agent 提示词构建：注入清洗、系统环境、SOUL/AGENT/USER 文件、标准提示词。
+ * Agent 提示词构建：注入清洗、系统环境、行为文件（SOUL.md / AGENTS.md）与 USER.md。
  */
 
 import { state } from '../../state/state.js';
@@ -87,63 +87,67 @@ async function readBuiltinResource(name: string): Promise<string> {
   return '';
 }
 
+/** 行为文件 Token 预算：合并后统一限制，避免自定义文件挤占上下文 */
+const BEHAVIOR_FILE_MAX_TOKENS = 3000;
+
+interface BehaviorFile {
+  label: 'SOUL.md' | 'AGENTS.md';
+  content: string;
+}
+
+async function readWorkspaceTextFile(
+  workspaceDir: string,
+  name: string,
+): Promise<{ content: string; lines?: number } | null> {
+  if (!workspaceDir) return null;
+  try {
+    const r = await window.metonaDesktop?.workspace.readFile(workspaceDir.replace(/[\\/]+$/, '') + '/' + name);
+    if (r?.success && r.content) return { content: r.content, lines: r.lines };
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+/**
+ * 行为文件只加载一份，优先级：
+ * 1. 工作空间 SOUL.md
+ * 2. 工作空间 AGENTS.md
+ * 3. 内置 SOUL.md（已合并原 AGENT.md 的身份、行为与工具规则）
+ */
+async function loadBehaviorFile(workspaceDir: string): Promise<BehaviorFile | null> {
+  const workspaceSoul = await readWorkspaceTextFile(workspaceDir, 'SOUL.md');
+  if (workspaceSoul) {
+    logInfo('SOUL.md 已从工作空间加载', `${workspaceSoul.lines || 0} 行`);
+    return { label: 'SOUL.md', content: workspaceSoul.content };
+  }
+
+  const workspaceAgents = await readWorkspaceTextFile(workspaceDir, 'AGENTS.md');
+  if (workspaceAgents) {
+    logInfo('AGENTS.md 已从工作空间加载', `${workspaceAgents.lines || 0} 行`);
+    return { label: 'AGENTS.md', content: workspaceAgents.content };
+  }
+
+  const builtinSoul = await readBuiltinResource('SOUL.md');
+  if (builtinSoul) {
+    logInfo('SOUL.md 已从内置加载', `${builtinSoul.length} 字符`);
+    return { label: 'SOUL.md', content: builtinSoul };
+  }
+
+  return null;
+}
+
 export async function loadCustomFiles(workspaceDir: string, systemPromptParts: string[]): Promise<void> {
-  let soulMdContent = '';
-  if (workspaceDir) {
-    try {
-      const r = await window.metonaDesktop?.workspace.readFile(workspaceDir.replace(/[\\/]+$/, '') + '/SOUL.md');
-      if (r?.success && r.content) {
-        soulMdContent = r.content;
-        logInfo('SOUL.md 已从工作空间加载', `${r.lines || 0} 行`);
-      }
-    } catch {
-      /* ignore */
-    }
-  }
-  if (!soulMdContent) {
-    soulMdContent = await readBuiltinResource('SOUL.md');
-    if (soulMdContent) logInfo('SOUL.md 已从内置加载', `${soulMdContent.length} 字符`);
-  }
-  if (soulMdContent) {
-    systemPromptParts.unshift(
-      `[SOUL.md]\n<<<REFERENCE_DATA_START>>>\n${sanitizeUntrustedInput(soulMdContent)}\n<<<REFERENCE_DATA_END>>>`,
-    );
+  const behavior = await loadBehaviorFile(workspaceDir);
+  if (behavior) {
+    const content = truncateByTokenBudget(sanitizeUntrustedInput(behavior.content), BEHAVIOR_FILE_MAX_TOKENS);
+    systemPromptParts.unshift(`[${behavior.label}]\n${content}`);
   }
 
-  let agentMdContent = '';
-  if (workspaceDir) {
-    try {
-      const r = await window.metonaDesktop?.workspace.readFile(workspaceDir.replace(/[\\/]+$/, '') + '/AGENT.md');
-      if (r?.success && r.content) {
-        agentMdContent = r.content;
-        logInfo('AGENT.md 已从工作空间加载', `${r.lines || 0} 行`);
-      }
-    } catch {
-      /* ignore */
-    }
-  }
-  if (!agentMdContent) {
-    agentMdContent = await readBuiltinResource('AGENT.md');
-    if (agentMdContent) logInfo('AGENT.md 已从内置加载', `${agentMdContent.length} 字符`);
-  }
-  if (agentMdContent) {
-    systemPromptParts.push(
-      `[AGENT.md]\n<<<REFERENCE_DATA_START>>>\n${sanitizeUntrustedInput(truncateByTokenBudget(agentMdContent, 2000))}\n<<<REFERENCE_DATA_END>>>`,
-    );
-  }
-
-  if (workspaceDir) {
-    try {
-      const r = await window.metonaDesktop?.workspace.readFile(workspaceDir.replace(/[\\/]+$/, '') + '/USER.md');
-      if (r?.success && r.content) {
-        systemPromptParts.push(
-          `[USER.md]\n<<<REFERENCE_DATA_START>>>\n${sanitizeUntrustedInput(r.content)}\n<<<REFERENCE_DATA_END>>>`,
-        );
-        logInfo('USER.md 已从工作空间加载', `${r.lines || 0} 行`);
-      }
-    } catch {
-      /* ignore */
-    }
+  const userProfile = await readWorkspaceTextFile(workspaceDir, 'USER.md');
+  if (userProfile) {
+    systemPromptParts.push(`[USER.md]\n${sanitizeUntrustedInput(userProfile.content)}`);
+    logInfo('USER.md 已从工作空间加载', `${userProfile.lines || 0} 行`);
   }
 }
 

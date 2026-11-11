@@ -129,8 +129,8 @@ describe('tool-security — 身份文件保护', () => {
     expect(checkPathAllowed(outside, 'read').ok).toBe(true);
   });
 
-  it('SOUL.md / AGENT.md / USER.md 可读不可写', () => {
-    for (const name of ['SOUL.md', 'AGENT.md', 'USER.md']) {
+  it('SOUL.md / AGENTS.md / USER.md 可读不可写', () => {
+    for (const name of ['SOUL.md', 'AGENTS.md', 'USER.md']) {
       const p = path.join(ws, name);
       expect(checkPathAllowed(p, 'read').ok).toBe(true);
       const writeCheck = checkPathAllowed(p, 'write');

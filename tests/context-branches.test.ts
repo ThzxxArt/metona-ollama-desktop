@@ -71,12 +71,15 @@ describe('tokenizer 边界', () => {
 describe('builder 分支', () => {
   it('稳定 system 消息识别', () => {
     expect(isStableSystemMessage('[SOUL.md]')).toBe(true);
-    expect(isStableSystemMessage('<<<REFERENCE_DATA_START>>>')).toBe(true);
+    expect(isStableSystemMessage('[AGENTS.md]')).toBe(true);
+    expect(isStableSystemMessage('[USER.md]')).toBe(true);
     expect(isStableSystemMessage('[日期] x')).toBe(true);
     expect(isStableSystemMessage('[环境] x')).toBe(true);
     expect(isStableSystemMessage('安全规则')).toBe(true);
     expect(isStableSystemMessage('系统提示')).toBe(true);
     expect(isStableSystemMessage('You are')).toBe(true);
+    expect(isStableSystemMessage('[相关记忆] x')).toBe(false);
+    expect(isStableSystemMessage('[历史会话摘要] x')).toBe(false);
     expect(isStableSystemMessage('dynamic')).toBe(false);
   });
 

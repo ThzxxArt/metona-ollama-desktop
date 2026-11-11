@@ -12,18 +12,26 @@ const COMPRESS_KEEP_TAIL = 8;
 
 export function scoreMessageImportance(msg: OllamaMessage): number {
   let score = 5;
+  const content = msg.content || '';
 
-  if (msg.content?.includes('[SOUL.md]') || msg.content?.includes('<<<REFERENCE_DATA_START>>>')) return 10;
-  if (msg.content?.startsWith('[日期]')) return 10;
-  if (msg.content?.startsWith('[环境]')) return 10;
-  if (msg.content?.includes('安全规则')) return 10;
+  if (
+    content.includes('[SOUL.md]') ||
+    content.includes('[AGENTS.md]') ||
+    content.includes('[USER.md]') ||
+    content.includes('[相关记忆]') ||
+    content.includes('[历史会话摘要]')
+  ) {
+    return 10;
+  }
+  if (content.startsWith('[日期]')) return 10;
+  if (content.startsWith('[环境]')) return 10;
+  if (content.includes('安全规则')) return 10;
 
   if (msg.role === 'user') score += 2;
   if (msg.role === 'system') score -= 2;
   if (msg.ephemeral) return 0;
   if (msg.compressed) score = 4;
 
-  const content = msg.content || '';
   const highValuePatterns = [
     /路径|目录|path|file|config|配置|命令|command|exec/i,
     /错误|error|失败|fail|bug|fix|修复|解决/i,
@@ -97,7 +105,8 @@ function mergeSummaries(old_: StructuredSummary, new_: StructuredSummary): Struc
 function isStableSystemMessage(content: string): boolean {
   return (
     content.includes('[SOUL.md]') ||
-    content.includes('<<<REFERENCE_DATA_START>>>') ||
+    content.includes('[AGENTS.md]') ||
+    content.includes('[USER.md]') ||
     content.startsWith('[日期]') ||
     content.startsWith('[环境]') ||
     content.includes('安全规则') ||

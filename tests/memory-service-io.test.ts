@@ -316,7 +316,8 @@ describe('记忆服务分支补齐', () => {
     expect(out).toContain('【必须严格遵守的规则】');
     expect(out).toContain('【用户偏好】');
     expect(out).toContain('【关于用户的参考信息】');
-    expect(out).toContain('<<<REFERENCE_DATA_END>>>');
+    expect(out).toContain('[相关记忆]');
+    expect(out).not.toContain('REFERENCE_DATA');
     expect(out.match(/事实 /g)?.length).toBe(5);
   });
 

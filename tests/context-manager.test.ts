@@ -44,14 +44,14 @@ describe('getAdaptiveCompressThreshold', () => {
 });
 
 describe('scoreMessageImportance', () => {
-  it('SOUL.md 与参考数据不可压缩（满 10 分）', () => {
-    const m: OllamaMessage = { role: 'system', content: '[SOUL.md]\nxxx' };
-    expect(scoreMessageImportance(m)).toBe(10);
+  it('SOUL.md / AGENTS.md 不可压缩（满 10 分）', () => {
+    expect(scoreMessageImportance({ role: 'system', content: '[SOUL.md]\nxxx' })).toBe(10);
+    expect(scoreMessageImportance({ role: 'system', content: '[AGENTS.md]\nxxx' })).toBe(10);
   });
 
-  it('含 REFERENCE_DATA 标记的满 10 分', () => {
-    const m: OllamaMessage = { role: 'system', content: '<<<REFERENCE_DATA_START>>>' };
-    expect(scoreMessageImportance(m)).toBe(10);
+  it('记忆与历史摘要不可压缩（满 10 分）', () => {
+    expect(scoreMessageImportance({ role: 'system', content: '[相关记忆]\nxxx' })).toBe(10);
+    expect(scoreMessageImportance({ role: 'system', content: '[历史会话摘要]\nxxx' })).toBe(10);
   });
 
   it('日期/环境消息满 10 分', () => {

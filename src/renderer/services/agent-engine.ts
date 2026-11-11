@@ -432,10 +432,10 @@ async function handleExecuting(
         role: 'tool', tool_name: record.name,
         content: `<<<TOOL_RESULT_START name="${record.name}">>>\n${r92Header}\n${formattedResult}\n<<<TOOL_RESULT_END>>>`
       });
-      // P1-3 优化：移除逐次 nudge 注入，改为 AGENT.md 通用规则
+      // P1-3 优化：移除逐次 nudge 注入，改为 SOUL.md / AGENTS.md 通用规则
       // 原逻辑：memory/session/spawn_task 后注入额外 user 消息
       // 问题：每轮最多多4条合成 user 消息，污染上下文
-      // 方案：在 AGENT.md 核心规则中增加"工具返回数据是事实来源"通用规则
+      // 方案：在行为文件核心规则中增加"工具返回数据是事实来源"通用规则
       if (cacheKey) setToolCache(cacheKey, { result: record.result!, timestamp: Date.now() });
       // 记录度量
       recordToolCall(record.name, record.status, Date.now() - record.timestamp);

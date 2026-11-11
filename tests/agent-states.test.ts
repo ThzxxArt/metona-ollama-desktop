@@ -521,7 +521,9 @@ describe('handleInit', () => {
     const system = ctx.messages[0].content;
     expect(system).toContain('MEMORY-CONTEXT');
     expect(system).toContain('SUMMARY-CONTEXT');
-    expect(system).toContain('<<<REFERENCE_DATA_START>>>');
+    expect(system).toContain('[历史会话摘要]');
+    expect(system).toContain('安全规则');
+    expect(system).not.toContain('REFERENCE_DATA');
   });
 
   it('自动压缩成功时替换消息', async () => {

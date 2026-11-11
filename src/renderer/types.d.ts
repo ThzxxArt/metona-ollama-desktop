@@ -165,7 +165,7 @@ export interface MetonaDesktopAPI {
   info: () => Promise<AppInfo>;
   /** 检查 GitHub 最新 Release（只提示，不自动安装） */
   checkUpdate: () => Promise<{ hasUpdate: boolean; current?: string; latest?: string; url?: string; error?: string }>;
-  /** 读取应用内置资源（SOUL.md / AGENT.md），basename 防路径穿越 */
+  /** 读取应用内置资源（SOUL.md），basename 防路径穿越 */
   readAppResource: (name: string) => Promise<{ success: boolean; content?: string; error?: string }>;
   /** Ollama 主进程代理（连接 / 认证 / 流式 / 卸载） */
   ollama: OllamaBridgeAPI;
@@ -424,7 +424,7 @@ export interface LoopContext {
 
 /** System Prompt 分区（支持 LLM Prefix Caching） */
 export interface SystemPromptZones {
-  /** 静态区：SOUL.md + 环境基础 → 利用 LLM Prefix Caching */
+  /** 静态区：SOUL.md / AGENTS.md + 环境基础 → 利用 LLM Prefix Caching */
   staticZone: string;
   /** 动态区：记忆检索 + 工作空间 + 实时日期 */
   dynamicZone: string;

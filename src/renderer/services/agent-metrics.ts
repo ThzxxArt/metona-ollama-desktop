@@ -291,21 +291,21 @@ export function generateImprovementSuggestions(): ImprovementSuggestion[] {
         suggestions.push({
           pattern: err.pattern,
           frequency: err.count,
-          suggestion: `web_fetch 频繁失败 (${err.count}次)。考虑在 AGENT.md 中添加规则：优先使用 browser action="open" + action="extract" 作为替代方案。`,
+          suggestion: `web_fetch 频繁失败 (${err.count}次)。考虑在 SOUL.md（或 AGENTS.md） 中添加规则：优先使用 browser action="open" + action="extract" 作为替代方案。`,
           severity: 'high',
         });
       } else if (tool === 'web_search' && err.count >= 3) {
         suggestions.push({
           pattern: err.pattern,
           frequency: err.count,
-          suggestion: `web_search 频繁失败 (${err.count}次)。检查 SearXNG 配置或网络连接。可在 AGENT.md 中添加备用搜索策略。`,
+          suggestion: `web_search 频繁失败 (${err.count}次)。检查 SearXNG 配置或网络连接。可在 SOUL.md（或 AGENTS.md） 中添加备用搜索策略。`,
           severity: 'high',
         });
       } else if (err.count >= 5) {
         suggestions.push({
           pattern: err.pattern,
           frequency: err.count,
-          suggestion: `工具 ${tool} 反复失败 ${err.count} 次。建议审查该工具的参数构造逻辑，或在 AGENT.md 中添加错误处理指南。`,
+          suggestion: `工具 ${tool} 反复失败 ${err.count} 次。建议审查该工具的参数构造逻辑，或在 SOUL.md（或 AGENTS.md） 中添加错误处理指南。`,
           severity: 'medium',
         });
       }
@@ -317,7 +317,7 @@ export function generateImprovementSuggestions(): ImprovementSuggestion[] {
     suggestions.push({
       pattern: 'low_token_efficiency',
       frequency: metrics.totalSessions,
-      suggestion: `Token 效率过低 (${formatPercent(metrics.tokenEfficiency)})。Agent 可能过度调用工具。建议在 AGENT.md 中添加：简单常识问题直接回答，不要调用工具。`,
+      suggestion: `Token 效率过低 (${formatPercent(metrics.tokenEfficiency)})。Agent 可能过度调用工具。建议在 SOUL.md（或 AGENTS.md） 中添加：简单常识问题直接回答，不要调用工具。`,
       severity: 'medium',
     });
   }
@@ -327,7 +327,7 @@ export function generateImprovementSuggestions(): ImprovementSuggestion[] {
     suggestions.push({
       pattern: 'high_iterations',
       frequency: metrics.totalSessions,
-      suggestion: `平均迭代次数过高 (${metrics.avgIterationsPerTask} 轮)。建议降低 maxTurns 设置或在 AGENT.md 中添加提前终止条件。`,
+      suggestion: `平均迭代次数过高 (${metrics.avgIterationsPerTask} 轮)。建议降低 maxTurns 设置或在 SOUL.md（或 AGENTS.md） 中添加提前终止条件。`,
       severity: 'medium',
     });
   }

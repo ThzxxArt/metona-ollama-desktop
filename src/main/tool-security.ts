@@ -107,7 +107,7 @@ const BLOCKED_FILES = new Set(['MEMORY.md']);
  * 这些文件定义 AI 的身份与行为；禁止工具写入是为了防止提示注入
  * 诱导 AI 改写自身人格文件实现持久化劫持，只能由用户手动编辑。
  */
-const WRITE_PROTECTED_FILES = new Set(['SOUL.md', 'AGENT.md', 'USER.md']);
+const WRITE_PROTECTED_FILES = new Set(['SOUL.md', 'AGENTS.md', 'USER.md']);
 
 /** 注册路径为安全豁免（不受 BLOCKED_DIRS 限制）。主要用于注册工作空间目录 */
 export function addBlocklistExemptions(dirs: string[]): void {
@@ -147,7 +147,7 @@ export function isBlockedFile(targetPath: string): boolean {
   }
 }
 
-/** 检查文件是否在工作空间下且属于写保护文件（SOUL/AGENT/USER.md，可读不可写） */
+/** 检查文件是否在工作空间下且属于写保护文件（SOUL/AGENTS/USER.md，可读不可写） */
 function isWriteProtectedFile(targetPath: string): boolean {
   try {
     const resolved = canonicalizePath(targetPath);
@@ -192,7 +192,7 @@ export function checkPathAllowed(targetPath: string, operation: 'read' | 'write'
     return { ok: false, reason: `禁止直接访问 ${basename}。此文件只能通过 memory 工具操作，其他任何工具都无权读写。` };
   }
 
-  // ── 写保护：SOUL/AGENT/USER.md 可读不可写（防提示注入持久化劫持） ──
+  // ── 写保护：SOUL/AGENTS/USER.md 可读不可写（防提示注入持久化劫持） ──
   if (operation === 'write' && isWriteProtectedFile(resolved)) {
     const basename = path.basename(resolved);
     return { ok: false, reason: `禁止写入 ${basename}。此文件定义 AI 的身份与行为，为防止提示注入劫持，只能由用户手动编辑。` };

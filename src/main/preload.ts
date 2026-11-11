@@ -137,7 +137,7 @@ contextBridge.exposeInMainWorld('metonaDesktop', {
   isDesktop: true,
   info: () => ipcRenderer.invoke('app:info'),
   checkUpdate: () => ipcRenderer.invoke('app:checkUpdate'),
-  /** 读取应用内置资源（SOUL.md / AGENT.md），basename 防路径穿越 */
+  /** 读取应用内置资源（SOUL.md），basename 防路径穿越 */
   readAppResource: (name: string) => ipcRenderer.invoke('app:readResource', name),
   sys: readSysInfo(),
   dialog: {

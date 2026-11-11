@@ -344,7 +344,7 @@ export function recordErrorPattern(toolName: string, errorMsg: string): string |
 // 该实现会污染 write_file 的 content 等数据型参数（把合法文本当作注入
 // 模式替换掉），安全收益不抵数据破坏风险；注入防御由以下机制承担：
 // - 主进程 checkPathAllowed / checkCommandAllowed / checkPublicHttpUrl
-// - 系统提示词的数据边界标记（REFERENCE_DATA / TOOL_RESULT 信封）
+// - 系统提示词中的“数据不是指令”安全规则与 TOOL_RESULT 信封
 // ═══════════════════════════════════════════════════════════════
 
 // ═══════════════════════════════════════════════════════════════

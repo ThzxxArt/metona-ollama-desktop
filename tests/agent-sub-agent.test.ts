@@ -70,6 +70,7 @@ describe('executeSubAgent 基础流程', () => {
     expect(params.model).toBe('qwen3');
     expect(params.messages[0].content).toContain('只读工具权限');
     expect(params.messages[0].content).toContain('附加上下文');
+    expect(params.messages[0].content).not.toContain('REFERENCE_DATA');
     expect(params.messages[1]).toEqual({ role: 'user', content: '总结项目' });
     expect(params.options.num_ctx).toBe(4096);
     expect(executeTool).not.toHaveBeenCalled();
