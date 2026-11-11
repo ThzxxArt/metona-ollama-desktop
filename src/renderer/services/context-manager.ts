@@ -16,6 +16,7 @@ export {
   type ContextWarningLevel,
   type ContextPrediction,
   recordTokenUsage,
+  resetTokenUsageTrend,
   predictContextOverflow,
   AUTO_COMPRESS_THRESHOLD,
   recordActualTokens,
@@ -24,6 +25,7 @@ export {
   type CompressionMetrics,
   getCompressionHistory,
   getAverageCompressionRatio,
+  recordCompressionMetrics,
 } from './context/tokenizer.js';
 
 export { scoreMessageImportance, buildContext, shouldAutoCompress } from './context/builder.js';

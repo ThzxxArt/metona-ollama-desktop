@@ -65,6 +65,12 @@ export function recordTokenUsage(tokens: number, numCtx: number): void {
   if (_tokenUsageTrend.length > MAX_TREND_POINTS) _tokenUsageTrend.shift();
 }
 
+/** 测试/新会话：清空趋势采样 */
+export function resetTokenUsageTrend(): void {
+  _tokenUsageTrend.length = 0;
+  _currentTurn = 0;
+}
+
 export function predictContextOverflow(numCtx: number): ContextPrediction {
   const currentTokens = _tokenUsageTrend.length > 0 ? _tokenUsageTrend[_tokenUsageTrend.length - 1].tokens : 0;
   const currentUsage = currentTokens / numCtx;
