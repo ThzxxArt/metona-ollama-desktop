@@ -87,6 +87,7 @@ const fetchMock = vi.fn();
 let tmpDir: string;
 
 const realSetImmediate = setImmediate;
+const realSetTimeout = setTimeout;
 
 async function advanceUntilSettled<T>(p: Promise<T>, step = 1000, maxSteps = 80): Promise<T> {
   let result: T | undefined;
@@ -104,9 +105,10 @@ async function advanceUntilSettled<T>(p: Promise<T>, step = 1000, maxSteps = 80)
   );
   for (let i = 0; i < maxSteps && !settled; i++) {
     await vi.advanceTimersByTimeAsync(step);
-    // fs.promises 使用线程池，必须让真实 event loop 转一圈，
-    // 否则 fake timers 下 I/O 回调没有机会把 promise settle。
+    // fs.promises 使用线程池，必须让真实 event loop 转一圈，并给 I/O 回调
+    // 留出真实的调度窗口；CI 磁盘较慢时只转一圈会误判 promise 未结算。
     await new Promise<void>((resolve) => realSetImmediate(resolve));
+    await new Promise<void>((resolve) => realSetTimeout(resolve, 10));
     await Promise.resolve();
   }
   if (!settled) throw new Error('promise did not settle with fake timers');
