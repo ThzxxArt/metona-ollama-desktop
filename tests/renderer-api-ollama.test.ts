@@ -19,6 +19,8 @@ const bridge = {
   show: vi.fn(async () => ({ capabilities: ['tools'], model_info: {} })),
   chat: vi.fn(async () => ({ message: { content: 'ok' } })),
   chatStream: vi.fn(async () => {}),
+  abortRequest: vi.fn(async () => ({ success: true })),
+  abortStream: vi.fn(async () => ({ success: true })),
   embed: vi.fn(async () => ({ embedding: [1, 2] })),
   unload: vi.fn(async () => ({ success: true, unloaded: 1 })),
 };
@@ -88,11 +90,51 @@ describe('渲染进程 OllamaAPI 薄封装', () => {
     expect(body.tools).toHaveLength(1);
   });
 
-  it('chatStream 透传 abort signal', async () => {
+  it('chatStream 使用 requestId 取消，不跨桥传 AbortSignal', async () => {
+    let resolveStream: () => void = () => {};
+    bridge.chatStream.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveStream = resolve;
+        }),
+    );
     const api = new OllamaAPI();
     const ac = new AbortController();
-    await api.chatStream({ model: 'qwen3', messages: [] }, () => {}, ac);
-    expect(bridge.chatStream).toHaveBeenCalledWith(expect.anything(), expect.any(Function), ac.signal);
+    const pending = api.chatStream({ model: 'qwen3', messages: [] }, () => {}, ac);
+    await vi.waitFor(() => expect(bridge.chatStream).toHaveBeenCalledTimes(1));
+    const call = bridge.chatStream.mock.calls[0] as unknown as [unknown, unknown, string];
+    expect(call[2]).toMatch(/^stream-/);
+    expect(typeof call[2]).toBe('string');
+    ac.abort();
+    await Promise.resolve();
+    expect(bridge.abortStream).toHaveBeenCalledWith(call[2]);
+    resolveStream();
+    await pending;
+  });
+
+  it('chat 使用 requestId 取消，已中止时直接拒绝', async () => {
+    let resolveChat: (value: unknown) => void = () => {};
+    bridge.chat.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveChat = resolve;
+        }),
+    );
+    const api = new OllamaAPI();
+    const ac = new AbortController();
+    const pending = api.chat({ model: 'qwen3', messages: [], signal: ac.signal });
+    await vi.waitFor(() => expect(bridge.chat).toHaveBeenCalledTimes(1));
+    const call = bridge.chat.mock.calls[0] as unknown as [unknown, string];
+    expect(call[1]).toMatch(/^req-/);
+    ac.abort();
+    await Promise.resolve();
+    expect(bridge.abortRequest).toHaveBeenCalledWith(call[1]);
+    resolveChat({ ok: true });
+    await pending;
+
+    const aborted = new AbortController();
+    aborted.abort();
+    await expect(api.chat({ model: 'qwen3', messages: [], signal: aborted.signal })).rejects.toThrow('请求已取消');
   });
 
   it('unloadModels 默认 manual=true', async () => {

@@ -360,74 +360,31 @@ describe('preload: 事件桥', () => {
   });
 });
 
-describe('preload: ollama.chat 取消语义', () => {
+describe('preload: ollama.chat requestId 语义', () => {
   const body = { model: 'm', messages: [] };
 
-  it('无 signal 时直接 invoke', async () => {
+  it('无 requestId 时直接 invoke', async () => {
     hoisted.invoke.mockResolvedValueOnce('chat-result');
     await expect(api.ollama.chat(body)).resolves.toBe('chat-result');
     expect(hoisted.invoke).toHaveBeenCalledWith('ollama:chat', body);
   });
 
-  it('有 signal 时携带 requestId 并在完成后移除 abort 监听', async () => {
-    const controller = new AbortController();
-    const add = vi.spyOn(controller.signal, 'addEventListener');
-    const remove = vi.spyOn(controller.signal, 'removeEventListener');
+  it('有 requestId 时透传，供 abortRequest 取消', async () => {
     hoisted.invoke.mockResolvedValueOnce('chat-result');
+    await expect(api.ollama.chat(body, 'req-1')).resolves.toBe('chat-result');
+    expect(hoisted.invoke).toHaveBeenCalledWith('ollama:chat', body, 'req-1');
 
-    await expect(api.ollama.chat(body, controller.signal)).resolves.toBe('chat-result');
-    expect(hoisted.invoke).toHaveBeenCalledWith('ollama:chat', body, expect.stringMatching(/^stream-\d+-\d+$/));
-    expect(add).toHaveBeenCalledWith('abort', expect.any(Function), { once: true });
-    expect(remove).toHaveBeenCalledWith('abort', expect.any(Function));
-
-    hoisted.invoke.mockClear();
-    controller.abort();
-    expect(hoisted.invoke).not.toHaveBeenCalled();
-  });
-
-  it('已 abort 时只发送 abortRequest 并拒绝', async () => {
-    const controller = new AbortController();
-    controller.abort();
-    await expect(api.ollama.chat(body, controller.signal)).rejects.toThrow('请求已取消');
-    expect(hoisted.invoke).toHaveBeenCalledTimes(1);
-    expect(hoisted.invoke).toHaveBeenCalledWith('ollama:chat:abortRequest', expect.stringMatching(/^stream-/));
-  });
-
-  it('请求进行中 abort 会发送 abortRequest 并拒绝', async () => {
-    const controller = new AbortController();
-    let resolveInvoke: (value: unknown) => void = () => {};
-    hoisted.invoke.mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          resolveInvoke = resolve;
-        }),
-    );
-
-    const pending = api.ollama.chat(body, controller.signal);
-    controller.abort();
-    await expect(pending).rejects.toThrow('请求已取消');
-    expect(hoisted.invoke).toHaveBeenCalledWith('ollama:chat:abortRequest', expect.stringMatching(/^stream-/));
-
-    resolveInvoke('late');
-    await Promise.resolve();
-  });
-
-  it('invoke 失败时透传错误', async () => {
-    const controller = new AbortController();
-    hoisted.invoke.mockRejectedValueOnce(new Error('ipc failed'));
-    await expect(api.ollama.chat(body, controller.signal)).rejects.toThrow('ipc failed');
-
-    hoisted.invoke.mockClear();
-    controller.abort();
-    expect(hoisted.invoke).not.toHaveBeenCalled();
+    hoisted.invoke.mockResolvedValueOnce({ success: true });
+    await expect(api.ollama.abortRequest('req-1')).resolves.toEqual({ success: true });
+    expect(hoisted.invoke).toHaveBeenCalledWith('ollama:chat:abortRequest', 'req-1');
   });
 });
 
 describe('preload: ollama.chatStream 流语义', () => {
   const body = { model: 'm', messages: [] };
 
-  function startStream(onChunk: AnyFn, signal?: AbortSignal) {
-    const promise = api.ollama.chatStream(body, onChunk, signal);
+  function startStream(onChunk: AnyFn, requestId?: string) {
+    const promise = api.ollama.chatStream(body, onChunk, requestId);
     const startCall = hoisted.invoke.mock.calls.find((c: any[]) => c[0] === 'ollama:chat:start');
     if (!startCall) throw new Error('chat:start not invoked');
     const streamId = startCall[2] as string;
@@ -437,7 +394,7 @@ describe('preload: ollama.chatStream 流语义', () => {
   it('chunk 与 done 正常完成，忽略其它 streamId', async () => {
     const onChunk = vi.fn();
     hoisted.invoke.mockResolvedValue(undefined);
-    const { promise, streamId } = startStream(onChunk);
+    const { promise, streamId } = startStream(onChunk, 'stream-1');
 
     emit('ollama:chat:chunk', { streamId: 'other', chunk: { message: { content: 'x' } } });
     emit('ollama:chat:done', { streamId: 'other' });
@@ -454,7 +411,7 @@ describe('preload: ollama.chatStream 流语义', () => {
 
   it('done 带非 aborted 错误时拒绝', async () => {
     hoisted.invoke.mockResolvedValue(undefined);
-    const { promise, streamId } = startStream(vi.fn());
+    const { promise, streamId } = startStream(vi.fn(), 'stream-err');
     emit('ollama:chat:done', { streamId, error: { kind: 'network', message: '连接失败' } });
     await expect(promise).rejects.toThrow('连接失败');
     expect(hoisted.invoke).toHaveBeenCalledWith('ollama:chat:abort', streamId);
@@ -462,7 +419,7 @@ describe('preload: ollama.chatStream 流语义', () => {
 
   it('done 带 aborted 错误时正常完成', async () => {
     hoisted.invoke.mockResolvedValue(undefined);
-    const { promise, streamId } = startStream(vi.fn());
+    const { promise, streamId } = startStream(vi.fn(), 'stream-aborted');
     emit('ollama:chat:done', { streamId, error: { kind: 'aborted', message: '取消' } });
     await expect(promise).resolves.toBeUndefined();
   });
@@ -472,7 +429,7 @@ describe('preload: ollama.chatStream 流语义', () => {
     const onChunk = vi.fn(() => {
       throw new Error('callback boom');
     });
-    const { promise, streamId } = startStream(onChunk);
+    const { promise, streamId } = startStream(onChunk, 'stream-cb');
     emit('ollama:chat:chunk', { streamId, chunk: { message: { content: 'a' } } });
     await expect(promise).rejects.toThrow('callback boom');
     expect(hoisted.invoke).toHaveBeenCalledWith('ollama:chat:abort', streamId);
@@ -480,26 +437,21 @@ describe('preload: ollama.chatStream 流语义', () => {
 
   it('start invoke 失败时拒绝并清理监听', async () => {
     hoisted.invoke.mockRejectedValueOnce(new Error('start failed'));
-    const { promise } = startStream(vi.fn());
+    const { promise } = startStream(vi.fn(), 'stream-fail');
     await expect(promise).rejects.toThrow('start failed');
     expect(hoisted.listeners.get('ollama:chat:chunk')?.size ?? 0).toBe(0);
     expect(hoisted.listeners.get('ollama:chat:done')?.size ?? 0).toBe(0);
   });
 
-  it('abort signal 触发 abort invoke，随后 done 正常结束', async () => {
-    const controller = new AbortController();
-    hoisted.invoke.mockResolvedValue(undefined);
-    const { promise, streamId } = startStream(vi.fn(), controller.signal);
-
-    controller.abort();
-    expect(hoisted.invoke).toHaveBeenCalledWith('ollama:chat:abort', streamId);
-    emit('ollama:chat:done', { streamId, error: { kind: 'aborted', message: '取消' } });
-    await expect(promise).resolves.toBeUndefined();
+  it('abortStream 透传主进程 abort 通道', async () => {
+    hoisted.invoke.mockResolvedValueOnce({ success: true });
+    await expect(api.ollama.abortStream('stream-1')).resolves.toEqual({ success: true });
+    expect(hoisted.invoke).toHaveBeenCalledWith('ollama:chat:abort', 'stream-1');
   });
 
   it('重复 done 只 finish 一次', async () => {
     hoisted.invoke.mockResolvedValue(undefined);
-    const { promise, streamId } = startStream(vi.fn());
+    const { promise, streamId } = startStream(vi.fn(), 'stream-dup');
     emit('ollama:chat:done', { streamId });
     emit('ollama:chat:done', { streamId });
     emit('ollama:chat:done', { streamId });

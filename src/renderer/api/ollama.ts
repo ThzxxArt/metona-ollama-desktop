@@ -14,6 +14,11 @@ import type {
   ToolDefinition,
 } from '../types.js';
 import type { OllamaBridgeAPI, OllamaChatRequestBody } from '../../shared/contracts/ollama.js';
+import { generateId } from '../utils/utils.js';
+
+function nextRequestId(prefix: 'req' | 'stream'): string {
+  return `${prefix}-${generateId()}`;
+}
 
 function bridge(): OllamaBridgeAPI {
   const api = window.metonaDesktop?.ollama;
@@ -97,7 +102,19 @@ export class OllamaAPI {
 
   async chat(params: Omit<OllamaChatParams, 'stream'> & { signal?: AbortSignal }): Promise<unknown> {
     await this._ensureConfig();
-    return bridge().chat(this._body(params as OllamaChatParams), params.signal);
+    const body = this._body(params as OllamaChatParams);
+    if (!params.signal) return bridge().chat(body);
+    if (params.signal.aborted) throw new Error('请求已取消');
+    const requestId = nextRequestId('req');
+    const onAbort = (): void => {
+      void bridge().abortRequest(requestId);
+    };
+    params.signal.addEventListener('abort', onAbort, { once: true });
+    try {
+      return await bridge().chat(body, requestId);
+    } finally {
+      params.signal.removeEventListener('abort', onAbort);
+    }
   }
 
   async chatStream(
@@ -106,11 +123,22 @@ export class OllamaAPI {
     abortController?: AbortController,
   ): Promise<void> {
     await this._ensureConfig();
-    await bridge().chatStream(
-      this._body(params),
-      onChunk as (chunk: import('../../shared/contracts/ollama.js').OllamaStreamChunk) => void,
-      abortController?.signal,
-    );
+    const signal = abortController?.signal;
+    if (signal?.aborted) return;
+    const streamId = nextRequestId('stream');
+    const onAbort = (): void => {
+      void bridge().abortStream(streamId);
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+    try {
+      await bridge().chatStream(
+        this._body(params),
+        onChunk as (chunk: import('../../shared/contracts/ollama.js').OllamaStreamChunk) => void,
+        streamId,
+      );
+    } finally {
+      signal?.removeEventListener('abort', onAbort);
+    }
   }
 
   async embed(model: string, input: string): Promise<OllamaEmbedResponse> {

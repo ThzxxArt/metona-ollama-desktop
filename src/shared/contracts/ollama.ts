@@ -147,12 +147,19 @@ export interface OllamaBridgeAPI {
   models: () => Promise<OllamaModelsResponse>;
   show: (model: string) => Promise<OllamaShowResponse>;
   ps: () => Promise<OllamaPsResponse>;
-  chat: (body: OllamaChatRequestBody, signal?: AbortSignal) => Promise<unknown>;
+  /**
+   * 非流式聊天。requestId 由渲染进程生成，用于通过 abortRequest 取消。
+   * 不能传 AbortSignal：contextBridge 无法保留 AbortSignal 的方法。
+   */
+  chat: (body: OllamaChatRequestBody, requestId?: string) => Promise<unknown>;
+  /** 流式聊天。requestId 用于通过 abortStream 取消。 */
   chatStream: (
     body: OllamaChatRequestBody,
     onChunk: (chunk: OllamaStreamChunk) => void,
-    signal?: AbortSignal,
+    requestId?: string,
   ) => Promise<void>;
+  abortRequest: (requestId: string) => Promise<{ success: boolean }>;
+  abortStream: (streamId: string) => Promise<{ success: boolean }>;
   embed: (model: string, input: string) => Promise<OllamaEmbedResponse>;
   unload: (options?: { manual?: boolean }) => Promise<{ success: boolean; unloaded: number; error?: string }>;
   onStreamChunk: (callback: (event: OllamaStreamEvent) => void) => () => void;
