@@ -132,7 +132,17 @@ export function loadMetricsHistory(): void {
   try {
     const raw = localStorage.getItem(METRICS_STORAGE_KEY);
     if (!raw) return;
-    const parsed = JSON.parse(raw) as Array<Record<string, any>>;
+    interface StoredMetric {
+      sessionId?: string;
+      model?: string;
+      duration?: number;
+      iterations?: number;
+      inputTokens?: number;
+      outputTokens?: number;
+      errorPatterns?: string[];
+      timestamp?: number;
+    }
+    const parsed = JSON.parse(raw) as StoredMetric[];
     for (const item of parsed) {
       sessionMetricsHistory.push({
         sessionId: item.sessionId || 'unknown',

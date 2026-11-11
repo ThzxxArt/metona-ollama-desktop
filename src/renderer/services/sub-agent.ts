@@ -9,7 +9,7 @@ import { OllamaAPI } from '../api/ollama.js';
 import { logInfo, logWarn, logError } from './log-service.js';
 import { validatePathSandbox, checkCommandSafety, snapshotSafetyState, restoreSafetyState, resetAllSafetyState, classifyError, calculateBackoff } from './agent-safety.js';
 import { getWorkspaceDirPath } from './workspace-state.js';
-import type { ToolResult, ToolCall, ToolDefinition } from '../types.js';
+import type { ToolResult, ToolCall, ToolDefinition, OllamaStreamChunk } from '../types.js';
 
 const SUB_AGENT_MAX_LOOPS = 10;    // 子代理最多 10 轮
 const SUB_AGENT_TIMEOUT = 300000;  // 5 分钟超时
@@ -163,7 +163,12 @@ export async function executeSubAgent(
 
   const systemPrompt = buildSubAgentPrompt(permission, toolNames, context, task);
 
-  const messages: Array<{ role: string; content: string; tool_calls?: ToolCall[]; tool_name?: string }> = [
+  const messages: Array<{
+    role: 'user' | 'assistant' | 'system' | 'tool';
+    content: string;
+    tool_calls?: ToolCall[];
+    tool_name?: string;
+  }> = [
     { role: 'system', content: systemPrompt },
     { role: 'user', content: task }
   ];
@@ -232,9 +237,9 @@ export async function executeSubAgent(
             messages,
             stream: true,
             think: false,
-            tools: tools as any,
+            tools,
             options: { num_ctx: numCtx }
-          } as any, (chunk: any) => {
+          }, (chunk: OllamaStreamChunk) => {
             if (chunk.message?.content) content += chunk.message.content;
             if (chunk.message?.tool_calls?.length) {
               for (const tc of chunk.message.tool_calls) {
